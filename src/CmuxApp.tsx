@@ -117,6 +117,12 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     // Create worktree path
     const worktreePath = path.join(currentDir, '..', `${path.basename(currentDir)}-${slug}`);
     
+    // Exit Ink app cleanly before creating tmux pane
+    exit();
+    
+    // Small delay to ensure clean exit
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     // Create new pane
     const paneInfo = execSync(
       `tmux split-window -h -P -F '#{pane_id}'`,
@@ -165,10 +171,10 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     };
     
     const updatedPanes = [...panes, newPane];
-    await savePanes(updatedPanes);
+    await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
     
-    setStatusMessage(`Created new pane: ${slug}`);
-    setTimeout(() => setStatusMessage(''), 3000);
+    // Re-launch cmux to show the updated menu
+    execSync('cmux', { stdio: 'inherit' });
   };
 
   const jumpToPane = (paneId: string) => {
