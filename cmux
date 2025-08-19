@@ -43,6 +43,10 @@ cmux_new() {
     # Run claude in the new session
     tmux send-keys -t "$name" "claude" C-m
     
+    # Give claude a moment to start, then clear the screen to force a repaint
+    sleep 0.5
+    tmux send-keys -t "$name" C-l
+    
     # Track this session
     echo "$name:$worktree_path" >> "$CMUX_SESSIONS_FILE"
     
