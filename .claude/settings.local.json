@@ -4,9 +4,14 @@
       "Bash(rm:*)",
       "Bash(chmod:*)",
       "Bash(npm install)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git worktree:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "/Users/justinschroeder/Projects/cmux/main"
+    ]
   }
 }
