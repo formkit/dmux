@@ -27,6 +27,8 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
   const [newPanePrompt, setNewPanePrompt] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [showMergeConfirmation, setShowMergeConfirmation] = useState(false);
+  const [mergedPane, setMergedPane] = useState<CmuxPane | null>(null);
   const { exit } = useApp();
 
   // Load panes on mount and refresh periodically
@@ -297,6 +299,10 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
       
       setStatusMessage(`Merged ${pane.slug} into ${mainBranch}`);
       setTimeout(() => setStatusMessage(''), 3000);
+      
+      // Show confirmation dialog to close the pane
+      setMergedPane(pane);
+      setShowMergeConfirmation(true);
     } catch (error) {
       setStatusMessage('Failed to merge - check git status');
       setTimeout(() => setStatusMessage(''), 3000);
@@ -312,6 +318,20 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
         createNewPane(newPanePrompt);
         setShowNewPaneDialog(false);
         setNewPanePrompt('');
+      }
+      return;
+    }
+
+    if (showMergeConfirmation) {
+      if (input === 'y' || input === 'Y') {
+        if (mergedPane) {
+          closePane(mergedPane);
+        }
+        setShowMergeConfirmation(false);
+        setMergedPane(null);
+      } else if (input === 'n' || input === 'N' || key.escape) {
+        setShowMergeConfirmation(false);
+        setMergedPane(null);
       }
       return;
     }
@@ -387,6 +407,15 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
               onChange={setNewPanePrompt}
               placeholder="Optional prompt..."
             />
+          </Box>
+        </Box>
+      )}
+
+      {showMergeConfirmation && mergedPane && (
+        <Box borderStyle="double" borderColor="yellow" paddingX={1} marginTop={1}>
+          <Box flexDirection="column">
+            <Text color="yellow" bold>Worktree merged successfully!</Text>
+            <Text>Close the pane "{mergedPane.slug}"? (y/n)</Text>
           </Box>
         </Box>
       )}
