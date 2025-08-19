@@ -119,17 +119,23 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     // Create worktree path
     const worktreePath = path.join(currentDir, '..', `${path.basename(currentDir)}-${slug}`);
     
+    // Clear the screen completely before exiting
+    process.stdout.write('\x1b[2J\x1b[H');
+    
     // Exit Ink app cleanly before creating tmux pane
     exit();
     
-    // Small delay to ensure clean exit
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait 1 second with clear screen
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Create new pane
     const paneInfo = execSync(
       `tmux split-window -h -P -F '#{pane_id}'`,
       { encoding: 'utf-8' }
     ).trim();
+    
+    // Wait another second after pane creation
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Resize panes evenly
     execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
