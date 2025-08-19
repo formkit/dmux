@@ -23,5 +23,6 @@
     "@types/node": "^20.10.5",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
-  }
+  },
+  "packageManager": "yarn@1.22.21+sha1.1959a18351b811cdeedbd484a8f86c3cc3bbaf72"
 }
