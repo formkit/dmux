@@ -199,6 +199,49 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
+  const generateCommitMessage = async (changes: string): Promise<string> => {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    
+    if (!apiKey) {
+      return 'chore: merge worktree changes';
+    }
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a git commit message generator. Generate semantic commit messages following conventional commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:). Be concise and specific.'
+            },
+            {
+              role: 'user',
+              content: `Generate a semantic commit message for these changes:\n\n${changes.substring(0, 3000)}`
+            }
+          ],
+          max_tokens: 100,
+          temperature: 0.3
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API error: ${response.status}`);
+      }
+
+      const data = await response.json() as any;
+      const message = data.choices[0].message.content.trim();
+      return message || 'chore: merge worktree changes';
+    } catch {
+      return 'chore: merge worktree changes';
+    }
+  };
+
   const mergeWorktree = async (pane: CmuxPane) => {
     if (!pane.worktreePath) {
       setStatusMessage('No worktree to merge');
@@ -207,8 +250,35 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
 
     try {
+      setStatusMessage('Checking worktree status...');
+      
       // Get current branch
       const mainBranch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
+      
+      // Check for uncommitted changes in the worktree
+      const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
+      
+      if (statusOutput.trim()) {
+        setStatusMessage('Generating commit message...');
+        
+        // Get the diff for uncommitted changes
+        const diffOutput = execSync(`git -C "${pane.worktreePath}" diff HEAD`, { encoding: 'utf-8' });
+        const statusDetails = execSync(`git -C "${pane.worktreePath}" status`, { encoding: 'utf-8' });
+        
+        // Generate commit message using LLM
+        const commitMessage = await generateCommitMessage(`${statusDetails}\n\n${diffOutput}`);
+        
+        setStatusMessage('Committing changes...');
+        
+        // Stage all changes and commit with generated message
+        execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
+        
+        // Escape the commit message for shell
+        const escapedMessage = commitMessage.replace(/'/g, "'\\''");
+        execSync(`git -C "${pane.worktreePath}" commit -m '${escapedMessage}'`, { stdio: 'pipe' });
+      }
+      
+      setStatusMessage('Merging into main...');
       
       // Merge the worktree branch
       execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
