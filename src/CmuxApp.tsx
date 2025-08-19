@@ -158,8 +158,8 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
     execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
     
-    // Return focus to original pane
-    execSync('tmux select-pane -t 0', { stdio: 'pipe' });
+    // Keep focus on the new pane
+    execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
     
     // Save pane info
     const newPane: CmuxPane = {
