@@ -119,14 +119,29 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     // Create worktree path
     const worktreePath = path.join(currentDir, '..', `${path.basename(currentDir)}-${slug}`);
     
-    // Clear the screen completely before exiting
+    // Multiple clearing strategies to prevent artifacts
+    // 1. Clear screen with ANSI codes
     process.stdout.write('\x1b[2J\x1b[H');
+    
+    // 2. Fill with blank lines to push content off screen
+    process.stdout.write('\n'.repeat(100));
+    
+    // 3. Clear tmux history and send clear command
+    try {
+      execSync('tmux clear-history', { stdio: 'pipe' });
+      execSync('tmux send-keys C-l', { stdio: 'pipe' });
+    } catch {}
     
     // Exit Ink app cleanly before creating tmux pane
     exit();
     
-    // Wait 1 second with clear screen
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait for exit to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // 4. Force tmux to refresh the display
+    try {
+      execSync('tmux refresh-client', { stdio: 'pipe' });
+    } catch {}
     
     // Create new pane
     const paneInfo = execSync(
@@ -134,8 +149,8 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
       { encoding: 'utf-8' }
     ).trim();
     
-    // Wait another second after pane creation
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait for pane creation to settle
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Resize panes evenly
     execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
