@@ -29,6 +29,9 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   const [statusMessage, setStatusMessage] = useState('');
   const [showMergeConfirmation, setShowMergeConfirmation] = useState(false);
   const [mergedPane, setMergedPane] = useState<CmuxPane | null>(null);
+  const [showCloseOptions, setShowCloseOptions] = useState(false);
+  const [selectedCloseOption, setSelectedCloseOption] = useState(0);
+  const [closingPane, setClosingPane] = useState<CmuxPane | null>(null);
   const { exit } = useApp();
 
   // Load panes on mount and refresh periodically
@@ -228,6 +231,116 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
+  const mergeAndPrune = async (pane: CmuxPane) => {
+    if (!pane.worktreePath) {
+      setStatusMessage('No worktree to merge');
+      setTimeout(() => setStatusMessage(''), 2000);
+      return;
+    }
+
+    try {
+      setStatusMessage('Checking worktree status...');
+      
+      // Get current branch
+      const mainBranch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
+      
+      // Check for uncommitted changes in the worktree
+      const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
+      
+      if (statusOutput.trim()) {
+        setStatusMessage('Generating commit message...');
+        
+        // Get the diff for uncommitted changes
+        const diffOutput = execSync(`git -C "${pane.worktreePath}" diff HEAD`, { encoding: 'utf-8' });
+        const statusDetails = execSync(`git -C "${pane.worktreePath}" status`, { encoding: 'utf-8' });
+        
+        // Generate commit message using LLM
+        const commitMessage = await generateCommitMessage(`${statusDetails}\n\n${diffOutput}`);
+        
+        setStatusMessage('Committing changes...');
+        
+        // Stage all changes and commit with generated message
+        execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
+        
+        // Escape the commit message for shell
+        const escapedMessage = commitMessage.replace(/'/g, "'\\''");
+        execSync(`git -C "${pane.worktreePath}" commit -m '${escapedMessage}'`, { stdio: 'pipe' });
+      }
+      
+      setStatusMessage('Merging into main...');
+      
+      // Merge the worktree branch
+      execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
+      
+      // Remove worktree
+      execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
+      
+      // Delete branch
+      execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
+      
+      // Close the pane
+      await closePane(pane);
+      
+      setStatusMessage(`Merged ${pane.slug} into ${mainBranch} and closed pane`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    } catch (error) {
+      setStatusMessage('Failed to merge - check git status');
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const deleteUnsavedChanges = async (pane: CmuxPane) => {
+    if (!pane.worktreePath) {
+      // No worktree, just close the pane
+      await closePane(pane);
+      return;
+    }
+
+    try {
+      setStatusMessage('Removing worktree with unsaved changes...');
+      
+      // Force remove worktree (discards uncommitted changes)
+      execSync(`git worktree remove --force "${pane.worktreePath}"`, { stdio: 'pipe' });
+      
+      // Delete branch
+      try {
+        execSync(`git branch -D ${pane.slug}`, { stdio: 'pipe' });
+      } catch {
+        // Branch might not exist or have commits, that's ok
+      }
+      
+      // Close the pane
+      await closePane(pane);
+      
+      setStatusMessage(`Deleted worktree ${pane.slug} and closed pane`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    } catch (error) {
+      setStatusMessage('Failed to delete worktree');
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const handleCloseOption = async (option: number, pane: CmuxPane) => {
+    setShowCloseOptions(false);
+    setClosingPane(null);
+    setSelectedCloseOption(0);
+
+    switch (option) {
+      case 0: // Merge & Prune
+        await mergeAndPrune(pane);
+        break;
+      case 1: // Merge Only
+        await mergeWorktree(pane);
+        break;
+      case 2: // Delete Unsaved Changes
+        await deleteUnsavedChanges(pane);
+        break;
+      case 3: // Just Close
+        await closePane(pane);
+        break;
+    }
+  };
+
   const generateCommitMessage = async (changes: string): Promise<string> => {
     const apiKey = process.env.OPENROUTER_API_KEY;
     
@@ -357,6 +470,21 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
       return;
     }
 
+    if (showCloseOptions) {
+      if (key.escape) {
+        setShowCloseOptions(false);
+        setClosingPane(null);
+        setSelectedCloseOption(0);
+      } else if (key.upArrow) {
+        setSelectedCloseOption(Math.max(0, selectedCloseOption - 1));
+      } else if (key.downArrow) {
+        setSelectedCloseOption(Math.min(3, selectedCloseOption + 1));
+      } else if (key.return && closingPane) {
+        handleCloseOption(selectedCloseOption, closingPane);
+      }
+      return;
+    }
+
     if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
     } else if (key.downArrow) {
@@ -368,7 +496,9 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     } else if (input === 'j' && selectedIndex < panes.length) {
       jumpToPane(panes[selectedIndex].paneId);
     } else if (input === 'x' && selectedIndex < panes.length) {
-      closePane(panes[selectedIndex]);
+      setClosingPane(panes[selectedIndex]);
+      setShowCloseOptions(true);
+      setSelectedCloseOption(0);
     } else if (input === 'm' && selectedIndex < panes.length) {
       mergeWorktree(panes[selectedIndex]);
     } else if (key.return && selectedIndex < panes.length) {
@@ -437,6 +567,37 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
           <Box flexDirection="column">
             <Text color="yellow" bold>Worktree merged successfully!</Text>
             <Text>Close the pane "{mergedPane.slug}"? (y/n)</Text>
+          </Box>
+        </Box>
+      )}
+
+      {showCloseOptions && closingPane && (
+        <Box borderStyle="double" borderColor="red" paddingX={1} marginTop={1}>
+          <Box flexDirection="column">
+            <Text color="red" bold>Close pane "{closingPane.slug}"?</Text>
+            <Text dimColor>Select an option (ESC to cancel):</Text>
+            <Box flexDirection="column" marginTop={1}>
+              <Box>
+                <Text color={selectedCloseOption === 0 ? 'cyan' : 'white'}>
+                  {selectedCloseOption === 0 ? '▶ ' : '  '}Merge & Prune - Merge worktree to main and close
+                </Text>
+              </Box>
+              <Box>
+                <Text color={selectedCloseOption === 1 ? 'cyan' : 'white'}>
+                  {selectedCloseOption === 1 ? '▶ ' : '  '}Merge Only - Merge worktree but keep pane open
+                </Text>
+              </Box>
+              <Box>
+                <Text color={selectedCloseOption === 2 ? 'cyan' : 'white'}>
+                  {selectedCloseOption === 2 ? '▶ ' : '  '}Delete Unsaved - Remove worktree (discard changes)
+                </Text>
+              </Box>
+              <Box>
+                <Text color={selectedCloseOption === 3 ? 'cyan' : 'white'}>
+                  {selectedCloseOption === 3 ? '▶ ' : '  '}Just Close - Close pane only
+                </Text>
+              </Box>
+            </Box>
           </Box>
         </Box>
       )}
