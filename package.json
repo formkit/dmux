@@ -1,28 +1,73 @@
 {
   "name": "dmux",
   "version": "1.0.0",
-  "description": "Tmux pane manager with AI agent integration",
-  "main": "dist/index.js",
+  "description": "Tmux pane manager with AI agent integration for parallel development workflows",
   "type": "module",
+  "author": "Justin Schroeder",
+  "license": "MIT",
+  "homepage": "https://github.com/justinschroeder/dmux#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/justinschroeder/dmux.git"
+  },
+  "bugs": {
+    "url": "https://github.com/justinschroeder/dmux/issues"
+  },
+  "keywords": [
+    "tmux",
+    "claude",
+    "ai",
+    "development",
+    "worktree",
+    "git",
+    "terminal",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "dmux",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
+    "clean": "rm -rf dist",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run build",
+    "prerelease": "run-s clean typecheck build",
+    "release": "bumpp --commit --push --tag",
+    "release:minor": "bumpp minor --commit --push --tag",
+    "release:major": "bumpp major --commit --push --tag"
   },
   "bin": {
     "dmux": "./dmux"
   },
   "dependencies": {
+    "chalk": "^5.3.0",
     "ink": "^5.0.1",
     "ink-text-input": "^6.0.0",
-    "react": "^18.2.0",
-    "chalk": "^5.3.0"
+    "react": "^18.2.0"
   },
   "devDependencies": {
-    "@types/react": "^18.2.45",
     "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "bumpp": "^10.2.3",
+    "npm-run-all2": "^8.0.4",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   },
-  "packageManager": "yarn@1.22.21+sha1.1959a18351b811cdeedbd484a8f86c3cc3bbaf72"
+  "packageManager": "pnpm@10.14.0"
 }

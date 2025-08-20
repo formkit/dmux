@@ -1,0 +1,22 @@
+{
+  "all": true,
+  "commit": true,
+  "tag": true,
+  "push": true,
+  "files": [
+    "package.json"
+  ],
+  "types": {
+    "feat": "Features",
+    "fix": "Bug Fixes",
+    "docs": "Documentation",
+    "style": "Styles",
+    "refactor": "Code Refactoring",
+    "perf": "Performance Improvements",
+    "test": "Tests",
+    "build": "Build System",
+    "ci": "Continuous Integration",
+    "chore": "Chores",
+    "revert": "Reverts"
+  }
+}

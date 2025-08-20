@@ -8,7 +8,9 @@
       "Bash(git worktree:*)",
       "Bash(git checkout:*)",
       "Bash(git add:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm:*)"
     ],
     "deny": [],
     "ask": [],
