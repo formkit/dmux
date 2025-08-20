@@ -29,7 +29,7 @@ Tools for running agents in parallel are too complex. `dmux` makes running paral
 npm install -g dmux
 ```
 
-### 2. Configure AI Features (Optional)
+### 2. Enable AI Features
 
 For AI-powered branch naming and commit messages:
 
