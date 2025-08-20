@@ -18,7 +18,8 @@
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "/Users/justinschroeder/Projects/dmux/main"
+      "/Users/justinschroeder/Projects/dmux/main",
+      "/Users/justinschroeder/.dmux"
     ]
   }
 }

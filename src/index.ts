@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { render } from 'ink';
 import React from 'react';
+import { createHash } from 'crypto';
 import DmuxApp from './DmuxApp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,15 +17,24 @@ class Dmux {
   private panesFile: string;
   private projectName: string;
   private sessionName: string;
+  private projectRoot: string;
 
   constructor() {
     this.dmuxDir = path.join(process.env.HOME!, '.dmux');
-    // Get project name from current directory
-    this.projectName = path.basename(process.cwd());
+    // Get git root directory to determine project scope
+    this.projectRoot = this.getProjectRoot();
+    // Get project name from git root directory
+    this.projectName = path.basename(this.projectRoot);
+    
+    // Create a unique identifier for this project based on its full path
+    // This ensures different projects with the same folder name are kept separate
+    const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
+    const projectIdentifier = `${this.projectName}-${projectHash}`;
+    
     // Create unique session name for this project
-    this.sessionName = `dmux-${this.projectName}`;
-    // Store panes per project
-    this.panesFile = path.join(this.dmuxDir, `${this.projectName}-panes.json`);
+    this.sessionName = `dmux-${projectIdentifier}`;
+    // Store panes per project using the unique identifier
+    this.panesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
   }
 
   async init() {
@@ -57,7 +67,8 @@ class Dmux {
       dmuxDir: this.dmuxDir,
       panesFile: this.panesFile,
       projectName: this.projectName,
-      sessionName: this.sessionName
+      sessionName: this.sessionName,
+      projectRoot: this.projectRoot
     }));
   }
 
@@ -67,6 +78,20 @@ class Dmux {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private getProjectRoot(): string {
+    try {
+      // Try to get git root directory
+      const gitRoot = execSync('git rev-parse --show-toplevel', { 
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      }).trim();
+      return gitRoot;
+    } catch {
+      // Fallback to current directory if not in a git repo
+      return process.cwd();
     }
   }
 }

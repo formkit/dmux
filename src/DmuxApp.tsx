@@ -19,6 +19,7 @@ interface DmuxAppProps {
   panesFile: string;
   projectName: string;
   sessionName: string;
+  projectRoot?: string;
 }
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sessionName }) => {
@@ -172,11 +173,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     setStatusMessage('Creating new pane...');
     
-    // Get current directory
-    const currentDir = process.cwd();
+    // Get git root directory for consistent worktree placement
+    let projectRoot: string;
+    try {
+      projectRoot = execSync('git rev-parse --show-toplevel', { 
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      }).trim();
+    } catch {
+      // Fallback to current directory if not in a git repo
+      projectRoot = process.cwd();
+    }
     
-    // Create worktree path
-    const worktreePath = path.join(currentDir, '..', `${path.basename(currentDir)}-${slug}`);
+    // Create worktree path relative to project root
+    const worktreePath = path.join(path.dirname(projectRoot), `${path.basename(projectRoot)}-${slug}`);
     
     // Get the original pane ID (where dmux is running) before clearing
     const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
