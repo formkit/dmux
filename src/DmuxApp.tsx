@@ -50,10 +50,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       // Filter out dead panes
       const activePanes = loadedPanes.filter(pane => {
         try {
-          execSync(`tmux list-panes -F '#{pane_id}' | grep -q '${pane.paneId}'`, { 
+          // Get list of all pane IDs
+          const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+            encoding: 'utf-8',
             stdio: 'pipe' 
-          });
-          return true;
+          }).trim().split('\n');
+          
+          // Check if our pane ID exists in the list
+          return paneIds.includes(pane.paneId);
         } catch {
           return false;
         }
@@ -262,6 +266,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     // Switch back to the original pane (where dmux was running)
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+    
+    // Small delay to ensure pane is fully established before re-launching
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // Re-launch dmux in the original pane
     execSync(`tmux send-keys -t '${originalPaneId}' 'dmux' Enter`, { stdio: 'pipe' });
