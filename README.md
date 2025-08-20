@@ -1,7 +1,8 @@
 # dmux - AI-Powered tmux Development Sessions
 
-Dmux makes running parallel development agents easy like Claude Code. It's a simple tool that creates a new tmux pane, a new git worktree, and launches a Claude Code agent in that worktree. The main dmux tool then lets you merge
-the open panes back into your main branch easily, close failed experiments, and spin up more agents quickly.
+Tools for running agents in parallel are too complex. `dmux` makes running parallel development agents like Claude Code very simple. It's a simple tool that creates a new tmux pane, a new git worktree, and launches a Claude Code agent in that worktree, with AI powered branch naming and commit messages.
+
+`dmux` lets you merge the open panes back into your main branch easily, close failed experiments, and spin up more agents quickly.
 
 ## Features
 
@@ -22,49 +23,13 @@ the open panes back into your main branch easily, close failed experiments, and 
 
 ## Installation
 
-### 1. Clone and Build
+### 1. Install dmux
 
 ```bash
-# Clone the repository
-git clone <repository-url> ~/dmux
-cd ~/dmux
-
-# Install dependencies
-npm install
-
-# Build the project
-npm run build
+npm install -g dmux
 ```
 
-### 2. Global Installation
-
-Choose one of these methods:
-
-#### Option A: Symlink (Recommended)
-```bash
-# Make the script executable
-chmod +x ~/dmux/dmux
-
-# Create symlink in a directory that's in your PATH
-sudo ln -s ~/dmux/dmux /usr/local/bin/dmux
-```
-
-#### Option B: Add to PATH
-```bash
-# Add this line to your ~/.bashrc or ~/.zshrc
-export PATH="$PATH:$HOME/dmux"
-
-# Reload your shell configuration
-source ~/.bashrc  # or ~/.zshrc
-```
-
-#### Option C: NPM Global Link
-```bash
-# From the dmux directory
-npm link
-```
-
-### 3. Configure AI Features (Optional)
+### 2. Configure AI Features (Optional)
 
 For AI-powered branch naming and commit messages:
 
@@ -111,11 +76,13 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
 | `q` | Quit dmux interface |
 | `ESC` | Cancel current dialog |
 
-## Example Workflow
+## Project structure
+
+When using git worktrees, its helpful to have your project's main source code in a "main" directory. Worktrees are then checked out as siblings of the main directory.
 
 ```bash
 # Start dmux in your project
-cd ~/projects/my-app
+cd ~/projects/my-app/main
 dmux
 
 # Create a pane for a new feature
@@ -141,60 +108,13 @@ dmux
 4. **Claude Integration**: Launches Claude with `--accept-edits` for immediate coding
 5. **Smart Merging**: Auto-commits, generates messages, and cleans up worktrees
 
-## Project Structure
-
-When you create panes, dmux organizes your work like this:
-
-```
-my-project/              # Your main repository
-├── .git/
-└── src/
-
-my-project-fix-auth/     # Worktree for "fix authentication"
-├── .git                 # Worktree reference
-└── src/                 # Independent working copy
-
-my-project-add-feature/  # Worktree for "add new feature"
-├── .git
-└── src/
-```
-
-## Troubleshooting
-
-### Claude command not found
-Install Claude Code CLI from [Claude Code documentation](https://claude.ai/code).
-
-### API features not working
-```bash
-# Check your API key
-echo $OPENROUTER_API_KEY
-
-# If missing, add to your shell config
-export OPENROUTER_API_KEY="your-key"
-```
-
-### Panes not appearing
-- Ensure tmux version 3.0+: `tmux -V`
-- Check git version 2.20+: `git --version`
-- Verify write permissions in parent directory
-
-### Screen artifacts
-Press `Ctrl+L` in the affected pane to clear the screen.
-
-## Tips
-
-- **Use descriptive prompts** for better AI-generated branch names
-- **Merge frequently** to keep your main branch updated
-- **One feature per pane** for clean separation of work
-- **Close unused panes** with `x` to keep the interface clean
-
 ## tmux Configuration for Beginners
 
 While dmux handles most tmux operations automatically, having a good tmux configuration can enhance your experience. This isn't the place to learn tmux comprehensively, but here's a helpful configuration to get you started.
 
-### Recommended tmux Configuration
+### A simple tmux configuration
 
-Add this to your `~/.tmux.conf` file:
+If you aren't a heavy tmux user, consider creating this to your `~/.tmux.conf` file:
 
 ```bash
 # Visual distinction between active and inactive panes
@@ -239,11 +159,3 @@ Or start a new tmux session for the changes to take effect.
 - Git ≥ 2.20
 - Claude Code CLI
 - OpenRouter API key (optional)
-
-## Support
-
-For issues or questions, please check the [full documentation](CLAUDE.md) or open an issue on GitHub.
-
-## License
-
-[Your License Here]
