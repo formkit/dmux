@@ -54,10 +54,10 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 /Users/justinschroeder/Projects/dmux/main/
 ├── src/
 │   ├── index.ts          # Main entry point, session management
-│   └── CmuxApp.tsx       # React TUI component, core logic
+│   └── DmuxApp.tsx       # React TUI component, core logic
 ├── dist/                 # Compiled JavaScript (gitignored)
 │   ├── index.js
-│   └── CmuxApp.js
+│   └── DmuxApp.js
 ├── dmux                  # Executable wrapper script
 ├── package.json          # Node dependencies and scripts
 ├── tsconfig.json         # TypeScript configuration
@@ -238,7 +238,7 @@ Analyzes git diffs to create semantic commit messages:
 ### 1. Session Management (`src/index.ts`)
 
 ```typescript
-class Cmux {
+class Dmux {
   private projectName: string;    // Current directory name
   private sessionName: string;     // tmux-{projectName}
   private panesFile: string;       // ~/.dmux/{project}-panes.json
@@ -254,11 +254,11 @@ class Cmux {
 }
 ```
 
-### 2. React TUI Component (`src/CmuxApp.tsx`)
+### 2. React TUI Component (`src/DmuxApp.tsx`)
 
 #### State Management
 ```typescript
-interface CmuxPane {
+interface DmuxPane {
   id: string;           // Unique identifier
   slug: string;         // Branch/worktree name
   prompt: string;       // Initial Claude prompt (truncated)
@@ -391,9 +391,9 @@ dmux  # Creates/attaches dmux-project-b
 
 ### Adding New Features
 
-#### 1. Extend CmuxPane Interface
+#### 1. Extend DmuxPane Interface
 ```typescript
-interface CmuxPane {
+interface DmuxPane {
   // ... existing fields
   customField?: string;  // Add new field
 }

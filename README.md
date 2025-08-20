@@ -1,6 +1,7 @@
-# cmux - AI-Powered tmux Development Sessions
+# dmux - AI-Powered tmux Development Sessions
 
-cmux is a powerful tmux pane manager that creates parallel development environments with Claude Code AI assistance. Each pane gets its own git worktree and branch, enabling seamless parallel development workflows.
+Dmux makes running parallel development agents easy like Claude Code. It's a simple tool that creates a new tmux pane, a new git worktree, and launches a Claude Code agent in that worktree. The main dmux tool then lets you merge
+the open panes back into your main branch easily, close failed experiments, and spin up more agents quickly.
 
 ## Features
 
@@ -25,8 +26,8 @@ cmux is a powerful tmux pane manager that creates parallel development environme
 
 ```bash
 # Clone the repository
-git clone <repository-url> ~/cmux
-cd ~/cmux
+git clone <repository-url> ~/dmux
+cd ~/dmux
 
 # Install dependencies
 npm install
@@ -42,16 +43,16 @@ Choose one of these methods:
 #### Option A: Symlink (Recommended)
 ```bash
 # Make the script executable
-chmod +x ~/cmux/cmux
+chmod +x ~/dmux/dmux
 
 # Create symlink in a directory that's in your PATH
-sudo ln -s ~/cmux/cmux /usr/local/bin/cmux
+sudo ln -s ~/dmux/dmux /usr/local/bin/dmux
 ```
 
 #### Option B: Add to PATH
 ```bash
 # Add this line to your ~/.bashrc or ~/.zshrc
-export PATH="$PATH:$HOME/cmux"
+export PATH="$PATH:$HOME/dmux"
 
 # Reload your shell configuration
 source ~/.bashrc  # or ~/.zshrc
@@ -59,7 +60,7 @@ source ~/.bashrc  # or ~/.zshrc
 
 #### Option C: NPM Global Link
 ```bash
-# From the cmux directory
+# From the dmux directory
 npm link
 ```
 
@@ -78,14 +79,14 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
 
 ### Basic Usage
 
-1. **Start cmux in your project**
+1. **Start dmux in your project**
    ```bash
    cd /path/to/your/project
-   cmux
+   dmux
    ```
 
 2. **Create a new development pane**
-   - Press `n` or select "+ New cmux pane"
+   - Press `n` or select "+ New dmux pane"
    - Enter an optional prompt like "fix authentication bug"
    - Claude launches in a new pane with your prompt
 
@@ -104,18 +105,18 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
 |-----|--------|
 | `↑/↓` | Navigate pane list |
 | `Enter` or `j` | Jump to selected pane |
-| `n` | Create new cmux pane |
+| `n` | Create new dmux pane |
 | `m` | Merge worktree to main |
 | `x` | Close selected pane |
-| `q` | Quit cmux interface |
+| `q` | Quit dmux interface |
 | `ESC` | Cancel current dialog |
 
 ## Example Workflow
 
 ```bash
-# Start cmux in your project
+# Start dmux in your project
 cd ~/projects/my-app
-cmux
+dmux
 
 # Create a pane for a new feature
 # Press 'n', enter: "add user dashboard"
@@ -134,7 +135,7 @@ cmux
 
 ## How It Works
 
-1. **Session Management**: Each project gets its own tmux session (`cmux-projectname`)
+1. **Session Management**: Each project gets its own tmux session (`dmux-projectname`)
 2. **Worktree Creation**: New panes create git worktrees in sibling directories
 3. **Branch Management**: Automatic branch creation with AI-generated names
 4. **Claude Integration**: Launches Claude with `--accept-edits` for immediate coding
@@ -142,7 +143,7 @@ cmux
 
 ## Project Structure
 
-When you create panes, cmux organizes your work like this:
+When you create panes, dmux organizes your work like this:
 
 ```
 my-project/              # Your main repository
@@ -189,7 +190,7 @@ Press `Ctrl+L` in the affected pane to clear the screen.
 
 ## tmux Configuration for Beginners
 
-While cmux handles most tmux operations automatically, having a good tmux configuration can enhance your experience. This isn't the place to learn tmux comprehensively, but here's a helpful configuration to get you started.
+While dmux handles most tmux operations automatically, having a good tmux configuration can enhance your experience. This isn't the place to learn tmux comprehensively, but here's a helpful configuration to get you started.
 
 ### Recommended tmux Configuration
 

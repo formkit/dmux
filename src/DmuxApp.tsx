@@ -208,7 +208,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     const updatedPanes = [...panes, newPane];
     await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
     
-    // Switch back to the original pane (where cmux was running)
+    // Switch back to the original pane (where dmux was running)
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
     
     // Re-launch dmux in the original pane
