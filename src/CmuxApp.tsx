@@ -29,9 +29,13 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   const [statusMessage, setStatusMessage] = useState('');
   const [showMergeConfirmation, setShowMergeConfirmation] = useState(false);
   const [mergedPane, setMergedPane] = useState<CmuxPane | null>(null);
+<<<<<<< HEAD
   const [showCloseOptions, setShowCloseOptions] = useState(false);
   const [selectedCloseOption, setSelectedCloseOption] = useState(0);
   const [closingPane, setClosingPane] = useState<CmuxPane | null>(null);
+=======
+  const [isCreatingPane, setIsCreatingPane] = useState(false);
+>>>>>>> cmux-management
   const { exit } = useApp();
 
   // Load panes on mount and refresh periodically
@@ -114,13 +118,21 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   };
 
   const createNewPane = async (prompt: string) => {
+    setIsCreatingPane(true);
+    setStatusMessage('Generating slug...');
+    
     const slug = await generateSlug(prompt);
+    
+    setStatusMessage('Creating new pane...');
     
     // Get current directory
     const currentDir = process.cwd();
     
     // Create worktree path
     const worktreePath = path.join(currentDir, '..', `${path.basename(currentDir)}-${slug}`);
+    
+    // Get the original pane ID (where cmux is running) before clearing
+    const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
     
     // Multiple clearing strategies to prevent artifacts
     // 1. Clear screen with ANSI codes
@@ -199,8 +211,11 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     const updatedPanes = [...panes, newPane];
     await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
     
-    // Re-launch cmux to show the updated menu
-    execSync('cmux', { stdio: 'inherit' });
+    // Switch back to the original pane (where cmux was running)
+    execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+    
+    // Re-launch cmux in the original pane
+    execSync(`tmux send-keys -t '${originalPaneId}' 'cmux' Enter`, { stdio: 'pipe' });
   };
 
   const jumpToPane = (paneId: string) => {
@@ -444,6 +459,11 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   };
 
   useInput((input: string, key: any) => {
+    if (isCreatingPane) {
+      // Disable input while creating pane
+      return;
+    }
+    
     if (showNewPaneDialog) {
       if (key.escape) {
         setShowNewPaneDialog(false);
@@ -559,6 +579,15 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
               placeholder="Optional prompt..."
             />
           </Box>
+        </Box>
+      )}
+
+      {isCreatingPane && (
+        <Box borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
+          <Text color="yellow">
+            <Text bold>⏳ Creating new pane... </Text>
+            {statusMessage}
+          </Text>
         </Box>
       )}
 
