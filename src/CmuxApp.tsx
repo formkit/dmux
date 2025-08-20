@@ -416,19 +416,21 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
       const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
       
       if (statusOutput.trim()) {
+        setStatusMessage('Staging changes...');
+        
+        // Stage all changes first (including untracked files)
+        execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
+        
         setStatusMessage('Generating commit message...');
         
-        // Get the diff for uncommitted changes
-        const diffOutput = execSync(`git -C "${pane.worktreePath}" diff HEAD`, { encoding: 'utf-8' });
+        // Get the diff of staged changes (after adding files)
+        const diffOutput = execSync(`git -C "${pane.worktreePath}" diff --cached`, { encoding: 'utf-8' });
         const statusDetails = execSync(`git -C "${pane.worktreePath}" status`, { encoding: 'utf-8' });
         
         // Generate commit message using LLM
         const commitMessage = await generateCommitMessage(`${statusDetails}\n\n${diffOutput}`);
         
         setStatusMessage('Committing changes...');
-        
-        // Stage all changes and commit with generated message
-        execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
         
         // Escape the commit message for shell
         const escapedMessage = commitMessage.replace(/'/g, "'\\''");
