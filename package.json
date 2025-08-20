@@ -48,9 +48,9 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm run build",
     "prerelease": "run-s clean typecheck build",
-    "release": "bumpp --commit --push --tag",
-    "release:minor": "bumpp minor --commit --push --tag",
-    "release:major": "bumpp major --commit --push --tag"
+    "release": "bumpp --commit --push --tag && pnpm publish",
+    "release:minor": "bumpp minor --commit --push --tag && pnpm publish",
+    "release:major": "bumpp major --commit --push --tag && pnpm publish"
   },
   "bin": {
     "dmux": "./dmux"

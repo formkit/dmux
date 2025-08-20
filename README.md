@@ -187,6 +187,50 @@ Press `Ctrl+L` in the affected pane to clear the screen.
 - **One feature per pane** for clean separation of work
 - **Close unused panes** with `x` to keep the interface clean
 
+## tmux Configuration for Beginners
+
+While cmux handles most tmux operations automatically, having a good tmux configuration can enhance your experience. This isn't the place to learn tmux comprehensively, but here's a helpful configuration to get you started.
+
+### Recommended tmux Configuration
+
+Add this to your `~/.tmux.conf` file:
+
+```bash
+# Visual distinction between active and inactive panes
+set -g window-style 'fg=colour247,bg=colour236'
+set -g window-active-style 'fg=default,bg=colour234'
+
+# Pane borders
+set -g pane-border-style "fg=colour238 bg=default"
+set -g pane-active-border-style "fg=blue bg=default"
+
+# Status bar styling
+set -g status-style 'bg=colour236'
+
+# Keyboard shortcuts for pane navigation
+# Hold Ctrl+Shift and use arrow keys to move between panes
+bind -n C-S-Left select-pane -L
+bind -n C-S-Right select-pane -R
+bind -n C-S-Up select-pane -U
+bind -n C-S-Down select-pane -D
+
+# Enable mouse support (click panes, resize with mouse)
+set -g mouse on
+```
+
+### Key Features of This Configuration
+
+- **Visual Feedback**: Active panes have a darker background and blue border
+- **Easy Navigation**: Hold `Ctrl+Shift` and use arrow keys to switch between panes instantly
+- **Mouse Support**: Click on panes to focus them, drag borders to resize
+
+After adding this configuration, reload tmux:
+```bash
+tmux source-file ~/.tmux.conf
+```
+
+Or start a new tmux session for the changes to take effect.
+
 ## Requirements Summary
 
 - tmux ≥ 3.0
