@@ -126,43 +126,78 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   };
 
-  const generateSlug = async (prompt: string): Promise<string> => {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    
-    if (!apiKey || !prompt) {
-      return `dmux-${Date.now()}`;
-    }
-
+  const callClaudeCode = async (prompt: string): Promise<string | null> => {
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-4o-mini',
-          messages: [
-            {
-              role: 'user',
-              content: `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
-            }
-          ],
-          max_tokens: 10,
-          temperature: 0.3
-        })
-      });
+      // Use a simpler approach: pipe the prompt via stdin and capture output
+      const result = execSync(
+        `echo "${prompt.replace(/"/g, '\\"')}" | claude --no-interactive --max-turns 1 2>/dev/null | head -n 5`,
+        { 
+          encoding: 'utf-8', 
+          stdio: 'pipe',
+          timeout: 5000 // 5 second timeout
+        }
+      );
+      
+      // Extract just the content (first few lines should have the response)
+      const lines = result.trim().split('\n');
+      const response = lines.join(' ').trim();
+      return response || null;
+    } catch (error) {
+      // Claude not available or error occurred
+      return null;
+    }
+  };
 
-      if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status}`);
-      }
-
-      const data = await response.json() as any;
-      const slug = data.choices[0].message.content.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-      return slug || `dmux-${Date.now()}`;
-    } catch {
+  const generateSlug = async (prompt: string): Promise<string> => {
+    if (!prompt) {
       return `dmux-${Date.now()}`;
     }
+
+    // Try OpenRouter first if API key is available
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (apiKey) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-4o-mini',
+            messages: [
+              {
+                role: 'user',
+                content: `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
+              }
+            ],
+            max_tokens: 10,
+            temperature: 0.3
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          const slug = data.choices[0].message.content.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+          if (slug) return slug;
+        }
+      } catch {
+        // Fall through to Claude Code
+      }
+    }
+
+    // Try Claude Code as fallback
+    const claudeResponse = await callClaudeCode(
+      `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
+    );
+    
+    if (claudeResponse) {
+      const slug = claudeResponse.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      if (slug) return slug;
+    }
+
+    // Final fallback
+    return `dmux-${Date.now()}`;
   };
 
   const createNewPane = async (prompt: string) => {
@@ -458,46 +493,55 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   const generateCommitMessage = async (changes: string): Promise<string> => {
+    // Try OpenRouter first if API key is available
     const apiKey = process.env.OPENROUTER_API_KEY;
-    
-    if (!apiKey) {
-      return 'chore: merge worktree changes';
-    }
+    if (apiKey) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a git commit message generator. Generate semantic commit messages following conventional commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:). Be concise and specific.'
+              },
+              {
+                role: 'user',
+                content: `Generate a semantic commit message for these changes:\n\n${changes.substring(0, 3000)}`
+              }
+            ],
+            max_tokens: 100,
+            temperature: 0.3
+          })
+        });
 
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a git commit message generator. Generate semantic commit messages following conventional commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:). Be concise and specific.'
-            },
-            {
-              role: 'user',
-              content: `Generate a semantic commit message for these changes:\n\n${changes.substring(0, 3000)}`
-            }
-          ],
-          max_tokens: 100,
-          temperature: 0.3
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status}`);
+        if (response.ok) {
+          const data = await response.json() as any;
+          const message = data.choices[0].message.content.trim();
+          if (message) return message;
+        }
+      } catch {
+        // Fall through to Claude Code
       }
-
-      const data = await response.json() as any;
-      const message = data.choices[0].message.content.trim();
-      return message || 'chore: merge worktree changes';
-    } catch {
-      return 'chore: merge worktree changes';
     }
+
+    // Try Claude Code as fallback
+    const systemPrompt = 'You are a git commit message generator. Generate semantic commit messages following conventional commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:). Be concise and specific.';
+    const userPrompt = `${systemPrompt}\n\nGenerate a semantic commit message for these changes:\n\n${changes.substring(0, 3000)}`;
+    
+    const claudeResponse = await callClaudeCode(userPrompt);
+    if (claudeResponse) {
+      const message = claudeResponse.trim();
+      if (message) return message;
+    }
+
+    // Final fallback
+    return 'chore: merge worktree changes';
   };
 
   const mergeWorktree = async (pane: DmuxPane) => {
