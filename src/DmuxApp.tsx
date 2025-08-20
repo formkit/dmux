@@ -280,8 +280,39 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
 
   const closePane = async (pane: DmuxPane) => {
     try {
+      // Multiple clearing strategies to prevent artifacts
+      // 1. Clear screen with ANSI codes
+      process.stdout.write('\x1b[2J\x1b[H');
+      
+      // 2. Fill with blank lines to push content off screen
+      process.stdout.write('\n'.repeat(100));
+      
+      // 3. Clear tmux history and send clear command
+      try {
+        execSync('tmux clear-history', { stdio: 'pipe' });
+        execSync('tmux send-keys C-l', { stdio: 'pipe' });
+      } catch {}
+      
+      // 4. Force tmux to refresh the display
+      try {
+        execSync('tmux refresh-client', { stdio: 'pipe' });
+      } catch {}
+      
+      // Small delay to let clearing complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Kill the tmux pane
       execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
+      
+      // Get current pane count to determine layout
+      const paneCount = parseInt(
+        execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
+      );
+      
+      // Apply smart layout after pane removal
+      if (paneCount > 1) {
+        applySmartLayout(paneCount);
+      }
       
       // Remove from list
       const updatedPanes = panes.filter(p => p.id !== pane.id);
@@ -342,7 +373,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       // Delete branch
       execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
       
-      // Close the pane
+      // Close the pane (includes clearing)
       await closePane(pane);
       
       setStatusMessage(`Merged ${pane.slug} into ${mainBranch} and closed pane`);
@@ -355,7 +386,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
 
   const deleteUnsavedChanges = async (pane: DmuxPane) => {
     if (!pane.worktreePath) {
-      // No worktree, just close the pane
+      // No worktree, just close the pane (includes clearing)
       await closePane(pane);
       return;
     }
@@ -373,7 +404,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         // Branch might not exist or have commits, that's ok
       }
       
-      // Close the pane
+      // Close the pane (includes clearing)
       await closePane(pane);
       
       setStatusMessage(`Deleted worktree ${pane.slug} and closed pane`);
