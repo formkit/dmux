@@ -7,7 +7,8 @@
       "Bash(npm run build:*)",
       "Bash(git worktree:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(mv:*)"
     ],
     "deny": [],
     "ask": [],

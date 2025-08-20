@@ -1,7 +1,7 @@
 {
-  "name": "cmux",
+  "name": "dmux",
   "version": "1.0.0",
-  "description": "Tmux pane manager with Claude Code integration",
+  "description": "Tmux pane manager with AI agent integration",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "start": "node dist/index.js"
   },
   "bin": {
-    "cmux": "./cmux"
+    "dmux": "./dmux"
   },
   "dependencies": {
     "ink": "^5.0.1",

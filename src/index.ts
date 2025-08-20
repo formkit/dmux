@@ -7,28 +7,28 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { render } from 'ink';
 import React from 'react';
-import CmuxApp from './CmuxApp.js';
+import DmuxApp from './DmuxApp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-class Cmux {
-  private cmuxDir: string;
+class Dmux {
+  private dmuxDir: string;
   private panesFile: string;
   private projectName: string;
   private sessionName: string;
 
   constructor() {
-    this.cmuxDir = path.join(process.env.HOME!, '.cmux');
+    this.dmuxDir = path.join(process.env.HOME!, '.dmux');
     // Get project name from current directory
     this.projectName = path.basename(process.cwd());
     // Create unique session name for this project
-    this.sessionName = `cmux-${this.projectName}`;
+    this.sessionName = `dmux-${this.projectName}`;
     // Store panes per project
-    this.panesFile = path.join(this.cmuxDir, `${this.projectName}-panes.json`);
+    this.panesFile = path.join(this.dmuxDir, `${this.projectName}-panes.json`);
   }
 
   async init() {
-    await fs.mkdir(this.cmuxDir, { recursive: true });
+    await fs.mkdir(this.dmuxDir, { recursive: true });
     
     if (!await this.fileExists(this.panesFile)) {
       await fs.writeFile(this.panesFile, '[]');
@@ -45,16 +45,16 @@ class Cmux {
         console.log(chalk.yellow(`Creating new tmux session for project: ${this.projectName}...`));
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
-        // Send cmux command to the new session
-        execSync(`tmux send-keys -t ${this.sessionName} "cmux" Enter`, { stdio: 'inherit' });
+        // Send dmux command to the new session
+        execSync(`tmux send-keys -t ${this.sessionName} "dmux" Enter`, { stdio: 'inherit' });
       }
       execSync(`tmux attach-session -t ${this.sessionName}`, { stdio: 'inherit' });
       return;
     }
 
     // Launch the Ink app
-    render(React.createElement(CmuxApp, {
-      cmuxDir: this.cmuxDir,
+    render(React.createElement(DmuxApp, {
+      dmuxDir: this.dmuxDir,
       panesFile: this.panesFile,
       projectName: this.projectName,
       sessionName: this.sessionName
@@ -71,5 +71,5 @@ class Cmux {
   }
 }
 
-const cmux = new Cmux();
-cmux.init().catch(console.error);
+const dmux = new Dmux();
+dmux.init().catch(console.error);

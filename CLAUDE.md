@@ -1,4 +1,4 @@
-# CLAUDE.md - Complete Documentation for cmux
+# CLAUDE.md - Complete Documentation for dmux
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
@@ -12,7 +12,7 @@
 
 ## Project Overview
 
-cmux is a sophisticated TypeScript-based tmux pane manager that creates AI-powered development sessions with Claude Code. It provides seamless integration between tmux, git worktrees, and Claude Code to enable parallel development workflows with automatic branch management and AI assistance.
+dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-powered development sessions with Claude Code. It provides seamless integration between tmux, git worktrees, and Claude Code to enable parallel development workflows with automatic branch management and AI assistance.
 
 ### Key Capabilities
 - **Project-specific tmux sessions**: Each project gets its own isolated tmux session
@@ -51,19 +51,19 @@ cmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 
 ### File Structure
 ```
-/Users/justinschroeder/Projects/cmux/main/
+/Users/justinschroeder/Projects/dmux/main/
 ├── src/
 │   ├── index.ts          # Main entry point, session management
 │   └── CmuxApp.tsx       # React TUI component, core logic
 ├── dist/                 # Compiled JavaScript (gitignored)
 │   ├── index.js
 │   └── CmuxApp.js
-├── cmux                  # Executable wrapper script
+├── dmux                  # Executable wrapper script
 ├── package.json          # Node dependencies and scripts
 ├── tsconfig.json         # TypeScript configuration
 ├── .gitignore           # Git ignore rules
 ├── CLAUDE.md            # This documentation file
-└── ~/.cmux/             # Runtime data directory
+└── ~/.dmux/             # Runtime data directory
     └── {project}-panes.json  # Per-project pane tracking
 ```
 
@@ -86,14 +86,14 @@ cmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
    
    # Auto-detected
    TMUX    # Set automatically when inside tmux
-   HOME    # Used for ~/.cmux directory
+   HOME    # Used for ~/.dmux directory
    ```
 
 ### Installation Steps
 ```bash
 # Clone the repository
-git clone <repository-url> cmux
-cd cmux
+git clone <repository-url> dmux
+cd dmux
 
 # Install dependencies
 npm install
@@ -102,8 +102,8 @@ npm install
 npm run build
 
 # Make executable available globally
-chmod +x cmux
-ln -s $(pwd)/cmux /usr/local/bin/cmux
+chmod +x dmux
+ln -s $(pwd)/dmux /usr/local/bin/dmux
 
 # Or add to PATH
 export PATH="$PATH:$(pwd)"
@@ -114,13 +114,13 @@ export PATH="$PATH:$(pwd)"
 npm install    # Install all dependencies
 npm run build  # Compile TypeScript to JavaScript
 npm run dev    # Run TypeScript directly with tsx (development)
-./cmux         # Run the application
+./dmux         # Run the application
 ```
 
 ## Core Features
 
 ### 1. Project-Specific Sessions
-Each project gets its own tmux session named `cmux-{project-name}`:
+Each project gets its own tmux session named `dmux-{project-name}`:
 - Automatic session creation on first run
 - Session reattachment if already exists
 - Isolated pane tracking per project
@@ -150,7 +150,7 @@ main-project-fix-bug/      # Worktree for "fix bug" pane
 Converts natural language prompts into branch names:
 - Input: "fix the authentication bug in login flow"
 - Output: "fix-auth" or "auth-bug"
-- Fallback: `cmux-{timestamp}` if API unavailable
+- Fallback: `dmux-{timestamp}` if API unavailable
 
 #### Commit Message Generation
 Analyzes git diffs to create semantic commit messages:
@@ -169,13 +169,13 @@ Analyzes git diffs to create semantic commit messages:
 - **`j` or Enter**: Jump to selected pane (switch tmux focus)
 - **`x`**: Close pane (kills tmux pane and cleans up)
 - **`m`**: Merge worktree into main branch
-- **`n`**: Create new cmux pane
+- **`n`**: Create new dmux pane
 - **`q`**: Quit the interface
 
 #### Visual Elements
 ```
 ┌─────────────────────────────────┐
-│ cmux - project-name             │
+│ dmux - project-name             │
 ├─────────────────────────────────┤
 │ ┌─────────────────────────────┐ │
 │ │ fix-auth (worktree)         │ │  <- Selected (cyan border)
@@ -186,7 +186,7 @@ Analyzes git diffs to create semantic commit messages:
 │ │ Add new user dashboard     │ │
 │ └─────────────────────────────┘ │
 │ ┌─────────────────────────────┐ │
-│ │ + New cmux pane             │ │
+│ │ + New dmux pane             │ │
 │ └─────────────────────────────┘ │
 └─────────────────────────────────┘
 ```
@@ -194,7 +194,7 @@ Analyzes git diffs to create semantic commit messages:
 ### 5. Pane Lifecycle Management
 
 #### Creation Flow
-1. User selects "New cmux pane"
+1. User selects "New dmux pane"
 2. Prompt for initial Claude command (optional)
 3. Generate slug via OpenRouter API
 4. Clear current pane (multiple strategies for clean display)
@@ -204,12 +204,12 @@ Analyzes git diffs to create semantic commit messages:
 8. Change to worktree directory
 9. Launch Claude: `claude "{prompt}" --permission-mode=acceptEdits`
 10. Focus remains on new pane
-11. Re-launch cmux to show updated menu
+11. Re-launch dmux to show updated menu
 
 #### Auto-Cleanup
 - Polls every 2 seconds for pane status
 - Removes dead panes from tracking
-- Updates `~/.cmux/{project}-panes.json`
+- Updates `~/.dmux/{project}-panes.json`
 - Maintains clean pane list
 
 ### 6. Merge Workflow
@@ -241,12 +241,12 @@ Analyzes git diffs to create semantic commit messages:
 class Cmux {
   private projectName: string;    // Current directory name
   private sessionName: string;     // tmux-{projectName}
-  private panesFile: string;       // ~/.cmux/{project}-panes.json
+  private panesFile: string;       // ~/.dmux/{project}-panes.json
   
   async init() {
     if (!inTmux) {
       // Create or attach to project session
-      // Auto-run cmux inside the session
+      // Auto-run dmux inside the session
     } else {
       // Launch Ink React app
     }
@@ -331,14 +331,14 @@ execSync(`tmux select-pane -t '${paneId}'`)
 
 ### Basic Workflow
 
-1. **Start cmux in your project**
+1. **Start dmux in your project**
    ```bash
    cd /path/to/your/project
-   cmux
+   dmux
    ```
 
 2. **Create a new development pane**
-   - Press `n` or select "+ New cmux pane"
+   - Press `n` or select "+ New dmux pane"
    - Enter initial prompt: "implement user authentication"
    - Claude launches in new pane with your prompt
 
@@ -353,21 +353,21 @@ execSync(`tmux select-pane -t '${paneId}'`)
 
 5. **Clean up**
    - Press `x` to close unwanted panes
-   - Press `q` to exit cmux interface
+   - Press `q` to exit dmux interface
 
 ### Advanced Usage
 
 #### Working with Multiple Features
 ```bash
-# Start cmux
-cmux
+# Start dmux
+dmux
 
 # Create pane for feature A
-> New cmux pane
+> New dmux pane
 > "implement shopping cart"
 
 # Create pane for bug fix
-> New cmux pane  
+> New dmux pane  
 > "fix memory leak in user service"
 
 # Work independently in each pane
@@ -378,11 +378,11 @@ cmux
 ```bash
 # Project A
 cd ~/projects/project-a
-cmux  # Creates/attaches cmux-project-a
+dmux  # Creates/attaches dmux-project-a
 
 # Project B  
 cd ~/projects/project-b
-cmux  # Creates/attaches cmux-project-b
+dmux  # Creates/attaches dmux-project-b
 
 # Sessions remain independent
 ```
@@ -507,7 +507,7 @@ git status
 git add .
 git commit
 
-# Return to cmux and retry merge
+# Return to dmux and retry merge
 ```
 
 ### Debug Information
@@ -515,19 +515,19 @@ git commit
 #### Check Session Status
 ```bash
 tmux list-sessions
-tmux list-panes -t cmux-{project}
+tmux list-panes -t dmux-{project}
 ```
 
 #### View Pane Tracking
 ```bash
-cat ~/.cmux/{project}-panes.json
+cat ~/.dmux/{project}-panes.json
 ```
 
 #### Monitor tmux Commands
 ```bash
-# Run cmux with command tracing
+# Run dmux with command tracing
 set -x
-./cmux
+./dmux
 ```
 
 ### Performance Optimization

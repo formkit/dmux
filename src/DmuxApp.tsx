@@ -6,7 +6,7 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 
-interface CmuxPane {
+interface DmuxPane {
   id: string;
   slug: string;
   prompt: string;
@@ -14,28 +14,25 @@ interface CmuxPane {
   worktreePath?: string;
 }
 
-interface CmuxAppProps {
-  cmuxDir: string;
+interface DmuxAppProps {
+  dmuxDir: string;
   panesFile: string;
   projectName: string;
   sessionName: string;
 }
 
-const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sessionName }) => {
-  const [panes, setPanes] = useState<CmuxPane[]>([]);
+const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sessionName }) => {
+  const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
   const [newPanePrompt, setNewPanePrompt] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [showMergeConfirmation, setShowMergeConfirmation] = useState(false);
-  const [mergedPane, setMergedPane] = useState<CmuxPane | null>(null);
-<<<<<<< HEAD
+  const [mergedPane, setMergedPane] = useState<DmuxPane | null>(null);
   const [showCloseOptions, setShowCloseOptions] = useState(false);
   const [selectedCloseOption, setSelectedCloseOption] = useState(0);
-  const [closingPane, setClosingPane] = useState<CmuxPane | null>(null);
-=======
+  const [closingPane, setClosingPane] = useState<DmuxPane | null>(null);
   const [isCreatingPane, setIsCreatingPane] = useState(false);
->>>>>>> cmux-management
   const { exit } = useApp();
 
   // Load panes on mount and refresh periodically
@@ -48,7 +45,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   const loadPanes = async () => {
     try {
       const content = await fs.readFile(panesFile, 'utf-8');
-      const loadedPanes = JSON.parse(content) as CmuxPane[];
+      const loadedPanes = JSON.parse(content) as DmuxPane[];
       
       // Filter out dead panes
       const activePanes = loadedPanes.filter(pane => {
@@ -73,7 +70,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
-  const savePanes = async (newPanes: CmuxPane[]) => {
+  const savePanes = async (newPanes: DmuxPane[]) => {
     await fs.writeFile(panesFile, JSON.stringify(newPanes, null, 2));
     setPanes(newPanes);
   };
@@ -82,7 +79,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     const apiKey = process.env.OPENROUTER_API_KEY;
     
     if (!apiKey || !prompt) {
-      return `cmux-${Date.now()}`;
+      return `dmux-${Date.now()}`;
     }
 
     try {
@@ -111,9 +108,9 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
 
       const data = await response.json() as any;
       const slug = data.choices[0].message.content.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-      return slug || `cmux-${Date.now()}`;
+      return slug || `dmux-${Date.now()}`;
     } catch {
-      return `cmux-${Date.now()}`;
+      return `dmux-${Date.now()}`;
     }
   };
 
@@ -131,7 +128,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     // Create worktree path
     const worktreePath = path.join(currentDir, '..', `${path.basename(currentDir)}-${slug}`);
     
-    // Get the original pane ID (where cmux is running) before clearing
+    // Get the original pane ID (where dmux is running) before clearing
     const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
     
     // Multiple clearing strategies to prevent artifacts
@@ -200,8 +197,8 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
     
     // Save pane info
-    const newPane: CmuxPane = {
-      id: `cmux-${Date.now()}`,
+    const newPane: DmuxPane = {
+      id: `dmux-${Date.now()}`,
       slug,
       prompt: prompt ? (prompt.substring(0, 50) + (prompt.length > 50 ? '...' : '')) : 'No initial prompt',
       paneId: paneInfo,
@@ -214,8 +211,8 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     // Switch back to the original pane (where cmux was running)
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
     
-    // Re-launch cmux in the original pane
-    execSync(`tmux send-keys -t '${originalPaneId}' 'cmux' Enter`, { stdio: 'pipe' });
+    // Re-launch dmux in the original pane
+    execSync(`tmux send-keys -t '${originalPaneId}' 'dmux' Enter`, { stdio: 'pipe' });
   };
 
   const jumpToPane = (paneId: string) => {
@@ -229,7 +226,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
-  const closePane = async (pane: CmuxPane) => {
+  const closePane = async (pane: DmuxPane) => {
     try {
       // Kill the tmux pane
       execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
@@ -246,7 +243,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
-  const mergeAndPrune = async (pane: CmuxPane) => {
+  const mergeAndPrune = async (pane: DmuxPane) => {
     if (!pane.worktreePath) {
       setStatusMessage('No worktree to merge');
       setTimeout(() => setStatusMessage(''), 2000);
@@ -304,7 +301,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
-  const deleteUnsavedChanges = async (pane: CmuxPane) => {
+  const deleteUnsavedChanges = async (pane: DmuxPane) => {
     if (!pane.worktreePath) {
       // No worktree, just close the pane
       await closePane(pane);
@@ -335,7 +332,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
-  const handleCloseOption = async (option: number, pane: CmuxPane) => {
+  const handleCloseOption = async (option: number, pane: DmuxPane) => {
     setShowCloseOptions(false);
     setClosingPane(null);
     setSelectedCloseOption(0);
@@ -399,7 +396,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     }
   };
 
-  const mergeWorktree = async (pane: CmuxPane) => {
+  const mergeWorktree = async (pane: DmuxPane) => {
     if (!pane.worktreePath) {
       setStatusMessage('No worktree to merge');
       setTimeout(() => setStatusMessage(''), 2000);
@@ -532,7 +529,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
     <Box flexDirection="column">
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          cmux - {projectName}
+          dmux - {projectName}
         </Text>
       </Box>
 
@@ -567,7 +564,7 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
         marginBottom={1}
       >
         <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
-          + New cmux pane
+          + New dmux pane
         </Text>
       </Box>
 
@@ -651,4 +648,4 @@ const CmuxApp: React.FC<CmuxAppProps> = ({ cmuxDir, panesFile, projectName, sess
   );
 };
 
-export default CmuxApp;
+export default DmuxApp;
