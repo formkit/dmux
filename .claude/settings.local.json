@@ -10,7 +10,10 @@
       "Bash(git add:*)",
       "Bash(mv:*)",
       "Bash(pnpm add:*)",
-      "Bash(pnpm:*)"
+      "Bash(pnpm:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx typescript:*)",
+      "Bash(npm ls:*)"
     ],
     "deny": [],
     "ask": [],

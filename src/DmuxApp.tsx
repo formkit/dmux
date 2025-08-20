@@ -75,6 +75,52 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     setPanes(newPanes);
   };
 
+  const applySmartLayout = (paneCount: number) => {
+    try {
+      // Progressive layout strategy based on pane count
+      if (paneCount <= 2) {
+        // 2 panes: side by side
+        execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+      } else if (paneCount === 3) {
+        // 3 panes: primary top, two bottom
+        execSync('tmux select-layout main-horizontal', { stdio: 'pipe' });
+      } else if (paneCount === 4) {
+        // 4 panes: 2x2 grid
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+      } else if (paneCount === 5) {
+        // 5 panes: 2 top, 3 bottom
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+        // Custom adjustment for better 2-over-3 layout
+        try {
+          execSync('tmux resize-pane -t 0 -y 50%', { stdio: 'pipe' });
+        } catch {}
+      } else if (paneCount === 6) {
+        // 6 panes: 3x2 grid
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+      } else if (paneCount <= 9) {
+        // 7-9 panes: 3x3 grid
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+      } else if (paneCount <= 12) {
+        // 10-12 panes: 3x4 grid
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+      } else if (paneCount <= 16) {
+        // 13-16 panes: 4x4 grid
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+      } else {
+        // More than 16: use tiled for best automatic arrangement
+        execSync('tmux select-layout tiled', { stdio: 'pipe' });
+      }
+      
+      // Refresh client to ensure layout is applied
+      execSync('tmux refresh-client', { stdio: 'pipe' });
+    } catch (error) {
+      // Fallback to even-horizontal if custom layout fails
+      try {
+        execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+      } catch {}
+    }
+  };
+
   const generateSlug = async (prompt: string): Promise<string> => {
     const apiKey = process.env.OPENROUTER_API_KEY;
     
@@ -155,6 +201,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       execSync('tmux refresh-client', { stdio: 'pipe' });
     } catch {}
     
+    // Get current pane count to determine layout
+    const paneCount = parseInt(
+      execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
+    );
+    
     // Create new pane
     const paneInfo = execSync(
       `tmux split-window -h -P -F '#{pane_id}'`,
@@ -164,8 +215,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     // Wait for pane creation to settle
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Resize panes evenly
-    execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+    // Apply smart layout based on pane count
+    const newPaneCount = paneCount + 1;
+    applySmartLayout(newPaneCount);
     
     // Create git worktree and cd into it
     try {
