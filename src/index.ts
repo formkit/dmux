@@ -15,6 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 class Dmux {
   private dmuxDir: string;
   private panesFile: string;
+  private settingsFile: string;
   private projectName: string;
   private sessionName: string;
   private projectRoot: string;
@@ -35,6 +36,8 @@ class Dmux {
     this.sessionName = `dmux-${projectIdentifier}`;
     // Store panes per project using the unique identifier
     this.panesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
+    // Store project settings (test/dev commands) per project
+    this.settingsFile = path.join(this.dmuxDir, `${projectIdentifier}-settings.json`);
   }
 
   async init() {
@@ -66,6 +69,7 @@ class Dmux {
     render(React.createElement(DmuxApp, {
       dmuxDir: this.dmuxDir,
       panesFile: this.panesFile,
+      settingsFile: this.settingsFile,
       projectName: this.projectName,
       sessionName: this.sessionName,
       projectRoot: this.projectRoot
