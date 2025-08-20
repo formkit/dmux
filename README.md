@@ -4,6 +4,8 @@ Tools for running agents in parallel are too complex. `dmux` makes running paral
 
 `dmux` lets you merge the open panes back into your main branch easily, close failed experiments, and spin up more agents quickly.
 
+![dmux demo](./screen.gif)
+
 ## Features
 
 - **🚀 Parallel Development**: Work on multiple features simultaneously in separate panes
