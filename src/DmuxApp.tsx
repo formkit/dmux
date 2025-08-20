@@ -225,10 +225,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     // Create git worktree and cd into it
     try {
-      execSync(`tmux send-keys -t '${paneInfo}' 'git worktree add "${worktreePath}" -b ${slug}' Enter`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${paneInfo}' 'cd "${worktreePath}"' Enter`, { stdio: 'pipe' });
-    } catch {
-      // Continue in current directory if worktree fails
+      // Send the git worktree command
+      execSync(`tmux send-keys -t '${paneInfo}' 'git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"' Enter`, { stdio: 'pipe' });
+      
+      // Wait for worktree creation to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (error) {
+      // Log error but continue
+      setStatusMessage(`Warning: Could not create worktree: ${error}`);
     }
     
     // Prepare the Claude command
