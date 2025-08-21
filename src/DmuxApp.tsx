@@ -827,8 +827,36 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       
       setStatusMessage('Merging into main...');
       
-      // Merge the worktree branch
-      execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
+      // Try to merge the worktree branch
+      try {
+        execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
+      } catch (mergeError: any) {
+        // Check if this is a merge conflict
+        const errorMessage = mergeError.message || mergeError.toString();
+        if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
+          // Merge conflict detected - exit dmux and inform user
+          console.error('\n\x1b[31m✗ Merge conflict detected!\x1b[0m');
+          console.error(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.`);
+          console.error('\nTo resolve:');
+          console.error('1. Manually resolve the merge conflicts in your editor');
+          console.error('2. Stage the resolved files: git add <resolved-files>');
+          console.error('3. Complete the merge: git commit');
+          console.error('4. Run dmux again to continue managing your panes');
+          console.error('\nExiting dmux now...\n');
+          
+          // Clean exit
+          process.stdout.write('\x1b[2J\x1b[H');
+          process.stdout.write('\x1b[3J');
+          try {
+            execSync('tmux clear-history', { stdio: 'pipe' });
+          } catch {}
+          
+          process.exit(1);
+        } else {
+          // Some other merge error
+          throw mergeError;
+        }
+      }
       
       // Remove worktree
       execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
@@ -1363,8 +1391,36 @@ OR ` : ''}To provide the final command:
       
       setStatusMessage('Merging into main...');
       
-      // Merge the worktree branch
-      execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
+      // Try to merge the worktree branch
+      try {
+        execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
+      } catch (mergeError: any) {
+        // Check if this is a merge conflict
+        const errorMessage = mergeError.message || mergeError.toString();
+        if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
+          // Merge conflict detected - exit dmux and inform user
+          console.error('\n\x1b[31m✗ Merge conflict detected!\x1b[0m');
+          console.error(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.`);
+          console.error('\nTo resolve:');
+          console.error('1. Manually resolve the merge conflicts in your editor');
+          console.error('2. Stage the resolved files: git add <resolved-files>');
+          console.error('3. Complete the merge: git commit');
+          console.error('4. Run dmux again to continue managing your panes');
+          console.error('\nExiting dmux now...\n');
+          
+          // Clean exit
+          process.stdout.write('\x1b[2J\x1b[H');
+          process.stdout.write('\x1b[3J');
+          try {
+            execSync('tmux clear-history', { stdio: 'pipe' });
+          } catch {}
+          
+          process.exit(1);
+        } else {
+          // Some other merge error
+          throw mergeError;
+        }
+      }
       
       // Remove worktree
       execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
