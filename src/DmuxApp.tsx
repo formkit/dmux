@@ -544,10 +544,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     // Monitor for Claude Code trust prompt and auto-respond
     const autoApproveTrust = async () => {
-      const maxChecks = 50; // 50 checks * 100ms = 5 seconds
-      const checkInterval = 100; // Check every 100ms
+      // Wait for Claude to start up before checking for prompts
+      await new Promise(resolve => setTimeout(resolve, 800));
       
-      // Check for various versions of the trust prompt
+      const maxChecks = 100; // 100 checks * 100ms = 10 seconds total
+      const checkInterval = 100; // Check every 100ms
+      let lastContent = '';
+      let stableContentCount = 0;
+      let promptHandled = false;
+      
+      // More comprehensive trust prompt patterns
       const trustPromptPatterns = [
         /Do you trust the files in this folder\?/i,
         /Trust the files in this workspace\?/i,
@@ -556,58 +562,128 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         /trust.*files.*folder/i,
         /trust.*workspace/i,
         /Do you trust/i,
-        /Trust this folder/i
+        /Trust this folder/i,
+        /trust.*directory/i,
+        /permission.*grant/i,
+        /allow.*access/i,
+        /workspace.*trust/i,
+        /accept.*edits/i,  // Claude's accept edits prompt
+        /permission.*mode/i,  // Permission mode prompt
+        /allow.*claude/i,  // Allow Claude prompt
+        /\[y\/n\]/i, // Common yes/no prompt pattern
+        /\(y\/n\)/i,
+        /Yes\/No/i,
+        /\[Y\/n\]/i,  // Default yes pattern
+        /press.*enter.*accept/i,  // Press enter to accept
+        /press.*enter.*continue/i  // Press enter to continue
       ];
       
       for (let i = 0; i < maxChecks; i++) {
         await new Promise(resolve => setTimeout(resolve, checkInterval));
         
         try {
-          // Capture the pane content to check for trust prompt
+          // Capture the pane content
           const paneContent = execSync(
-            `tmux capture-pane -t '${paneInfo}' -p`,
+            `tmux capture-pane -t '${paneInfo}' -p -S -30`,  // Capture last 30 lines
             { encoding: 'utf-8', stdio: 'pipe' }
           );
           
+          // Check if content has stabilized (same for 3 checks = prompt is waiting)
+          if (paneContent === lastContent) {
+            stableContentCount++;
+          } else {
+            stableContentCount = 0;
+            lastContent = paneContent;
+          }
+          
+          // Look for trust prompt in the current content
           const hasTrustPrompt = trustPromptPatterns.some(pattern => 
             pattern.test(paneContent)
           );
           
-          if (hasTrustPrompt) {
-            // Auto-respond with Enter (yes) to the trust prompt
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+          // Also check if we see specific Claude permission text
+          const hasClaudePermissionPrompt = 
+            paneContent.includes('Do you trust') ||
+            paneContent.includes('trust the files') ||
+            paneContent.includes('permission') ||
+            paneContent.includes('allow') ||
+            (paneContent.includes('folder') && paneContent.includes('?'));
+          
+          if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
+            // Log what we detected for debugging
+            console.error(`[dmux] Detected trust prompt in pane ${paneInfo}`);
+            console.error(`[dmux] Content stable for ${stableContentCount} checks`);
             
-            // Wait a bit and check if we need to send the command again
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            // Check if Claude is now ready (no longer showing trust prompt)
-            const updatedContent = execSync(
-              `tmux capture-pane -t '${paneInfo}' -p`,
-              { encoding: 'utf-8', stdio: 'pipe' }
-            );
-            
-            // If the trust prompt is gone but Claude hasn't started processing the prompt,
-            // we might need to resend the command
-            if (!trustPromptPatterns.some(p => p.test(updatedContent))) {
-              // Claude is past the trust prompt
-              if (prompt && prompt.trim() && !updatedContent.includes(prompt.substring(0, Math.min(20, prompt.length)))) {
-                // Claude might need the command again after trust approval
-                // This handles cases where the trust dialog cleared the initial command
-                execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
-                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+            // Content is stable and we found a prompt
+            if (stableContentCount >= 2) {
+              console.error(`[dmux] Attempting to auto-approve trust prompt`);
+              
+              // Try multiple response methods to ensure it works
+              
+              // Method 1: Send 'y' followed by Enter (most explicit)
+              console.error(`[dmux] Sending 'y' + Enter`);
+              execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
+              await new Promise(resolve => setTimeout(resolve, 50));
+              execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+              
+              // Method 2: Just Enter (if it's a yes/no with default yes)
+              await new Promise(resolve => setTimeout(resolve, 100));
+              console.error(`[dmux] Sending additional Enter`);
+              execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+              
+              // Mark as handled to avoid duplicate responses
+              promptHandled = true;
+              
+              // Wait and check if prompt is gone
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              // Verify the prompt is gone
+              const updatedContent = execSync(
+                `tmux capture-pane -t '${paneInfo}' -p -S -10`,
+                { encoding: 'utf-8', stdio: 'pipe' }
+              );
+              
+              // If trust prompt is gone, check if we need to resend the Claude command
+              const promptGone = !trustPromptPatterns.some(p => p.test(updatedContent));
+              
+              if (promptGone) {
+                // Check if Claude is running or if we need to restart it
+                const claudeRunning = 
+                  updatedContent.includes('Claude') || 
+                  updatedContent.includes('claude') ||
+                  updatedContent.includes('Assistant') ||
+                  (prompt && updatedContent.includes(prompt.substring(0, Math.min(20, prompt.length))));
+                
+                if (!claudeRunning && !updatedContent.includes('$')) {
+                  // Claude might have exited after permission was granted, restart it
+                  console.error(`[dmux] Claude not running after trust approval, restarting`);
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                  execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
+                  execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+                }
+                
+                // Successfully handled the prompt
+                break;
               }
-              // We handled the trust prompt, stop checking
-              break;
             }
           }
+          
+          // If we see Claude is already running without prompts, we're done
+          if (!hasTrustPrompt && !hasClaudePermissionPrompt && 
+              (paneContent.includes('Claude') || paneContent.includes('Assistant'))) {
+            break;
+          }
         } catch (error) {
-          // Ignore errors in auto-approval, it's a best-effort feature
+          // Continue checking, errors are non-fatal
+          console.error('Error checking for trust prompt:', error);
         }
       }
     };
     
     // Start monitoring for trust prompt in background
-    autoApproveTrust();
+    autoApproveTrust().catch(err => {
+      console.error('Error in autoApproveTrust:', err);
+    });
     
     // Keep focus on the new pane
     execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
