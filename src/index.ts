@@ -58,6 +58,8 @@ class Dmux {
         console.log(chalk.yellow(`Creating new tmux session for project: ${this.projectName}...`));
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
+        // Set pane title for the main dmux pane
+        execSync(`tmux select-pane -t ${this.sessionName} -T "dmux-${this.projectName}"`, { stdio: 'inherit' });
         // Send dmux command to the new session
         execSync(`tmux send-keys -t ${this.sessionName} "dmux" Enter`, { stdio: 'inherit' });
       }
@@ -65,6 +67,13 @@ class Dmux {
       return;
     }
 
+    // Set pane title for the current pane running dmux
+    try {
+      execSync(`tmux select-pane -T "dmux-${this.projectName}"`, { stdio: 'pipe' });
+    } catch {
+      // Ignore if it fails (might not have permission or tmux version doesn't support it)
+    }
+    
     // Launch the Ink app
     render(React.createElement(DmuxApp, {
       dmuxDir: this.dmuxDir,

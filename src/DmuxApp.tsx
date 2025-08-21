@@ -104,7 +104,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       const content = await fs.readFile(panesFile, 'utf-8');
       const loadedPanes = JSON.parse(content) as DmuxPane[];
       
-      // Filter out dead panes
+      // Filter out dead panes and update titles for active ones
       const activePanes = loadedPanes.filter(pane => {
         try {
           // Get list of all pane IDs
@@ -114,7 +114,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           }).trim().split('\n');
           
           // Check if our pane ID exists in the list
-          return paneIds.includes(pane.paneId);
+          if (paneIds.includes(pane.paneId)) {
+            // Update pane title while we're at it
+            const paneTitle = pane.prompt ? pane.prompt.substring(0, 30) : pane.slug;
+            try {
+              execSync(`tmux select-pane -t '${pane.paneId}' -T "${paneTitle}"`, { stdio: 'pipe' });
+            } catch {
+              // Ignore if setting title fails
+            }
+            return true;
+          }
+          return false;
         } catch {
           return false;
         }
@@ -379,6 +389,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     // Wait for pane creation to settle
     await new Promise(resolve => setTimeout(resolve, 500));
     
+    // Set pane title based on prompt or slug
+    const paneTitle = prompt ? prompt.substring(0, 30) : slug;
+    try {
+      execSync(`tmux select-pane -t '${paneInfo}' -T "${paneTitle}"`, { stdio: 'pipe' });
+    } catch {
+      // Ignore if setting title fails
+    }
+    
     // Apply smart layout based on pane count
     const newPaneCount = paneCount + 1;
     applySmartLayout(newPaneCount);
@@ -430,6 +448,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     // Switch back to the original pane (where dmux was running)
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+    
+    // Re-set the title for the dmux pane
+    try {
+      execSync(`tmux select-pane -t '${originalPaneId}' -T "dmux-${projectName}"`, { stdio: 'pipe' });
+    } catch {
+      // Ignore if setting title fails
+    }
     
     // Small delay to ensure pane is fully established before re-launching
     await new Promise(resolve => setTimeout(resolve, 100));
