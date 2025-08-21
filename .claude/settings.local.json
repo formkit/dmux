@@ -17,7 +17,8 @@
       "Bash(grep:*)",
       "Bash(./dmux)",
       "Bash(echo $TMUX)",
-      "Bash(tmux send-keys:*)"
+      "Bash(tmux send-keys:*)",
+      "Bash(tmux list-panes:*)"
     ],
     "deny": [],
     "ask": [],
