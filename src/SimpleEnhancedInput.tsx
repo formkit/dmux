@@ -34,6 +34,8 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   const [autocompleteStartPos, setAutocompleteStartPos] = useState(0);
   const [fileMatches, setFileMatches] = useState<FileMatch[]>([]);
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
+  const [pastedContent, setPastedContent] = useState<Map<number, string>>(new Map());
+  const [displayValue, setDisplayValue] = useState(value);
 
   // Update cursor when value changes externally
   useEffect(() => {
@@ -42,6 +44,61 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       // This is initial value, keep cursor at 0
     } else if (value === '') {
       setCursorPosition(0);
+    }
+  }, [value]);
+
+  // Helper function to check if text looks like a paste that should be formatted
+  const shouldFormatPaste = (text: string): boolean => {
+    // Format if it contains multiple lines or is very long
+    const hasMultipleLines = text.includes('\n');
+    const isVeryLong = text.length > 100;
+    // Check for code-like patterns that might break display
+    const hasSpecialChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text);
+    const hasAnsiCodes = /\x1b\[[0-9;]*[a-zA-Z]/.test(text);
+    
+    return hasMultipleLines || isVeryLong || hasSpecialChars || hasAnsiCodes;
+  };
+
+  // Helper function to process pasted text
+  const processPastedText = (text: string): string => {
+    if (!shouldFormatPaste(text)) {
+      return text;
+    }
+
+    // Generate a unique ID for this paste
+    const pasteId = pastedContent.size + 1;
+    
+    // Store the actual content
+    const newPastedContent = new Map(pastedContent);
+    newPastedContent.set(pasteId, text);
+    setPastedContent(newPastedContent);
+
+    // Count lines in the pasted content
+    const lineCount = (text.match(/\n/g) || []).length + 1;
+    
+    // Return placeholder text
+    return `[#${pasteId} pasted ${lineCount} lines]`;
+  };
+
+  // Helper function to get the actual value with pasted content restored
+  const getActualValue = (): string => {
+    let actualValue = displayValue;
+    
+    // Replace all placeholders with actual content
+    pastedContent.forEach((content, id) => {
+      const placeholder = `[#${id} pasted ${(content.match(/\n/g) || []).length + 1} lines]`;
+      actualValue = actualValue.replace(placeholder, content);
+    });
+    
+    return actualValue;
+  };
+
+  // Update display value when value prop changes
+  useEffect(() => {
+    setDisplayValue(value);
+    // Clear pasted content when value is cleared
+    if (value === '') {
+      setPastedContent(new Map());
     }
   }, [value]);
 
@@ -165,24 +222,32 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     }
   };
 
-  const insertText = (text: string, position: number) => {
-    const before = value.slice(0, position);
-    const after = value.slice(position);
-    const newValue = before + text + after;
+  const insertText = (text: string, position: number, isPaste: boolean = false) => {
+    // Process text if it's a paste
+    const processedText = isPaste ? processPastedText(text) : text;
+    
+    const before = displayValue.slice(0, position);
+    const after = displayValue.slice(position);
+    const newDisplayValue = before + processedText + after;
+    setDisplayValue(newDisplayValue);
+    
+    // Update the actual value with processed text (placeholder for pastes)
+    const newValue = before + processedText + after;
     onChange(newValue);
-    setCursorPosition(position + text.length);
+    setCursorPosition(position + processedText.length);
   };
 
   const deleteText = (start: number, end: number) => {
-    const before = value.slice(0, start);
-    const after = value.slice(end);
-    const newValue = before + after;
-    onChange(newValue);
+    const before = displayValue.slice(0, start);
+    const after = displayValue.slice(end);
+    const newDisplayValue = before + after;
+    setDisplayValue(newDisplayValue);
+    onChange(newDisplayValue);
     setCursorPosition(start);
   };
 
   const moveCursor = (position: number) => {
-    const clampedPosition = Math.max(0, Math.min(value.length, position));
+    const clampedPosition = Math.max(0, Math.min(displayValue.length, position));
     setCursorPosition(clampedPosition);
   };
 
@@ -214,10 +279,11 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   };
 
   const completeFileReference = (match: FileMatch) => {
-    const before = value.slice(0, autocompleteStartPos);
-    const after = value.slice(cursorPosition);
-    const newValue = before + match.displayPath + after;
-    onChange(newValue);
+    const before = displayValue.slice(0, autocompleteStartPos);
+    const after = displayValue.slice(cursorPosition);
+    const newDisplayValue = before + match.displayPath + after;
+    setDisplayValue(newDisplayValue);
+    onChange(newDisplayValue);
     setCursorPosition(autocompleteStartPos + match.displayPath.length);
     setShowAutocomplete(false);
     setAutocompleteQuery('');
@@ -254,6 +320,9 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     }
     
     if (key.return && !key.shift) {
+      // Get the actual value with pasted content restored before submitting
+      const actualValue = getActualValue();
+      onChange(actualValue);
       onSubmit?.();
       return;
     }
@@ -267,7 +336,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     // Line navigation with up/down arrows (when not in autocomplete)
     if (!showAutocomplete && key.upArrow) {
       // Move cursor up one line
-      const lines = value.split('\n');
+      const lines = displayValue.split('\n');
       let currentPos = 0;
       let lineIndex = 0;
       let columnIndex = 0;
@@ -299,7 +368,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     
     if (!showAutocomplete && key.downArrow) {
       // Move cursor down one line
-      const lines = value.split('\n');
+      const lines = displayValue.split('\n');
       let currentPos = 0;
       let lineIndex = 0;
       let columnIndex = 0;
@@ -336,7 +405,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     if (key.leftArrow) {
       if (key.meta || key.alt || key.option) {
         // Move to previous word
-        const newPos = findWordBoundary(value, cursorPosition, 'left');
+        const newPos = findWordBoundary(displayValue, cursorPosition, 'left');
         moveCursor(newPos);
       } else {
         moveCursor(cursorPosition - 1);
@@ -347,7 +416,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     if (key.rightArrow) {
       if (key.meta || key.alt || key.option) {
         // Move to next word
-        const newPos = findWordBoundary(value, cursorPosition, 'right');
+        const newPos = findWordBoundary(displayValue, cursorPosition, 'right');
         moveCursor(newPos);
       } else {
         moveCursor(cursorPosition + 1);
@@ -362,7 +431,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     }
     
     if (key.ctrl && input === 'e') {
-      moveCursor(value.length);
+      moveCursor(displayValue.length);
       return;
     }
 
@@ -370,7 +439,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     if (key.backspace || key.delete) {
       if (key.meta || key.alt || key.option) {
         // Delete word
-        const wordStart = findWordBoundary(value, cursorPosition, 'left');
+        const wordStart = findWordBoundary(displayValue, cursorPosition, 'left');
         deleteText(wordStart, cursorPosition);
       } else if (cursorPosition > 0) {
         deleteText(cursorPosition - 1, cursorPosition);
@@ -380,27 +449,30 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
 
     // Text input
     if (input && !key.ctrl && !key.meta) {
+      // Detect paste by checking if input is unusually long or contains special characters
+      const isPaste = input.length > 1 && shouldFormatPaste(input);
+      
       // Check for @ symbol to trigger autocomplete
       if (input === '@') {
         setShowAutocomplete(true);
         setAutocompleteStartPos(cursorPosition + 1);
         setAutocompleteQuery('');
-        insertText(input, cursorPosition);
+        insertText(input, cursorPosition, false);
       } else if (showAutocomplete) {
         // Update autocomplete query
-        insertText(input, cursorPosition);
-        const newQuery = value.slice(autocompleteStartPos, cursorPosition + 1) + input;
+        insertText(input, cursorPosition, isPaste);
+        const newQuery = displayValue.slice(autocompleteStartPos, cursorPosition + 1) + input;
         setAutocompleteQuery(newQuery);
       } else {
-        insertText(input, cursorPosition);
+        insertText(input, cursorPosition, isPaste);
       }
     }
   });
 
   // Build display with cursor (handles multiline)
   const getDisplayWithCursor = () => {
-    const before = value.slice(0, cursorPosition);
-    const after = value.slice(cursorPosition);
+    const before = displayValue.slice(0, cursorPosition);
+    const after = displayValue.slice(cursorPosition);
     const cursorChar = after[0] || ' ';
     const remaining = after.slice(1);
     
@@ -471,7 +543,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   return (
     <Box flexDirection="column">
       <Box>
-        {value ? (
+        {displayValue ? (
           getDisplayWithCursor()
         ) : (
           <>
