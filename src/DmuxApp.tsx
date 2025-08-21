@@ -23,6 +23,8 @@ interface DmuxPane {
   devWindowId?: string;   // Background window for dev server
   devStatus?: 'running' | 'stopped';
   devUrl?: string;        // Detected dev server URL
+  claudeStatus?: 'working' | 'waiting' | 'idle';  // Claude Code status
+  lastClaudeCheck?: number;  // Timestamp of last status check
 }
 
 interface PanePosition {
@@ -84,6 +86,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     // Add resize listener
     process.stdout.on('resize', handleResize);
+    // Add Claude status monitoring
+    const claudeInterval = setInterval(() => {
+      monitorClaudeStatus();
+    }, 200);
     
     // Add cleanup handlers for process termination
     const handleTermination = () => {
@@ -102,10 +108,102 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     return () => {
       clearInterval(interval);
       process.stdout.removeListener('resize', handleResize);
+      clearInterval(claudeInterval);
       process.removeListener('SIGINT', handleTermination);
       process.removeListener('SIGTERM', handleTermination);
     };
   }, []);
+
+  const monitorClaudeStatus = async () => {
+    // Monitor Claude Code status for all panes
+    const updatedPanes = await Promise.all(panes.map(async (pane) => {
+      try {
+        // Skip if recently checked (within 150ms to avoid overlapping checks)
+        if (pane.lastClaudeCheck && Date.now() - pane.lastClaudeCheck < 150) {
+          return pane;
+        }
+        
+        // Capture the last 20 lines of the pane
+        const captureOutput = execSync(
+          `tmux capture-pane -t '${pane.paneId}' -p -S -20`,
+          { encoding: 'utf-8', stdio: 'pipe' }
+        );
+        
+        // Pattern detection for Claude Code states
+        // Working patterns - Claude is processing
+        // Look for the loading symbols and "(esc to interrupt)"
+        const workingPatterns = [
+          /\(esc to interrupt\)/i,  // Most reliable indicator
+          /✻|✢|✽|·|✳/,  // Loading symbols you identified
+          /⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/,  // Braille spinner characters (might also be used)
+        ];
+        
+        // Permission/attention patterns - needs user input
+        const attentionPatterns = [
+          /Do you want to (allow|approve|grant|trust)/i,
+          /Permission required/i,
+          /\[y\/n\]/i,
+          /\(y\/n\)/i,
+          /Would you like to/i,
+          /Continue\?/i,
+          /Proceed\?/i,
+          /Accept.*\?/i,
+          /Allow.*\?/i,
+          /Approve.*\?/i,
+          /Grant.*\?/i,
+          /Trust.*\?/i,
+          /press.*enter.*continue/i,
+          /press.*enter.*accept/i,
+          /waiting for.*input/i,
+          /requires.*permission/i,
+          /needs.*approval/i
+        ];
+        
+        // Check if Claude is working
+        const isWorking = workingPatterns.some(pattern => pattern.test(captureOutput));
+        
+        // Check if Claude needs attention
+        const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput));
+        
+        // Determine status
+        let newStatus: 'working' | 'waiting' | 'idle' = 'idle';
+        if (isWorking) {
+          newStatus = 'working';
+        } else if (needsAttention) {
+          newStatus = 'waiting';
+        }
+        
+        // Return updated pane if status changed
+        if (pane.claudeStatus !== newStatus) {
+          return {
+            ...pane,
+            claudeStatus: newStatus,
+            lastClaudeCheck: Date.now()
+          };
+        }
+        
+        // Just update timestamp
+        return {
+          ...pane,
+          lastClaudeCheck: Date.now()
+        };
+      } catch (error) {
+        // If we can't capture the pane, it might be dead
+        return pane;
+      }
+    }));
+    
+    // Only update state if something changed
+    const hasChanges = updatedPanes.some((pane, index) => 
+      pane.claudeStatus !== panes[index]?.claudeStatus
+    );
+    
+    if (hasChanges) {
+      setPanes(updatedPanes);
+      // Save to file
+      await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -1760,6 +1858,18 @@ OR ` : ''}To provide the final command:
                 <Text color="gray" dimColor wrap="truncate">
                   {pane.prompt.substring(0, 30)}
                 </Text>
+                
+                {/* Claude status indicator */}
+                {pane.claudeStatus && (
+                  <Box>
+                    {pane.claudeStatus === 'working' && (
+                      <Text color="cyan">✻ Working...</Text>
+                    )}
+                    {pane.claudeStatus === 'waiting' && (
+                      <Text color="yellow" bold>⚠ Needs attention</Text>
+                    )}
+                  </Box>
+                )}
                 
                 {/* Compact status indicators */}
                 {(pane.testStatus || pane.devStatus) && (
