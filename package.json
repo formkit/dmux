@@ -67,7 +67,7 @@
     "bumpp": "^10.2.3",
     "npm-run-all2": "^8.0.4",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.9.2"
   },
   "packageManager": "pnpm@10.14.0"
 }
