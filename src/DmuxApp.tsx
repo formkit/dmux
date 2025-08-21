@@ -804,24 +804,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           
           if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
             // Log what we detected for debugging
-            console.error(`[dmux] Detected trust prompt in pane ${paneInfo}`);
-            console.error(`[dmux] Content stable for ${stableContentCount} checks`);
+            // Detected trust prompt in pane, content stable
             
             // Content is stable and we found a prompt
             if (stableContentCount >= 2) {
-              console.error(`[dmux] Attempting to auto-approve trust prompt`);
+              // Attempting to auto-approve trust prompt
               
               // Try multiple response methods to ensure it works
               
               // Method 1: Send 'y' followed by Enter (most explicit)
-              console.error(`[dmux] Sending 'y' + Enter`);
+              // Sending 'y' + Enter
               execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
               await new Promise(resolve => setTimeout(resolve, 50));
               execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
               
               // Method 2: Just Enter (if it's a yes/no with default yes)
               await new Promise(resolve => setTimeout(resolve, 100));
-              console.error(`[dmux] Sending additional Enter`);
+              // Sending additional Enter
               execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
               
               // Mark as handled to avoid duplicate responses
@@ -849,7 +848,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
                 
                 if (!claudeRunning && !updatedContent.includes('$')) {
                   // Claude might have exited after permission was granted, restart it
-                  console.error(`[dmux] Claude not running after trust approval, restarting`);
+                  // Claude not running after trust approval, restarting
                   await new Promise(resolve => setTimeout(resolve, 300));
                   execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
                   execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
@@ -868,14 +867,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           }
         } catch (error) {
           // Continue checking, errors are non-fatal
-          console.error('Error checking for trust prompt:', error);
+          // Error checking for trust prompt
         }
       }
     };
     
     // Start monitoring for trust prompt in background
     autoApproveTrust().catch(err => {
-      console.error('Error in autoApproveTrust:', err);
+      // Error in autoApproveTrust
     });
     
     // Keep focus on the new pane
@@ -1038,14 +1037,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         const errorMessage = mergeError.message || mergeError.toString();
         if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
           // Merge conflict detected - exit dmux and inform user
-          console.error('\n\x1b[31m✗ Merge conflict detected!\x1b[0m');
-          console.error(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.`);
-          console.error('\nTo resolve:');
-          console.error('1. Manually resolve the merge conflicts in your editor');
-          console.error('2. Stage the resolved files: git add <resolved-files>');
-          console.error('3. Complete the merge: git commit');
-          console.error('4. Run dmux again to continue managing your panes');
-          console.error('\nExiting dmux now...\n');
+          // Merge conflict detected - exit dmux and inform user
+          process.stderr.write('\n\x1b[31m✗ Merge conflict detected!\x1b[0m\n');
+          process.stderr.write(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.\n`);
+          process.stderr.write('\nTo resolve:\n');
+          process.stderr.write('1. Manually resolve the merge conflicts in your editor\n');
+          process.stderr.write('2. Stage the resolved files: git add <resolved-files>\n');
+          process.stderr.write('3. Complete the merge: git commit\n');
+          process.stderr.write('4. Run dmux again to continue managing your panes\n');
+          process.stderr.write('\nExiting dmux now...\n\n');
           
           // Clean exit
           process.stdout.write('\x1b[2J\x1b[H');
@@ -1319,7 +1319,7 @@ OR ` : ''}To provide the final command:
           
           response = actualResult;
         } catch (parseError) {
-          console.error('Failed to parse Claude response:', result);
+          // Failed to parse Claude response
           throw new Error(`Failed to parse AI response: ${parseError}`);
         }
         
@@ -1602,14 +1602,15 @@ OR ` : ''}To provide the final command:
         const errorMessage = mergeError.message || mergeError.toString();
         if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
           // Merge conflict detected - exit dmux and inform user
-          console.error('\n\x1b[31m✗ Merge conflict detected!\x1b[0m');
-          console.error(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.`);
-          console.error('\nTo resolve:');
-          console.error('1. Manually resolve the merge conflicts in your editor');
-          console.error('2. Stage the resolved files: git add <resolved-files>');
-          console.error('3. Complete the merge: git commit');
-          console.error('4. Run dmux again to continue managing your panes');
-          console.error('\nExiting dmux now...\n');
+          // Merge conflict detected - exit dmux and inform user
+          process.stderr.write('\n\x1b[31m✗ Merge conflict detected!\x1b[0m\n');
+          process.stderr.write(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.\n`);
+          process.stderr.write('\nTo resolve:\n');
+          process.stderr.write('1. Manually resolve the merge conflicts in your editor\n');
+          process.stderr.write('2. Stage the resolved files: git add <resolved-files>\n');
+          process.stderr.write('3. Complete the merge: git commit\n');
+          process.stderr.write('4. Run dmux again to continue managing your panes\n');
+          process.stderr.write('\nExiting dmux now...\n\n');
           
           // Clean exit
           process.stdout.write('\x1b[2J\x1b[H');

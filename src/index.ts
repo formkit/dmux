@@ -53,9 +53,9 @@ class Dmux {
       // Check if project-specific session already exists
       try {
         execSync(`tmux has-session -t ${this.sessionName} 2>/dev/null`, { stdio: 'pipe' });
-        console.log(chalk.yellow(`Attaching to existing ${this.sessionName} session...`));
+        // Session exists, will attach
       } catch {
-        console.log(chalk.yellow(`Creating new tmux session for project: ${this.projectName}...`));
+        // Create new session
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
         // Enable pane borders to show titles
@@ -119,4 +119,4 @@ class Dmux {
 }
 
 const dmux = new Dmux();
-dmux.init().catch(console.error);
+dmux.init().catch(() => process.exit(1));
