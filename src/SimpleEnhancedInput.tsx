@@ -148,10 +148,18 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       let searchCmd: string;
       let dirSearchCmd: string;
       
+      // Check if query is a directory path (ends with /)
+      const isDirectoryPath = query.endsWith('/');
+      
       if (query === '') {
         // Show files and directories in the root of the working directory (excluding common dirs)
         searchCmd = `find "${workingDirectory}" -maxdepth 1 \\( ${excludeArgs} -type f -print \\) 2>/dev/null | head -20`;
         dirSearchCmd = `find "${workingDirectory}" -maxdepth 1 \\( ${excludeArgs} -type d -print \\) 2>/dev/null | grep -v "^${workingDirectory}$" | head -10`;
+      } else if (isDirectoryPath) {
+        // Navigate into directory - show contents of the specified directory
+        const dirPath = path.join(workingDirectory, query.slice(0, -1)); // Remove trailing slash
+        searchCmd = `find "${dirPath}" -maxdepth 1 \\( ${excludeArgs} -type f -print \\) 2>/dev/null | head -20`;
+        dirSearchCmd = `find "${dirPath}" -maxdepth 1 \\( ${excludeArgs} -type d -print \\) 2>/dev/null | grep -v "^${dirPath}$" | head -10`;
       } else {
         // Search for files matching the query (excluding common dirs)
         searchCmd = `find "${workingDirectory}" \\( ${excludeArgs} -type f -name "*${query}*" -print \\) 2>/dev/null | head -20`;
@@ -189,9 +197,15 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         if (isExcluded(dirPath)) continue;
         const relativePath = path.relative(workingDirectory, dirPath);
         if (relativePath && !relativePath.startsWith('..')) {
+          // When browsing within a directory, adjust the display path
+          let displayPath = relativePath;
+          if (isDirectoryPath && query) {
+            // We're inside a subdirectory, show just the item name
+            displayPath = path.basename(dirPath);
+          }
           matches.push({
             path: dirPath,
-            displayPath: relativePath + '/',
+            displayPath: displayPath + '/',
             type: 'directory'
           });
         }
@@ -202,9 +216,15 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         if (isExcluded(filePath)) continue;
         const relativePath = path.relative(workingDirectory, filePath);
         if (relativePath && !relativePath.startsWith('..')) {
+          // When browsing within a directory, adjust the display path
+          let displayPath = relativePath;
+          if (isDirectoryPath && query) {
+            // We're inside a subdirectory, show just the item name
+            displayPath = path.basename(filePath);
+          }
           matches.push({
             path: filePath,
-            displayPath: relativePath,
+            displayPath: displayPath,
             type: 'file'
           });
         }
@@ -283,10 +303,21 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   const completeFileReference = (match: FileMatch) => {
     const before = displayValue.slice(0, autocompleteStartPos);
     const after = displayValue.slice(cursorPosition);
-    const newDisplayValue = before + match.displayPath + after;
+    
+    // Build the complete path to insert
+    let completePath: string;
+    if (autocompleteQuery.endsWith('/')) {
+      // We're in a subdirectory, need to build the full path
+      completePath = autocompleteQuery + match.displayPath.replace(/\/$/, ''); // Remove trailing slash from directories
+    } else {
+      // Use the relative path from working directory
+      completePath = path.relative(workingDirectory, match.path);
+    }
+    
+    const newDisplayValue = before + completePath + after;
     setDisplayValue(newDisplayValue);
     onChange(newDisplayValue);
-    setCursorPosition(autocompleteStartPos + match.displayPath.length);
+    setCursorPosition(autocompleteStartPos + completePath.length);
     setShowAutocomplete(false);
     setAutocompleteQuery('');
   };
@@ -306,6 +337,52 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         return;
       } else if (key.downArrow) {
         setSelectedMatchIndex(Math.min(fileMatches.length - 1, selectedMatchIndex + 1));
+        return;
+      } else if (key.rightArrow) {
+        // Navigate into directory with right arrow
+        if (fileMatches.length > 0) {
+          const selectedMatch = fileMatches[selectedMatchIndex];
+          if (selectedMatch.type === 'directory') {
+            // Build the full path for navigation
+            let newQuery: string;
+            if (autocompleteQuery.endsWith('/')) {
+              // We're already in a directory, append the selected subdirectory
+              newQuery = autocompleteQuery + selectedMatch.displayPath;
+            } else if (autocompleteQuery) {
+              // We have a search query, replace it with the full path
+              const relativePath = path.relative(workingDirectory, selectedMatch.path);
+              newQuery = relativePath + '/';
+            } else {
+              // We're at root, use the display path
+              newQuery = selectedMatch.displayPath;
+            }
+            setAutocompleteQuery(newQuery);
+            // Trigger a new search within this directory
+            searchFiles(newQuery);
+          }
+        }
+        return;
+      } else if (key.leftArrow) {
+        // Navigate back/up one directory level with left arrow
+        if (autocompleteQuery.includes('/')) {
+          // Remove the last directory segment
+          const segments = autocompleteQuery.split('/');
+          segments.pop(); // Remove last segment
+          if (segments.length > 0) {
+            segments.pop(); // Remove the directory we're going back from
+            const newQuery = segments.length > 0 ? segments.join('/') + '/' : '';
+            setAutocompleteQuery(newQuery);
+            searchFiles(newQuery);
+          } else {
+            // Go back to root
+            setAutocompleteQuery('');
+            searchFiles('');
+          }
+        } else if (autocompleteQuery !== '') {
+          // Go back to root if we have a query but no slashes
+          setAutocompleteQuery('');
+          searchFiles('');
+        }
         return;
       } else if (key.return || key.tab) {
         if (fileMatches.length > 0) {
@@ -631,7 +708,11 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       {showAutocomplete && fileMatches.length > 0 && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
           <Text color="cyan" dimColor>
-            {autocompleteQuery ? `Files matching: @${autocompleteQuery}` : 'Files in current directory:'}
+            {autocompleteQuery.endsWith('/') 
+              ? `Browsing: @${autocompleteQuery}` 
+              : autocompleteQuery 
+                ? `Files matching: @${autocompleteQuery}` 
+                : 'Files in current directory:'}
           </Text>
           {fileMatches.map((match, index) => (
             <Box key={match.path}>
@@ -641,7 +722,9 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
               </Text>
             </Box>
           ))}
-          <Text dimColor italic>↑↓ to select, Tab/Enter to complete, Esc to cancel</Text>
+          <Text dimColor italic>
+            ↑↓ select • → enter directory • ← go back • Tab/Enter complete • Esc cancel
+          </Text>
         </Box>
       )}
     </Box>

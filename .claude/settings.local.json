@@ -24,7 +24,8 @@
       "Bash(tmux new-session:*)",
       "Bash(for i in {1..60})",
       "Bash(do tmux send-keys -t test-dmux Right)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(tmux capture-pane:*)"
     ],
     "deny": [],
     "ask": [],
