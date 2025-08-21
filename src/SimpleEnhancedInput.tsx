@@ -256,7 +256,11 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     // Update the actual value with processed text (placeholder for pastes)
     const newValue = before + processedText + after;
     onChange(newValue);
-    setCursorPosition(position + processedText.length);
+    
+    // When inserting newlines, ensure cursor position is correct
+    // This prevents the issue where wrapped lines cause incorrect cursor positioning
+    const newCursorPos = position + processedText.length;
+    setCursorPosition(newCursorPos);
   };
 
   const deleteText = (start: number, end: number) => {
@@ -408,6 +412,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     
     if (key.return && key.shift) {
       // Insert newline for multiline input
+      // Make sure we're inserting at the correct position even with wrapped lines
       insertText('\n', cursorPosition);
       return;
     }
@@ -531,19 +536,23 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       // Detect paste by checking if input is unusually long or contains special characters
       const isPaste = input.length > 1 && shouldFormatPaste(input);
       
+      // Prevent inserting newlines that aren't explicitly requested
+      // This fixes the issue where wrapped lines cause unintended newlines
+      const filteredInput = isPaste ? input : input.replace(/[\r\n]/g, '');
+      
       // Check for @ symbol to trigger autocomplete
-      if (input === '@') {
+      if (filteredInput === '@') {
         setShowAutocomplete(true);
         setAutocompleteStartPos(cursorPosition + 1);
         setAutocompleteQuery('');
-        insertText(input, cursorPosition, false);
+        insertText(filteredInput, cursorPosition, false);
       } else if (showAutocomplete) {
         // Update autocomplete query
-        insertText(input, cursorPosition, isPaste);
-        const newQuery = displayValue.slice(autocompleteStartPos, cursorPosition + 1) + input;
+        insertText(filteredInput, cursorPosition, isPaste);
+        const newQuery = displayValue.slice(autocompleteStartPos, cursorPosition + 1) + filteredInput;
         setAutocompleteQuery(newQuery);
       } else {
-        insertText(input, cursorPosition, isPaste);
+        insertText(filteredInput, cursorPosition, isPaste);
       }
     }
   });
@@ -559,7 +568,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     const splitIntoVisualLines = (text: string): string[] => {
       const visualLines: string[] = [];
       const logicalLines = text.split('\n');
-      const wrapWidth = terminalWidth - 2; // Leave room for cursor and border
+      const wrapWidth = Math.max(1, terminalWidth - 2); // Leave room for cursor and border, ensure min width of 1
       
       for (let lineIdx = 0; lineIdx < logicalLines.length; lineIdx++) {
         const logicalLine = logicalLines[lineIdx];
@@ -585,6 +594,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       let currentVisualLine = 0;
       
       const logicalLines = displayValue.split('\n');
+      const wrapWidth = Math.max(1, terminalWidth - 2); // Ensure wrapWidth is at least 1
       
       for (let logicalLineIdx = 0; logicalLineIdx < logicalLines.length; logicalLineIdx++) {
         const logicalLine = logicalLines[logicalLineIdx];
@@ -601,7 +611,6 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
             return { visualLine: currentVisualLine, visualColumn: 0 };
           }
           
-          const wrapWidth = terminalWidth - 2;
           const visualLineWithinLogical = Math.floor(positionInLogicalLine / wrapWidth);
           const visualColumn = positionInLogicalLine % wrapWidth;
           
@@ -615,15 +624,16 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         if (logicalLine.length === 0) {
           currentVisualLine += 1;
         } else {
-          const visualLinesForThisLogicalLine = Math.ceil(logicalLine.length / (terminalWidth - 2));
+          const visualLinesForThisLogicalLine = Math.ceil(Math.max(1, logicalLine.length) / wrapWidth);
           currentVisualLine += visualLinesForThisLogicalLine;
         }
         
         totalCharsProcessed += logicalLine.length + 1; // +1 for the newline character
       }
       
-      // Cursor at end of text
-      return { visualLine: currentVisualLine - 1, visualColumn: 0 };
+      // Cursor at end of text - make sure we return valid line number
+      const maxVisualLine = Math.max(0, visualLines.length - 1);
+      return { visualLine: Math.min(currentVisualLine - 1, maxVisualLine), visualColumn: 0 };
     };
     
     // Get visual lines for the entire text
