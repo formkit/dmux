@@ -1296,80 +1296,82 @@ OR ` : ''}To provide the final command:
         </Text>
       </Box>
 
-      {panes.map((pane, index) => {
-        // Determine border color based on status
-        let borderColor = 'gray';
-        if (selectedIndex === index) {
-          borderColor = 'cyan';
-        } else if (pane.devStatus === 'running') {
-          borderColor = 'green';
-        } else if (pane.testStatus === 'running') {
-          borderColor = 'yellow';
-        } else if (pane.testStatus === 'failed') {
-          borderColor = 'red';
-        }
-        
-        return (
-          <Box
-            key={pane.id}
-            paddingX={1}
-            borderStyle="single"
-            borderColor={borderColor}
-            marginBottom={1}
-          >
-            <Box flexDirection="column">
-              <Box>
-                <Text color={selectedIndex === index ? 'cyan' : 'white'} bold>
-                  {pane.slug}
+      {/* Flex container for pane cards with wrapping */}
+      <Box flexDirection="row" flexWrap="wrap" gap={1}>
+        {panes.map((pane, index) => {
+          // Determine border color based on status
+          let borderColor = 'gray';
+          if (selectedIndex === index) {
+            borderColor = 'cyan';
+          } else if (pane.devStatus === 'running') {
+            borderColor = 'green';
+          } else if (pane.testStatus === 'running') {
+            borderColor = 'yellow';
+          } else if (pane.testStatus === 'failed') {
+            borderColor = 'red';
+          }
+          
+          return (
+            <Box
+              key={pane.id}
+              paddingX={1}
+              borderStyle="single"
+              borderColor={borderColor}
+              width={35}  // Max width for cards
+              flexShrink={0}
+            >
+              <Box flexDirection="column">
+                <Box>
+                  <Text color={selectedIndex === index ? 'cyan' : 'white'} bold wrap="truncate">
+                    {pane.slug}
+                  </Text>
+                  {pane.worktreePath && (
+                    <Text color="gray"> (wt)</Text>
+                  )}
+                </Box>
+                <Text color="gray" dimColor wrap="truncate">
+                  {pane.prompt.substring(0, 30)}
                 </Text>
-                {pane.worktreePath && (
-                  <Text color="gray"> (worktree)</Text>
+                
+                {/* Compact status indicators */}
+                {(pane.testStatus || pane.devStatus) && (
+                  <Box>
+                    {pane.testStatus === 'running' && (
+                      <Text color="yellow">⏳ Test</Text>
+                    )}
+                    {pane.testStatus === 'passed' && (
+                      <Text color="green">✓ Test</Text>
+                    )}
+                    {pane.testStatus === 'failed' && (
+                      <Text color="red">✗ Test</Text>
+                    )}
+                    {pane.devStatus === 'running' && (
+                      <Text color="green">
+                        ▶ Dev
+                        {pane.devUrl && (
+                          <Text color="cyan" wrap="truncate"> {pane.devUrl.replace(/https?:\/\//, '').substring(0, 15)}</Text>
+                        )}
+                      </Text>
+                    )}
+                  </Box>
                 )}
               </Box>
-              <Text color="gray" dimColor>
-                {pane.prompt}
-              </Text>
-              
-              {/* Show test status */}
-              {pane.testStatus && (
-                <Box>
-                  {pane.testStatus === 'running' && (
-                    <Text color="yellow">⏳ Test running...</Text>
-                  )}
-                  {pane.testStatus === 'passed' && (
-                    <Text color="green">✓ Tests passed</Text>
-                  )}
-                  {pane.testStatus === 'failed' && (
-                    <Text color="red">✗ Tests failed (press 'o' to view)</Text>
-                  )}
-                </Box>
-              )}
-              
-              {/* Show dev server status */}
-              {pane.devStatus === 'running' && (
-                <Box>
-                  <Text color="green">
-                    ▶ Dev server running
-                    {pane.devUrl && (
-                      <Text color="cyan"> → {pane.devUrl}</Text>
-                    )}
-                  </Text>
-                </Box>
-              )}
             </Box>
-          </Box>
-        );
-      })}
+          );
+        })}
 
-      <Box
-        paddingX={1}
-        borderStyle="single"
-        borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
-        marginBottom={1}
-      >
-        <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
-          + New dmux pane
-        </Text>
+        {/* New pane button */}
+        <Box
+          paddingX={1}
+          borderStyle="single"
+          borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
+          width={35}  // Match card width
+          flexShrink={0}
+        >
+          <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
+            + New dmux pane
+          </Text>
+        </Box>
       </Box>
 
       {showNewPaneDialog && (
