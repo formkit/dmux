@@ -38,6 +38,8 @@ interface PanePosition {
 interface ProjectSettings {
   testCommand?: string;
   devCommand?: string;
+  firstTestRun?: boolean;  // Track if test has been run before
+  firstDevRun?: boolean;   // Track if dev has been run before
 }
 
 interface DmuxAppProps {
@@ -64,9 +66,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [projectSettings, setProjectSettings] = useState<ProjectSettings>({});
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
-  const [showAIPrompt, setShowAIPrompt] = useState(false);
-  const [aiChangeRequest, setAIChangeRequest] = useState('');
-  const [generatingCommand, setGeneratingCommand] = useState(false);
+  const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
+  const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
   const { exit } = useApp();
 
@@ -1227,178 +1228,148 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     return 'chore: merge worktree changes';
   };
 
-  const generateCommand = async (type: 'test' | 'dev', changeRequest?: string): Promise<string | null> => {
-    setGeneratingCommand(true);
-    setStatusMessage(`Generating ${type} command with AI...`);
-    
+  const detectPackageManager = async (): Promise<{ manager: string | null, hasPackageJson: boolean }> => {
     try {
-      // Find claude command
-      const claudeCmd = await findClaudeCommand();
-      if (!claudeCmd) {
-        throw new Error('Claude Code not found. Please ensure Claude Code is installed and accessible');
-      }
-
       // Get project root
       const projectRoot = execSync('git rev-parse --show-toplevel', { 
         encoding: 'utf-8',
         stdio: 'pipe'
       }).trim();
       
-      // Pre-fetch directory listings
-      setStatusMessage('Analyzing project structure...');
+      // Check if package.json exists
+      try {
+        await fs.access(path.join(projectRoot, 'package.json'));
+        
+        // Check for lock files to determine package manager
+        const files = await fs.readdir(projectRoot);
+        
+        if (files.includes('pnpm-lock.yaml')) {
+          return { manager: 'pnpm', hasPackageJson: true };
+        } else if (files.includes('yarn.lock')) {
+          return { manager: 'yarn', hasPackageJson: true };
+        } else if (files.includes('package-lock.json')) {
+          return { manager: 'npm', hasPackageJson: true };
+        } else {
+          // Default to npm if no lock file found
+          return { manager: 'npm', hasPackageJson: true };
+        }
+      } catch {
+        // No package.json found
+        return { manager: null, hasPackageJson: false };
+      }
+    } catch {
+      return { manager: null, hasPackageJson: false };
+    }
+  };
+
+  const suggestCommand = async (type: 'test' | 'dev'): Promise<string | null> => {
+    const { manager, hasPackageJson } = await detectPackageManager();
+    
+    if (!hasPackageJson) {
+      return null;
+    }
+    
+    // Suggest standard commands based on package manager
+    if (type === 'test') {
+      return `${manager} run test`;
+    } else {
+      return `${manager} run dev`;
+    }
+  };
+
+  const copyNonGitFiles = async (worktreePath: string) => {
+    try {
+      setStatusMessage('Copying non-git files from main...');
       
-      // Get main directory listing
-      const mainFiles = execSync(`ls -la "${projectRoot}"`, { 
+      // Get project root
+      const projectRoot = execSync('git rev-parse --show-toplevel', { 
         encoding: 'utf-8',
         stdio: 'pipe'
-      });
+      }).trim();
       
-      // Get worktree listing (simulate what it would look like)
-      // For now we'll use main, but in reality worktrees start with the same files
-      const worktreeFiles = mainFiles;
+      // Use rsync to copy non-tracked files
+      // This copies everything except git-tracked files, .git, and common build directories
+      const rsyncCmd = `rsync -avz --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='build' --exclude='.next' --exclude='.turbo' "${projectRoot}/" "${worktreePath}/"`;
       
-      // Check for package.json to understand the project type
-      let packageJsonContent = '';
-      try {
-        packageJsonContent = await fs.readFile(path.join(projectRoot, 'package.json'), 'utf-8');
-      } catch {}
+      execSync(rsyncCmd, { stdio: 'pipe' });
       
-      let requestedFile = '';
-      let maxAttempts = 2; // Allow one file request, then must generate command
+      setStatusMessage('Non-git files copied successfully');
+      setTimeout(() => setStatusMessage(''), 2000);
+    } catch (error) {
+      setStatusMessage('Failed to copy non-git files');
+      setTimeout(() => setStatusMessage(''), 2000);
+    }
+  };
+
+  const runCommandInternal = async (type: 'test' | 'dev', pane: DmuxPane) => {
+    if (!pane.worktreePath) {
+      setStatusMessage('No worktree path for this pane');
+      setTimeout(() => setStatusMessage(''), 2000);
+      return;
+    }
+
+    const command = type === 'test' ? projectSettings.testCommand : projectSettings.devCommand;
+    
+    if (!command) {
+      setStatusMessage('No command configured');
+      setTimeout(() => setStatusMessage(''), 2000);
+      return;
+    }
+
+    try {
+      setRunningCommand(true);
+      setStatusMessage(`Starting ${type} in background window...`);
       
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const isLastAttempt = attempt === maxAttempts - 1;
-        
-        // Build the prompt
-        let prompt = `You are generating a ${type === 'test' ? 'test' : 'development server'} command for a git worktree.
-
-CRITICAL CONTEXT:
-- Main project directory: ${projectRoot}
-- Worktrees are siblings: ${path.dirname(projectRoot)}/{project-name}-{branch}
-- Command runs INSIDE the worktree (not main)
-- Files like .env, .wrangler, node_modules are NOT shared between worktrees
-
-Files in MAIN directory:
-${mainFiles}
-
-Files in WORKTREE (initially same as main):
-${worktreeFiles}
-
-${packageJsonContent ? `package.json contents:\n${packageJsonContent.substring(0, 3000)}\n` : ''}
-
-${requestedFile}
-
-${changeRequest ? `User's requested change: ${changeRequest}\n` : ''}
-
-Your task: Generate a command to ${type === 'test' ? 'run tests' : 'start a dev server'} in the worktree.
-
-Consider:
-1. Copy needed files from main (e.g., cp ../${path.basename(projectRoot)}/.env .)
-2. Install dependencies (npm/pnpm/yarn install)
-3. Build if needed
-4. Run the ${type} command
-
-${isLastAttempt ? 'YOU MUST PROVIDE THE FINAL COMMAND NOW. No more file requests allowed.' : 'You can request ONE file to read, then you must provide the command.'}
-
-Respond with ONLY a JSON object:
-
-${!isLastAttempt ? `To read ONE file (only one chance):
-{
-  "type": "cat",
-  "path": "path/to/file"
-}
-
-OR ` : ''}To provide the final command:
-{
-  "type": "command",
-  "command": "cp ../${path.basename(projectRoot)}/.env . && npm install && npm run ${type}",
-  "description": "Copy env, install deps, run ${type}"
-}`;
-
-        // Write prompt to a temporary file
-        const tmpFile = `/tmp/dmux-prompt-${Date.now()}.txt`;
-        await fs.writeFile(tmpFile, prompt);
-        
-        // Use Claude to generate the response
-        const result = execSync(
-          `${claudeCmd} -p "$(cat ${tmpFile})" --output-format json`,
-          { 
-            encoding: 'utf-8',
-            stdio: 'pipe',
-            maxBuffer: 1024 * 1024 * 10
-          }
-        );
-        
-        // Clean up temp file
+      // Kill existing window if present
+      const existingWindowId = type === 'test' ? pane.testWindowId : pane.devWindowId;
+      if (existingWindowId) {
         try {
-          await fs.unlink(tmpFile);
+          execSync(`tmux kill-window -t '${existingWindowId}'`, { stdio: 'pipe' });
         } catch {}
-        
-        // Parse the response
-        let response: any;
-        try {
-          const wrapper = JSON.parse(result);
-          let actualResult = wrapper.result || wrapper;
-          
-          if (typeof actualResult === 'string') {
-            actualResult = actualResult.trim();
-            
-            // Extract JSON from the response
-            const jsonMatch = actualResult.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              let jsonStr = jsonMatch[0];
-              
-              // Clean up markdown code blocks if present
-              if (actualResult.includes('```')) {
-                const codeBlockMatch = actualResult.match(/```(?:json)?\s*([\s\S]*?)```/);
-                if (codeBlockMatch) {
-                  jsonStr = codeBlockMatch[1].trim();
-                }
-              }
-              
-              actualResult = JSON.parse(jsonStr);
-            } else {
-              throw new Error('No JSON object found in response');
-            }
-          }
-          
-          response = actualResult;
-        } catch (parseError) {
-          // Failed to parse Claude response
-          throw new Error(`Failed to parse AI response: ${parseError}`);
-        }
-        
-        // Handle the response
-        if (response.type === 'cat' && !isLastAttempt) {
-          // Read the requested file
-          const targetPath = path.join(projectRoot, response.path);
-          try {
-            const content = await fs.readFile(targetPath, 'utf-8');
-            const truncated = content.length > 4000 
-              ? content.substring(0, 4000) + '\n... [truncated]'
-              : content;
-            requestedFile = `\nContents of ${response.path}:\n${truncated}\n`;
-          } catch (err) {
-            requestedFile = `\nError reading ${response.path}: File not found\n`;
-          }
-          // Continue to next iteration to get the command
-        } else if (response.type === 'command') {
-          // Got the command!
-          setGeneratingCommand(false);
-          setStatusMessage('');
-          return response.command;
-        } else if (isLastAttempt) {
-          // Last attempt must provide a command
-          throw new Error('AI did not provide a command on final attempt');
-        }
       }
       
-      throw new Error('Failed to generate command after maximum attempts');
-    } catch (error) {
-      setGeneratingCommand(false);
-      setStatusMessage(`Failed to generate command: ${error}`);
+      // Create a new background window for the command
+      const windowName = `${pane.slug}-${type}`;
+      const windowId = execSync(
+        `tmux new-window -d -n '${windowName}' -P -F '#{window_id}'`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      
+      // Create a log file to capture output
+      const logFile = `/tmp/dmux-${pane.id}-${type}.log`;
+      
+      // Build the command with output capture
+      const fullCommand = `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`;
+      
+      // Send the command to the new window
+      execSync(`tmux send-keys -t '${windowId}' '${fullCommand.replace(/'/g, "'\\''")}' Enter`, { stdio: 'pipe' });
+      
+      // Update pane with window info
+      const updatedPane: DmuxPane = {
+        ...pane,
+        [type === 'test' ? 'testWindowId' : 'devWindowId']: windowId,
+        [type === 'test' ? 'testStatus' : 'devStatus']: 'running'
+      };
+      
+      const updatedPanes = panes.map(p => p.id === pane.id ? updatedPane : p);
+      await savePanes(updatedPanes);
+      
+      // Start monitoring the output
+      if (type === 'test') {
+        // For tests, monitor for completion
+        setTimeout(() => monitorTestOutput(pane.id, logFile), 2000);
+      } else {
+        // For dev, monitor for server URL
+        setTimeout(() => monitorDevOutput(pane.id, logFile), 2000);
+      }
+      
+      setRunningCommand(false);
+      setStatusMessage(`${type === 'test' ? 'Test' : 'Dev server'} started in background`);
       setTimeout(() => setStatusMessage(''), 3000);
-      return null;
+    } catch (error) {
+      setRunningCommand(false);
+      setStatusMessage(`Failed to run ${type} command`);
+      setTimeout(() => setStatusMessage(''), 3000);
     }
   };
 
@@ -1410,10 +1381,22 @@ OR ` : ''}To provide the final command:
     }
 
     const command = type === 'test' ? projectSettings.testCommand : projectSettings.devCommand;
+    const isFirstRun = type === 'test' ? !projectSettings.firstTestRun : !projectSettings.firstDevRun;
     
     if (!command) {
       // No command configured, prompt user
       setShowCommandPrompt(type);
+      return;
+    }
+    
+    // Check if this is the first run and offer to copy non-git files
+    if (isFirstRun) {
+      // Show file copy prompt and wait for response
+      setShowFileCopyPrompt(true);
+      setCurrentCommandType(type);
+      setStatusMessage(`First time running ${type} command...`);
+      
+      // Return here - the actual command will be run after user responds to prompt
       return;
     }
 
@@ -1707,8 +1690,45 @@ OR ` : ''}To provide the final command:
   };
 
   useInput(async (input: string, key: any) => {
-    if (isCreatingPane || generatingCommand || runningCommand) {
+    if (isCreatingPane || runningCommand) {
       // Disable input while performing operations
+      return;
+    }
+    
+    if (showFileCopyPrompt) {
+      if (input === 'y' || input === 'Y') {
+        setShowFileCopyPrompt(false);
+        const selectedPane = panes[selectedIndex];
+        if (selectedPane && selectedPane.worktreePath && currentCommandType) {
+          await copyNonGitFiles(selectedPane.worktreePath);
+          
+          // Mark as not first run and continue with command
+          const newSettings = {
+            ...projectSettings,
+            [currentCommandType === 'test' ? 'firstTestRun' : 'firstDevRun']: true
+          };
+          await saveSettings(newSettings);
+          
+          // Now run the actual command
+          await runCommandInternal(currentCommandType, selectedPane);
+        }
+        setCurrentCommandType(null);
+      } else if (input === 'n' || input === 'N' || key.escape) {
+        setShowFileCopyPrompt(false);
+        const selectedPane = panes[selectedIndex];
+        if (selectedPane && currentCommandType) {
+          // Mark as not first run and continue without copying
+          const newSettings = {
+            ...projectSettings,
+            [currentCommandType === 'test' ? 'firstTestRun' : 'firstDevRun']: true
+          };
+          await saveSettings(newSettings);
+          
+          // Now run the actual command
+          await runCommandInternal(currentCommandType, selectedPane);
+        }
+        setCurrentCommandType(null);
+      }
       return;
     }
     
@@ -1716,15 +1736,12 @@ OR ` : ''}To provide the final command:
       if (key.escape) {
         setShowCommandPrompt(null);
         setCommandInput('');
-        setShowAIPrompt(false);
-        setAIChangeRequest('');
-      } else if (key.return && !showAIPrompt) {
+      } else if (key.return) {
         if (commandInput.trim() === '') {
-          // User wants AI to generate
-          const generated = await generateCommand(showCommandPrompt);
-          if (generated) {
-            setCommandInput(generated);
-            setShowAIPrompt(true);
+          // If empty, suggest a default command based on package manager
+          const suggested = await suggestCommand(showCommandPrompt);
+          if (suggested) {
+            setCommandInput(suggested);
           }
         } else {
           // User provided manual command
@@ -1735,34 +1752,20 @@ OR ` : ''}To provide the final command:
           await saveSettings(newSettings);
           const selectedPane = panes[selectedIndex];
           if (selectedPane) {
-            await runCommand(showCommandPrompt, selectedPane);
-          }
-          setShowCommandPrompt(null);
-          setCommandInput('');
-          setShowAIPrompt(false);
-        }
-      } else if (key.return && showAIPrompt) {
-        if (aiChangeRequest.trim() === '') {
-          // User accepts AI generated command
-          const newSettings = {
-            ...projectSettings,
-            [showCommandPrompt === 'test' ? 'testCommand' : 'devCommand']: commandInput.trim()
-          };
-          await saveSettings(newSettings);
-          const selectedPane = panes[selectedIndex];
-          if (selectedPane) {
-            await runCommand(showCommandPrompt, selectedPane);
-          }
-          setShowCommandPrompt(null);
-          setCommandInput('');
-          setShowAIPrompt(false);
-          setAIChangeRequest('');
-        } else {
-          // User wants changes, regenerate
-          const generated = await generateCommand(showCommandPrompt, aiChangeRequest);
-          if (generated) {
-            setCommandInput(generated);
-            setAIChangeRequest('');
+            // Check if first run
+            const isFirstRun = showCommandPrompt === 'test' ? !projectSettings.firstTestRun : !projectSettings.firstDevRun;
+            if (isFirstRun) {
+              setCurrentCommandType(showCommandPrompt);
+              setShowCommandPrompt(null);
+              setShowFileCopyPrompt(true);
+            } else {
+              await runCommandInternal(showCommandPrompt, selectedPane);
+              setShowCommandPrompt(null);
+              setCommandInput('');
+            }
+          } else {
+            setShowCommandPrompt(null);
+            setCommandInput('');
           }
         }
       }
@@ -2033,7 +2036,7 @@ OR ` : ''}To provide the final command:
         </Box>
       )}
 
-      {showCommandPrompt && !showAIPrompt && (
+      {showCommandPrompt && (
         <Box borderStyle="double" borderColor="magenta" paddingX={1} marginTop={1}>
           <Box flexDirection="column">
             <Text color="magenta" bold>
@@ -2043,7 +2046,7 @@ OR ` : ''}To provide the final command:
               Enter command to run {showCommandPrompt === 'test' ? 'tests' : 'dev server'} in worktrees
             </Text>
             <Text dimColor>
-              (Press Enter with empty input to generate with AI, ESC to cancel)
+              (Press Enter with empty input for suggested command, ESC to cancel)
             </Text>
             <Box marginTop={1}>
               <TextInput
@@ -2056,38 +2059,23 @@ OR ` : ''}To provide the final command:
         </Box>
       )}
 
-      {showCommandPrompt && showAIPrompt && (
-        <Box borderStyle="double" borderColor="magenta" paddingX={1} marginTop={1}>
+      {showFileCopyPrompt && (
+        <Box borderStyle="double" borderColor="yellow" paddingX={1} marginTop={1}>
           <Box flexDirection="column">
-            <Text color="magenta" bold>
-              AI Generated {showCommandPrompt === 'test' ? 'Test' : 'Dev'} Command
+            <Text color="yellow" bold>First Run Setup</Text>
+            <Text>
+              Copy non-git files (like .env, configs) from main to worktree?
             </Text>
-            <Box marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
-              <Text>{commandInput}</Text>
-            </Box>
+            <Text dimColor>
+              This includes files not tracked by git but excludes node_modules, dist, etc.
+            </Text>
             <Box marginTop={1}>
-              <Text dimColor>
-                Press Enter to accept, or describe changes needed:
-              </Text>
-            </Box>
-            <Box marginTop={1}>
-              <TextInput
-                value={aiChangeRequest}
-                onChange={setAIChangeRequest}
-                placeholder="e.g., 'also copy .env file' or press Enter to accept"
-              />
+              <Text>(y/n):</Text>
             </Box>
           </Box>
         </Box>
       )}
 
-      {generatingCommand && (
-        <Box borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Text color="yellow">
-            <Text bold>⏳ Generating command with AI...</Text>
-          </Text>
-        </Box>
-      )}
 
       {runningCommand && (
         <Box borderStyle="single" borderColor="blue" paddingX={1} marginTop={1}>
