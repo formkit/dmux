@@ -582,6 +582,7 @@ set -x
 3. **Preserve state**: Always update panes.json
 4. **Clean exits**: Use exit() properly in Ink
 5. **User feedback**: Show status messages for operations
+6. **State management**: Always use React Context, never use Redux
 
 ## Support & Contribution
 

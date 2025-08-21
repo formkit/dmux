@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
+import SimpleEnhancedInput from './SimpleEnhancedInput.js';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
@@ -60,7 +61,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     loadPanes();
     loadSettings();
     const interval = setInterval(loadPanes, 2000);
-    return () => clearInterval(interval);
+    
+    // Add cleanup handlers for process termination
+    const handleTermination = () => {
+      // Clear screen before exit
+      process.stdout.write('\x1b[2J\x1b[H');
+      process.stdout.write('\x1b[3J');
+      try {
+        execSync('tmux clear-history', { stdio: 'pipe' });
+      } catch {}
+      process.exit(0);
+    };
+    
+    process.on('SIGINT', handleTermination);
+    process.on('SIGTERM', handleTermination);
+    
+    return () => {
+      clearInterval(interval);
+      process.removeListener('SIGINT', handleTermination);
+      process.removeListener('SIGTERM', handleTermination);
+    };
   }, []);
 
   const loadSettings = async () => {
@@ -334,7 +354,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       execSync('tmux send-keys C-l', { stdio: 'pipe' });
     } catch {}
     
-    // Exit Ink app cleanly before creating tmux pane
+    // Exit Ink app cleanly before creating tmux pane (no cleanup needed here as we're re-launching)
     exit();
     
     // Wait for exit to complete
@@ -1084,6 +1104,23 @@ OR ` : ''}To provide the final command:
     }
   };
 
+  // Cleanup function for exit
+  const cleanExit = () => {
+    // Clear screen multiple times to ensure no artifacts
+    process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
+    process.stdout.write('\x1b[3J'); // Clear scrollback buffer
+    process.stdout.write('\n'.repeat(100)); // Push any remaining content off screen
+    
+    // Clear tmux pane
+    try {
+      execSync('tmux clear-history', { stdio: 'pipe' });
+      execSync('tmux send-keys C-l', { stdio: 'pipe' });
+    } catch {}
+    
+    // Exit the app
+    exit();
+  };
+
   useInput(async (input: string, key: any) => {
     if (isCreatingPane || generatingCommand || runningCommand) {
       // Disable input while performing operations
@@ -1148,14 +1185,7 @@ OR ` : ''}To provide the final command:
     }
     
     if (showNewPaneDialog) {
-      if (key.escape) {
-        setShowNewPaneDialog(false);
-        setNewPanePrompt('');
-      } else if (key.return) {
-        createNewPane(newPanePrompt);
-        setShowNewPaneDialog(false);
-        setNewPanePrompt('');
-      }
+      // EnhancedTextInput handles its own input events
       return;
     }
 
@@ -1196,7 +1226,7 @@ OR ` : ''}To provide the final command:
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(panes.length, selectedIndex + 1));
     } else if (input === 'q') {
-      exit();
+      cleanExit();
     } else if (input === 'n' || (key.return && selectedIndex === panes.length)) {
       setShowNewPaneDialog(true);
     } else if (input === 'j' && selectedIndex < panes.length) {
@@ -1317,11 +1347,26 @@ OR ` : ''}To provide the final command:
         <Box borderStyle="double" borderColor="cyan" paddingX={1}>
           <Box flexDirection="column">
             <Text>Enter initial Claude prompt (ESC to cancel):</Text>
-            <TextInput
-              value={newPanePrompt}
-              onChange={setNewPanePrompt}
-              placeholder="Optional prompt..."
-            />
+            <Text dimColor italic>Tip: Use @ to reference files in your project</Text>
+            <Text dimColor italic>Shortcuts: Ctrl+A (start), Ctrl+E (end), Alt+←/→ (word jump)</Text>
+            <Box marginTop={1}>
+              <SimpleEnhancedInput
+                value={newPanePrompt}
+                onChange={setNewPanePrompt}
+                placeholder="Optional prompt... (try @filename to reference files)"
+                onSubmit={() => {
+                  createNewPane(newPanePrompt);
+                  setShowNewPaneDialog(false);
+                  setNewPanePrompt('');
+                }}
+                onCancel={() => {
+                  setShowNewPaneDialog(false);
+                  setNewPanePrompt('');
+                }}
+                isActive={showNewPaneDialog}
+                workingDirectory={process.cwd()}
+              />
+            </Box>
           </Box>
         </Box>
       )}
