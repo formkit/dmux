@@ -25,6 +25,14 @@ interface DmuxPane {
   devUrl?: string;        // Detected dev server URL
 }
 
+interface PanePosition {
+  paneId: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 interface ProjectSettings {
   testCommand?: string;
   devCommand?: string;
@@ -143,6 +151,105 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     } catch {
       setPanes([]);
     }
+  };
+
+  const getPanePositions = (): PanePosition[] => {
+    try {
+      const output = execSync(
+        `tmux list-panes -F '#{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height}'`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      
+      return output.split('\n').map(line => {
+        const [paneId, left, top, width, height] = line.split(' ');
+        return {
+          paneId,
+          left: parseInt(left),
+          top: parseInt(top),
+          width: parseInt(width),
+          height: parseInt(height)
+        };
+      });
+    } catch {
+      return [];
+    }
+  };
+
+  const findPaneInDirection = (currentPane: DmuxPane, direction: 'up' | 'down' | 'left' | 'right'): DmuxPane | null => {
+    const positions = getPanePositions();
+    const currentPos = positions.find(p => p.paneId === currentPane.paneId);
+    
+    if (!currentPos) return null;
+    
+    // Calculate center point of current pane
+    const currentCenterX = currentPos.left + currentPos.width / 2;
+    const currentCenterY = currentPos.top + currentPos.height / 2;
+    
+    // Filter panes based on direction
+    const candidatePanes = panes.filter(pane => {
+      if (pane.paneId === currentPane.paneId) return false;
+      
+      const pos = positions.find(p => p.paneId === pane.paneId);
+      if (!pos) return false;
+      
+      const centerX = pos.left + pos.width / 2;
+      const centerY = pos.top + pos.height / 2;
+      
+      switch (direction) {
+        case 'up':
+          return centerY < currentCenterY;
+        case 'down':
+          return centerY > currentCenterY;
+        case 'left':
+          return centerX < currentCenterX;
+        case 'right':
+          return centerX > currentCenterX;
+        default:
+          return false;
+      }
+    });
+    
+    if (candidatePanes.length === 0) return null;
+    
+    // Find the closest pane in the given direction
+    let closestPane = candidatePanes[0];
+    let minDistance = Infinity;
+    
+    for (const pane of candidatePanes) {
+      const pos = positions.find(p => p.paneId === pane.paneId);
+      if (!pos) continue;
+      
+      const centerX = pos.left + pos.width / 2;
+      const centerY = pos.top + pos.height / 2;
+      
+      let distance: number;
+      
+      switch (direction) {
+        case 'up':
+        case 'down':
+          // For vertical movement, prioritize vertical alignment, then distance
+          const xDiff = Math.abs(centerX - currentCenterX);
+          const yDiff = Math.abs(centerY - currentCenterY);
+          // Weight horizontal difference less than vertical
+          distance = yDiff + xDiff * 0.3;
+          break;
+        case 'left':
+        case 'right':
+          // For horizontal movement, prioritize horizontal alignment, then distance
+          const xDiff2 = Math.abs(centerX - currentCenterX);
+          const yDiff2 = Math.abs(centerY - currentCenterY);
+          // Weight vertical difference less than horizontal
+          distance = xDiff2 + yDiff2 * 0.3;
+          break;
+      }
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestPane = pane;
+      }
+    }
+    
+    return closestPane;
   };
 
   const savePanes = async (newPanes: DmuxPane[]) => {
@@ -1349,11 +1456,71 @@ OR ` : ''}To provide the final command:
       return;
     }
 
-    if (key.upArrow) {
-      setSelectedIndex(Math.max(0, selectedIndex - 1));
-    } else if (key.downArrow) {
-      setSelectedIndex(Math.min(panes.length, selectedIndex + 1));
-    } else if (input === 'q') {
+    // Handle directional navigation with spatial awareness
+    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
+      const currentPane = panes[selectedIndex];
+      
+      // If on "New dmux pane" button, use simple navigation
+      if (selectedIndex === panes.length) {
+        if (key.upArrow && panes.length > 0) {
+          // Move to the last pane
+          setSelectedIndex(panes.length - 1);
+        } else if (key.leftArrow && panes.length > 0) {
+          // Move to the last pane
+          setSelectedIndex(panes.length - 1);
+        }
+        return;
+      }
+      
+      // Find the pane in the given direction
+      let targetPane: DmuxPane | null = null;
+      
+      if (key.upArrow) {
+        targetPane = findPaneInDirection(currentPane, 'up');
+      } else if (key.downArrow) {
+        targetPane = findPaneInDirection(currentPane, 'down');
+        // If no pane below and we're at bottom, go to "New dmux pane"
+        if (!targetPane) {
+          const positions = getPanePositions();
+          const currentPos = positions.find(p => p.paneId === currentPane.paneId);
+          if (currentPos) {
+            // Check if we're in the bottom row
+            const maxTop = Math.max(...positions.map(p => p.top));
+            if (currentPos.top >= maxTop - 5) { // Allow small tolerance
+              setSelectedIndex(panes.length);
+              return;
+            }
+          }
+        }
+      } else if (key.leftArrow) {
+        targetPane = findPaneInDirection(currentPane, 'left');
+      } else if (key.rightArrow) {
+        targetPane = findPaneInDirection(currentPane, 'right');
+        // If no pane to the right and we're at rightmost position, could go to "New dmux pane"
+        if (!targetPane) {
+          const positions = getPanePositions();
+          const currentPos = positions.find(p => p.paneId === currentPane.paneId);
+          if (currentPos) {
+            // Check if we're in the rightmost column
+            const maxLeft = Math.max(...positions.map(p => p.left));
+            if (currentPos.left >= maxLeft - 5) { // Allow small tolerance
+              setSelectedIndex(panes.length);
+              return;
+            }
+          }
+        }
+      }
+      
+      if (targetPane) {
+        const targetIndex = panes.findIndex(p => p.id === targetPane.id);
+        if (targetIndex !== -1) {
+          setSelectedIndex(targetIndex);
+        }
+      }
+      return;
+    }
+    
+    if (input === 'q') {
       cleanExit();
     } else if (input === 'n' || (key.return && selectedIndex === panes.length)) {
       setShowNewPaneDialog(true);
@@ -1624,7 +1791,7 @@ OR ` : ''}To provide the final command:
             Commands: [j]ump • [t]est • [d]ev • [o]pen • [x]close • [m]erge • [n]ew • [q]uit
           </Text>
           <Text dimColor>
-            Use ↑↓ arrows to navigate, Enter to select
+            Use arrow keys (↑↓←→) for spatial navigation, Enter to select
           </Text>
         </Box>
       )}

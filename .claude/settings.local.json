@@ -18,7 +18,8 @@
       "Bash(./dmux)",
       "Bash(echo $TMUX)",
       "Bash(tmux send-keys:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(tmux list-panes:*)"
     ],
     "deny": [],
     "ask": [],
