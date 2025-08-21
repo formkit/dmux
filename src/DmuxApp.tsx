@@ -672,6 +672,51 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     return `dmux-${Date.now()}`;
   };
 
+  const openInEditor = async () => {
+    try {
+      const os = require('os');
+      const fs = require('fs');
+      const tmpFile = path.join(os.tmpdir(), `dmux-prompt-${Date.now()}.md`);
+      
+      // Write current prompt to temp file
+      fs.writeFileSync(tmpFile, newPanePrompt || '# Enter your Claude prompt here\n\n');
+      
+      // Get editor from environment or use default
+      const editor = process.env.EDITOR || process.env.VISUAL || 'nano';
+      
+      // Clear screen and open editor
+      process.stdout.write('\x1b[2J\x1b[H');
+      
+      // Use spawn to open editor in foreground
+      const { spawn } = require('child_process');
+      const editorProcess = spawn(editor, [tmpFile], {
+        stdio: 'inherit',
+        shell: true
+      });
+      
+      editorProcess.on('close', (code: number) => {
+        // Read the file back
+        try {
+          const content = fs.readFileSync(tmpFile, 'utf8')
+            .replace(/^# Enter your Claude prompt here\s*\n*/m, '')
+            .trim();
+          setNewPanePrompt(content);
+          
+          // Clean up temp file
+          fs.unlinkSync(tmpFile);
+          
+          // Clear screen and return to dmux
+          process.stdout.write('\x1b[2J\x1b[H');
+        } catch (error) {
+          // If file read fails, just continue
+        }
+      });
+      
+    } catch (error) {
+      // If editor fails, just continue with inline input
+    }
+  };
+  
   const createNewPane = async (prompt: string) => {
     setIsCreatingPane(true);
     setStatusMessage('Generating slug...');
@@ -1787,7 +1832,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
     
     if (showNewPaneDialog) {
-      // EnhancedTextInput handles its own input events
+      if (key.escape) {
+        setShowNewPaneDialog(false);
+        setNewPanePrompt('');
+      } else if (key.ctrl && input === 'o') {
+        // Open in external editor
+        openInEditor();
+      }
+      // TextInput handles other input events
       return;
     }
 
@@ -1976,26 +2028,27 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       </Box>
 
       {showNewPaneDialog && (
-        <Box borderStyle="double" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="round" borderColor="gray" paddingX={1}>
           <Box flexDirection="column">
             <Text>Enter initial Claude prompt (ESC to cancel):</Text>
             <Box marginTop={1}>
-              <SimpleEnhancedInput
-                value={newPanePrompt}
-                onChange={setNewPanePrompt}
-                placeholder="Optional prompt... (@ to reference files)"
-                onSubmit={() => {
-                  createNewPane(newPanePrompt);
-                  setShowNewPaneDialog(false);
-                  setNewPanePrompt('');
-                }}
-                onCancel={() => {
-                  setShowNewPaneDialog(false);
-                  setNewPanePrompt('');
-                }}
-                isActive={showNewPaneDialog}
-                workingDirectory={process.cwd()}
-              />
+              <Box flexDirection="column">
+                <TextInput
+                  value={newPanePrompt}
+                  onChange={setNewPanePrompt}
+                  placeholder="Optional prompt... (@ to reference files)"
+                  onSubmit={() => {
+                    createNewPane(newPanePrompt);
+                    setShowNewPaneDialog(false);
+                    setNewPanePrompt('');
+                  }}
+                />
+                <Box marginTop={1}>
+                  <Text dimColor italic>
+                    Press Ctrl+O to open in $EDITOR for complex multi-line input
+                  </Text>
+                </Box>
+              </Box>
             </Box>
           </Box>
         </Box>
@@ -2051,7 +2104,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       )}
 
       {showCommandPrompt && (
-        <Box borderStyle="double" borderColor="magenta" paddingX={1} marginTop={1}>
+        <Box borderStyle="round" borderColor="gray" paddingX={1} marginTop={1}>
           <Box flexDirection="column">
             <Text color="magenta" bold>
               Configure {showCommandPrompt === 'test' ? 'Test' : 'Dev'} Command

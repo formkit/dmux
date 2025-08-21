@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { execSync } from 'child_process';
 import path from 'path';
+import stringWidth from 'string-width';
+import chalk from 'chalk';
 
 interface SimpleEnhancedInputProps {
   value: string;
@@ -34,10 +36,10 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   const [autocompleteStartPos, setAutocompleteStartPos] = useState(0);
   const [fileMatches, setFileMatches] = useState<FileMatch[]>([]);
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
-  const [pastedContent, setPastedContent] = useState<Map<number, string>>(new Map());
   const [displayValue, setDisplayValue] = useState(value);
   const { stdout } = useStdout();
-  const terminalWidth = stdout?.columns || 80; // Default to 80 if not available
+  const terminalWidth = stdout?.columns || 80;
+  const [pastedContent, setPastedContent] = useState<Map<number, string>>(new Map());
 
   // Update cursor when value changes externally
   useEffect(() => {
@@ -51,8 +53,12 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
 
   // Helper function to check if text looks like a paste that should be formatted
   const shouldFormatPaste = (text: string): boolean => {
-    // Format if it contains multiple lines or is very long
-    const hasMultipleLines = text.includes('\n');
+    // Only format if it's a large paste, not single newlines
+    // Single newline = user pressing shift+enter
+    // Multiple lines with content = likely a paste
+    if (text === '\n') return false; // Single newline is never a paste
+    
+    const hasMultipleLines = text.includes('\n') && text.length > 1;
     const isVeryLong = text.length > 100;
     // Check for code-like patterns that might break display
     const hasSpecialChars = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text);
@@ -277,6 +283,111 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     setCursorPosition(clampedPosition);
   };
 
+  // Gemini CLI-style buffer system with proper line tracking
+  const getBuffer = (text: string, width: number) => {
+    const lines: string[] = [];
+    let charPosition = 0;
+    const charToLineMap: Array<{ line: number; col: number }> = [];
+    
+    // Split by actual newlines first
+    const logicalLines = text.split('\n');
+    
+    for (let logicalIdx = 0; logicalIdx < logicalLines.length; logicalIdx++) {
+      const logicalLine = logicalLines[logicalIdx];
+      
+      if (logicalLine.length === 0) {
+        // Empty line
+        lines.push('');
+        charToLineMap[charPosition] = { line: lines.length - 1, col: 0 };
+        charPosition += 1; // for the newline
+      } else {
+        // Break this logical line into visual lines
+        let remaining = logicalLine;
+        let isFirstWrap = true;
+        
+        while (remaining.length > 0) {
+          let lineContent = '';
+          let charsUsed = 0;
+          
+          // Try to fit as many complete words as possible
+          const words = remaining.split(' ');
+          let wordIndex = 0;
+          
+          while (wordIndex < words.length) {
+            const word = words[wordIndex];
+            const separator = (wordIndex === 0 || lineContent === '') ? '' : ' ';
+            const testContent = lineContent + separator + word;
+            
+            if (stringWidth(testContent) <= width) {
+              lineContent = testContent;
+              charsUsed += (separator + word).length;
+              wordIndex++;
+            } else {
+              // This word doesn't fit
+              if (lineContent === '') {
+                // Word is longer than line width, break it
+                let charCount = 0;
+                for (let i = 0; i < word.length; i++) {
+                  const testChar = word.slice(0, i + 1);
+                  if (stringWidth(testChar) <= width) {
+                    charCount = i + 1;
+                  } else {
+                    break;
+                  }
+                }
+                lineContent = word.slice(0, Math.max(1, charCount));
+                charsUsed = lineContent.length;
+              }
+              break;
+            }
+          }
+          
+          // Add this visual line
+          lines.push(lineContent);
+          
+          // Map character positions to line/col
+          for (let i = 0; i < charsUsed; i++) {
+            charToLineMap[charPosition + i] = { 
+              line: lines.length - 1, 
+              col: i 
+            };
+          }
+          
+          // Move to next part
+          remaining = remaining.slice(charsUsed).trimStart();
+          charPosition += charsUsed;
+          
+          // Skip spaces that were trimmed
+          const originalRemaining = logicalLine.slice(charPosition - (logicalIdx === 0 ? 0 : logicalIdx));
+          const spacesToSkip = originalRemaining.length - remaining.length - charsUsed;
+          if (spacesToSkip > 0 && !isFirstWrap) {
+            charPosition += spacesToSkip;
+          }
+          isFirstWrap = false;
+        }
+      }
+      
+      // Add newline mapping if not last logical line
+      if (logicalIdx < logicalLines.length - 1) {
+        charToLineMap[charPosition] = { 
+          line: lines.length - 1, 
+          col: lines[lines.length - 1]?.length || 0 
+        };
+        charPosition += 1;
+      }
+    }
+    
+    // Handle cursor at end
+    if (charPosition <= text.length) {
+      charToLineMap[text.length] = { 
+        line: Math.max(0, lines.length - 1), 
+        col: lines[lines.length - 1]?.length || 0 
+      };
+    }
+    
+    return { lines, charToLineMap };
+  };
+
   const findWordBoundary = (text: string, position: number, direction: 'left' | 'right'): number => {
     const wordRegex = /\w/;
     let pos = position;
@@ -404,8 +515,13 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     
     if (key.shift && key.return) {
       // Insert newline for multiline input
-      // Make sure we're inserting at the correct position even with wrapped lines
-      insertText('\n', cursorPosition);
+      // Force insert a newline character directly into the value
+      const before = displayValue.slice(0, cursorPosition);
+      const after = displayValue.slice(cursorPosition);
+      const newValue = before + '\n' + after;
+      setDisplayValue(newValue);
+      onChange(newValue);
+      setCursorPosition(cursorPosition + 1);
       return;
     }
     
@@ -417,70 +533,54 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       return;
     }
 
-    // Line navigation with up/down arrows (when not in autocomplete)
+    // Buffer-based navigation like Gemini CLI
     if (!showAutocomplete && key.upArrow) {
-      // Move cursor up one line
-      const lines = displayValue.split('\n');
-      let currentPos = 0;
-      let lineIndex = 0;
-      let columnIndex = 0;
+      const inputWidth = Math.max(1, terminalWidth - 4);
+      const buffer = getBuffer(displayValue, inputWidth);
+      const currentPos = buffer.charToLineMap[cursorPosition] || { line: 0, col: 0 };
       
-      // Find current line and column
-      for (let i = 0; i < lines.length; i++) {
-        const lineLength = lines[i].length;
-        if (currentPos + lineLength >= cursorPosition) {
-          lineIndex = i;
-          columnIndex = cursorPosition - currentPos;
-          break;
+      if (currentPos.line > 0) {
+        const targetLine = currentPos.line - 1;
+        const targetLineLength = buffer.lines[targetLine].length;
+        const targetColumn = Math.min(currentPos.col, targetLineLength);
+        
+        // Find character position for this line/column
+        let newCursorPos = 0;
+        for (let charPos = 0; charPos < displayValue.length; charPos++) {
+          const mapped = buffer.charToLineMap[charPos];
+          if (mapped && mapped.line === targetLine && mapped.col === targetColumn) {
+            newCursorPos = charPos;
+            break;
+          }
         }
-        currentPos += lineLength + 1; // +1 for newline
-      }
-      
-      // Move to previous line if possible
-      if (lineIndex > 0) {
-        const prevLineLength = lines[lineIndex - 1].length;
-        const newColumn = Math.min(columnIndex, prevLineLength);
-        let newPos = 0;
-        for (let i = 0; i < lineIndex - 1; i++) {
-          newPos += lines[i].length + 1;
-        }
-        newPos += newColumn;
-        moveCursor(newPos);
+        moveCursor(newCursorPos);
       }
       return;
     }
     
     if (!showAutocomplete && key.downArrow) {
-      // Move cursor down one line
-      const lines = displayValue.split('\n');
-      let currentPos = 0;
-      let lineIndex = 0;
-      let columnIndex = 0;
+      const inputWidth = Math.max(1, terminalWidth - 4);
+      const buffer = getBuffer(displayValue, inputWidth);
+      const currentPos = buffer.charToLineMap[cursorPosition] || { line: 0, col: 0 };
       
-      // Find current line and column
-      for (let i = 0; i < lines.length; i++) {
-        const lineLength = lines[i].length;
-        if (currentPos + lineLength >= cursorPosition) {
-          lineIndex = i;
-          columnIndex = cursorPosition - currentPos;
-          break;
+      if (currentPos.line < buffer.lines.length - 1) {
+        const targetLine = currentPos.line + 1;
+        const targetLineLength = buffer.lines[targetLine].length;
+        const targetColumn = Math.min(currentPos.col, targetLineLength);
+        
+        // Find character position for this line/column
+        let newCursorPos = displayValue.length;
+        for (let charPos = 0; charPos <= displayValue.length; charPos++) {
+          const mapped = buffer.charToLineMap[charPos];
+          if (mapped && mapped.line === targetLine && mapped.col === targetColumn) {
+            newCursorPos = charPos;
+            break;
+          }
         }
-        currentPos += lineLength + 1; // +1 for newline
-      }
-      
-      // Move to next line if possible
-      if (lineIndex < lines.length - 1) {
-        const nextLineLength = lines[lineIndex + 1].length;
-        const newColumn = Math.min(columnIndex, nextLineLength);
-        let newPos = 0;
-        for (let i = 0; i <= lineIndex; i++) {
-          newPos += lines[i].length + 1;
-        }
-        newPos += newColumn;
-        moveCursor(newPos);
+        moveCursor(newCursorPos);
       } else {
         // At last line, move to end
-        moveCursor(value.length);
+        moveCursor(displayValue.length);
       }
       return;
     }
@@ -492,7 +592,10 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         const newPos = findWordBoundary(displayValue, cursorPosition, 'left');
         moveCursor(newPos);
       } else {
-        moveCursor(cursorPosition - 1);
+        // Regular left movement - skip over newlines
+        if (cursorPosition > 0) {
+          moveCursor(cursorPosition - 1);
+        }
       }
       return;
     }
@@ -503,7 +606,10 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         const newPos = findWordBoundary(displayValue, cursorPosition, 'right');
         moveCursor(newPos);
       } else {
-        moveCursor(cursorPosition + 1);
+        // Regular right movement - skip over newlines
+        if (cursorPosition < displayValue.length) {
+          moveCursor(cursorPosition + 1);
+        }
       }
       return;
     }
@@ -556,66 +662,46 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     }
   });
 
-  // Build display with cursor (handles multiline and wrapping)
+  // Gemini CLI-style display with proper buffer-based cursor calculation
   const getDisplayWithCursor = () => {
-    const before = displayValue.slice(0, cursorPosition);
-    const after = displayValue.slice(cursorPosition);
-    const cursorChar = after[0] || ' ';
-    const remaining = after.slice(1);
+    const inputWidth = Math.max(1, terminalWidth - 4);
+    const buffer = getBuffer(displayValue, inputWidth);
     
-    // Check if we have actual multiline content (with real newlines)
-    const hasNewlines = displayValue.includes('\n');
+    // Get cursor position from the character map
+    const cursorPos = buffer.charToLineMap[cursorPosition] || { line: 0, col: 0 };
+    const cursorLine = cursorPos.line;
+    const cursorColumn = cursorPos.col;
     
-    if (!hasNewlines) {
-      // Single logical line - let the terminal handle wrapping naturally
-      // Just render the text with cursor inline
+    
+    // Handle empty input
+    if (buffer.lines.length === 0 || (buffer.lines.length === 1 && buffer.lines[0] === '')) {
       return (
         <Box>
-          <Text>{before}</Text>
-          <Text inverse>{cursorChar}</Text>
-          <Text>{remaining}</Text>
+          <Text>{chalk.inverse(' ')}</Text>
+          {placeholder && <Text dimColor>{placeholder}</Text>}
         </Box>
       );
     }
     
-    // Multiple logical lines - handle each line separately
-    // Split only on actual newlines, let terminal handle wrapping
-    const logicalLines = displayValue.split('\n');
-    let charCount = 0;
-    let cursorLine = -1;
-    let cursorCol = 0;
     
-    // Find which logical line contains the cursor
-    for (let i = 0; i < logicalLines.length; i++) {
-      const lineLength = logicalLines[i].length;
-      if (charCount + lineLength >= cursorPosition) {
-        cursorLine = i;
-        cursorCol = cursorPosition - charCount;
-        break;
-      }
-      charCount += lineLength + 1; // +1 for newline
-    }
-    
-    // Render each logical line, letting terminal handle wrapping
     return (
       <Box flexDirection="column">
-        {logicalLines.map((line, lineIndex) => {
-          if (lineIndex === cursorLine) {
-            // This line has the cursor
-            const beforeCursor = line.slice(0, cursorCol);
-            const atCursor = line[cursorCol] || ' ';
-            const afterCursor = line.slice(cursorCol + 1);
+        {buffer.lines.map((line, idx) => {
+          if (idx === cursorLine) {
+            // Line with cursor - exact Gemini CLI approach
+            const beforeCursor = line.slice(0, cursorColumn);
+            const atCursor = line[cursorColumn] || ' ';
+            const afterCursor = line.slice(cursorColumn + 1);
             
             return (
-              <Box key={`line-${lineIndex}`}>
+              <Box key={idx}>
                 <Text>{beforeCursor}</Text>
-                <Text inverse>{atCursor}</Text>
+                <Text>{chalk.inverse(atCursor)}</Text>
                 <Text>{afterCursor}</Text>
               </Box>
             );
           } else {
-            // Regular line without cursor
-            return <Text key={`line-${lineIndex}`}>{line}</Text>;
+            return <Text key={idx}>{line}</Text>;
           }
         })}
       </Box>
