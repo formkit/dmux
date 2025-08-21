@@ -6,6 +6,10 @@ import chalk from 'chalk';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json');
 
 interface DmuxPane {
   id: string;
@@ -1515,13 +1519,19 @@ OR ` : ''}To provide the final command:
         </Box>
       )}
 
-      <Box marginTop={1} flexDirection="column">
-        <Text dimColor>
-          Commands: [j]ump • [t]est • [d]ev • [o]pen • [x]close • [m]erge • [n]ew • [q]uit
-        </Text>
-        <Text dimColor>
-          Use ↑↓ arrows to navigate, Enter to select
-        </Text>
+      {!showNewPaneDialog && !showCommandPrompt && (
+        <Box marginTop={1} flexDirection="column">
+          <Text dimColor>
+            Commands: [j]ump • [t]est • [d]ev • [o]pen • [x]close • [m]erge • [n]ew • [q]uit
+          </Text>
+          <Text dimColor>
+            Use ↑↓ arrows to navigate, Enter to select
+          </Text>
+        </Box>
+      )}
+
+      <Box marginTop={1}>
+        <Text dimColor>dmux v{packageJson.version}</Text>
       </Box>
     </Box>
   );
