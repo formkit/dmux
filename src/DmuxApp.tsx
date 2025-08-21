@@ -1372,13 +1372,11 @@ OR ` : ''}To provide the final command:
         <Box borderStyle="double" borderColor="cyan" paddingX={1}>
           <Box flexDirection="column">
             <Text>Enter initial Claude prompt (ESC to cancel):</Text>
-            <Text dimColor italic>Tip: Use @ to reference files in your project</Text>
-            <Text dimColor italic>Shortcuts: Ctrl+A (start), Ctrl+E (end), Alt+←/→ (word jump)</Text>
             <Box marginTop={1}>
               <SimpleEnhancedInput
                 value={newPanePrompt}
                 onChange={setNewPanePrompt}
-                placeholder="Optional prompt... (try @filename to reference files)"
+                placeholder="Optional prompt... (@ to reference files)"
                 onSubmit={() => {
                   createNewPane(newPanePrompt);
                   setShowNewPaneDialog(false);

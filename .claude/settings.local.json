@@ -14,7 +14,10 @@
       "Bash(npx tsc:*)",
       "Bash(npx typescript:*)",
       "Bash(npm ls:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(./dmux)",
+      "Bash(echo $TMUX)",
+      "Bash(tmux send-keys:*)"
     ],
     "deny": [],
     "ask": [],
