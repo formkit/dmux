@@ -678,7 +678,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     const slug = await generateSlug(prompt);
     
-    setStatusMessage('Creating new pane...');
+    setStatusMessage(`Creating worktree: ${slug}...`);
     
     // Get git root directory for consistent worktree placement
     let projectRoot: string;
@@ -752,18 +752,32 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     applySmartLayout(newPaneCount);
     
     // Create git worktree and cd into it
+    // This MUST happen before launching Claude to ensure we're in the right directory
     try {
-      // Send the git worktree command
-      execSync(`tmux send-keys -t '${paneInfo}' 'git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"' Enter`, { stdio: 'pipe' });
+      // First, create the worktree and cd into it as a single command
+      // Use ; instead of && to ensure cd runs even if worktree already exists
+      const worktreeCmd = `git worktree add "${worktreePath}" -b ${slug} 2>/dev/null ; cd "${worktreePath}"`;
+      execSync(`tmux send-keys -t '${paneInfo}' '${worktreeCmd}' Enter`, { stdio: 'pipe' });
       
-      // Wait for worktree creation to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Wait longer for worktree creation and cd to complete
+      // This is critical - if we don't wait long enough, Claude will start in the wrong directory
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      
+      // Verify we're in the worktree directory by sending pwd command  
+      execSync(`tmux send-keys -t '${paneInfo}' 'echo "Worktree created at:" && pwd' Enter`, { stdio: 'pipe' });
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setStatusMessage('Worktree created, launching Claude...');
     } catch (error) {
-      // Log error but continue
-      setStatusMessage(`Warning: Could not create worktree: ${error}`);
+      // Log error but continue - worktree creation is essential
+      setStatusMessage(`Warning: Worktree issue: ${error}`);
+      // Even if worktree creation failed, try to cd to the directory in case it exists
+      execSync(`tmux send-keys -t '${paneInfo}' 'cd "${worktreePath}" 2>/dev/null || (echo "ERROR: Failed to create/enter worktree ${slug}" && pwd)' Enter`, { stdio: 'pipe' });
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    // Prepare the Claude command
+    // NOW prepare and send the Claude command
+    // Claude should always be launched AFTER we're in the worktree directory
     let claudeCmd: string;
     if (prompt && prompt.trim()) {
       const escapedPrompt = prompt
@@ -776,7 +790,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       claudeCmd = `claude --permission-mode=acceptEdits`;
     }
     
-    // Send command to new pane
+    // Send Claude command to new pane
     const escapedCmd = claudeCmd.replace(/'/g, "'\\''");
     execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
     execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });

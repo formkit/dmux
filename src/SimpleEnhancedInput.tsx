@@ -257,8 +257,8 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     const newValue = before + processedText + after;
     onChange(newValue);
     
-    // When inserting newlines, ensure cursor position is correct
-    // This prevents the issue where wrapped lines cause incorrect cursor positioning
+    // Update cursor position - just move by the length of inserted text
+    // Don't add any special handling for wrapping
     const newCursorPos = position + processedText.length;
     setCursorPosition(newCursorPos);
   };
@@ -536,8 +536,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       // Detect paste by checking if input is unusually long or contains special characters
       const isPaste = input.length > 1 && shouldFormatPaste(input);
       
-      // Don't filter input here - just use it as-is
-      // The terminal wrapping shouldn't introduce actual newlines
+      // Use input as-is - terminal wrapping is visual only, not actual newlines
       const filteredInput = input;
       
       // Check for @ symbol to trigger autocomplete
@@ -564,128 +563,48 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     const cursorChar = after[0] || ' ';
     const remaining = after.slice(1);
     
-    // Split text into visual lines accounting for terminal width
-    const splitIntoVisualLines = (text: string): string[] => {
-      const visualLines: string[] = [];
-      const logicalLines = text.split('\n');
-      const wrapWidth = Math.max(1, terminalWidth - 2); // Leave room for cursor and border, ensure min width of 1
-      
-      for (let lineIdx = 0; lineIdx < logicalLines.length; lineIdx++) {
-        const logicalLine = logicalLines[lineIdx];
-        
-        if (logicalLine.length === 0) {
-          // Empty line
-          visualLines.push('');
-        } else {
-          // Split long lines into wrapped visual lines
-          for (let i = 0; i < logicalLine.length; i += wrapWidth) {
-            const chunk = logicalLine.slice(i, i + wrapWidth);
-            visualLines.push(chunk);
-          }
-        }
-      }
-      
-      return visualLines;
-    };
+    // Check if we have actual multiline content (with real newlines)
+    const hasNewlines = displayValue.includes('\n');
     
-    // Calculate visual cursor position
-    const calculateVisualCursorPosition = () => {
-      let totalCharsProcessed = 0;
-      let currentVisualLine = 0;
-      
-      const logicalLines = displayValue.split('\n');
-      const wrapWidth = Math.max(1, terminalWidth - 2); // Ensure wrapWidth is at least 1
-      
-      for (let logicalLineIdx = 0; logicalLineIdx < logicalLines.length; logicalLineIdx++) {
-        const logicalLine = logicalLines[logicalLineIdx];
-        const lineStartPos = totalCharsProcessed;
-        const lineEndPos = lineStartPos + logicalLine.length;
-        
-        // Check if cursor is in this logical line
-        if (cursorPosition >= lineStartPos && cursorPosition <= lineEndPos) {
-          const positionInLogicalLine = cursorPosition - lineStartPos;
-          
-          // Calculate visual position within this logical line
-          if (logicalLine.length === 0) {
-            // Empty line
-            return { visualLine: currentVisualLine, visualColumn: 0 };
-          }
-          
-          const visualLineWithinLogical = Math.floor(positionInLogicalLine / wrapWidth);
-          const visualColumn = positionInLogicalLine % wrapWidth;
-          
-          return {
-            visualLine: currentVisualLine + visualLineWithinLogical,
-            visualColumn: visualColumn
-          };
-        }
-        
-        // Move past this logical line
-        if (logicalLine.length === 0) {
-          currentVisualLine += 1;
-        } else {
-          const visualLinesForThisLogicalLine = Math.ceil(Math.max(1, logicalLine.length) / wrapWidth);
-          currentVisualLine += visualLinesForThisLogicalLine;
-        }
-        
-        totalCharsProcessed += logicalLine.length + 1; // +1 for the newline character
-      }
-      
-      // Cursor at end of text - make sure we return valid line number
-      const maxVisualLine = Math.max(0, visualLines.length - 1);
-      return { visualLine: Math.min(currentVisualLine - 1, maxVisualLine), visualColumn: 0 };
-    };
-    
-    // Get visual lines for the entire text
-    const visualLines = splitIntoVisualLines(displayValue);
-    const { visualLine: cursorVisualLine, visualColumn: cursorVisualColumn } = calculateVisualCursorPosition();
-    
-    // Build the display with proper cursor positioning
-    if (visualLines.length > 1) {
+    if (!hasNewlines) {
+      // Single logical line - let the terminal handle wrapping naturally
+      // Just render the text with cursor inline
       return (
-        <Box flexDirection="column">
-          {visualLines.map((line, lineIndex) => {
-            if (lineIndex === cursorVisualLine) {
-              // This is the line with the cursor
-              const beforeCursor = line.slice(0, cursorVisualColumn);
-              const atCursor = line[cursorVisualColumn] || ' ';
-              const afterCursor = line.slice(cursorVisualColumn + 1);
-              
-              return (
-                <Box key={`line-${lineIndex}`}>
-                  <Text>{beforeCursor}</Text>
-                  <Text inverse>{atCursor}</Text>
-                  <Text>{afterCursor}</Text>
-                </Box>
-              );
-            } else {
-              // Regular line without cursor
-              return <Text key={`line-${lineIndex}`}>{line}</Text>;
-            }
-          })}
+        <Box>
+          <Text>{before}</Text>
+          <Text inverse>{cursorChar}</Text>
+          <Text>{remaining}</Text>
         </Box>
       );
     }
     
-    // Single line display (no wrapping needed)
-    if (displayValue.length < terminalWidth - 2) {
-      return (
-        <>
-          <Text>{before}</Text>
-          <Text inverse>{cursorChar}</Text>
-          <Text>{remaining}</Text>
-        </>
-      );
+    // Multiple logical lines - handle each line separately
+    // Split only on actual newlines, let terminal handle wrapping
+    const logicalLines = displayValue.split('\n');
+    let charCount = 0;
+    let cursorLine = -1;
+    let cursorCol = 0;
+    
+    // Find which logical line contains the cursor
+    for (let i = 0; i < logicalLines.length; i++) {
+      const lineLength = logicalLines[i].length;
+      if (charCount + lineLength >= cursorPosition) {
+        cursorLine = i;
+        cursorCol = cursorPosition - charCount;
+        break;
+      }
+      charCount += lineLength + 1; // +1 for newline
     }
     
-    // Single line but needs wrapping
+    // Render each logical line, letting terminal handle wrapping
     return (
       <Box flexDirection="column">
-        {visualLines.map((line, lineIndex) => {
-          if (lineIndex === cursorVisualLine) {
-            const beforeCursor = line.slice(0, cursorVisualColumn);
-            const atCursor = line[cursorVisualColumn] || ' ';
-            const afterCursor = line.slice(cursorVisualColumn + 1);
+        {logicalLines.map((line, lineIndex) => {
+          if (lineIndex === cursorLine) {
+            // This line has the cursor
+            const beforeCursor = line.slice(0, cursorCol);
+            const atCursor = line[cursorCol] || ' ';
+            const afterCursor = line.slice(cursorCol + 1);
             
             return (
               <Box key={`line-${lineIndex}`}>
@@ -695,6 +614,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
               </Box>
             );
           } else {
+            // Regular line without cursor
             return <Text key={`line-${lineIndex}`}>{line}</Text>;
           }
         })}
