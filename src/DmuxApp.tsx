@@ -162,9 +162,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   };
 
-<<<<<<< HEAD
-  const callClaudeCode = async (prompt: string): Promise<string | null> => {
-=======
   const findClaudeCommand = async (): Promise<string | null> => {
     // Strategy 1: Try to execute claude directly (in case it's in PATH)
     try {
@@ -224,14 +221,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     return null;
   };
 
-  const generateSlug = async (prompt: string): Promise<string> => {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    
-    if (!apiKey || !prompt) {
-      return `dmux-${Date.now()}`;
-    }
-
->>>>>>> auto-test-dev
+  const callClaudeCode = async (prompt: string): Promise<string | null> => {
     try {
       // Use a simpler approach: pipe the prompt via stdin and capture output
       const result = execSync(

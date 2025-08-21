@@ -13,7 +13,8 @@
       "Bash(pnpm:*)",
       "Bash(npx tsc:*)",
       "Bash(npx typescript:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": [],
