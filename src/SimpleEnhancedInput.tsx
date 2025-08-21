@@ -402,18 +402,18 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       return;
     }
     
+    if (key.shift && key.return) {
+      // Insert newline for multiline input
+      // Make sure we're inserting at the correct position even with wrapped lines
+      insertText('\n', cursorPosition);
+      return;
+    }
+    
     if (key.return && !key.shift) {
       // Get the actual value with pasted content restored before submitting
       const actualValue = getActualValue();
       onChange(actualValue);
       onSubmit?.();
-      return;
-    }
-    
-    if (key.return && key.shift) {
-      // Insert newline for multiline input
-      // Make sure we're inserting at the correct position even with wrapped lines
-      insertText('\n', cursorPosition);
       return;
     }
 
@@ -536,9 +536,9 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
       // Detect paste by checking if input is unusually long or contains special characters
       const isPaste = input.length > 1 && shouldFormatPaste(input);
       
-      // Prevent inserting newlines that aren't explicitly requested
-      // This fixes the issue where wrapped lines cause unintended newlines
-      const filteredInput = isPaste ? input : input.replace(/[\r\n]/g, '');
+      // Don't filter input here - just use it as-is
+      // The terminal wrapping shouldn't introduce actual newlines
+      const filteredInput = input;
       
       // Check for @ symbol to trigger autocomplete
       if (filteredInput === '@') {
