@@ -437,57 +437,65 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     // Monitor for Claude Code trust prompt and auto-respond
     const autoApproveTrust = async () => {
-      // Give Claude time to start and potentially show the trust prompt
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const maxChecks = 50; // 50 checks * 100ms = 5 seconds
+      const checkInterval = 100; // Check every 100ms
       
-      try {
-        // Capture the pane content to check for trust prompt
-        const paneContent = execSync(
-          `tmux capture-pane -t '${paneInfo}' -p`,
-          { encoding: 'utf-8', stdio: 'pipe' }
-        );
+      // Check for various versions of the trust prompt
+      const trustPromptPatterns = [
+        /Do you trust the files in this folder\?/i,
+        /Trust the files in this workspace\?/i,
+        /Do you trust the authors of the files/i,
+        /Do you want to trust this workspace\?/i,
+        /trust.*files.*folder/i,
+        /trust.*workspace/i,
+        /Do you trust/i,
+        /Trust this folder/i
+      ];
+      
+      for (let i = 0; i < maxChecks; i++) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
         
-        // Check for various versions of the trust prompt
-        const trustPromptPatterns = [
-          /Do you trust the files in this folder\?/i,
-          /Trust the files in this workspace\?/i,
-          /Do you trust the authors of the files/i,
-          /Do you want to trust this workspace\?/i,
-          /trust.*files.*folder/i,
-          /trust.*workspace/i
-        ];
-        
-        const hasTrustPrompt = trustPromptPatterns.some(pattern => 
-          pattern.test(paneContent)
-        );
-        
-        if (hasTrustPrompt) {
-          // Auto-respond with Enter (yes) to the trust prompt
-          execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
-          
-          // Optionally wait a bit more and check if we need to send the command again
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Check if Claude is now ready (no longer showing trust prompt)
-          const updatedContent = execSync(
+        try {
+          // Capture the pane content to check for trust prompt
+          const paneContent = execSync(
             `tmux capture-pane -t '${paneInfo}' -p`,
             { encoding: 'utf-8', stdio: 'pipe' }
           );
           
-          // If the trust prompt is gone but Claude hasn't started processing the prompt,
-          // we might need to resend the command
-          if (!trustPromptPatterns.some(p => p.test(updatedContent)) && 
-              !updatedContent.includes(prompt.substring(0, 20))) {
-            // Claude might need the command again after trust approval
-            // This handles cases where the trust dialog cleared the initial command
-            if (prompt && prompt.trim()) {
-              execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
-              execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+          const hasTrustPrompt = trustPromptPatterns.some(pattern => 
+            pattern.test(paneContent)
+          );
+          
+          if (hasTrustPrompt) {
+            // Auto-respond with Enter (yes) to the trust prompt
+            execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+            
+            // Wait a bit and check if we need to send the command again
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Check if Claude is now ready (no longer showing trust prompt)
+            const updatedContent = execSync(
+              `tmux capture-pane -t '${paneInfo}' -p`,
+              { encoding: 'utf-8', stdio: 'pipe' }
+            );
+            
+            // If the trust prompt is gone but Claude hasn't started processing the prompt,
+            // we might need to resend the command
+            if (!trustPromptPatterns.some(p => p.test(updatedContent))) {
+              // Claude is past the trust prompt
+              if (prompt && prompt.trim() && !updatedContent.includes(prompt.substring(0, Math.min(20, prompt.length)))) {
+                // Claude might need the command again after trust approval
+                // This handles cases where the trust dialog cleared the initial command
+                execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
+                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+              }
+              // We handled the trust prompt, stop checking
+              break;
             }
           }
+        } catch (error) {
+          // Ignore errors in auto-approval, it's a best-effort feature
         }
-      } catch (error) {
-        // Ignore errors in auto-approval, it's a best-effort feature
       }
     };
     
@@ -519,10 +527,42 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       // Ignore if setting title fails
     }
     
-    // Small delay to ensure pane is fully established before re-launching
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Ensure the original pane is ready for input by checking for a shell prompt
+    let paneReady = false;
+    const maxWaitAttempts = 20; // 20 * 100ms = 2 seconds max wait
     
-    // Re-launch dmux in the original pane
+    for (let i = 0; i < maxWaitAttempts; i++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      try {
+        // Check if the pane has a shell prompt ($ or # or % or >)
+        const paneContent = execSync(
+          `tmux capture-pane -t '${originalPaneId}' -p | tail -5`,
+          { encoding: 'utf-8', stdio: 'pipe' }
+        );
+        
+        // Look for common shell prompt indicators
+        if (paneContent.match(/[$#%>]\s*$/m) || paneContent.match(/\n\s*$/)) {
+          paneReady = true;
+          break;
+        }
+      } catch {
+        // If we can't check, assume it's ready after a few attempts
+        if (i > 5) {
+          paneReady = true;
+          break;
+        }
+      }
+    }
+    
+    // If still not ready, add a small extra delay
+    if (!paneReady) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
+    // Clear any partial input and re-launch dmux in the original pane
+    execSync(`tmux send-keys -t '${originalPaneId}' C-c`, { stdio: 'pipe' }); // Clear any partial input
+    await new Promise(resolve => setTimeout(resolve, 50));
     execSync(`tmux send-keys -t '${originalPaneId}' 'dmux' Enter`, { stdio: 'pipe' });
   };
 
