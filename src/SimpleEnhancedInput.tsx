@@ -28,7 +28,7 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   isActive = true,
   workingDirectory = process.cwd()
 }) => {
-  const [cursorPosition, setCursorPosition] = useState(value.length);
+  const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
   const [autocompleteStartPos, setAutocompleteStartPos] = useState(0);
@@ -37,7 +37,12 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
 
   // Update cursor when value changes externally
   useEffect(() => {
-    setCursorPosition(value.length);
+    // Only update cursor to end if value actually changed and we're not already editing
+    if (value.length > 0 && cursorPosition === 0) {
+      // This is initial value, keep cursor at 0
+    } else if (value === '') {
+      setCursorPosition(0);
+    }
   }, [value]);
 
   // Search for files when autocomplete query changes or when @ is typed
@@ -320,6 +325,9 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
         }
         newPos += newColumn;
         moveCursor(newPos);
+      } else {
+        // At last line, move to end
+        moveCursor(value.length);
       }
       return;
     }
@@ -467,8 +475,8 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
           getDisplayWithCursor()
         ) : (
           <>
-            {placeholder && <Text dimColor>{placeholder}</Text>}
             <Text inverse> </Text>
+            {placeholder && <Text dimColor>{placeholder}</Text>}
           </>
         )}
       </Box>
