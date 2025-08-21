@@ -68,11 +68,22 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [runningCommand, setRunningCommand] = useState(false);
   const { exit } = useApp();
 
+  // Track terminal dimensions for responsive layout
+  const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
+  
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
     loadPanes();
     loadSettings();
     const interval = setInterval(loadPanes, 2000);
+    
+    // Handle terminal resize
+    const handleResize = () => {
+      setTerminalWidth(process.stdout.columns || 80);
+    };
+    
+    // Add resize listener
+    process.stdout.on('resize', handleResize);
     
     // Add cleanup handlers for process termination
     const handleTermination = () => {
@@ -90,6 +101,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     return () => {
       clearInterval(interval);
+      process.stdout.removeListener('resize', handleResize);
       process.removeListener('SIGINT', handleTermination);
       process.removeListener('SIGTERM', handleTermination);
     };
@@ -127,10 +139,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           
           // Check if our pane ID exists in the list
           if (paneIds.includes(pane.paneId)) {
-            // Update pane title while we're at it
-            const paneTitle = pane.prompt ? pane.prompt.substring(0, 30) : pane.slug;
+            // Update pane title to match the slug
             try {
-              execSync(`tmux select-pane -t '${pane.paneId}' -T "${paneTitle}"`, { stdio: 'pipe' });
+              execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
             } catch {
               // Ignore if setting title fails
             }
@@ -173,6 +184,87 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     } catch {
       return [];
     }
+  };
+
+  // Calculate the visual grid position of cards based on their index
+  const getCardGridPosition = (index: number): { row: number; col: number } => {
+    // Cards are displayed in a flexbox with wrapping
+    // With card width of 35 and typical terminal width of 80-120, we get 2-3 cards per row
+    const cardWidth = 35 + 2; // Card width plus gap
+    const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
+    
+    const row = Math.floor(index / cardsPerRow);
+    const col = index % cardsPerRow;
+    
+    return { row, col };
+  };
+
+  const findCardInDirection = (currentIndex: number, direction: 'up' | 'down' | 'left' | 'right'): number | null => {
+    const totalItems = panes.length + 1; // +1 for "New dmux pane" button
+    const currentPos = getCardGridPosition(currentIndex);
+    
+    // Calculate cards per row based on current terminal width
+    const cardWidth = 35 + 2; // Card width plus gap
+    const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
+    
+    let targetIndex: number | null = null;
+    
+    switch (direction) {
+      case 'up':
+        // Move up one row, same column
+        if (currentPos.row > 0) {
+          targetIndex = (currentPos.row - 1) * cardsPerRow + currentPos.col;
+          // Make sure target exists
+          if (targetIndex >= totalItems) {
+            // Try to find the last item in the row above
+            targetIndex = Math.min((currentPos.row - 1) * cardsPerRow + cardsPerRow - 1, totalItems - 1);
+          }
+        }
+        break;
+        
+      case 'down':
+        // Move down one row, same column
+        targetIndex = (currentPos.row + 1) * cardsPerRow + currentPos.col;
+        if (targetIndex >= totalItems) {
+          // If moving down from last row, try to go to "New dmux pane" if not already there
+          if (currentIndex < totalItems - 1) {
+            targetIndex = totalItems - 1;
+          } else {
+            targetIndex = null;
+          }
+        }
+        break;
+        
+      case 'left':
+        // Move left one column, same row
+        if (currentPos.col > 0) {
+          targetIndex = currentIndex - 1;
+        } else if (currentPos.row > 0) {
+          // Wrap to end of previous row
+          targetIndex = currentPos.row * cardsPerRow - 1;
+          if (targetIndex >= totalItems) {
+            targetIndex = totalItems - 1;
+          }
+        }
+        break;
+        
+      case 'right':
+        // Move right one column, same row
+        if (currentPos.col < cardsPerRow - 1 && currentIndex < totalItems - 1) {
+          targetIndex = currentIndex + 1;
+        } else if ((currentPos.row + 1) * cardsPerRow < totalItems) {
+          // Wrap to start of next row
+          targetIndex = (currentPos.row + 1) * cardsPerRow;
+        }
+        break;
+    }
+    
+    // Validate target index
+    if (targetIndex !== null && targetIndex >= 0 && targetIndex < totalItems) {
+      return targetIndex;
+    }
+    
+    return null;
   };
 
   const findPaneInDirection = (currentPane: DmuxPane, direction: 'up' | 'down' | 'left' | 'right'): DmuxPane | null => {
@@ -491,6 +583,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
     );
     
+    // Enable pane borders to show titles
+    try {
+      execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+    } catch {
+      // Ignore if already set or fails
+    }
+    
     // Create new pane
     const paneInfo = execSync(
       `tmux split-window -h -P -F '#{pane_id}'`,
@@ -500,10 +599,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     // Wait for pane creation to settle
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Set pane title based on prompt or slug
-    const paneTitle = prompt ? prompt.substring(0, 30) : slug;
+    // Set pane title to match the slug
     try {
-      execSync(`tmux select-pane -t '${paneInfo}' -T "${paneTitle}"`, { stdio: 'pipe' });
+      execSync(`tmux select-pane -t '${paneInfo}' -T "${slug}"`, { stdio: 'pipe' });
     } catch {
       // Ignore if setting title fails
     }
@@ -675,6 +773,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
 
   const jumpToPane = (paneId: string) => {
     try {
+      // Enable pane borders to show titles (if not already enabled)
+      try {
+        execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+      } catch {
+        // Ignore if already set or fails
+      }
+      
       execSync(`tmux select-pane -t '${paneId}'`, { stdio: 'pipe' });
       setStatusMessage('Jumped to pane');
       setTimeout(() => setStatusMessage(''), 2000);
@@ -1456,66 +1561,22 @@ OR ` : ''}To provide the final command:
       return;
     }
 
-    // Handle directional navigation with spatial awareness
+    // Handle directional navigation with spatial awareness based on card grid layout
     if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      const currentPane = panes[selectedIndex];
-      
-      // If on "New dmux pane" button, use simple navigation
-      if (selectedIndex === panes.length) {
-        if (key.upArrow && panes.length > 0) {
-          // Move to the last pane
-          setSelectedIndex(panes.length - 1);
-        } else if (key.leftArrow && panes.length > 0) {
-          // Move to the last pane
-          setSelectedIndex(panes.length - 1);
-        }
-        return;
-      }
-      
-      // Find the pane in the given direction
-      let targetPane: DmuxPane | null = null;
+      let targetIndex: number | null = null;
       
       if (key.upArrow) {
-        targetPane = findPaneInDirection(currentPane, 'up');
+        targetIndex = findCardInDirection(selectedIndex, 'up');
       } else if (key.downArrow) {
-        targetPane = findPaneInDirection(currentPane, 'down');
-        // If no pane below and we're at bottom, go to "New dmux pane"
-        if (!targetPane) {
-          const positions = getPanePositions();
-          const currentPos = positions.find(p => p.paneId === currentPane.paneId);
-          if (currentPos) {
-            // Check if we're in the bottom row
-            const maxTop = Math.max(...positions.map(p => p.top));
-            if (currentPos.top >= maxTop - 5) { // Allow small tolerance
-              setSelectedIndex(panes.length);
-              return;
-            }
-          }
-        }
+        targetIndex = findCardInDirection(selectedIndex, 'down');
       } else if (key.leftArrow) {
-        targetPane = findPaneInDirection(currentPane, 'left');
+        targetIndex = findCardInDirection(selectedIndex, 'left');
       } else if (key.rightArrow) {
-        targetPane = findPaneInDirection(currentPane, 'right');
-        // If no pane to the right and we're at rightmost position, could go to "New dmux pane"
-        if (!targetPane) {
-          const positions = getPanePositions();
-          const currentPos = positions.find(p => p.paneId === currentPane.paneId);
-          if (currentPos) {
-            // Check if we're in the rightmost column
-            const maxLeft = Math.max(...positions.map(p => p.left));
-            if (currentPos.left >= maxLeft - 5) { // Allow small tolerance
-              setSelectedIndex(panes.length);
-              return;
-            }
-          }
-        }
+        targetIndex = findCardInDirection(selectedIndex, 'right');
       }
       
-      if (targetPane) {
-        const targetIndex = panes.findIndex(p => p.id === targetPane.id);
-        if (targetIndex !== -1) {
-          setSelectedIndex(targetIndex);
-        }
+      if (targetIndex !== null) {
+        setSelectedIndex(targetIndex);
       }
       return;
     }
@@ -1793,6 +1854,17 @@ OR ` : ''}To provide the final command:
           <Text dimColor>
             Use arrow keys (↑↓←→) for spatial navigation, Enter to select
           </Text>
+          {/* Debug info - can be removed after testing */}
+          {process.env.DEBUG_DMUX && (
+            <Text dimColor>
+              Grid: {Math.max(1, Math.floor(terminalWidth / 37))} cols × {Math.ceil((panes.length + 1) / Math.max(1, Math.floor(terminalWidth / 37)))} rows | 
+              Selected: {(() => {
+                const pos = getCardGridPosition(selectedIndex);
+                return ` row ${pos.row}, col ${pos.col}`;
+              })()} | 
+              Terminal: {terminalWidth}w
+            </Text>
+          )}
         </Box>
       )}
 

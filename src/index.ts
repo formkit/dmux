@@ -58,6 +58,8 @@ class Dmux {
         console.log(chalk.yellow(`Creating new tmux session for project: ${this.projectName}...`));
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
+        // Enable pane borders to show titles
+        execSync(`tmux set-option -t ${this.sessionName} pane-border-status top`, { stdio: 'inherit' });
         // Set pane title for the main dmux pane
         execSync(`tmux select-pane -t ${this.sessionName} -T "dmux-${this.projectName}"`, { stdio: 'inherit' });
         // Send dmux command to the new session
@@ -65,6 +67,13 @@ class Dmux {
       }
       execSync(`tmux attach-session -t ${this.sessionName}`, { stdio: 'inherit' });
       return;
+    }
+
+    // Enable pane borders to show titles
+    try {
+      execSync(`tmux set-option pane-border-status top`, { stdio: 'pipe' });
+    } catch {
+      // Ignore if it fails
     }
 
     // Set pane title for the current pane running dmux
