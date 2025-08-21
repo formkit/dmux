@@ -129,25 +129,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           );
           
           // Pattern detection for Claude Code states
-          // Working patterns - Claude is processing (very forgiving)
+          // Working patterns - Claude is processing
+          // The ONLY reliable indicator is "(esc to interrupt)"
           const workingPatterns = [
-            /esc to interrupt/i,  // Most reliable indicator
-            /✻|✢|✽|·|✳|⚡|⏳|🔄|🔍|📝|💭|🤔/,  // Loading symbols and emojis
-            /⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/,  // Braille spinner characters
-            /\bcooking\b/i,  // "Cooking..." message
-            /\bthinking\b/i,
-            /\bprocessing\b/i,
-            /\banalyzing\b/i,
-            /\bworking\b/i,
-            /\bgenerating\b/i,
-            /\bwriting\b/i,
-            /\breading\b/i,
-            /\bsearching\b/i,
-            /\bloading\b/i,
-            /\bRunning\b/i,
-            /⏺|⏸|⏵|◀|▶/,  // Media symbols that might appear
-            /\.\.\./,  // Three dots often indicate processing
+            /esc to interrupt/i,  // The ONLY reliable indicator that Claude is actively working
           ];
+          
+          // Extract last few lines to check for patterns
+          const lines = captureOutput.split('\n');
+          const lastLines = lines.slice(-10).join('\n');
+          
+          // Check if Claude's input box is present (waiting for input)
+          const hasInputBox = /╭─+╮/.test(lastLines) && /╰─+╯/.test(lastLines) && /│\s+>\s+.*│/.test(lastLines);
           
           // Permission/attention patterns - needs user input (very forgiving)
           const attentionPatterns = [
@@ -179,7 +172,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           const isWorking = workingPatterns.some(pattern => pattern.test(captureOutput));
           
           // Check if Claude needs attention
-          const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput));
+          const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput)) || hasInputBox;
           
           // Determine status - working takes precedence
           let newStatus: 'working' | 'waiting' | 'idle' = 'idle';
@@ -190,8 +183,27 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
             newStatus = 'waiting';
           }
           
-          // Additional check: if we see "accept edits" without other working indicators, it's waiting
+          // Additional checks for specific Claude states
+          // If we see "accept edits" without other working indicators, it's waiting
           if (/accept edits/i.test(captureOutput) && !/esc to interrupt/i.test(captureOutput)) {
+            newStatus = 'waiting';
+          }
+          
+          // If Claude's input box is visible and no working indicators, it's waiting for input
+          if (hasInputBox && !isWorking) {
+            newStatus = 'waiting';
+          }
+          
+          // Check for specific Claude question patterns that might not end with ?
+          const claudeQuestionPatterns = [
+            /I (can|could|should|would|will|may|might)/i,
+            /Let me know/i,
+            /Please (tell|let|inform|advise)/i,
+            /Would you prefer/i,
+            /Should I (proceed|continue|go ahead)/i,
+          ];
+          
+          if (claudeQuestionPatterns.some(pattern => pattern.test(lastLines)) && !isWorking) {
             newStatus = 'waiting';
           }
           
