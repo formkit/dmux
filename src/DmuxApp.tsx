@@ -475,11 +475,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       execSync('tmux send-keys C-l', { stdio: 'pipe' });
     } catch {}
     
-    // Exit Ink app cleanly before creating tmux pane (no cleanup needed here as we're re-launching)
-    exit();
-    
-    // Wait for exit to complete
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait a bit for clearing to settle
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // 4. Force tmux to refresh the display
     try {
@@ -624,7 +621,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     const updatedPanes = [...panes, newPane];
     await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
     
-    // Switch back to the original pane (where dmux was running)
+    // Switch back to the original pane (where dmux is running)
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
     
     // Re-set the title for the dmux pane
@@ -634,43 +631,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       // Ignore if setting title fails
     }
     
-    // Ensure the original pane is ready for input by checking for a shell prompt
-    let paneReady = false;
-    const maxWaitAttempts = 20; // 20 * 100ms = 2 seconds max wait
+    // Clear the screen and redraw the UI
+    process.stdout.write('\x1b[2J\x1b[H');
     
-    for (let i = 0; i < maxWaitAttempts; i++) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      try {
-        // Check if the pane has a shell prompt ($ or # or % or >)
-        const paneContent = execSync(
-          `tmux capture-pane -t '${originalPaneId}' -p | tail -5`,
-          { encoding: 'utf-8', stdio: 'pipe' }
-        );
-        
-        // Look for common shell prompt indicators
-        if (paneContent.match(/[$#%>]\s*$/m) || paneContent.match(/\n\s*$/)) {
-          paneReady = true;
-          break;
-        }
-      } catch {
-        // If we can't check, assume it's ready after a few attempts
-        if (i > 5) {
-          paneReady = true;
-          break;
-        }
-      }
-    }
+    // Reset the creating pane flag and refresh
+    setIsCreatingPane(false);
+    setStatusMessage('');
     
-    // If still not ready, add a small extra delay
-    if (!paneReady) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-    
-    // Clear any partial input and re-launch dmux in the original pane
-    execSync(`tmux send-keys -t '${originalPaneId}' C-c`, { stdio: 'pipe' }); // Clear any partial input
-    await new Promise(resolve => setTimeout(resolve, 50));
-    execSync(`tmux send-keys -t '${originalPaneId}' 'dmux' Enter`, { stdio: 'pipe' });
+    // Force a reload of panes to ensure UI is up to date
+    await loadPanes();
   };
 
   const jumpToPane = (paneId: string) => {
