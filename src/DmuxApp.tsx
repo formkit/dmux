@@ -116,10 +116,21 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
 
     const monitorClaudeStatus = async () => {
       // Monitor Claude Code status for all panes
-      const updatedPanes = await Promise.all(panes.map(async (pane) => {
+      const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
         try {
           // Skip if recently checked (within 500ms to avoid overlapping checks)
           if (pane.lastClaudeCheck && Date.now() - pane.lastClaudeCheck < 500) {
+            return pane;
+          }
+          
+          // First check if pane exists before trying to capture
+          const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+            encoding: 'utf-8',
+            stdio: 'pipe' 
+          }).trim().split('\n');
+          
+          if (!paneIds.includes(pane.paneId)) {
+            // Pane doesn't exist anymore, return unchanged
             return pane;
           }
           
@@ -223,15 +234,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
             lastClaudeCheck: Date.now()
           };
         } catch (error) {
-          // If we can't capture the pane, it might be dead
-          return pane;
+          // If we can't capture the pane, it might be dead - mark it for removal
+          return null; // Will be filtered out below
         }
       }));
       
-      // Only update state if something changed
-      const hasChanges = updatedPanes.some((pane, index) => 
-        pane.claudeStatus !== panes[index]?.claudeStatus
-      );
+      // Filter out null values (dead panes) and keep only valid panes
+      const updatedPanes = updatedPanesWithNulls.filter((pane): pane is DmuxPane => pane !== null);
+      
+      // Check if we have changes (including pane removals)
+      const hasChanges = updatedPanes.length !== panes.length || 
+        updatedPanes.some((pane, index) => 
+          pane.claudeStatus !== panes[index]?.claudeStatus
+        );
       
       if (hasChanges) {
         setPanes(updatedPanes);
