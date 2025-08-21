@@ -19,7 +19,12 @@
       "Bash(echo $TMUX)",
       "Bash(tmux send-keys:*)",
       "Bash(node:*)",
-      "Bash(tmux list-panes:*)"
+      "Bash(tmux list-panes:*)",
+      "Bash(tmux capture-pane:*)",
+      "Bash(tmux new-session:*)",
+      "Bash(for i in {1..60})",
+      "Bash(do tmux send-keys -t test-dmux Right)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": [],

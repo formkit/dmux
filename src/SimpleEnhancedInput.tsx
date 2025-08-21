@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import { execSync } from 'child_process';
 import path from 'path';
 
@@ -36,6 +36,8 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
   const [pastedContent, setPastedContent] = useState<Map<number, string>>(new Map());
   const [displayValue, setDisplayValue] = useState(value);
+  const { stdout } = useStdout();
+  const terminalWidth = stdout?.columns || 80; // Default to 80 if not available
 
   // Update cursor when value changes externally
   useEffect(() => {
@@ -469,74 +471,147 @@ const SimpleEnhancedInput: React.FC<SimpleEnhancedInputProps> = ({
     }
   });
 
-  // Build display with cursor (handles multiline)
+  // Build display with cursor (handles multiline and wrapping)
   const getDisplayWithCursor = () => {
     const before = displayValue.slice(0, cursorPosition);
     const after = displayValue.slice(cursorPosition);
     const cursorChar = after[0] || ' ';
     const remaining = after.slice(1);
     
-    // For multiline, we need to handle newlines properly
-    const beforeLines = before.split('\n');
-    const cursorAndAfter = cursorChar + remaining;
-    const afterLines = cursorAndAfter.split('\n');
+    // Split text into visual lines accounting for terminal width
+    const splitIntoVisualLines = (text: string): string[] => {
+      const visualLines: string[] = [];
+      const logicalLines = text.split('\n');
+      const wrapWidth = terminalWidth - 2; // Leave room for cursor and border
+      
+      for (let lineIdx = 0; lineIdx < logicalLines.length; lineIdx++) {
+        const logicalLine = logicalLines[lineIdx];
+        
+        if (logicalLine.length === 0) {
+          // Empty line
+          visualLines.push('');
+        } else {
+          // Split long lines into wrapped visual lines
+          for (let i = 0; i < logicalLine.length; i += wrapWidth) {
+            const chunk = logicalLine.slice(i, i + wrapWidth);
+            visualLines.push(chunk);
+          }
+        }
+      }
+      
+      return visualLines;
+    };
     
-    // If we have multiple lines, render them separately
-    if (beforeLines.length > 1 || afterLines.length > 1) {
+    // Calculate visual cursor position
+    const calculateVisualCursorPosition = () => {
+      let totalCharsProcessed = 0;
+      let currentVisualLine = 0;
+      
+      const logicalLines = displayValue.split('\n');
+      
+      for (let logicalLineIdx = 0; logicalLineIdx < logicalLines.length; logicalLineIdx++) {
+        const logicalLine = logicalLines[logicalLineIdx];
+        const lineStartPos = totalCharsProcessed;
+        const lineEndPos = lineStartPos + logicalLine.length;
+        
+        // Check if cursor is in this logical line
+        if (cursorPosition >= lineStartPos && cursorPosition <= lineEndPos) {
+          const positionInLogicalLine = cursorPosition - lineStartPos;
+          
+          // Calculate visual position within this logical line
+          if (logicalLine.length === 0) {
+            // Empty line
+            return { visualLine: currentVisualLine, visualColumn: 0 };
+          }
+          
+          const wrapWidth = terminalWidth - 2;
+          const visualLineWithinLogical = Math.floor(positionInLogicalLine / wrapWidth);
+          const visualColumn = positionInLogicalLine % wrapWidth;
+          
+          return {
+            visualLine: currentVisualLine + visualLineWithinLogical,
+            visualColumn: visualColumn
+          };
+        }
+        
+        // Move past this logical line
+        if (logicalLine.length === 0) {
+          currentVisualLine += 1;
+        } else {
+          const visualLinesForThisLogicalLine = Math.ceil(logicalLine.length / (terminalWidth - 2));
+          currentVisualLine += visualLinesForThisLogicalLine;
+        }
+        
+        totalCharsProcessed += logicalLine.length + 1; // +1 for the newline character
+      }
+      
+      // Cursor at end of text
+      return { visualLine: currentVisualLine - 1, visualColumn: 0 };
+    };
+    
+    // Get visual lines for the entire text
+    const visualLines = splitIntoVisualLines(displayValue);
+    const { visualLine: cursorVisualLine, visualColumn: cursorVisualColumn } = calculateVisualCursorPosition();
+    
+    // Build the display with proper cursor positioning
+    if (visualLines.length > 1) {
       return (
         <Box flexDirection="column">
-          {beforeLines.map((line, i) => {
-            if (i < beforeLines.length - 1) {
-              // Complete lines before cursor line
-              return <Text key={`before-${i}`}>{line}</Text>;
-            } else {
-              // Last line before cursor + cursor + first line after cursor
-              const firstAfterLine = afterLines[0];
-              const cursorIsNewline = cursorChar === '\n';
+          {visualLines.map((line, lineIndex) => {
+            if (lineIndex === cursorVisualLine) {
+              // This is the line with the cursor
+              const beforeCursor = line.slice(0, cursorVisualColumn);
+              const atCursor = line[cursorVisualColumn] || ' ';
+              const afterCursor = line.slice(cursorVisualColumn + 1);
               
-              if (cursorIsNewline) {
-                // Cursor is on a newline
-                return (
-                  <Box key={`cursor-line`} flexDirection="column">
-                    <Box>
-                      <Text>{line}</Text>
-                      <Text inverse> </Text>
-                    </Box>
-                    {afterLines.slice(1).map((afterLine, j) => (
-                      <Text key={`after-${j}`}>{afterLine}</Text>
-                    ))}
-                  </Box>
-                );
-              } else {
-                // Normal cursor in middle of text
-                const cursorLineChar = firstAfterLine[0] || ' ';
-                const restOfLine = firstAfterLine.slice(1);
-                return (
-                  <Box key={`cursor-line`} flexDirection="column">
-                    <Box>
-                      <Text>{line}</Text>
-                      <Text inverse>{cursorLineChar}</Text>
-                      <Text>{restOfLine}</Text>
-                    </Box>
-                    {afterLines.slice(1).map((afterLine, j) => (
-                      <Text key={`after-${j}`}>{afterLine}</Text>
-                    ))}
-                  </Box>
-                );
-              }
+              return (
+                <Box key={`line-${lineIndex}`}>
+                  <Text>{beforeCursor}</Text>
+                  <Text inverse>{atCursor}</Text>
+                  <Text>{afterCursor}</Text>
+                </Box>
+              );
+            } else {
+              // Regular line without cursor
+              return <Text key={`line-${lineIndex}`}>{line}</Text>;
             }
           })}
         </Box>
       );
     }
     
-    // Single line display
+    // Single line display (no wrapping needed)
+    if (displayValue.length < terminalWidth - 2) {
+      return (
+        <>
+          <Text>{before}</Text>
+          <Text inverse>{cursorChar}</Text>
+          <Text>{remaining}</Text>
+        </>
+      );
+    }
+    
+    // Single line but needs wrapping
     return (
-      <>
-        <Text>{before}</Text>
-        <Text inverse>{cursorChar}</Text>
-        <Text>{remaining}</Text>
-      </>
+      <Box flexDirection="column">
+        {visualLines.map((line, lineIndex) => {
+          if (lineIndex === cursorVisualLine) {
+            const beforeCursor = line.slice(0, cursorVisualColumn);
+            const atCursor = line[cursorVisualColumn] || ' ';
+            const afterCursor = line.slice(cursorVisualColumn + 1);
+            
+            return (
+              <Box key={`line-${lineIndex}`}>
+                <Text>{beforeCursor}</Text>
+                <Text inverse>{atCursor}</Text>
+                <Text>{afterCursor}</Text>
+              </Box>
+            );
+          } else {
+            return <Text key={`line-${lineIndex}`}>{line}</Text>;
+          }
+        })}
+      </Box>
     );
   };
 
