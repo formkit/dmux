@@ -115,6 +115,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     };
   }, []);
 
+  // Auto-show new pane dialog when starting with no panes
+  useEffect(() => {
+    // Only show the dialog if:
+    // 1. We have no panes
+    // 2. We're not already showing the dialog
+    // 3. We're not showing any other dialogs or prompts
+    if (panes.length === 0 && 
+        !showNewPaneDialog && 
+        !showMergeConfirmation && 
+        !showCloseOptions && 
+        !showCommandPrompt && 
+        !showFileCopyPrompt && 
+        !showUpdateDialog &&
+        !isCreatingPane &&
+        !runningCommand &&
+        !isUpdating) {
+      setShowNewPaneDialog(true);
+    }
+  }, [panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showUpdateDialog, isCreatingPane, runningCommand, isUpdating]);
+
   // Check for updates periodically
   useEffect(() => {
     if (!autoUpdater) return;

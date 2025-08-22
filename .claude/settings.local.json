@@ -37,7 +37,8 @@
     "additionalDirectories": [
       "/Users/justinschroeder/Projects/dmux/main",
       "/Users/justinschroeder/.dmux",
-      "/private/tmp/bod.coach-react-native"
+      "/private/tmp/bod.coach-react-native",
+      "/tmp"
     ]
   }
 }
