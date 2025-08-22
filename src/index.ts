@@ -32,8 +32,10 @@ class Dmux {
     const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
     const projectIdentifier = `${this.projectName}-${projectHash}`;
     
-    // Create unique session name for this project
-    this.sessionName = `dmux-${projectIdentifier}`;
+    // Create unique session name for this project (sanitize for tmux compatibility)
+    // tmux converts dots to underscores, so we do it explicitly to avoid mismatches
+    const sanitizedProjectIdentifier = projectIdentifier.replace(/\./g, '-');
+    this.sessionName = `dmux-${sanitizedProjectIdentifier}`;
     // Store panes per project using the unique identifier
     this.panesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
     // Store project settings (test/dev commands) per project

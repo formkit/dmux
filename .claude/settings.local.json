@@ -26,13 +26,17 @@
       "Bash(do tmux send-keys -t test-dmux Right)",
       "Bash(done)",
       "Bash(tmux capture-pane:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(cat:*)",
+      "Bash(/Users/justinschroeder/Projects/dmux/main-dot-breaking/dmux)",
+      "Bash(tmux list-sessions:*)"
     ],
     "deny": [],
     "ask": [],
     "additionalDirectories": [
       "/Users/justinschroeder/Projects/dmux/main",
-      "/Users/justinschroeder/.dmux"
+      "/Users/justinschroeder/.dmux",
+      "/private/tmp/bod.coach-react-native"
     ]
   }
 }
