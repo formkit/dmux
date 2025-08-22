@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { createRequire } from 'module';
+import type { AutoUpdater } from './AutoUpdater.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -49,9 +50,10 @@ interface DmuxAppProps {
   sessionName: string;
   projectRoot?: string;
   settingsFile: string;
+  autoUpdater?: AutoUpdater; // AutoUpdater instance
 }
 
-const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sessionName, settingsFile }) => {
+const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sessionName, settingsFile, autoUpdater }) => {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
@@ -69,6 +71,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
   const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const { exit } = useApp();
 
   // Track terminal dimensions for responsive layout
@@ -109,6 +114,33 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       process.removeListener('SIGTERM', handleTermination);
     };
   }, []);
+
+  // Check for updates periodically
+  useEffect(() => {
+    if (!autoUpdater) return;
+
+    const checkForUpdates = async () => {
+      try {
+        const info = await autoUpdater.checkForUpdates();
+        if (await autoUpdater.shouldShowUpdateNotification(info)) {
+          setUpdateInfo(info);
+          setShowUpdateDialog(true);
+        }
+      } catch {
+        // Silently ignore update check failures
+      }
+    };
+
+    // Check for updates on mount
+    checkForUpdates();
+
+    // Check for updates every 6 hours
+    const updateInterval = setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+    
+    return () => {
+      clearInterval(updateInterval);
+    };
+  }, [autoUpdater]);
 
   // Monitor Claude status in all panes with proper dependency tracking
   useEffect(() => {
@@ -1746,6 +1778,47 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   };
 
+  // Update handling functions
+  const performUpdate = async () => {
+    if (!autoUpdater || !updateInfo) return;
+
+    try {
+      setIsUpdating(true);
+      setStatusMessage('Updating dmux...');
+      
+      const success = await autoUpdater.performUpdate(updateInfo);
+      
+      if (success) {
+        setStatusMessage('Update completed successfully! Please restart dmux.');
+        setTimeout(() => {
+          process.exit(0);
+        }, 3000);
+      } else {
+        setStatusMessage('Update failed. Please update manually.');
+        setTimeout(() => setStatusMessage(''), 3000);
+      }
+    } catch (error) {
+      setStatusMessage('Update failed. Please update manually.');
+      setTimeout(() => setStatusMessage(''), 3000);
+    } finally {
+      setIsUpdating(false);
+      setShowUpdateDialog(false);
+    }
+  };
+
+  const skipUpdate = async () => {
+    if (!autoUpdater || !updateInfo) return;
+    
+    await autoUpdater.skipVersion(updateInfo.latestVersion);
+    setShowUpdateDialog(false);
+    setUpdateInfo(null);
+  };
+
+  const dismissUpdate = () => {
+    setShowUpdateDialog(false);
+    setUpdateInfo(null);
+  };
+
   // Cleanup function for exit
   const cleanExit = () => {
     // Clear screen multiple times to ensure no artifacts
@@ -1764,8 +1837,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   useInput(async (input: string, key: any) => {
-    if (isCreatingPane || runningCommand) {
+    if (isCreatingPane || runningCommand || isUpdating) {
       // Disable input while performing operations
+      return;
+    }
+    
+    if (showUpdateDialog && updateInfo) {
+      if (input === 'u' || input === 'U') {
+        await performUpdate();
+      } else if (input === 's' || input === 'S') {
+        await skipUpdate();
+      } else if (input === 'l' || input === 'L' || key.escape) {
+        dismissUpdate();
+      }
       return;
     }
     
@@ -2164,6 +2248,45 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           <Text color="blue">
             <Text bold>▶ Running command...</Text>
           </Text>
+        </Box>
+      )}
+
+      {isUpdating && (
+        <Box borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
+          <Text color="yellow">
+            <Text bold>⬇ Updating dmux...</Text>
+          </Text>
+        </Box>
+      )}
+
+      {showUpdateDialog && updateInfo && (
+        <Box borderStyle="double" borderColor="green" paddingX={1} marginTop={1}>
+          <Box flexDirection="column">
+            <Text color="green" bold>🎉 dmux Update Available!</Text>
+            <Text>
+              Current version: <Text color="cyan">{updateInfo.currentVersion}</Text>
+            </Text>
+            <Text>
+              Latest version: <Text color="green">{updateInfo.latestVersion}</Text>
+            </Text>
+            {updateInfo.installMethod === 'global' && updateInfo.packageManager && (
+              <Text>
+                Detected global install via: <Text color="yellow">{updateInfo.packageManager}</Text>
+              </Text>
+            )}
+            <Box marginTop={1}>
+              {updateInfo.installMethod === 'global' && updateInfo.packageManager ? (
+                <Text>
+                  [U]pdate now • [S]kip this version • [L]ater
+                </Text>
+              ) : (
+                <Text>
+                  Manual update required: <Text color="cyan">{updateInfo.packageManager || 'npm'} update -g dmux</Text>
+                  {'\n'}[S]kip this version • [L]ater
+                </Text>
+              )}
+            </Box>
+          </Box>
         </Box>
       )}
 

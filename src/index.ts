@@ -9,6 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { createHash } from 'crypto';
 import DmuxApp from './DmuxApp.js';
+import { AutoUpdater } from './AutoUpdater.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +20,7 @@ class Dmux {
   private projectName: string;
   private sessionName: string;
   private projectRoot: string;
+  private autoUpdater: AutoUpdater;
 
   constructor() {
     this.dmuxDir = path.join(process.env.HOME!, '.dmux');
@@ -40,6 +42,8 @@ class Dmux {
     this.panesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
     // Store project settings (test/dev commands) per project
     this.settingsFile = path.join(this.dmuxDir, `${projectIdentifier}-settings.json`);
+    // Initialize auto-updater
+    this.autoUpdater = new AutoUpdater(this.dmuxDir);
   }
 
   async init() {
@@ -48,6 +52,9 @@ class Dmux {
     if (!await this.fileExists(this.panesFile)) {
       await fs.writeFile(this.panesFile, '[]');
     }
+
+    // Check for updates in background if needed
+    this.checkForUpdatesBackground();
 
     const inTmux = process.env.TMUX !== undefined;
     
@@ -92,7 +99,8 @@ class Dmux {
       settingsFile: this.settingsFile,
       projectName: this.projectName,
       sessionName: this.sessionName,
-      projectRoot: this.projectRoot
+      projectRoot: this.projectRoot,
+      autoUpdater: this.autoUpdater
     }));
   }
 
@@ -117,6 +125,40 @@ class Dmux {
       // Fallback to current directory if not in a git repo
       return process.cwd();
     }
+  }
+
+  private checkForUpdatesBackground() {
+    // Run update check in background without blocking startup
+    setImmediate(async () => {
+      try {
+        const shouldCheck = await this.autoUpdater.shouldCheckForUpdates();
+        if (shouldCheck) {
+          // Check for updates asynchronously
+          this.autoUpdater.checkForUpdates().catch(() => {
+            // Silently ignore update check failures
+          });
+        }
+      } catch {
+        // Silently ignore errors in background update check
+      }
+    });
+  }
+
+  async getUpdateInfo() {
+    return await this.autoUpdater.checkForUpdates();
+  }
+
+  async performUpdate() {
+    const updateInfo = await this.autoUpdater.checkForUpdates();
+    return await this.autoUpdater.performUpdate(updateInfo);
+  }
+
+  async skipUpdate(version: string) {
+    return await this.autoUpdater.skipVersion(version);
+  }
+
+  getAutoUpdater() {
+    return this.autoUpdater;
   }
 }
 

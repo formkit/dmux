@@ -29,7 +29,8 @@
       "Bash(npm install:*)",
       "Bash(cat:*)",
       "Bash(/Users/justinschroeder/Projects/dmux/main-dot-breaking/dmux)",
-      "Bash(tmux list-sessions:*)"
+      "Bash(tmux list-sessions:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": [],
