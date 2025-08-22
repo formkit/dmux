@@ -2145,8 +2145,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           );
         })}
 
-        {/* New pane button - only show when not loading */}
-        {!isLoading && (
+        {/* New pane button - only show when not loading and not showing dialogs */}
+        {!isLoading && !showNewPaneDialog && (
           <Box
             paddingX={1}
             borderStyle="single"
