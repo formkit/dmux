@@ -416,6 +416,97 @@ useInput((input, key) => {
 </Box>
 ```
 
+### TypeScript Compilation
+
+#### Common tsc Issues and Solutions
+
+When running TypeScript compilation, you may encounter this error:
+```
+This is not the tsc command you are looking for
+
+To get access to the TypeScript compiler, tsc, from the command line either:
+- Use npm install typescript to first add TypeScript to your project before using npx
+- Use yarn to avoid accidentally running code from un-installed packages
+```
+
+**Solution**: Always install TypeScript first before compiling:
+```bash
+# Install TypeScript if not already installed
+npm install typescript
+
+# Then build normally
+npm run build
+
+# Or use npx after installing TypeScript
+npx tsc
+```
+
+**Why this happens**: The project may not have TypeScript installed locally, and npx refuses to download and run arbitrary packages for security reasons.
+
+#### Build Process
+```bash
+# Standard development workflow
+npm install        # Install all dependencies including TypeScript
+npm run build     # Compile TypeScript to JavaScript
+./dmux            # Run the application
+```
+
+### Meta-Development: Working on dmux Inside dmux
+
+**Important Context**: Most dmux development happens inside a dmux session itself, which can create confusing scenarios for Claude Code.
+
+#### Understanding the Meta Context
+
+1. **Nested Sessions**: When working on dmux, you're often running dmux inside a tmux session that was created by dmux itself.
+
+2. **Multiple dmux Instances**: You might see multiple dmux processes running:
+   - The "parent" dmux managing your development session
+   - The "child" dmux you're testing/developing
+   - Background dmux instances from other projects
+
+3. **tmux Pane Confusion**: Commands like `tmux list-panes` will show all panes in the current session, including:
+   - The pane running Claude Code (where you're reading this)
+   - The pane where you're testing dmux
+   - Other development panes for different features
+
+#### Development Best Practices
+
+1. **Testing in Isolation**:
+   ```bash
+   # Create a separate tmux session for testing
+   tmux new-session -d -s dmux-test
+   tmux send-keys -t dmux-test "cd /path/to/dmux && ./dmux" Enter
+   ```
+
+2. **Distinguishing Sessions**:
+   ```bash
+   # List all tmux sessions to see which is which
+   tmux list-sessions
+   
+   # Typical output might show:
+   # dmux-dmux: 3 windows (current session for dmux development)
+   # dmux-test: 1 window (isolated testing session)
+   ```
+
+3. **Debugging Meta Issues**:
+   - If dmux behaves strangely, check if you're in a nested scenario
+   - Use `echo $TMUX` to verify tmux environment
+   - Use `ps aux | grep dmux` to see all running dmux instances
+
+#### Common Meta-Development Scenarios
+
+**Scenario 1**: "dmux won't start new panes"
+- **Cause**: You might be testing dmux in a session it doesn't manage
+- **Solution**: Ensure you're in the correct project directory and tmux session
+
+**Scenario 2**: "I see phantom panes in the interface"
+- **Cause**: Multiple dmux instances sharing the same project name
+- **Solution**: Check running dmux processes and kill duplicates
+
+**Scenario 3**: "Changes don't appear when testing"
+- **Cause**: Testing an old compiled version instead of rebuilt code
+- **Solution**: Always run `npm run build` after making changes
+
 ### Testing
 
 #### Manual Testing Checklist

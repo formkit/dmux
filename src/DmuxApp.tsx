@@ -74,6 +74,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [updateInfo, setUpdateInfo] = useState<any>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { exit } = useApp();
 
   // Track terminal dimensions for responsive layout
@@ -335,6 +336,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   const loadPanes = async () => {
+    if (isLoading) {
+      // Don't set loading to false immediately - keep it true for initial load
+    }
     try {
       const content = await fs.readFile(panesFile, 'utf-8');
       const loadedPanes = JSON.parse(content) as DmuxPane[];
@@ -370,8 +374,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       if (activePanes.length !== loadedPanes.length) {
         await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
       }
+      
+      // Set loading to false after first load
+      if (isLoading) {
+        setIsLoading(false);
+      }
     } catch {
       setPanes([]);
+      // Set loading to false even on error
+      if (isLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -411,7 +424,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   const findCardInDirection = (currentIndex: number, direction: 'up' | 'down' | 'left' | 'right'): number | null => {
-    const totalItems = panes.length + 1; // +1 for "New dmux pane" button
+    const totalItems = panes.length + (isLoading ? 0 : 1); // +1 for "New dmux pane" button when not loading
     const currentPos = getCardGridPosition(currentIndex);
     
     // Calculate cards per row based on current terminal width
@@ -1857,8 +1870,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   useInput(async (input: string, key: any) => {
-    if (isCreatingPane || runningCommand || isUpdating) {
-      // Disable input while performing operations
+    if (isCreatingPane || runningCommand || isUpdating || isLoading) {
+      // Disable input while performing operations or loading
       return;
     }
     
@@ -2016,7 +2029,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     
     if (input === 'q') {
       cleanExit();
-    } else if (input === 'n' || (key.return && selectedIndex === panes.length)) {
+    } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
       setShowNewPaneDialog(true);
     } else if (input === 'j' && selectedIndex < panes.length) {
       jumpToPane(panes[selectedIndex].paneId);
@@ -2132,19 +2145,31 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           );
         })}
 
-        {/* New pane button */}
-        <Box
-          paddingX={1}
-          borderStyle="single"
-          borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
-          width={35}  // Match card width
-          flexShrink={0}
-        >
-          <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
-            + New dmux pane
-          </Text>
-        </Box>
+        {/* New pane button - only show when not loading */}
+        {!isLoading && (
+          <Box
+            paddingX={1}
+            borderStyle="single"
+            borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
+            width={35}  // Match card width
+            flexShrink={0}
+          >
+            <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
+              + New dmux pane
+            </Text>
+          </Box>
+        )}
       </Box>
+
+      {/* Loading dialog */}
+      {isLoading && (
+        <Box borderStyle="round" borderColor="cyan" paddingX={2} marginTop={1}>
+          <Box flexDirection="row" gap={1}>
+            <Text color="cyan">⏳</Text>
+            <Text>Loading dmux sessions...</Text>
+          </Box>
+        </Box>
+      )}
 
       {showNewPaneDialog && (
         <Box borderStyle="round" borderColor="gray" paddingX={1}>
