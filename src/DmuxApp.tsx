@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import TextInput from 'ink-text-input';
+import EnhancedTextInput from './EnhancedTextInput.js';
 import SimpleEnhancedInput from './SimpleEnhancedInput.js';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
@@ -2177,7 +2177,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
             <Text>Enter initial Claude prompt (ESC to cancel):</Text>
             <Box marginTop={1}>
               <Box flexDirection="column">
-                <TextInput
+                <EnhancedTextInput
                   value={newPanePrompt}
                   onChange={setNewPanePrompt}
                   placeholder="Optional prompt... (@ to reference files)"
@@ -2260,7 +2260,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
               (Press Enter with empty input for suggested command, ESC to cancel)
             </Text>
             <Box marginTop={1}>
-              <TextInput
+              <EnhancedTextInput
                 value={commandInput}
                 onChange={setCommandInput}
                 placeholder={showCommandPrompt === 'test' ? 'e.g., npm test, pnpm test' : 'e.g., npm run dev, pnpm dev'}
