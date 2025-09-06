@@ -67,6 +67,48 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     // Forward delete (actual delete key behavior) - removed since we're treating delete as backspace
     // If you need forward delete, use a different key combination
 
+    // Ctrl-A: Jump to beginning of current line
+    if (key.ctrl && input === 'a') {
+      if (!value.includes('\n')) {
+        // Single line - go to start
+        setCursor(0);
+      } else {
+        // Multiline - find start of current line
+        const lines = value.split('\n');
+        let pos = 0;
+        for (let i = 0; i < lines.length; i++) {
+          const lineEndPos = pos + lines[i].length;
+          if (cursor <= lineEndPos) {
+            setCursor(pos);
+            break;
+          }
+          pos = lineEndPos + 1;
+        }
+      }
+      return;
+    }
+
+    // Ctrl-E: Jump to end of current line
+    if (key.ctrl && input === 'e') {
+      if (!value.includes('\n')) {
+        // Single line - go to end
+        setCursor(value.length);
+      } else {
+        // Multiline - find end of current line
+        const lines = value.split('\n');
+        let pos = 0;
+        for (let i = 0; i < lines.length; i++) {
+          const lineEndPos = pos + lines[i].length;
+          if (cursor <= lineEndPos) {
+            setCursor(lineEndPos);
+            break;
+          }
+          pos = lineEndPos + 1;
+        }
+      }
+      return;
+    }
+
     // Left arrow
     if (key.leftArrow) {
       setCursor(Math.max(0, cursor - 1));
