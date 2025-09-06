@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import EnhancedTextInput from './EnhancedTextInput.js';
+import CleanTextInput from './CleanTextInput.js';
+import StyledTextInput from './StyledTextInput.js';
 import SimpleEnhancedInput from './SimpleEnhancedInput.js';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
@@ -2030,7 +2031,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     if (input === 'q') {
       cleanExit();
     } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
+      setNewPanePrompt(''); // Clear any stale input
       setShowNewPaneDialog(true);
+      return; // Consume the 'n' keystroke so it doesn't propagate
     } else if (input === 'j' && selectedIndex < panes.length) {
       jumpToPane(panes[selectedIndex].paneId);
     } else if (input === 'x' && selectedIndex < panes.length) {
@@ -2172,28 +2175,24 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       )}
 
       {showNewPaneDialog && (
-        <Box borderStyle="round" borderColor="gray" paddingX={1}>
-          <Box flexDirection="column">
-            <Text>Enter initial Claude prompt (ESC to cancel):</Text>
-            <Box marginTop={1}>
-              <Box flexDirection="column">
-                <EnhancedTextInput
-                  value={newPanePrompt}
-                  onChange={setNewPanePrompt}
-                  placeholder="Optional prompt... (@ to reference files)"
-                  onSubmit={() => {
-                    createNewPane(newPanePrompt);
-                    setShowNewPaneDialog(false);
-                    setNewPanePrompt('');
-                  }}
-                />
-                <Box marginTop={1}>
-                  <Text dimColor italic>
-                    Press Ctrl+O to open in $EDITOR for complex multi-line input
-                  </Text>
-                </Box>
-              </Box>
-            </Box>
+        <Box flexDirection="column" marginTop={1}>
+          <Text>Enter initial Claude prompt (ESC to cancel):</Text>
+          <Box borderStyle="round" borderColor="#E67E22" paddingX={1} marginTop={1}>
+            <CleanTextInput
+              value={newPanePrompt}
+              onChange={setNewPanePrompt}
+              placeholder="Type your message..."
+              onSubmit={() => {
+                createNewPane(newPanePrompt);
+                setShowNewPaneDialog(false);
+                setNewPanePrompt('');
+              }}
+            />
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor italic>
+              Press Ctrl+O to open in $EDITOR for complex multi-line input
+            </Text>
           </Box>
         </Box>
       )}
@@ -2260,7 +2259,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
               (Press Enter with empty input for suggested command, ESC to cancel)
             </Text>
             <Box marginTop={1}>
-              <EnhancedTextInput
+              <StyledTextInput
                 value={commandInput}
                 onChange={setCommandInput}
                 placeholder={showCommandPrompt === 'test' ? 'e.g., npm test, pnpm test' : 'e.g., npm run dev, pnpm dev'}
