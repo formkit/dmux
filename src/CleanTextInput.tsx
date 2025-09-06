@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useFocus } from 'ink';
+import { Box, Text, useInput, useFocus, useStdout } from 'ink';
 
 interface CleanTextInputProps {
   value: string;
@@ -16,6 +16,13 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
 }) => {
   const { isFocused } = useFocus({ autoFocus: true });
   const [cursor, setCursor] = useState(value.length);
+  const { stdout } = useStdout();
+  
+  // Calculate available width for text (terminal width - prompt - borders - padding)
+  // Subtract 2 for "> " prompt, 2 for borders, 2 for padding = 6 total
+  // Use process.stdout.columns as fallback since useStdout might not update
+  const terminalWidth = process.stdout.columns || (stdout ? stdout.columns : 80);
+  const maxWidth = Math.max(20, terminalWidth - 6);
 
   // Keep cursor in bounds
   useEffect(() => {
@@ -67,45 +74,45 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     // Forward delete (actual delete key behavior) - removed since we're treating delete as backspace
     // If you need forward delete, use a different key combination
 
-    // Ctrl-A: Jump to beginning of current line
+    // Ctrl-A: Jump to beginning of current visual line
     if (key.ctrl && input === 'a') {
-      if (!value.includes('\n')) {
-        // Single line - go to start
-        setCursor(0);
-      } else {
-        // Multiline - find start of current line
-        const lines = value.split('\n');
-        let pos = 0;
-        for (let i = 0; i < lines.length; i++) {
-          const lineEndPos = pos + lines[i].length;
-          if (cursor <= lineEndPos) {
-            setCursor(pos);
-            break;
-          }
-          pos = lineEndPos + 1;
+      const wrapped = wrapText(value, maxWidth);
+      const currentPos = findCursorInWrappedLines(wrapped, cursor);
+      
+      // Find absolute position of start of current visual line
+      let absolutePos = 0;
+      for (let i = 0; i < currentPos.line; i++) {
+        absolutePos += wrapped[i].line.length;
+        if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+          absolutePos++; // Space between wrapped segments
+        } else if (wrapped[i].isHardBreak) {
+          absolutePos++; // Newline character
         }
       }
+      setCursor(absolutePos);
       return;
     }
 
-    // Ctrl-E: Jump to end of current line
+    // Ctrl-E: Jump to end of current visual line
     if (key.ctrl && input === 'e') {
-      if (!value.includes('\n')) {
-        // Single line - go to end
-        setCursor(value.length);
-      } else {
-        // Multiline - find end of current line
-        const lines = value.split('\n');
-        let pos = 0;
-        for (let i = 0; i < lines.length; i++) {
-          const lineEndPos = pos + lines[i].length;
-          if (cursor <= lineEndPos) {
-            setCursor(lineEndPos);
-            break;
+      const wrapped = wrapText(value, maxWidth);
+      const currentPos = findCursorInWrappedLines(wrapped, cursor);
+      
+      // Find absolute position of end of current visual line
+      let absolutePos = 0;
+      for (let i = 0; i <= currentPos.line; i++) {
+        if (i === currentPos.line) {
+          absolutePos += wrapped[i].line.length;
+        } else {
+          absolutePos += wrapped[i].line.length;
+          if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+            absolutePos++; // Space between wrapped segments
+          } else if (wrapped[i].isHardBreak) {
+            absolutePos++; // Newline character
           }
-          pos = lineEndPos + 1;
         }
       }
+      setCursor(Math.min(absolutePos, value.length));
       return;
     }
 
@@ -121,38 +128,50 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       return;
     }
 
-    // Up/Down arrows for multiline navigation
-    if ((key.upArrow || key.downArrow) && value.includes('\n')) {
-      const lines = value.split('\n');
-      let pos = 0;
-      let lineIdx = 0;
-      let col = 0;
+    // Up/Down arrows for navigation (works with both hard and soft wrapped lines)
+    if (key.upArrow || key.downArrow) {
+      // Get wrapped lines to understand visual layout
+      const wrapped = wrapText(value, maxWidth);
+      const currentPos = findCursorInWrappedLines(wrapped, cursor);
       
-      // Find current position - FIXED calculation
-      for (let i = 0; i < lines.length; i++) {
-        const lineEndPos = pos + lines[i].length;
-        if (cursor <= lineEndPos) {
-          lineIdx = i;
-          col = cursor - pos;
-          break;
+      if (key.upArrow && currentPos.line > 0) {
+        // Move up one visual line
+        const targetLine = currentPos.line - 1;
+        const targetCol = Math.min(currentPos.col, wrapped[targetLine].line.length);
+        
+        // Convert back to absolute position
+        let absolutePos = 0;
+        for (let i = 0; i < targetLine; i++) {
+          absolutePos += wrapped[i].line.length;
+          // Add space if this was a soft wrap
+          if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+            const nextLineExists = i + 1 < wrapped.length;
+            if (nextLineExists) absolutePos++; // Space between wrapped segments
+          } else if (wrapped[i].isHardBreak) {
+            absolutePos++; // Newline character
+          }
         }
-        pos = lineEndPos + 1;
-      }
-      
-      if (key.upArrow && lineIdx > 0) {
-        const targetCol = Math.min(col, lines[lineIdx - 1].length);
-        let newPos = 0;
-        for (let i = 0; i < lineIdx - 1; i++) {
-          newPos += lines[i].length + 1;
+        absolutePos += targetCol;
+        setCursor(Math.min(absolutePos, value.length));
+      } else if (key.downArrow && currentPos.line < wrapped.length - 1) {
+        // Move down one visual line
+        const targetLine = currentPos.line + 1;
+        const targetCol = Math.min(currentPos.col, wrapped[targetLine].line.length);
+        
+        // Convert back to absolute position
+        let absolutePos = 0;
+        for (let i = 0; i < targetLine; i++) {
+          absolutePos += wrapped[i].line.length;
+          // Add space if this was a soft wrap
+          if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+            const nextLineExists = i + 1 < wrapped.length;
+            if (nextLineExists) absolutePos++; // Space between wrapped segments
+          } else if (wrapped[i].isHardBreak) {
+            absolutePos++; // Newline character
+          }
         }
-        setCursor(newPos + targetCol);
-      } else if (key.downArrow && lineIdx < lines.length - 1) {
-        const targetCol = Math.min(col, lines[lineIdx + 1].length);
-        let newPos = 0;
-        for (let i = 0; i <= lineIdx; i++) {
-          newPos += lines[i].length + 1;
-        }
-        setCursor(newPos + targetCol);
+        absolutePos += targetCol;
+        setCursor(Math.min(absolutePos, value.length));
       }
       return;
     }
@@ -166,12 +185,130 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     }
   });
 
-  // Render
-  const lines = value.split('\n');
-  const hasMultipleLines = lines.length > 1;
+  // Function to wrap text at word boundaries
+  const wrapText = (text: string, width: number): { line: string; isHardBreak: boolean }[] => {
+    if (!text) return [{ line: '', isHardBreak: false }];
+    
+    const hardLines = text.split('\n');
+    const wrappedLines: { line: string; isHardBreak: boolean }[] = [];
+    
+    for (let i = 0; i < hardLines.length; i++) {
+      const hardLine = hardLines[i];
+      const isLastHardLine = i === hardLines.length - 1;
+      
+      if (hardLine.length <= width) {
+        // Line fits within width
+        wrappedLines.push({ line: hardLine, isHardBreak: !isLastHardLine });
+      } else {
+        // Need to wrap this line at word boundaries
+        let remaining = hardLine;
+        let isFirstSegment = true;
+        
+        while (remaining.length > 0) {
+          if (remaining.length <= width) {
+            // Last segment of this hard line
+            wrappedLines.push({ 
+              line: remaining, 
+              isHardBreak: !isLastHardLine 
+            });
+            break;
+          }
+          
+          // Find last space within width limit
+          let breakPoint = width;
+          let lastSpace = remaining.lastIndexOf(' ', width);
+          
+          if (lastSpace > 0 && lastSpace < width) {
+            // Found a space to break at
+            breakPoint = lastSpace;
+          } else if (lastSpace === -1 && remaining.indexOf(' ') > width) {
+            // No space in first width chars, but there is a space later
+            // Break at the width limit
+            breakPoint = width;
+          } else if (remaining.indexOf(' ') === -1) {
+            // No spaces in remaining text, break at width
+            breakPoint = Math.min(width, remaining.length);
+          }
+          
+          const segment = remaining.slice(0, breakPoint).trimEnd();
+          wrappedLines.push({ 
+            line: segment, 
+            isHardBreak: false // soft wrap
+          });
+          
+          // Skip the space if we broke at a space
+          remaining = remaining.slice(breakPoint).trimStart();
+        }
+      }
+    }
+    
+    return wrappedLines;
+  };
+  
+  // Function to find cursor position in wrapped lines
+  const findCursorInWrappedLines = (wrappedLines: { line: string; isHardBreak: boolean }[], absoluteCursor: number) => {
+    let pos = 0;
+    
+    // Walk through the original text and wrapped lines simultaneously
+    const originalLines = value.split('\n');
+    let originalPos = 0;
+    let wrappedIndex = 0;
+    
+    for (let i = 0; i < originalLines.length; i++) {
+      const originalLine = originalLines[i];
+      
+      // Count wrapped segments for this original line
+      let linePos = 0;
+      while (wrappedIndex < wrappedLines.length && linePos < originalLine.length) {
+        const wrappedLine = wrappedLines[wrappedIndex];
+        const segmentLength = wrappedLine.line.length;
+        
+        // Check if cursor is in this wrapped segment
+        const segmentEnd = originalPos + segmentLength;
+        if (absoluteCursor <= segmentEnd) {
+          const colInSegment = absoluteCursor - originalPos;
+          return {
+            line: wrappedIndex,
+            col: colInSegment
+          };
+        }
+        
+        originalPos = segmentEnd;
+        linePos += segmentLength;
+        
+        // Account for space that was removed during wrapping
+        if (!wrappedLine.isHardBreak && wrappedIndex < wrappedLines.length - 1) {
+          // This was a soft wrap, account for the space that was trimmed
+          if (linePos < originalLine.length && originalLine[linePos] === ' ') {
+            originalPos++; // Skip the space in position counting
+            linePos++;
+          }
+        }
+        
+        wrappedIndex++;
+        if (wrappedLine.isHardBreak) break;
+      }
+      
+      // Account for the newline character
+      if (i < originalLines.length - 1) {
+        originalPos++; // newline character
+      }
+    }
+    
+    // Cursor at very end
+    const lastLine = wrappedLines[wrappedLines.length - 1];
+    return {
+      line: wrappedLines.length - 1,
+      col: lastLine ? lastLine.line.length : 0
+    };
+  };
 
-  if (!hasMultipleLines && value === '') {
-    // Show placeholder for empty single line
+  // Render
+  const wrappedLines = wrapText(value, maxWidth);
+  const hasMultipleLines = wrappedLines.length > 1;
+
+  if (value === '') {
+    // Show placeholder for empty input
     return (
       <Box>
         <Text>{'> '}</Text>
@@ -181,54 +318,21 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     );
   }
 
-  if (!hasMultipleLines) {
-    // Single line display
-    const before = value.slice(0, cursor);
-    const at = value[cursor] || ' ';
-    const after = value.slice(cursor + 1);
-    
-    return (
-      <Box>
-        <Text>{'> '}</Text>
-        <Text>{before}</Text>
-        <Text inverse>{at}</Text>
-        <Text>{after}</Text>
-      </Box>
-    );
-  }
+  // Find cursor position in wrapped lines
+  const cursorPos = findCursorInWrappedLines(wrappedLines, cursor);
 
-  // Multiline display - FIXED cursor calculation
-  let pos = 0;
-  let cursorLine = 0;
-  let cursorCol = 0;
-  
-  // If cursor is at the very end, put it at the end of the last line
-  if (cursor === value.length && lines.length > 0) {
-    cursorLine = lines.length - 1;
-    cursorCol = lines[cursorLine].length;
-  } else {
-    // Find which line the cursor is on
-    for (let i = 0; i < lines.length; i++) {
-      const lineEndPos = pos + lines[i].length;
-      if (cursor <= lineEndPos) {
-        cursorLine = i;
-        cursorCol = cursor - pos;
-        break;
-      }
-      pos = lineEndPos + 1; // +1 for the newline character
-    }
-  }
-
+  // Render wrapped lines
   return (
     <Box flexDirection="column">
-      {lines.map((line, idx) => {
+      {wrappedLines.map((wrappedLine, idx) => {
         const isFirst = idx === 0;
-        const hasCursor = idx === cursorLine;
+        const hasCursor = idx === cursorPos.line;
+        const line = wrappedLine.line;
         
         if (hasCursor) {
-          const before = line.slice(0, cursorCol);
-          const at = line[cursorCol] || ' ';
-          const after = line.slice(cursorCol + 1);
+          const before = line.slice(0, cursorPos.col);
+          const at = line[cursorPos.col] || ' ';
+          const after = line.slice(cursorPos.col + 1);
           
           return (
             <Box key={idx}>
