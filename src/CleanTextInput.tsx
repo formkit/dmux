@@ -18,11 +18,12 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const [cursor, setCursor] = useState(value.length);
   const { stdout } = useStdout();
   
-  // Calculate available width for text (terminal width - prompt - borders - padding)
-  // Subtract 2 for "> " prompt, 2 for borders, 2 for padding = 6 total
+  // Calculate available width for text (terminal width - borders - padding)
+  // Subtract 2 for borders, 2 for padding = 4 total
+  // The prompt "> " is handled separately in wrapText for first line only
   // Use process.stdout.columns as fallback since useStdout might not update
   const terminalWidth = process.stdout.columns || (stdout ? stdout.columns : 80);
-  const maxWidth = Math.max(20, terminalWidth - 6);
+  const maxWidth = Math.max(20, terminalWidth - 4);
 
   // Keep cursor in bounds
   useEffect(() => {
@@ -186,48 +187,58 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   });
 
   // Function to wrap text at word boundaries
-  const wrapText = (text: string, width: number): { line: string; isHardBreak: boolean }[] => {
+  const wrapText = (text: string, baseWidth: number): { line: string; isHardBreak: boolean }[] => {
     if (!text) return [{ line: '', isHardBreak: false }];
     
     const hardLines = text.split('\n');
     const wrappedLines: { line: string; isHardBreak: boolean }[] = [];
+    let totalWrappedLines = 0; // Track total wrapped lines for determining if it's first line
     
     for (let i = 0; i < hardLines.length; i++) {
       const hardLine = hardLines[i];
       const isLastHardLine = i === hardLines.length - 1;
+      let isFirstWrappedSegment = true;
       
-      if (hardLine.length <= width) {
+      // First line of entire text has less width due to "> " prompt
+      // All subsequent lines (including wrapped continuations) have full width
+      const effectiveWidth = (i === 0 && totalWrappedLines === 0) ? baseWidth - 2 : baseWidth;
+      
+      if (hardLine.length <= effectiveWidth) {
         // Line fits within width
         wrappedLines.push({ line: hardLine, isHardBreak: !isLastHardLine });
+        totalWrappedLines++;
       } else {
         // Need to wrap this line at word boundaries
         let remaining = hardLine;
-        let isFirstSegment = true;
         
         while (remaining.length > 0) {
-          if (remaining.length <= width) {
+          // First segment of first hard line gets less width, all others get full width
+          const currentWidth = (i === 0 && isFirstWrappedSegment) ? baseWidth - 2 : baseWidth;
+          
+          if (remaining.length <= currentWidth) {
             // Last segment of this hard line
             wrappedLines.push({ 
               line: remaining, 
               isHardBreak: !isLastHardLine 
             });
+            totalWrappedLines++;
             break;
           }
           
           // Find last space within width limit
-          let breakPoint = width;
-          let lastSpace = remaining.lastIndexOf(' ', width);
+          let breakPoint = currentWidth;
+          let lastSpace = remaining.lastIndexOf(' ', currentWidth);
           
-          if (lastSpace > 0 && lastSpace < width) {
+          if (lastSpace > 0 && lastSpace < currentWidth) {
             // Found a space to break at
             breakPoint = lastSpace;
-          } else if (lastSpace === -1 && remaining.indexOf(' ') > width) {
+          } else if (lastSpace === -1 && remaining.indexOf(' ') > currentWidth) {
             // No space in first width chars, but there is a space later
             // Break at the width limit
-            breakPoint = width;
+            breakPoint = currentWidth;
           } else if (remaining.indexOf(' ') === -1) {
             // No spaces in remaining text, break at width
-            breakPoint = Math.min(width, remaining.length);
+            breakPoint = Math.min(currentWidth, remaining.length);
           }
           
           const segment = remaining.slice(0, breakPoint).trimEnd();
@@ -238,6 +249,8 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
           
           // Skip the space if we broke at a space
           remaining = remaining.slice(breakPoint).trimStart();
+          isFirstWrappedSegment = false;
+          totalWrappedLines++;
         }
       }
     }
