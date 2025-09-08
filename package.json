@@ -35,7 +35,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
+    "dist/**/*",
     "dmux",
     "README.md",
     "LICENSE"
