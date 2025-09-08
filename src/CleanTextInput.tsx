@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useFocus, useStdout } from 'ink';
 
 interface CleanTextInputProps {
@@ -51,13 +51,21 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     }
   }, [value.length, cursor]);
 
-  // Enable bracketed paste mode
+  // Enable bracketed paste mode with small delay to avoid blocking UI
   useEffect(() => {
+    let bracketedPasteTimer: NodeJS.Timeout | null = null;
+    
     if (isFocused) {
-      process.stdout.write('\x1b[?2004h');
+      // Small delay to let UI settle before enabling bracketed paste
+      bracketedPasteTimer = setTimeout(() => {
+        process.stdout.write('\x1b[?2004h');
+      }, 10);
     }
     
     return () => {
+      if (bracketedPasteTimer) {
+        clearTimeout(bracketedPasteTimer);
+      }
       process.stdout.write('\x1b[?2004l');
       // Clean up paste timeout if component unmounts
       if (pasteTimeout) {
@@ -586,8 +594,8 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     });
   };
 
-  // Render
-  const wrappedLines = wrapText(value, maxWidth);
+  // Memoize wrapped text to avoid recalculating on every render
+  const wrappedLines = useMemo(() => wrapText(value, maxWidth), [value, maxWidth]);
   const hasMultipleLines = wrappedLines.length > 1;
 
   if (value === '') {
