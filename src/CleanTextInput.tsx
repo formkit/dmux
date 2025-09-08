@@ -27,6 +27,7 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const [pastedItems, setPastedItems] = useState<Map<number, PastedContent>>(new Map());
   const [nextPasteId, setNextPasteId] = useState(1);
   const [isProcessingPaste, setIsProcessingPaste] = useState(false);
+  const [ignoreNextInput, setIgnoreNextInput] = useState(true);
   
   // Paste buffering state
   const [pasteBuffer, setPasteBuffer] = useState<string>('');
@@ -60,6 +61,11 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       bracketedPasteTimer = setTimeout(() => {
         process.stdout.write('\x1b[?2004h');
       }, 10);
+      
+      // Clear the ignore flag after a short delay to allow normal input
+      setTimeout(() => {
+        setIgnoreNextInput(false);
+      }, 50);
     }
     
     return () => {
@@ -355,6 +361,12 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
 
     // Regular text input with paste detection and buffering
     if (input && !key.ctrl && !key.meta) {
+      // Ignore the first character input if flag is set (prevents 'n' from dmux menu)
+      if (ignoreNextInput && input.length === 1) {
+        setIgnoreNextInput(false);
+        return;
+      }
+      
       // First, check if this looks like a malformed paste sequence we should ignore
       // Pattern: [200- or [201- followed by content (missing the ~)
       if (input.startsWith('[200-') || input.startsWith('[201-')) {
@@ -585,55 +597,55 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   
   // Function to find cursor position in wrapped lines
   const findCursorInWrappedLines = (wrappedLines: { line: string; isHardBreak: boolean }[], absoluteCursor: number) => {
-    let pos = 0;
+    if (wrappedLines.length === 0) {
+      return { line: 0, col: 0 };
+    }
     
-    // Walk through the original text and wrapped lines simultaneously
-    const originalLines = value.split('\n');
-    let originalPos = 0;
-    let wrappedIndex = 0;
+    let currentPos = 0;
     
-    for (let i = 0; i < originalLines.length; i++) {
-      const originalLine = originalLines[i];
+    // Walk through each wrapped line and track character positions
+    for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
+      const wrappedLine = wrappedLines[lineIndex];
+      const lineLength = wrappedLine.line.length;
       
-      // Count wrapped segments for this original line
-      let linePos = 0;
-      while (wrappedIndex < wrappedLines.length && linePos < originalLine.length) {
-        const wrappedLine = wrappedLines[wrappedIndex];
-        const segmentLength = wrappedLine.line.length;
-        
-        // Check if cursor is in this wrapped segment
-        const segmentEnd = originalPos + segmentLength;
-        if (absoluteCursor <= segmentEnd) {
-          const colInSegment = absoluteCursor - originalPos;
-          return {
-            line: wrappedIndex,
-            col: colInSegment
-          };
-        }
-        
-        originalPos = segmentEnd;
-        linePos += segmentLength;
-        
-        // Account for space that was removed during wrapping
-        if (!wrappedLine.isHardBreak && wrappedIndex < wrappedLines.length - 1) {
-          // This was a soft wrap, account for the space that was trimmed
-          if (linePos < originalLine.length && originalLine[linePos] === ' ') {
-            originalPos++; // Skip the space in position counting
-            linePos++;
-          }
-        }
-        
-        wrappedIndex++;
-        if (wrappedLine.isHardBreak) break;
+      // Check if cursor is within this wrapped line
+      if (absoluteCursor <= currentPos + lineLength) {
+        const colInLine = absoluteCursor - currentPos;
+        return {
+          line: lineIndex,
+          col: Math.max(0, Math.min(colInLine, lineLength))
+        };
       }
       
-      // Account for the newline character
-      if (i < originalLines.length - 1) {
-        originalPos++; // newline character
+      // Move past this line's characters
+      currentPos += lineLength;
+      
+      // Add 1 for newline character if this is a hard break
+      if (wrappedLine.isHardBreak) {
+        currentPos++;
+        // Check if cursor is exactly at the newline position
+        if (absoluteCursor === currentPos - 1) {
+          return {
+            line: lineIndex,
+            col: lineLength
+          };
+        }
+      }
+      // For soft breaks (word wrapping), account for the space that was removed
+      else if (lineIndex < wrappedLines.length - 1) {
+        // Add 1 for the space that was trimmed during word wrapping
+        currentPos++;
+        // Check if cursor is at the space position
+        if (absoluteCursor === currentPos - 1) {
+          return {
+            line: lineIndex,
+            col: lineLength
+          };
+        }
       }
     }
     
-    // Cursor at very end
+    // Cursor is at the very end
     const lastLine = wrappedLines[wrappedLines.length - 1];
     return {
       line: wrappedLines.length - 1,
@@ -686,9 +698,11 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
         const line = wrappedLine.line;
         
         if (hasCursor) {
-          const before = line.slice(0, cursorPos.col);
-          const at = line[cursorPos.col] || ' ';
-          const after = line.slice(cursorPos.col + 1);
+          // Ensure cursor position is valid
+          const actualCol = Math.min(cursorPos.col, line.length);
+          const before = line.slice(0, actualCol);
+          const at = line[actualCol] || ' ';
+          const after = line.slice(actualCol + 1);
           
           // Check if cursor is within a paste tag
           const tagPattern = /\[#\d+ Pasted, \d+ lines?\]/g;
@@ -696,7 +710,7 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
           let cursorInTag = false;
           
           while ((match = tagPattern.exec(line)) !== null) {
-            if (cursorPos.col >= match.index && cursorPos.col < match.index + match[0].length) {
+            if (actualCol >= match.index && actualCol < match.index + match[0].length) {
               cursorInTag = true;
               break;
             }

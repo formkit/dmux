@@ -50,7 +50,13 @@
       "Bash(do tmux send-keys -t test-delete BSpace)",
       "Bash(for i in {1..5})",
       "Bash(for i in {1..20})",
-      "Bash(do tmux send-keys -t test-typing -l \"x\")"
+      "Bash(do tmux send-keys -t test-typing -l \"x\")",
+      "Bash(do tmux send-keys -t test-cursor Left)",
+      "Bash(do tmux send-keys -t test-fix Left)",
+      "Bash(do tmux send-keys -t test-final Left)",
+      "Bash(for i in {1..2})",
+      "Bash(do tmux send-keys -t test-final Right)",
+      "Bash(do tmux send-keys -t test-features Left)"
     ],
     "deny": [],
     "ask": [],
