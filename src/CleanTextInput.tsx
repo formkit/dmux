@@ -80,12 +80,22 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     let cleaned = input.replace(/\x1b\[[0-9;]*m/g, ''); // Remove color codes
     cleaned = cleaned.replace(/\x1b\[[\d;]*[A-Za-z]/g, ''); // Remove cursor movements
     
+    // Normalize line endings
+    cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // Check if this looks like code/JSON (has braces, brackets, or consistent indentation)
+    const looksLikeCode = cleaned.match(/[{}\[\]]/) || 
+                         cleaned.split('\n').some(line => line.startsWith('  ') || line.startsWith('\t'));
+    
+    if (looksLikeCode) {
+      // For code/JSON, preserve formatting exactly
+      return cleaned;
+    }
+    
+    // For regular text, do more aggressive cleaning
     // Remove box drawing characters
     const boxChars = /[╭╮╰╯│─┌┐└┘├┤┬┴┼━┃┏┓┗┛┣┫┳┻╋]/g;
     cleaned = cleaned.replace(boxChars, '');
-    
-    // Normalize line endings
-    cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     
     // Split into lines for processing
     let lines = cleaned.split('\n');
@@ -150,7 +160,7 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     const cleaned = preprocessPastedContent(fullContent);
     const lines = cleaned.split('\n');
     
-    if (lines.length > 10) {
+    if (lines.length > 15) {
       // Large paste - create reference tag
       const pasteId = nextPasteId;
       const pasteRef: PastedContent = {
@@ -345,22 +355,66 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
 
     // Regular text input with paste detection and buffering
     if (input && !key.ctrl && !key.meta) {
-      // Detect bracketed paste sequences
+      // First, check if this looks like a malformed paste sequence we should ignore
+      // Pattern: [200- or [201- followed by content (missing the ~)
+      if (input.startsWith('[200-') || input.startsWith('[201-')) {
+        // This is a malformed paste marker - strip it and process the rest as normal content
+        const cleanedInput = input.replace(/^\[20[01]-/, '');
+        if (cleanedInput) {
+          // Process as a regular paste if it has content
+          const hasNewlines = cleanedInput.includes('\n');
+          const isVeryLong = cleanedInput.length > 10;
+          if (hasNewlines || isVeryLong) {
+            processPastedContent(cleanedInput);
+            return;
+          }
+          // Otherwise treat as normal input
+          const before = value.slice(0, cursor);
+          const after = value.slice(cursor);
+          onChange(before + cleanedInput + after);
+          setCursor(cursor + cleanedInput.length);
+        }
+        return;
+      }
+      
+      // Detect bracketed paste sequences - handle multiple formats
       const PASTE_START = '\x1b[200~';
       const PASTE_END = '\x1b[201~';
+      // Also check for the pattern without escape char (some terminals strip it)
+      const PASTE_START_ALT = '[200~';
+      const PASTE_END_ALT = '[201~';
       
-      // Check for bracketed paste markers
-      const hasPasteStart = input.includes(PASTE_START);
-      const hasPasteEnd = input.includes(PASTE_END);
+      // Check for bracketed paste markers (both formats)
+      const hasPasteStart = input.includes(PASTE_START) || input.includes(PASTE_START_ALT);
+      const hasPasteEnd = input.includes(PASTE_END) || input.includes(PASTE_END_ALT);
       
       // Handle bracketed paste mode
       if (hasPasteStart) {
         setInBracketedPaste(true);
-        // Extract content after paste start marker
-        const startIdx = input.indexOf(PASTE_START) + PASTE_START.length;
+        // Extract content after paste start marker (check both formats)
+        let startIdx = -1;
+        let markerLength = 0;
+        
+        if (input.includes(PASTE_START)) {
+          startIdx = input.indexOf(PASTE_START);
+          markerLength = PASTE_START.length;
+        } else if (input.includes(PASTE_START_ALT)) {
+          startIdx = input.indexOf(PASTE_START_ALT);
+          markerLength = PASTE_START_ALT.length;
+        }
+        
+        let endIdx = -1;
+        if (hasPasteEnd) {
+          if (input.includes(PASTE_END)) {
+            endIdx = input.indexOf(PASTE_END);
+          } else if (input.includes(PASTE_END_ALT)) {
+            endIdx = input.indexOf(PASTE_END_ALT);
+          }
+        }
+        
         const content = hasPasteEnd ? 
-          input.substring(startIdx, input.indexOf(PASTE_END)) :
-          input.substring(startIdx);
+          input.substring(startIdx + markerLength, endIdx) :
+          input.substring(startIdx + markerLength);
         setPasteBuffer(content);
         
         if (hasPasteEnd) {
@@ -373,13 +427,21 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       }
       
       if (hasPasteEnd && inBracketedPaste) {
-        // End of bracketed paste
-        const endIdx = input.indexOf(PASTE_END);
-        const finalContent = input.substring(0, endIdx);
-        processPastedContent(pasteBuffer + finalContent);
-        setPasteBuffer('');
-        setInBracketedPaste(false);
-        return;
+        // End of bracketed paste - check both formats
+        let endIdx = -1;
+        if (input.includes(PASTE_END)) {
+          endIdx = input.indexOf(PASTE_END);
+        } else if (input.includes(PASTE_END_ALT)) {
+          endIdx = input.indexOf(PASTE_END_ALT);
+        }
+        
+        if (endIdx >= 0) {
+          const finalContent = input.substring(0, endIdx);
+          processPastedContent(pasteBuffer + finalContent);
+          setPasteBuffer('');
+          setInBracketedPaste(false);
+          return;
+        }
       }
       
       if (inBracketedPaste) {
