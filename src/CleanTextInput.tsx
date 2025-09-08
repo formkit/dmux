@@ -197,20 +197,20 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       return;
     }
 
-    // Shift+Enter submits with expanded content
+    // Shift+Enter adds newline
     if (key.return && key.shift) {
-      const expandedValue = expandPasteReferences(value);
-      onSubmit?.(expandedValue);
-      return;
-    }
-
-    // Enter adds newline
-    if (key.return) {
       const before = value.slice(0, cursor);
       const after = value.slice(cursor);
       const newValue = before + '\n' + after;
       onChange(newValue);
       setCursor(cursor + 1);
+      return;
+    }
+
+    // Enter submits with expanded content
+    if (key.return) {
+      const expandedValue = expandPasteReferences(value);
+      onSubmit?.(expandedValue);
       return;
     }
 
