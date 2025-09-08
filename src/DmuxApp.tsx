@@ -178,9 +178,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   useEffect(() => {
     if (panes.length === 0) return;
 
-    // Defer Claude monitoring to avoid slowing down startup
+    // Defer Claude monitoring to avoid slowing down startup and dialog interactions
     const startupDelay = setTimeout(() => {
       const monitorClaudeStatus = async () => {
+        // Skip monitoring if any dialog is open to avoid UI freezing
+        if (showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
+            showCommandPrompt || showFileCopyPrompt || showUpdateDialog) {
+          return;
+        }
+        
         // Monitor Claude Code status for all panes
         const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
         try {
@@ -335,7 +341,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     return () => {
       clearTimeout(startupDelay);
     };
-  }, [panes, panesFile]); // Re-run when panes change
+  }, [panes, panesFile, showNewPaneDialog, showMergeConfirmation, showCloseOptions, 
+      showCommandPrompt, showFileCopyPrompt, showUpdateDialog]); // Re-run when panes or dialogs change
 
   const loadSettings = async () => {
     try {
@@ -354,6 +361,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   const loadPanes = async () => {
+    // Skip loading if any dialog is open to avoid UI freezing
+    if (showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
+        showCommandPrompt || showFileCopyPrompt || showUpdateDialog) {
+      return;
+    }
+    
     if (isLoading) {
       // Don't set loading to false immediately - keep it true for initial load
     }
@@ -2199,7 +2212,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
             <CleanTextInput
               value={newPanePrompt}
               onChange={setNewPanePrompt}
-              placeholder="Type your message..."
               onSubmit={(expandedValue) => {
                 // Use expanded value if provided (for paste references), otherwise use raw value
                 createNewPane(expandedValue || newPanePrompt);

@@ -19,7 +19,7 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   value,
   onChange,
   onSubmit,
-  placeholder = 'Type your message...'
+  placeholder = ''
 }) => {
   const { isFocused } = useFocus({ autoFocus: true });
   const [cursor, setCursor] = useState(value.length);
@@ -46,6 +46,8 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   useEffect(() => {
     if (cursor > value.length) {
       setCursor(value.length);
+    } else if (cursor < 0) {
+      setCursor(0);
     }
   }, [value.length, cursor]);
 
@@ -208,6 +210,16 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     // IMPORTANT: Some terminals send 'delete' key when backspace is pressed
     // Handle both key.backspace and key.delete as backspace
     if (key.backspace || key.delete || input === '\x7f' || input === '\x08') {
+      // Clear any paste state when delete is pressed
+      if (isPasting) {
+        setIsPasting(false);
+        setPasteBuffer('');
+        if (pasteTimeout) {
+          clearTimeout(pasteTimeout);
+          setPasteTimeout(null);
+        }
+      }
+      
       if (cursor > 0) {
         const before = value.slice(0, cursor - 1);
         const after = value.slice(cursor);
@@ -369,9 +381,20 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       }
       
       // Detect non-bracketed paste (fallback for terminals without bracketed paste mode)
-      const isLikelyPaste = input.length > 1 || 
-                           (input.includes('\n') && input.length > 5) ||
-                           isPasting;
+      // Exclude delete/backspace key sequences from paste detection
+      const isDeleteSequence = input === '\x7f' || input === '\x08' || 
+                              input.split('').every(c => c === '\x7f' || c === '\x08');
+      
+      // Better heuristics for paste detection:
+      // - Must have newlines OR be quite long (>10 chars at once)
+      // - Single chars or small groups (2-3) are likely fast typing
+      // - Already in paste mode should continue
+      const hasNewlines = input.includes('\n');
+      const isVeryLong = input.length > 10;
+      const isLikelyPaste = !isDeleteSequence && (
+                           (hasNewlines && input.length > 2) ||  // Multi-line content
+                           isVeryLong ||                          // Very long single chunk
+                           (isPasting && input.length > 0));      // Continue existing paste
       
       if (isLikelyPaste && !inBracketedPaste) {
         // Clear any existing timeout
@@ -397,8 +420,23 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
         return;
       }
       
-      // Normal single character input
+      // Normal single character input (or fast typing)
       if (!isPasting && !inBracketedPaste) {
+        const before = value.slice(0, cursor);
+        const after = value.slice(cursor);
+        onChange(before + input + after);
+        setCursor(cursor + input.length);
+      } else if (isPasting && !isLikelyPaste && !inBracketedPaste) {
+        // If we're in paste mode but this doesn't look like a paste,
+        // it's probably just fast typing - cancel paste mode
+        if (pasteTimeout) {
+          clearTimeout(pasteTimeout);
+          setPasteTimeout(null);
+        }
+        setPasteBuffer('');
+        setIsPasting(false);
+        
+        // Process as normal input
         const before = value.slice(0, cursor);
         const after = value.slice(cursor);
         onChange(before + input + after);
@@ -553,14 +591,13 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const hasMultipleLines = wrappedLines.length > 1;
 
   if (value === '') {
-    // Show placeholder for empty input
+    // Show cursor for empty input (no placeholder)
     return (
       <Box>
         <Box width={2}>
           <Text>{'> '}</Text>
         </Box>
         <Box>
-          <Text dimColor>{placeholder}</Text>
           <Text inverse>{' '}</Text>
         </Box>
       </Box>

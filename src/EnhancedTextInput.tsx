@@ -48,6 +48,10 @@ const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
       setLines([value]);
     }
     setDisplayValue(value);
+    // Keep cursor position valid
+    if (cursorPosition > value.length) {
+      setCursorPosition(value.length);
+    }
   }, [value, multiline]);
 
   // Search for files when autocomplete query changes
@@ -187,6 +191,11 @@ const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
     // Only handle input when focused
     if (!isFocused) return;
     
+    // Debug logging for key detection
+    if (process.env.DEBUG_DMUX) {
+      console.error('Key pressed:', { input, key });
+    }
+    
     // Handle autocomplete navigation
     if (showAutocomplete) {
       if (key.escape) {
@@ -253,34 +262,91 @@ const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
       return;
     }
     
-    // Line navigation for multiline
-    if (multiline) {
-      if (key.upArrow) {
+    // Line navigation for multiline and single-line
+    if (key.upArrow) {
+      if (multiline) {
         // Move to line above
-        const lineStart = displayValue.lastIndexOf('\n', cursorPosition - 1);
-        if (lineStart !== -1) {
-          const currentCol = cursorPosition - lineStart - 1;
-          const prevLineStart = displayValue.lastIndexOf('\n', lineStart - 1);
-          const prevLineLength = lineStart - prevLineStart - 1;
-          const newPos = prevLineStart + 1 + Math.min(currentCol, prevLineLength);
-          moveCursor(newPos);
+        const lines = displayValue.split('\n');
+        let currentPos = 0;
+        let lineIndex = 0;
+        let columnIndex = 0;
+        
+        // Find current line and column
+        for (let i = 0; i < lines.length; i++) {
+          const lineLength = lines[i].length;
+          if (currentPos + lineLength >= cursorPosition) {
+            lineIndex = i;
+            columnIndex = cursorPosition - currentPos;
+            break;
+          }
+          currentPos += lineLength + 1; // +1 for newline
         }
-        return;
+        
+        // Move to previous line if possible
+        if (lineIndex > 0) {
+          const prevLineLength = lines[lineIndex - 1].length;
+          const newColumn = Math.min(columnIndex, prevLineLength);
+          
+          // Calculate new cursor position
+          let newPos = 0;
+          for (let i = 0; i < lineIndex - 1; i++) {
+            newPos += lines[i].length + 1;
+          }
+          newPos += newColumn;
+          
+          moveCursor(newPos);
+        } else {
+          // At first line, move to start of line
+          moveCursor(0);
+        }
+      } else {
+        // Single line: move to start
+        moveCursor(0);
       }
-      
-      if (key.downArrow) {
+      return;
+    }
+    
+    if (key.downArrow) {
+      if (multiline) {
         // Move to line below
-        const lineEnd = displayValue.indexOf('\n', cursorPosition);
-        if (lineEnd !== -1) {
-          const lineStart = displayValue.lastIndexOf('\n', cursorPosition - 1);
-          const currentCol = cursorPosition - lineStart - 1;
-          const nextLineEnd = displayValue.indexOf('\n', lineEnd + 1);
-          const nextLineLength = (nextLineEnd === -1 ? displayValue.length : nextLineEnd) - lineEnd - 1;
-          const newPos = lineEnd + 1 + Math.min(currentCol, nextLineLength);
-          moveCursor(newPos);
+        const lines = displayValue.split('\n');
+        let currentPos = 0;
+        let lineIndex = 0;
+        let columnIndex = 0;
+        
+        // Find current line and column
+        for (let i = 0; i < lines.length; i++) {
+          const lineLength = lines[i].length;
+          if (currentPos + lineLength >= cursorPosition) {
+            lineIndex = i;
+            columnIndex = cursorPosition - currentPos;
+            break;
+          }
+          currentPos += lineLength + 1; // +1 for newline
         }
-        return;
+        
+        // Move to next line if possible
+        if (lineIndex < lines.length - 1) {
+          const nextLineLength = lines[lineIndex + 1].length;
+          const newColumn = Math.min(columnIndex, nextLineLength);
+          
+          // Calculate new cursor position
+          let newPos = 0;
+          for (let i = 0; i <= lineIndex; i++) {
+            newPos += lines[i].length + 1;
+          }
+          newPos += newColumn;
+          
+          moveCursor(newPos);
+        } else {
+          // At last line, move to end of line
+          moveCursor(displayValue.length);
+        }
+      } else {
+        // Single line: move to end
+        moveCursor(displayValue.length);
       }
+      return;
     }
     
     // Home/End keys
@@ -306,25 +372,26 @@ const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
       return;
     }
 
-    // Deletion
-    if (key.backspace) {
-      if (key.meta || key.alt) {
-        // Delete word (Alt/Cmd + Backspace)
-        const wordStart = findWordBoundary(displayValue, cursorPosition, 'left');
-        deleteText(wordStart, cursorPosition);
-      } else if (cursorPosition > 0) {
-        deleteText(cursorPosition - 1, cursorPosition);
-      }
-      return;
-    }
-    
-    if (key.delete) {
-      if (key.meta || key.alt) {
-        // Delete word forward (Alt/Cmd + Delete)
-        const wordEnd = findWordBoundary(displayValue, cursorPosition, 'right');
-        deleteText(cursorPosition, wordEnd);
-      } else if (cursorPosition < displayValue.length) {
-        deleteText(cursorPosition, cursorPosition + 1);
+    // Deletion - handle both backspace and delete properly
+    if (key.backspace || key.delete) {
+      if (key.backspace) {
+        // Backspace: delete character before cursor
+        if (key.meta || key.alt) {
+          // Delete word (Alt/Cmd + Backspace)
+          const wordStart = findWordBoundary(displayValue, cursorPosition, 'left');
+          deleteText(wordStart, cursorPosition);
+        } else if (cursorPosition > 0) {
+          deleteText(cursorPosition - 1, cursorPosition);
+        }
+      } else if (key.delete) {
+        // Delete: delete character after cursor
+        if (key.meta || key.alt) {
+          // Delete word forward (Alt/Cmd + Delete)
+          const wordEnd = findWordBoundary(displayValue, cursorPosition, 'right');
+          deleteText(cursorPosition, wordEnd);
+        } else if (cursorPosition < displayValue.length) {
+          deleteText(cursorPosition, cursorPosition + 1);
+        }
       }
       return;
     }
@@ -348,34 +415,89 @@ const EnhancedTextInput: React.FC<EnhancedTextInputProps> = ({
     }
   });
 
-  // Build display with cursor
+  // Build display with cursor - handle multiline properly
   const getDisplayWithCursor = () => {
-    const before = displayValue.slice(0, cursorPosition);
-    const after = displayValue.slice(cursorPosition);
-    const cursorChar = after[0] || ' ';
-    const remaining = after.slice(1);
-    
-    return (
-      <>
-        <Text>{before}</Text>
-        <Text inverse>{cursorChar}</Text>
-        <Text>{remaining}</Text>
-      </>
-    );
+    if (!multiline) {
+      // Single line display
+      const before = displayValue.slice(0, cursorPosition);
+      const after = displayValue.slice(cursorPosition);
+      const cursorChar = after[0] || ' ';
+      const remaining = after.slice(1);
+      
+      return (
+        <>
+          <Text>{before}</Text>
+          <Text inverse>{cursorChar}</Text>
+          <Text>{remaining}</Text>
+        </>
+      );
+    } else {
+      // Multiline display - render each line separately
+      const lines = displayValue.split('\n');
+      let currentPos = 0;
+      let result: JSX.Element[] = [];
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const lineStart = currentPos;
+        const lineEnd = currentPos + line.length;
+        
+        if (cursorPosition >= lineStart && cursorPosition <= lineEnd) {
+          // This line contains the cursor
+          const beforeCursor = line.slice(0, cursorPosition - lineStart);
+          const atCursor = line[cursorPosition - lineStart] || ' ';
+          const afterCursor = line.slice(cursorPosition - lineStart + 1);
+          
+          result.push(
+            <Box key={i}>
+              <Text>{i > 0 ? '  ' : ''}</Text>
+              <Text>{beforeCursor}</Text>
+              <Text inverse>{atCursor}</Text>
+              <Text>{afterCursor}</Text>
+            </Box>
+          );
+        } else {
+          // Normal line without cursor
+          result.push(
+            <Box key={i}>
+              <Text>{i > 0 ? '  ' : ''}</Text>
+              <Text>{line}</Text>
+            </Box>
+          );
+        }
+        
+        currentPos = lineEnd + 1; // +1 for newline
+      }
+      
+      // If cursor is at the very end after a newline, show it
+      if (cursorPosition === displayValue.length && displayValue.endsWith('\n')) {
+        result.push(
+          <Box key={lines.length}>
+            <Text>  </Text>
+            <Text inverse> </Text>
+          </Box>
+        );
+      }
+      
+      return <Box flexDirection="column">{result}</Box>;
+    }
   };
 
   return (
     <Box flexDirection="column">
-      <Box>
-        {displayValue ? (
-          getDisplayWithCursor()
-        ) : (
-          <>
-            <Text dimColor>{placeholder}</Text>
-            <Text inverse> </Text>
-          </>
-        )}
-      </Box>
+      {multiline ? (
+        <Box flexDirection="row">
+          <Text>{'> '}</Text>
+          <Box flexGrow={1}>
+            {getDisplayWithCursor()}
+          </Box>
+        </Box>
+      ) : (
+        <Box>
+          <Text>{'> '}</Text>
+          {getDisplayWithCursor()}
+        </Box>
+      )}
       
       {showAutocomplete && fileMatches.length > 0 && (
         <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
