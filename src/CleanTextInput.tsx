@@ -18,12 +18,13 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const [cursor, setCursor] = useState(value.length);
   const { stdout } = useStdout();
   
-  // Calculate available width for text (terminal width - borders - padding)
-  // Subtract 2 for borders, 2 for padding = 4 total
-  // The prompt "> " is handled separately in wrapText for first line only
+  // Calculate available width for text (terminal width - borders - padding - prompt)
+  // Subtract 2 for borders, 2 for padding, 2 for "> " prompt = 6 total
+  // The prompt is always rendered separately, so we need to account for it
   // Use process.stdout.columns as fallback since useStdout might not update
   const terminalWidth = process.stdout.columns || (stdout ? stdout.columns : 80);
-  const maxWidth = Math.max(20, terminalWidth - 4);
+  // Reduce by 1 more to prevent edge case where text exactly fills width
+  const maxWidth = Math.max(20, terminalWidth - 7);
 
   // Keep cursor in bounds
   useEffect(() => {
@@ -187,70 +188,66 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   });
 
   // Function to wrap text at word boundaries
-  const wrapText = (text: string, baseWidth: number): { line: string; isHardBreak: boolean }[] => {
+  const wrapText = (text: string, width: number): { line: string; isHardBreak: boolean }[] => {
     if (!text) return [{ line: '', isHardBreak: false }];
     
     const hardLines = text.split('\n');
     const wrappedLines: { line: string; isHardBreak: boolean }[] = [];
-    let totalWrappedLines = 0; // Track total wrapped lines for determining if it's first line
     
     for (let i = 0; i < hardLines.length; i++) {
       const hardLine = hardLines[i];
       const isLastHardLine = i === hardLines.length - 1;
-      let isFirstWrappedSegment = true;
       
-      // First line of entire text has less width due to "> " prompt
-      // All subsequent lines (including wrapped continuations) have full width
-      const effectiveWidth = (i === 0 && totalWrappedLines === 0) ? baseWidth - 2 : baseWidth;
-      
-      if (hardLine.length <= effectiveWidth) {
+      if (hardLine.length <= width) {
         // Line fits within width
         wrappedLines.push({ line: hardLine, isHardBreak: !isLastHardLine });
-        totalWrappedLines++;
       } else {
         // Need to wrap this line at word boundaries
         let remaining = hardLine;
         
         while (remaining.length > 0) {
-          // First segment of first hard line gets less width, all others get full width
-          const currentWidth = (i === 0 && isFirstWrappedSegment) ? baseWidth - 2 : baseWidth;
-          
-          if (remaining.length <= currentWidth) {
+          if (remaining.length <= width) {
             // Last segment of this hard line
             wrappedLines.push({ 
               line: remaining, 
               isHardBreak: !isLastHardLine 
             });
-            totalWrappedLines++;
             break;
           }
           
           // Find last space within width limit
-          let breakPoint = currentWidth;
-          let lastSpace = remaining.lastIndexOf(' ', currentWidth);
+          let breakPoint = width;
           
-          if (lastSpace > 0 && lastSpace < currentWidth) {
+          // Look for the last space that fits within the width - 1 to wrap before overflow
+          let lastSpace = remaining.lastIndexOf(' ', width - 1);
+          
+          if (lastSpace > 0) {
             // Found a space to break at
             breakPoint = lastSpace;
-          } else if (lastSpace === -1 && remaining.indexOf(' ') > currentWidth) {
-            // No space in first width chars, but there is a space later
-            // Break at the width limit
-            breakPoint = currentWidth;
-          } else if (remaining.indexOf(' ') === -1) {
-            // No spaces in remaining text, break at width
-            breakPoint = Math.min(currentWidth, remaining.length);
+          } else {
+            // No good space found, break at width or look for first space
+            const firstSpace = remaining.indexOf(' ');
+            if (firstSpace > 0 && firstSpace < width) {
+              breakPoint = firstSpace;
+            } else {
+              // No spaces or space is beyond width, break at width
+              breakPoint = Math.min(width, remaining.length);
+            }
           }
           
-          const segment = remaining.slice(0, breakPoint).trimEnd();
+          const segment = remaining.slice(0, breakPoint);
           wrappedLines.push({ 
-            line: segment, 
+            line: segment.trimEnd(), 
             isHardBreak: false // soft wrap
           });
           
           // Skip the space if we broke at a space
-          remaining = remaining.slice(breakPoint).trimStart();
-          isFirstWrappedSegment = false;
-          totalWrappedLines++;
+          const nextChar = remaining[breakPoint];
+          if (nextChar === ' ') {
+            remaining = remaining.slice(breakPoint + 1);
+          } else {
+            remaining = remaining.slice(breakPoint);
+          }
         }
       }
     }
@@ -324,9 +321,13 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     // Show placeholder for empty input
     return (
       <Box>
-        <Text>{'> '}</Text>
-        <Text dimColor>{placeholder}</Text>
-        <Text inverse>{' '}</Text>
+        <Box width={2}>
+          <Text>{'> '}</Text>
+        </Box>
+        <Box>
+          <Text dimColor>{placeholder}</Text>
+          <Text inverse>{' '}</Text>
+        </Box>
       </Box>
     );
   }
@@ -349,17 +350,23 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
           
           return (
             <Box key={idx}>
-              <Text>{isFirst ? '> ' : '  '}</Text>
-              <Text>{before}</Text>
-              <Text inverse>{at}</Text>
-              <Text>{after}</Text>
+              <Box width={2}>
+                <Text>{isFirst ? '> ' : '  '}</Text>
+              </Box>
+              <Box>
+                <Text>{before}</Text>
+                <Text inverse>{at}</Text>
+                <Text>{after}</Text>
+              </Box>
             </Box>
           );
         }
         
         return (
           <Box key={idx}>
-            <Text>{isFirst ? '> ' : '  '}</Text>
+            <Box width={2}>
+              <Text>{isFirst ? '> ' : '  '}</Text>
+            </Box>
             <Text>{line || ' '}</Text>
           </Box>
         );
