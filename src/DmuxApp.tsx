@@ -2129,9 +2129,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     if (input === 'q') {
       cleanExit();
     } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
-      // Defer state updates slightly to avoid blocking UI
+      // Clear the prompt and show dialog in next tick to prevent 'n' bleeding through
+      setNewPanePrompt('');
       setShowNewPaneDialog(true);
-      setTimeout(() => setNewPanePrompt(''), 0); // Clear after dialog renders
       return; // Consume the 'n' keystroke so it doesn't propagate
     } else if (input === 'j' && selectedIndex < panes.length) {
       jumpToPane(panes[selectedIndex].paneId);
