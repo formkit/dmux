@@ -198,14 +198,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           }
           
           // First check if pane exists before trying to capture
-          const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
-            encoding: 'utf-8',
-            stdio: 'pipe' 
-          }).trim().split('\n');
+          let paneExists = false;
+          try {
+            const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+              encoding: 'utf-8',
+              stdio: 'pipe',
+              timeout: 500 // Quick timeout
+            }).trim().split('\n').filter(id => id && id.startsWith('%'));
+            
+            paneExists = paneIds.includes(pane.paneId);
+          } catch {
+            // If we can't check, assume pane exists to avoid false removals
+            paneExists = true;
+          }
           
-          if (!paneIds.includes(pane.paneId)) {
-            // Pane doesn't exist anymore, return unchanged
-            return pane;
+          if (!paneExists) {
+            // Pane doesn't exist anymore, mark for removal
+            return null;
           }
           
           // Capture the last 30 lines of the pane for better detection
@@ -316,16 +325,25 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       // Filter out null values (dead panes) and keep only valid panes
       const updatedPanes = updatedPanesWithNulls.filter((pane): pane is DmuxPane => pane !== null);
       
-      // Check if we have changes (including pane removals)
-      const hasChanges = updatedPanes.length !== panes.length || 
-        updatedPanes.some((pane, index) => 
+      // Check if panes were removed
+      const panesRemoved = updatedPanes.length < panes.length;
+      
+      if (panesRemoved) {
+        // Save the updated list with removed panes
+        await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
+        // Reload to sync state properly
+        await loadPanes();
+      } else {
+        // Only update Claude status if no structural changes
+        const hasStatusChanges = updatedPanes.some((pane, index) => 
           pane.claudeStatus !== panes[index]?.claudeStatus
         );
-      
-      if (hasChanges) {
-        setPanes(updatedPanes);
-        // Save to file
-        await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
+        
+        if (hasStatusChanges) {
+          // Update state with new Claude status but don't save to file
+          // Claude status is ephemeral and shouldn't persist
+          setPanes(updatedPanes);
+        }
       }
       };
 
@@ -376,37 +394,67 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       const content = await fs.readFile(panesFile, 'utf-8');
       const loadedPanes = JSON.parse(content) as DmuxPane[];
       
-      // Get all pane IDs in a single call (much faster)
+      // Get all pane IDs with retries for stability
       let allPaneIds: string[] = [];
-      try {
-        allPaneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
-          encoding: 'utf-8',
-          stdio: 'pipe' 
-        }).trim().split('\n').filter(id => id);
-      } catch {
-        // No panes or tmux error
-      }
+      let retryCount = 0;
+      const maxRetries = 2;
       
-      // Filter out dead panes
-      const activePanes = loadedPanes.filter(pane => allPaneIds.includes(pane.paneId));
-      
-      // Batch update all pane titles in one go (only if needed)
-      if (activePanes.length > 0) {
-        // Update titles for all active panes at once
-        activePanes.forEach(pane => {
-          try {
-            execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-          } catch {
-            // Ignore if setting title fails
+      while (retryCount <= maxRetries) {
+        try {
+          const output = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+            encoding: 'utf-8',
+            stdio: 'pipe',
+            timeout: 1000 // 1 second timeout
+          });
+          
+          allPaneIds = output.trim().split('\n').filter(id => id && id.startsWith('%'));
+          
+          // If we got results, break out of retry loop
+          if (allPaneIds.length > 0 || retryCount === maxRetries) {
+            break;
           }
-        });
+        } catch (error) {
+          // On error, wait a bit before retry
+          if (retryCount < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        retryCount++;
       }
       
-      setPanes(activePanes);
+      // Filter out dead panes - but keep panes from file as source of truth
+      // Only remove panes that definitively don't exist
+      const activePanes = loadedPanes.filter(pane => {
+        // If we couldn't get pane list, keep all panes (safer)
+        if (allPaneIds.length === 0) {
+          return true;
+        }
+        return allPaneIds.includes(pane.paneId);
+      });
       
-      // Save cleaned list
-      if (activePanes.length !== loadedPanes.length) {
-        await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
+      // Only update state if there's an actual change to avoid re-renders
+      const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
+      const newPaneIds = activePanes.map(p => p.paneId).sort().join(',');
+      
+      if (currentPaneIds !== newPaneIds || panes.length === 0) {
+        // Batch update all pane titles in one go (only if needed)
+        if (activePanes.length > 0) {
+          // Update titles for all active panes at once
+          activePanes.forEach(pane => {
+            try {
+              execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+            } catch {
+              // Ignore if setting title fails
+            }
+          });
+        }
+        
+        setPanes(activePanes);
+        
+        // Save cleaned list
+        if (activePanes.length !== loadedPanes.length) {
+          await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
+        }
       }
       
       // Set loading to false after first load
@@ -414,7 +462,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         setIsLoading(false);
       }
     } catch {
-      setPanes([]);
+      // Don't clear panes on error - keep current state
       // Set loading to false even on error
       if (isLoading) {
         setIsLoading(false);
@@ -603,8 +651,25 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   const savePanes = async (newPanes: DmuxPane[]) => {
-    await fs.writeFile(panesFile, JSON.stringify(newPanes, null, 2));
-    setPanes(newPanes);
+    // Filter out any panes that no longer exist in tmux before saving
+    let activePanes = newPanes;
+    
+    try {
+      const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: 1000
+      }).trim().split('\n').filter(id => id && id.startsWith('%'));
+      
+      // Only keep panes that still exist
+      activePanes = newPanes.filter(pane => paneIds.includes(pane.paneId));
+    } catch {
+      // If we can't verify, save all panes
+      activePanes = newPanes;
+    }
+    
+    await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
+    setPanes(activePanes);
   };
 
   const applySmartLayout = (paneCount: number) => {
@@ -1109,7 +1174,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     };
     
     const updatedPanes = [...panes, newPane];
-    await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
+    await savePanes(updatedPanes);
     
     // Switch back to the original pane (where dmux is running)
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });

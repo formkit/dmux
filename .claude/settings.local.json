@@ -51,7 +51,10 @@
       "Bash(for i in {1..5})",
       "Bash(for i in {1..20})",
       "Bash(do tmux send-keys -t test-typing -l \"x\")",
-      "Bash(npm pack:*)"
+      "Bash(npm pack:*)",
+      "Bash(echo:*)",
+      "Bash(tmux split-window:*)",
+      "Bash(tmux kill-pane:*)"
     ],
     "deny": [],
     "ask": [],
