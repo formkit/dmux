@@ -25,8 +25,9 @@ interface DmuxPane {
   devWindowId?: string;   // Background window for dev server
   devStatus?: 'running' | 'stopped';
   devUrl?: string;        // Detected dev server URL
-  claudeStatus?: 'working' | 'waiting' | 'idle';  // Claude Code status
-  lastClaudeCheck?: number;  // Timestamp of last status check
+  agent?: 'claude' | 'opencode';
+  agentStatus?: 'working' | 'waiting' | 'idle';  // Agent working/attention status
+  lastAgentCheck?: number;  // Timestamp of last status check
 }
 
 interface PanePosition {
@@ -77,6 +78,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [isUpdating, setIsUpdating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { exit } = useApp();
+
+  // Agent selection state
+  const [availableAgents, setAvailableAgents] = useState<Array<'claude' | 'opencode'>>([]);
+  const [showAgentChoiceDialog, setShowAgentChoiceDialog] = useState(false);
+  const [agentChoice, setAgentChoice] = useState<'claude' | 'opencode' | null>(null);
+  const [pendingPrompt, setPendingPrompt] = useState('');
 
   // Track terminal dimensions for responsive layout
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
@@ -139,12 +146,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         !showCommandPrompt && 
         !showFileCopyPrompt && 
         !showUpdateDialog &&
+        !showAgentChoiceDialog &&
         !isCreatingPane &&
         !runningCommand &&
         !isUpdating) {
       setShowNewPaneDialog(true);
     }
-  }, [isLoading, panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showUpdateDialog, isCreatingPane, runningCommand, isUpdating]);
+  }, [isLoading, panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showUpdateDialog, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
   // Check for updates periodically
   useEffect(() => {
@@ -176,24 +184,39 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     };
   }, [autoUpdater]);
 
+  // Detect available agents on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const agents: Array<'claude' | 'opencode'> = [];
+        const hasClaude = await findClaudeCommand();
+        if (hasClaude) agents.push('claude');
+        const hasopencode = await findopencodeCommand();
+        if (hasopencode) agents.push('opencode');
+        setAvailableAgents(agents);
+        setAgentChoice(agents[0] || 'claude');
+      } catch {}
+    })();
+  }, []);
+
   // Monitor Claude status in all panes with proper dependency tracking
   useEffect(() => {
     if (panes.length === 0) return;
 
     // Defer Claude monitoring to avoid slowing down startup and dialog interactions
     const startupDelay = setTimeout(() => {
-      const monitorClaudeStatus = async () => {
+      const monitorAgentStatus = async () => {
         // Skip monitoring if any dialog is open to avoid UI freezing
         if (showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
             showCommandPrompt || showFileCopyPrompt || showUpdateDialog) {
           return;
         }
         
-        // Monitor Claude Code status for all panes
+        // Monitor agent status for all panes
         const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
         try {
           // Skip if recently checked (within 500ms to avoid overlapping checks)
-          if (pane.lastClaudeCheck && Date.now() - pane.lastClaudeCheck < 500) {
+          if (pane.lastAgentCheck && Date.now() - pane.lastAgentCheck < 500) {
             return pane;
           }
           
@@ -223,25 +246,30 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
             { encoding: 'utf-8', stdio: 'pipe' }
           );
           
-          // Pattern detection for Claude Code states
-          // Working patterns - Claude is processing
-          // The ONLY reliable indicator is "(esc to interrupt)"
-          const workingPatterns = [
-            /esc to interrupt/i,  // The ONLY reliable indicator that Claude is actively working
-          ];
-          
-          // Extract last few lines to check for patterns
           const lines = captureOutput.split('\n');
           const lastLines = lines.slice(-10).join('\n');
           
-          // Check if Claude's input box is present (waiting for input)
-          const hasInputBox = /╭─+╮/.test(lastLines) && /╰─+╯/.test(lastLines) && /│\s+>\s+.*│/.test(lastLines);
+          // Determine working patterns based on agent
+          let isWorking = false;
+          if (pane.agent === 'opencode') {
+            const workingPatterns = [
+              /esc\s+(to\s+)?interrupt/i,
+              /working(\.|\.{2}|\.{3})/i,
+            ];
+            isWorking = workingPatterns.some(pattern => pattern.test(lastLines));
+          } else {
+            // Default to Claude patterns
+            const workingPatterns = [
+              /esc to interrupt/i,
+            ];
+            isWorking = workingPatterns.some(pattern => pattern.test(captureOutput));
+          }
           
-          // Permission/attention patterns - needs user input (very forgiving)
+          // Attention patterns - generic prompts needing user input
           const attentionPatterns = [
-            /\?\s*$/m,  // Any line ending with a question mark
-            /y\/n/i,  // Any y/n prompt
-            /yes.*no/i,  // Yes or no prompts
+            /\?\s*$/m,
+            /y\/n/i,
+            /yes.*no/i,
             /\ballow\b.*\?/i,
             /\bapprove\b.*\?/i,
             /\bgrant\b.*\?/i,
@@ -259,62 +287,56 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
             /please confirm/i,
             /requires.*approval/i,
             /needs.*input/i,
-            /⏵⏵\s*accept edits/i,  // Claude's accept edits mode
-            /shift\+tab to cycle/i,  // Claude's interface hints
+            /⏵⏵\s*accept edits/i,
+            /shift\+tab to cycle/i,
           ];
           
-          // Check if Claude is working
-          const isWorking = workingPatterns.some(pattern => pattern.test(captureOutput));
+          // Claude-specific input box detection
+          const hasClaudeInputBox = /╭─+╮/.test(lastLines) && /╰─+╯/.test(lastLines) && /│\s+>\s+.*│/.test(lastLines);
           
-          // Check if Claude needs attention
-          const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput)) || hasInputBox;
+          const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput)) || (pane.agent !== 'opencode' && hasClaudeInputBox);
           
           // Determine status - working takes precedence
           let newStatus: 'working' | 'waiting' | 'idle' = 'idle';
           if (isWorking) {
             newStatus = 'working';
           } else if (needsAttention && !isWorking) {
-            // Only show as waiting if NOT working (working takes precedence)
             newStatus = 'waiting';
           }
           
-          // Additional checks for specific Claude states
-          // If we see "accept edits" without other working indicators, it's waiting
-          if (/accept edits/i.test(captureOutput) && !/esc to interrupt/i.test(captureOutput)) {
-            newStatus = 'waiting';
-          }
-          
-          // If Claude's input box is visible and no working indicators, it's waiting for input
-          if (hasInputBox && !isWorking) {
-            newStatus = 'waiting';
-          }
-          
-          // Check for specific Claude question patterns that might not end with ?
-          const claudeQuestionPatterns = [
-            /I (can|could|should|would|will|may|might)/i,
-            /Let me know/i,
-            /Please (tell|let|inform|advise)/i,
-            /Would you prefer/i,
-            /Should I (proceed|continue|go ahead)/i,
-          ];
-          
-          if (claudeQuestionPatterns.some(pattern => pattern.test(lastLines)) && !isWorking) {
-            newStatus = 'waiting';
+          // Additional Claude-specific checks
+          if (pane.agent !== 'opencode') {
+            if (/accept edits/i.test(captureOutput) && !/esc to interrupt/i.test(captureOutput)) {
+              newStatus = 'waiting';
+            }
+            if (hasClaudeInputBox && !isWorking) {
+              newStatus = 'waiting';
+            }
+            const claudeQuestionPatterns = [
+              /I (can|could|should|would|will|may|might)/i,
+              /Let me know/i,
+              /Please (tell|let|inform|advise)/i,
+              /Would you prefer/i,
+              /Should I (proceed|continue|go ahead)/i,
+            ];
+            if (claudeQuestionPatterns.some(pattern => pattern.test(lastLines)) && !isWorking) {
+              newStatus = 'waiting';
+            }
           }
           
           // Return updated pane if status changed
-          if (pane.claudeStatus !== newStatus) {
+          if (pane.agentStatus !== newStatus) {
             return {
               ...pane,
-              claudeStatus: newStatus,
-              lastClaudeCheck: Date.now()
+              agentStatus: newStatus,
+              lastAgentCheck: Date.now()
             };
           }
           
           // Just update timestamp
           return {
             ...pane,
-            lastClaudeCheck: Date.now()
+            lastAgentCheck: Date.now()
           };
         } catch (error) {
           // If we can't capture the pane, it might be dead - mark it for removal
@@ -334,27 +356,27 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         // Reload to sync state properly
         await loadPanes();
       } else {
-        // Only update Claude status if no structural changes
+        // Only update status if no structural changes
         const hasStatusChanges = updatedPanes.some((pane, index) => 
-          pane.claudeStatus !== panes[index]?.claudeStatus
+          pane.agentStatus !== panes[index]?.agentStatus
         );
         
         if (hasStatusChanges) {
-          // Update state with new Claude status but don't save to file
-          // Claude status is ephemeral and shouldn't persist
+          // Update state with new status but don't save to file
+          // Agent status is ephemeral and shouldn't persist
           setPanes(updatedPanes);
         }
       }
       };
 
       // Run monitoring after delay
-      monitorClaudeStatus();
+      monitorAgentStatus();
       
       // Set up interval for continuous monitoring (less frequent for better performance)
-      const claudeInterval = setInterval(monitorClaudeStatus, 2000); // Check every 2 seconds
+      const agentInterval = setInterval(monitorAgentStatus, 2000); // Check every 2 seconds
       
       return () => {
-        clearInterval(claudeInterval);
+        clearInterval(agentInterval);
       };
     }, 500); // Wait 500ms before starting monitoring
     
@@ -719,13 +741,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   };
 
   const findClaudeCommand = async (): Promise<string | null> => {
-    // Strategy 1: Try to execute claude directly (in case it's in PATH)
+    // Prefer passive detection to avoid triggering installers
     try {
-      execSync('claude --version', { stdio: 'pipe' });
-      return 'claude';
+      const userShell = process.env.SHELL || '/bin/bash';
+      const result = execSync(
+        `${userShell} -i -c "command -v claude 2>/dev/null || which claude 2>/dev/null"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      if (result) return result.split('\n')[0];
     } catch {}
 
-    // Strategy 2: Check common installation paths
+    // Check common installation paths without executing
     const commonPaths = [
       `${process.env.HOME}/.claude/local/claude`,
       `${process.env.HOME}/.local/bin/claude`,
@@ -735,44 +761,39 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       `${process.env.HOME}/bin/claude`,
     ];
 
-    for (const path of commonPaths) {
+    for (const p of commonPaths) {
       try {
-        await fs.access(path);
-        // Verify it's executable
-        execSync(`${path} --version`, { stdio: 'pipe' });
-        return path;
+        await fs.access(p);
+        return p;
       } catch {}
     }
 
-    // Strategy 3: Try to find claude using which in a shell with aliases
+    return null;
+  };
+
+  const findopencodeCommand = async (): Promise<string | null> => {
+    // Passive detection only (no execution)
     try {
       const userShell = process.env.SHELL || '/bin/bash';
       const result = execSync(
-        `${userShell} -i -c "which claude 2>/dev/null"`,
+        `${userShell} -i -c "command -v opencode 2>/dev/null || which opencode 2>/dev/null"`,
         { encoding: 'utf-8', stdio: 'pipe' }
       ).trim();
-      if (result) {
-        // Verify it works
-        execSync(`${result} --version`, { stdio: 'pipe' });
-        return result;
-      }
+      if (result) return result.split('\n')[0];
     } catch {}
 
-    // Strategy 4: Try to resolve alias
-    try {
-      const userShell = process.env.SHELL || '/bin/bash';
-      const result = execSync(
-        `${userShell} -i -c "type -p claude 2>/dev/null || alias claude 2>/dev/null | sed -n 's/.*=\\(.*\\)/\\1/p' | tr -d \"'\""`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      if (result) {
-        // Clean up the result (remove quotes, etc)
-        const cleanPath = result.replace(/^['"]|['"]$/g, '').replace(/^claude=/, '');
-        // Verify it works
-        execSync(`${cleanPath} --version`, { stdio: 'pipe' });
-        return cleanPath;
-      }
-    } catch {}
+    const commonPaths = [
+      '/opt/homebrew/bin/opencode',
+      '/usr/local/bin/opencode',
+      `${process.env.HOME}/.local/bin/opencode`,
+      `${process.env.HOME}/bin/opencode`,
+    ];
+    for (const p of commonPaths) {
+      try {
+        await fs.access(p);
+        return p;
+      } catch {}
+    }
 
     return null;
   };
@@ -896,7 +917,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   };
   
-  const createNewPane = async (prompt: string) => {
+  const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
     setIsCreatingPane(true);
     setStatusMessage('Generating slug...');
     
@@ -991,7 +1012,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       execSync(`tmux send-keys -t '${paneInfo}' 'echo "Worktree created at:" && pwd' Enter`, { stdio: 'pipe' });
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      setStatusMessage('Worktree created, launching Claude...');
+      setStatusMessage(agent ? `Worktree created, launching ${agent === 'opencode' ? 'opencode' : 'Claude'}...` : 'Worktree created.');
     } catch (error) {
       // Log error but continue - worktree creation is essential
       setStatusMessage(`Warning: Worktree issue: ${error}`);
@@ -1000,26 +1021,44 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    // NOW prepare and send the Claude command
-    // Claude should always be launched AFTER we're in the worktree directory
-    let claudeCmd: string;
-    if (prompt && prompt.trim()) {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
-    } else {
-      claudeCmd = `claude --permission-mode=acceptEdits`;
+    // Prepare and send the agent command
+    let escapedCmd = '';
+    if (agent === 'claude') {
+      // Claude should always be launched AFTER we're in the worktree directory
+      let claudeCmd: string;
+      if (prompt && prompt.trim()) {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
+      } else {
+        claudeCmd = `claude --permission-mode=acceptEdits`;
+      }
+      // Send Claude command to new pane
+      escapedCmd = claudeCmd.replace(/'/g, "'\\''");
+      execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
+      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    } else if (agent === 'opencode') {
+      // opencode: start the TUI, then paste the prompt and submit
+      const openCoderCmd = `opencode`;
+      const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\''");
+      execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, { stdio: 'pipe' });
+      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+      if (prompt && prompt.trim()) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        const bufName = `dmux_prompt_${Date.now()}`;
+        const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+        execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, { stdio: 'pipe' });
+        execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}' -p`, { stdio: 'pipe' });
+        execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: 'pipe' });
+        execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+      }
     }
     
-    // Send Claude command to new pane
-    const escapedCmd = claudeCmd.replace(/'/g, "'\\''");
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
-    
-    // Monitor for Claude Code trust prompt and auto-respond
+    if (agent === 'claude') {
+      // Monitor for Claude Code trust prompt and auto-respond
     const autoApproveTrust = async () => {
       // Wait for Claude to start up before checking for prompts
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -1160,6 +1199,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     autoApproveTrust().catch(err => {
       // Error in autoApproveTrust
     });
+    }
     
     // Keep focus on the new pane
     execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
@@ -1170,7 +1210,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       slug,
       prompt: prompt ? (prompt.substring(0, 50) + (prompt.length > 50 ? '...' : '')) : 'No initial prompt',
       paneId: paneInfo,
-      worktreePath
+      worktreePath,
+      agent
     };
     
     const updatedPanes = [...panes, newPane];
@@ -1192,6 +1233,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     // Reset the creating pane flag and refresh
     setIsCreatingPane(false);
     setStatusMessage('');
+    setNewPanePrompt('');
     
     // Force a reload of panes to ensure UI is up to date
     await loadPanes();
@@ -2018,11 +2060,32 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
           await runCommandInternal(currentCommandType, selectedPane);
         }
         setCurrentCommandType(null);
-      }
-      return;
     }
-    
-    if (showCommandPrompt) {
+     return;
+   }
+   
+   if (showAgentChoiceDialog) {
+     if (key.escape) {
+       setShowAgentChoiceDialog(false);
+       setShowNewPaneDialog(true);
+       setNewPanePrompt(pendingPrompt);
+       setPendingPrompt('');
+     } else if (key.leftArrow || input === '1' || (input && input.toLowerCase() === 'c')) {
+       setAgentChoice('claude');
+     } else if (key.rightArrow || input === '2' || (input && input.toLowerCase() === 'o')) {
+       setAgentChoice('opencode');
+     } else if (key.return) {
+       const chosen = agentChoice || (availableAgents[0] || 'claude');
+       const promptValue = pendingPrompt;
+       setShowAgentChoiceDialog(false);
+       setPendingPrompt('');
+       await createNewPane(promptValue, chosen);
+       setNewPanePrompt('');
+     }
+     return;
+   }
+   
+   if (showCommandPrompt) {
       if (key.escape) {
         setShowCommandPrompt(null);
         setCommandInput('');
@@ -2203,18 +2266,21 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
                   {pane.worktreePath && (
                     <Text color="gray"> (wt)</Text>
                   )}
+                  {pane.agent && (
+                    <Text color="gray"> ({pane.agent === 'claude' ? 'cc' : 'oc'})</Text>
+                  )}
                 </Box>
                 <Text color="gray" dimColor wrap="truncate">
                   {pane.prompt.substring(0, 30)}
                 </Text>
                 
                 {/* Claude status indicator */}
-                {pane.claudeStatus && (
+                {pane.agentStatus && (
                   <Box>
-                    {pane.claudeStatus === 'working' && (
+                    {pane.agentStatus === 'working' && (
                       <Text color="cyan">✻ Working...</Text>
                     )}
-                    {pane.claudeStatus === 'waiting' && (
+                    {pane.agentStatus === 'waiting' && (
                       <Text color="yellow" bold>⚠ Needs attention</Text>
                     )}
                   </Box>
@@ -2273,20 +2339,33 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         </Box>
       )}
 
-      {showNewPaneDialog && (
+      {showNewPaneDialog && !showAgentChoiceDialog && (
         <Box flexDirection="column" marginTop={1}>
-          <Text>Enter initial Claude prompt (ESC to cancel):</Text>
+          <Text>Enter initial prompt (ESC to cancel):</Text>
           <Box borderStyle="round" borderColor="#E67E22" paddingX={1} marginTop={1}>
-            <CleanTextInput
-              value={newPanePrompt}
-              onChange={setNewPanePrompt}
-              onSubmit={(expandedValue) => {
-                // Use expanded value if provided (for paste references), otherwise use raw value
-                createNewPane(expandedValue || newPanePrompt);
-                setShowNewPaneDialog(false);
-                setNewPanePrompt('');
-              }}
-            />
+              <CleanTextInput
+                value={newPanePrompt}
+                onChange={setNewPanePrompt}
+                onSubmit={(expandedValue) => {
+                  const promptValue = expandedValue || newPanePrompt;
+                  const agents = availableAgents;
+                   if (agents.length === 0) {
+                     setShowNewPaneDialog(false);
+                     setNewPanePrompt('');
+                     createNewPane(promptValue);
+                  } else if (agents.length === 1) {
+                    setShowNewPaneDialog(false);
+                    setNewPanePrompt('');
+                    createNewPane(promptValue, agents[0]);
+                  } else {
+                    setPendingPrompt(promptValue);
+                    setShowNewPaneDialog(false);
+                    setNewPanePrompt('');
+                    setShowAgentChoiceDialog(true);
+                    setAgentChoice(agentChoice || 'claude');
+                  }
+                }}
+              />
           </Box>
           <Box marginTop={1}>
             <Text dimColor italic>
@@ -2296,7 +2375,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         </Box>
       )}
 
-      {isCreatingPane && (
+      {showAgentChoiceDialog && (
+        <Box borderStyle="round" borderColor="cyan" paddingX={1} marginTop={1}>
+          <Box flexDirection="column">
+            <Text>Select agent (←/→, 1/2, C/O, Enter, ESC):</Text>
+            <Box marginTop={1} gap={3}>
+              <Text color={agentChoice === 'claude' ? 'cyan' : 'white'}>
+                {agentChoice === 'claude' ? '▶ Claude Code' : '  Claude Code'}
+              </Text>
+              <Text color={agentChoice === 'opencode' ? 'cyan' : 'white'}>
+                {agentChoice === 'opencode' ? '▶ opencode' : '  opencode'}
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+       {isCreatingPane && (
         <Box borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
           <Text color="yellow">
             <Text bold>⏳ Creating new pane... </Text>
