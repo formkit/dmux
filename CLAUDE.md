@@ -310,7 +310,108 @@ execSync('tmux refresh-client');
 - Missing API key: Uses timestamp slug
 - Invalid responses: Sanitizes and validates output
 
-### 5. Tmux Command Execution
+### 5. CleanTextInput Component (CRITICAL - DO NOT MODIFY WITHOUT CAREFUL CONSIDERATION)
+
+The `CleanTextInput` component (`src/CleanTextInput.tsx`) is a highly sophisticated custom text input implementation for terminal environments. It has been carefully engineered to handle complex terminal behaviors and should NOT be modified without understanding all its features.
+
+#### Core Features That Must Be Preserved
+
+1. **Multiline Support with Word Wrapping**
+   - Supports Shift+Enter for line breaks
+   - Word wrapping at word boundaries (not character-by-character)
+   - Handles edge cases where typing triggers wrap
+   - Preserves proper spacing between wrapped lines
+   - Visual line navigation with arrow keys
+
+2. **Advanced Cursor Management**
+   - Solid cursor (non-blinking) for better visibility
+   - Cursor positioning tracks correctly across wrapped lines
+   - Arrow key navigation (up/down/left/right) across visual lines
+   - Ctrl+A: Jump to beginning of current visual line
+   - Ctrl+E: Jump to end of current visual line
+   - Home/End key support
+
+3. **Terminal-Specific Key Handling**
+   - **CRITICAL**: Handles both 'backspace' and 'delete' signals
+   - Some terminals send 'delete' signal when backspace is pressed
+   - Must check both `key.backspace` and `key.delete` for backspace behavior
+   - Proper forward delete with actual delete key
+
+4. **Paste Detection and Reference System**
+   - Bracketed paste mode support (`\x1b[?2004h` and `\x1b[?2004l`)
+   - Smart paste detection heuristics:
+     - Multi-line content detection
+     - Large single-chunk detection (>10 chars)
+     - Paste buffering to handle entire pastes as single operations
+   - Claude Code-style reference tags for large pastes:
+     - Shows `[#1 Pasted content, 20 lines]` for pastes >10 lines
+     - Preprocessing removes ANSI codes and box drawing characters
+     - Expands references when submitting to Claude
+
+5. **Performance Optimizations**
+   - Memoized text wrapping calculations
+   - Deferred bracketed paste mode initialization (10ms delay)
+   - Efficient re-rendering only when necessary
+   - Background operation pausing during input
+
+6. **Edge Case Handling**
+   - Empty input shows cursor without placeholder
+   - Handles terminal resize gracefully
+   - Manages rapid key input without triggering paste mode
+   - Prevents UI freezing from background operations
+
+#### Implementation Details
+
+```typescript
+// Key components:
+- useFocus({ autoFocus: true }) - Auto-focuses on mount
+- Bracketed paste mode - Detects paste vs typing
+- Word wrapping algorithm - Preserves word boundaries
+- Cursor tracking - Maps visual position to string position
+```
+
+#### Critical Code Sections Not to Change
+
+1. **Backspace handling** (lines ~285-295):
+   ```typescript
+   if ((key.backspace || key.delete) && !key.shift && !key.meta)
+   ```
+   This MUST handle both signals due to terminal variations.
+
+2. **Paste detection heuristics** (lines ~155-165):
+   ```typescript
+   const hasNewlines = input.includes('\n');
+   const isVeryLong = input.length > 10;
+   const isLikelyPaste = !isDeleteSequence && (
+     (hasNewlines && input.length > 2) ||
+     isVeryLong ||
+     (isPasting && input.length > 0)
+   );
+   ```
+
+3. **Word wrapping calculation** (lines ~457-520):
+   - Complex algorithm for breaking at word boundaries
+   - Handles maximum width calculations
+   - Preserves spacing between wrapped segments
+
+4. **Cursor position mapping** (lines ~520-545):
+   - Maps between absolute string position and visual line/column
+   - Critical for arrow key navigation
+
+#### Testing Checklist When Modifying
+
+- [ ] Backspace works in single-line text
+- [ ] Backspace works after creating newlines with Shift+Enter
+- [ ] Arrow keys navigate correctly across wrapped lines
+- [ ] Ctrl+A/E jump to line boundaries
+- [ ] Large pastes create reference tags
+- [ ] Rapid typing doesn't trigger paste mode
+- [ ] Rapid delete key doesn't get "stuck"
+- [ ] Word wrapping happens at word boundaries
+- [ ] Character that triggers wrap displays immediately
+- [ ] No UI freezing when dialog opens
+
+### 6. Tmux Command Execution
 
 All tmux operations use `child_process.execSync`:
 ```typescript
@@ -633,6 +734,33 @@ set -x
 - Keyboard input is instant
 - Async operations for network calls
 
+#### Background Operation Management
+**Critical for UI Responsiveness**: The following operations are paused when dialogs are open to prevent UI freezing:
+
+1. **Pane Loading (`loadPanes`)**
+   - Runs every 3 seconds to check pane status
+   - Uses `execSync` which blocks the event loop
+   - Automatically skips when any dialog is open
+
+2. **Claude Monitoring (`monitorClaudeStatus`)**
+   - Runs every 2 seconds to check Claude status in panes
+   - Multiple `execSync` calls per pane (list-panes, capture-pane)
+   - Automatically skips when any dialog is open
+   - Deferred 500ms on startup to avoid initial lag
+
+3. **Why This Matters**
+   - `execSync` blocks the entire Node.js event loop
+   - When dialogs (especially text input) are open, blocking operations cause input lag
+   - The checks prevent the "jamming" effect when typing begins
+
+```typescript
+// Both operations check dialog states:
+if (showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
+    showCommandPrompt || showFileCopyPrompt || showUpdateDialog) {
+  return; // Skip blocking operations
+}
+```
+
 ## Recent Updates & Known Issues
 
 ### Recent Changes
@@ -641,6 +769,7 @@ set -x
 - Improved focus management for new panes
 - Implemented comprehensive worktree workflows
 - Fixed boot reliability issues
+- **Custom CleanTextInput component**: Complete rewrite of text input with advanced features
 
 ### Known Issues
 1. **Error handling**: Claude command availability not verified
