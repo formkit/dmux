@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="./dmux.png" alt="dmux logo" width="400" />
+</p>
+
 # dmux - AI-Powered tmux Development Sessions
 
-Tools for running agents in parallel are too complex. `dmux` makes running parallel development agents like Claude Code very simple. It's a simple tool that creates a new tmux pane, a new git worktree, and launches a Claude Code agent in that worktree, with AI powered branch naming and commit messages.
+Tools for running agents in parallel are too complex. `dmux` makes running parallel development agents like Claude Code or opencode very simple. It's a simple tool that creates a new tmux pane, a new git worktree, and launches your chosen agent (Claude Code or opencode) in that worktree, with AI powered branch naming and commit messages.
 
 `dmux` lets you merge the open panes back into your main branch easily, close failed experiments, and spin up more agents quickly.
 
@@ -11,7 +15,7 @@ Tools for running agents in parallel are too complex. `dmux` makes running paral
 - **🚀 Parallel Development**: Work on multiple features simultaneously in separate panes
 - **🌳 Git Worktree Integration**: Each pane operates in its own isolated git worktree
 - **🤖 AI-Powered**: Automatic branch naming and commit message generation
-- **🎯 Claude Code Integration**: Launch Claude with prompts and auto-accept edits
+- **🎯 Agent Integration**: Launch Claude Code or opencode with prompts (Claude auto-accepts edits)
 - **📦 Project Isolation**: Each project gets its own tmux session
 - **🔄 Smart Merging**: One-command merge workflow with automatic cleanup
 
@@ -20,7 +24,7 @@ Tools for running agents in parallel are too complex. `dmux` makes running paral
 - **tmux** 3.0 or higher
 - **Node.js** 18 or higher  
 - **Git** 2.20 or higher (with worktree support)
-- **Claude Code CLI** (`claude` command must be available)
+- **Agent CLI**: Claude Code (`claude`) or opencode (`opencode`)
 - **OpenRouter API Key** (optional but recommended for AI features)
 
 ## Installation
@@ -54,8 +58,8 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
 
 2. **Create a new development pane**
    - Press `n` or select "+ New dmux pane"
-   - Enter an optional prompt like "fix authentication bug"
-   - Claude launches in a new pane with your prompt
+- Enter an optional prompt like "fix authentication bug"
+- Your selected agent launches in a new pane with your prompt
 
 3. **Navigate between panes**
    - Use `↑/↓` arrows to select panes
@@ -89,7 +93,7 @@ dmux
 
 # Create a pane for a new feature
 # Press 'n', enter: "add user dashboard"
-# Claude opens with your prompt
+# The agent opens with your prompt
 
 # Create another pane for a bug fix
 # Press 'n', enter: "fix memory leak"
@@ -107,7 +111,7 @@ dmux
 1. **Session Management**: Each project gets its own tmux session (`dmux-projectname`)
 2. **Worktree Creation**: New panes create git worktrees in sibling directories
 3. **Branch Management**: Automatic branch creation with AI-generated names
-4. **Claude Integration**: Launches Claude with `--accept-edits` for immediate coding
+4. **Agent Integration**: Launches Claude with `--accept-edits`, or starts opencode and submits your prompt automatically
 5. **Smart Merging**: Auto-commits, generates messages, and cleans up worktrees
 
 ## tmux Configuration for Beginners
@@ -159,5 +163,5 @@ Or start a new tmux session for the changes to take effect.
 - tmux ≥ 3.0
 - Node.js ≥ 18
 - Git ≥ 2.20
-- Claude Code CLI
+- Claude Code or opencode CLI (at least one)
 - OpenRouter API key (optional)

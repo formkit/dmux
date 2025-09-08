@@ -12,13 +12,13 @@
 
 ## Project Overview
 
-dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-powered development sessions with Claude Code. It provides seamless integration between tmux, git worktrees, and Claude Code to enable parallel development workflows with automatic branch management and AI assistance.
+dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-powered development sessions with Claude Code or opencode. It provides seamless integration between tmux, git worktrees, and these agents to enable parallel development workflows with automatic branch management and AI assistance.
 
 ### Key Capabilities
 - **Project-specific tmux sessions**: Each project gets its own isolated tmux session
 - **Horizontal split pane management**: Creates and manages tmux panes (not windows)
 - **Git worktree integration**: Each pane operates in its own git worktree with a dedicated branch
-- **Claude Code automation**: Automatically launches Claude with prompts and `--accept-edits` flag
+- **Agent automation**: Automatically launches Claude Code (with `--accept-edits`) or opencode and submits your initial prompt
 - **AI-powered naming**: Generates contextual kebab-case slugs for branches and worktrees
 - **Intelligent merge workflows**: Auto-commits, generates commit messages, and merges worktrees
 - **React-based TUI**: Interactive terminal UI built with Ink framework
@@ -47,7 +47,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 - **Styling**: chalk for terminal colors
 - **Language**: TypeScript 5.x with strict mode
 - **External APIs**: OpenRouter AI (gpt-4o-mini model)
-- **System Requirements**: tmux, git, Claude Code CLI
+- **System Requirements**: tmux, git, and at least one agent CLI: Claude Code (`claude`) or opencode (`opencode`)
 
 ### File Structure
 ```
@@ -76,7 +76,8 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
    tmux --version      # tmux 3.0+
    node --version      # Node.js 18+
    git --version       # Git 2.20+ (worktree support)
-   claude --version    # Claude Code CLI
+    claude --version    # Claude Code CLI (if using Claude)
+    opencode --version  # opencode CLI (if using opencode)
    ```
 
 2. **Environment Variables**
@@ -195,14 +196,16 @@ Analyzes git diffs to create semantic commit messages:
 
 #### Creation Flow
 1. User selects "New dmux pane"
-2. Prompt for initial Claude command (optional)
+2. Prompt for initial agent prompt (optional)
 3. Generate slug via OpenRouter API
 4. Clear current pane (multiple strategies for clean display)
 5. Exit Ink app gracefully
 6. Create horizontal tmux split
 7. Create git worktree: `git worktree add ../{project}-{slug} -b {slug}`
 8. Change to worktree directory
-9. Launch Claude: `claude "{prompt}" --permission-mode=acceptEdits`
+9. Launch agent:
+   - Claude: `claude "{prompt}" --permission-mode=acceptEdits`
+   - opencode: start `opencode`, paste the prompt, and submit
 10. Focus remains on new pane
 11. Re-launch dmux to show updated menu
 
@@ -441,7 +444,7 @@ execSync(`tmux select-pane -t '${paneId}'`)
 2. **Create a new development pane**
    - Press `n` or select "+ New dmux pane"
    - Enter initial prompt: "implement user authentication"
-   - Claude launches in new pane with your prompt
+   - Your selected agent (Claude or opencode) launches in a new pane with your prompt
 
 3. **Switch between panes**
    - Use arrow keys to select pane
@@ -648,14 +651,14 @@ console.error('Debug:', variable);  // Outputs to stderr
 
 ### Common Issues
 
-#### 1. "Command not found: claude"
-**Solution**: Install Claude Code CLI
+#### 1. "Command not found: claude" or "opencode"
+**Solution**: Install the corresponding agent CLI
 ```bash
 # Check installation
 which claude
 
 # Install if missing
-# Follow Claude Code installation instructions
+# Follow the installation instructions for the chosen agent
 ```
 
 #### 2. API Key Not Working
@@ -769,6 +772,7 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 - Improved focus management for new panes
 - Implemented comprehensive worktree workflows
 - Fixed boot reliability issues
+- **opencode support**: Agent detection, selection UI, and working-status detection
 - **Custom CleanTextInput component**: Complete rewrite of text input with advanced features
 
 ### Known Issues
