@@ -21,10 +21,11 @@ class Dmux {
   private sessionName: string;
   private projectRoot: string;
   private autoUpdater: AutoUpdater;
+  private static cachedProjectRoot: string | null = null;
 
   constructor() {
     this.dmuxDir = path.join(process.env.HOME!, '.dmux');
-    // Get git root directory to determine project scope
+    // Get git root directory to determine project scope (cached)
     this.projectRoot = this.getProjectRoot();
     // Get project name from git root directory
     this.projectName = path.basename(this.projectRoot);
@@ -114,16 +115,24 @@ class Dmux {
   }
 
   private getProjectRoot(): string {
+    // Return cached value if available
+    if (Dmux.cachedProjectRoot) {
+      return Dmux.cachedProjectRoot;
+    }
+    
     try {
       // Try to get git root directory
       const gitRoot = execSync('git rev-parse --show-toplevel', { 
         encoding: 'utf-8',
         stdio: 'pipe'
       }).trim();
+      Dmux.cachedProjectRoot = gitRoot;
       return gitRoot;
     } catch {
       // Fallback to current directory if not in a git repo
-      return process.cwd();
+      const cwd = process.cwd();
+      Dmux.cachedProjectRoot = cwd;
+      return cwd;
     }
   }
 

@@ -83,9 +83,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
+    // Load immediately for initial data
     loadPanes();
     loadSettings();
-    const interval = setInterval(loadPanes, 2000);
+    
+    // Start polling after a short delay to avoid competing with startup
+    let pollingInterval: NodeJS.Timeout | undefined;
+    const startPolling = setTimeout(() => {
+      pollingInterval = setInterval(loadPanes, 3000); // Poll every 3 seconds instead of 2
+    }, 1000); // Wait 1 second before starting polling
     
     // Handle terminal resize
     const handleResize = () => {
@@ -110,7 +116,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     process.on('SIGTERM', handleTermination);
     
     return () => {
-      clearInterval(interval);
+      clearTimeout(startPolling);
+      if (pollingInterval) clearInterval(pollingInterval);
       process.stdout.removeListener('resize', handleResize);
       process.removeListener('SIGINT', handleTermination);
       process.removeListener('SIGTERM', handleTermination);
@@ -153,13 +160,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       }
     };
 
-    // Check for updates on mount
-    checkForUpdates();
+    // Delay initial update check to avoid slowing startup
+    const initialCheckTimer = setTimeout(() => {
+      checkForUpdates();
+    }, 3000); // Check after 3 seconds
 
     // Check for updates every 6 hours
     const updateInterval = setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
     
     return () => {
+      clearTimeout(initialCheckTimer);
       clearInterval(updateInterval);
     };
   }, [autoUpdater]);
@@ -168,9 +178,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   useEffect(() => {
     if (panes.length === 0) return;
 
-    const monitorClaudeStatus = async () => {
-      // Monitor Claude Code status for all panes
-      const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
+    // Defer Claude monitoring to avoid slowing down startup
+    const startupDelay = setTimeout(() => {
+      const monitorClaudeStatus = async () => {
+        // Monitor Claude Code status for all panes
+        const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
         try {
           // Skip if recently checked (within 500ms to avoid overlapping checks)
           if (pane.lastClaudeCheck && Date.now() - pane.lastClaudeCheck < 500) {
@@ -307,16 +319,21 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         // Save to file
         await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
       }
-    };
+      };
 
-    // Run monitoring immediately
-    monitorClaudeStatus();
-    
-    // Set up interval for continuous monitoring
-    const claudeInterval = setInterval(monitorClaudeStatus, 1000); // Check every second
+      // Run monitoring after delay
+      monitorClaudeStatus();
+      
+      // Set up interval for continuous monitoring (less frequent for better performance)
+      const claudeInterval = setInterval(monitorClaudeStatus, 2000); // Check every 2 seconds
+      
+      return () => {
+        clearInterval(claudeInterval);
+      };
+    }, 500); // Wait 500ms before starting monitoring
     
     return () => {
-      clearInterval(claudeInterval);
+      clearTimeout(startupDelay);
     };
   }, [panes, panesFile]); // Re-run when panes change
 
@@ -344,30 +361,31 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       const content = await fs.readFile(panesFile, 'utf-8');
       const loadedPanes = JSON.parse(content) as DmuxPane[];
       
-      // Filter out dead panes and update titles for active ones
-      const activePanes = loadedPanes.filter(pane => {
-        try {
-          // Get list of all pane IDs
-          const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
-            encoding: 'utf-8',
-            stdio: 'pipe' 
-          }).trim().split('\n');
-          
-          // Check if our pane ID exists in the list
-          if (paneIds.includes(pane.paneId)) {
-            // Update pane title to match the slug
-            try {
-              execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-            } catch {
-              // Ignore if setting title fails
-            }
-            return true;
+      // Get all pane IDs in a single call (much faster)
+      let allPaneIds: string[] = [];
+      try {
+        allPaneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+          encoding: 'utf-8',
+          stdio: 'pipe' 
+        }).trim().split('\n').filter(id => id);
+      } catch {
+        // No panes or tmux error
+      }
+      
+      // Filter out dead panes
+      const activePanes = loadedPanes.filter(pane => allPaneIds.includes(pane.paneId));
+      
+      // Batch update all pane titles in one go (only if needed)
+      if (activePanes.length > 0) {
+        // Update titles for all active panes at once
+        activePanes.forEach(pane => {
+          try {
+            execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+          } catch {
+            // Ignore if setting title fails
           }
-          return false;
-        } catch {
-          return false;
-        }
-      });
+        });
+      }
       
       setPanes(activePanes);
       
@@ -2182,8 +2200,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
               value={newPanePrompt}
               onChange={setNewPanePrompt}
               placeholder="Type your message..."
-              onSubmit={() => {
-                createNewPane(newPanePrompt);
+              onSubmit={(expandedValue) => {
+                // Use expanded value if provided (for paste references), otherwise use raw value
+                createNewPane(expandedValue || newPanePrompt);
                 setShowNewPaneDialog(false);
                 setNewPanePrompt('');
               }}
