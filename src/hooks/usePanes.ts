@@ -20,7 +20,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
       while (retryCount <= maxRetries) {
         try {
-          const output = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+          const output = execSync(`tmux list-panes -s -F '#{pane_id}'`, { 
             encoding: 'utf-8',
             stdio: 'pipe',
             timeout: 1000
@@ -33,10 +33,11 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         retryCount++;
       }
 
-      const activePanes = loadedPanes.filter(pane => {
-        if (allPaneIds.length === 0) return true;
-        return allPaneIds.includes(pane.paneId);
-      });
+      // Only filter panes if we successfully got the pane list
+      // If tmux command failed (allPaneIds is empty), keep existing state
+      const activePanes = allPaneIds.length > 0 
+        ? loadedPanes.filter(pane => allPaneIds.includes(pane.paneId))
+        : panes.length > 0 ? panes : loadedPanes;
 
       const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
       const newPaneIds = activePanes.map(p => p.paneId).sort().join(',');
@@ -64,7 +65,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
   const savePanes = async (newPanes: DmuxPane[]) => {
     let activePanes = newPanes;
     try {
-      const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
+      const paneIds = execSync(`tmux list-panes -s -F '#{pane_id}'`, { 
         encoding: 'utf-8',
         stdio: 'pipe',
         timeout: 1000

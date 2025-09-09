@@ -27,7 +27,7 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
 
             let paneExists = false;
             try {
-              const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, {
+              const paneIds = execSync(`tmux list-panes -s -F '#{pane_id}'`, {
                 encoding: 'utf-8',
                 stdio: 'pipe',
                 timeout: 500,

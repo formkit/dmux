@@ -60,7 +60,9 @@
       "Bash(do tmux send-keys -t test-final Left)",
       "Bash(for i in {1..2})",
       "Bash(do tmux send-keys -t test-final Right)",
-      "Bash(do tmux send-keys -t test-features Left)"
+      "Bash(do tmux send-keys -t test-features Left)",
+      "Bash(./test-pane-persistence.sh:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": [],
