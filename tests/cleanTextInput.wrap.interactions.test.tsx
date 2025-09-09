@@ -14,7 +14,11 @@ const Harness: React.FC = () => {
 
 const makeCaptureHarness = (capture: (v: string) => void): React.FC => () => {
   const [val, setVal] = useState('');
-  return <CleanTextInput value={val} onChange={(v) => { setVal(v); capture(v); }} />;
+  return <CleanTextInput value={val} onChange={(v) => { 
+    console.log('Test onChange called with:', v);
+    setVal(v); 
+    capture(v); 
+  }} />;
 };
 
 function typeChar(stdin: any, ch: string) {
@@ -102,12 +106,17 @@ describe('CleanTextInput: cursor movement and multi-line', () => {
 
   it('left/right moves cursor and inserts at new position', async () => {
     let current = '';
-    const Capturing = makeCaptureHarness((v) => { current = v; });
+    const Capturing = makeCaptureHarness((v) => { 
+      console.log('Capture called with:', v);
+      current = v; 
+    });
     const { stdin } = render(<Capturing />);
     await sleep(120);
     await type(stdin, 'hello world');
+    console.log('After typing hello world, current:', current);
     await left(stdin, 6); // before 'world'
     await type(stdin, 'X');
+    console.log('After typing X, current:', current);
     expect(current).toContain('hello Xworld');
   });
 

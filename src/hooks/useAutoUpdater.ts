@@ -1,36 +1,79 @@
 import { useEffect, useState } from 'react';
+import { Worker } from 'worker_threads';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  packageManager: 'npm' | 'pnpm' | 'yarn' | null;
+  installMethod: 'global' | 'local' | 'unknown';
+}
 
 export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMessage: (msg: string) => void) {
-  const [updateInfo, setUpdateInfo] = useState<any>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
-    if (!autoUpdater) return;
+    // Only run the worker check, not the old blocking check
+    let worker: Worker | null = null;
+    let updateInterval: NodeJS.Timeout | null = null;
 
-    const checkForUpdates = async () => {
+    const runWorkerCheck = () => {
       try {
-        const info = await autoUpdater.checkForUpdates();
-        if (await autoUpdater.shouldShowUpdateNotification(info)) {
-          setUpdateInfo(info);
-          setShowUpdateDialog(true);
+        // Create a new worker thread for update checking
+        const workerPath = path.join(__dirname, '../workers/updateChecker.js');
+        
+        // Check if worker file exists first
+        if (!require('fs').existsSync(workerPath)) {
+          return;
         }
+        
+        worker = new Worker(workerPath);
+        
+        worker.on('message', (message) => {
+          if (message.type === 'update-available') {
+            setUpdateInfo(message.updateInfo);
+            setUpdateAvailable(true);
+          }
+          // Clean up the worker after it's done
+          worker?.terminate();
+          worker = null;
+        });
+
+        worker.on('error', () => {
+          // Silently ignore errors
+          worker?.terminate();
+          worker = null;
+        });
       } catch {
-        // ignore
+        // Silently ignore any errors creating the worker
       }
     };
 
+    // Initial check after a short delay
     const initialCheckTimer = setTimeout(() => {
-      checkForUpdates();
+      runWorkerCheck();
     }, 3000);
 
-    const updateInterval = setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+    // Periodic checks every 6 hours
+    updateInterval = setInterval(() => {
+      runWorkerCheck();
+    }, 6 * 60 * 60 * 1000);
 
     return () => {
       clearTimeout(initialCheckTimer);
-      clearInterval(updateInterval);
+      if (updateInterval) clearInterval(updateInterval);
+      if (worker) {
+        worker.terminate();
+      }
     };
-  }, [autoUpdater]);
+  }, []);
 
   const performUpdate = async () => {
     if (!autoUpdater || !updateInfo) return;
@@ -71,5 +114,5 @@ export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMe
     setUpdateInfo(null);
   };
 
-  return { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, setShowUpdateDialog, setUpdateInfo };
+  return { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, setShowUpdateDialog, setUpdateInfo, updateAvailable };
 }

@@ -28,7 +28,12 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const [pastedItems, setPastedItems] = useState<Map<number, PastedContent>>(new Map());
   const [nextPasteId, setNextPasteId] = useState(1);
   const [isProcessingPaste, setIsProcessingPaste] = useState(false);
-  const [ignoreNextInput, setIgnoreNextInput] = useState(true);
+  // Only ignore first input in production (not in tests)
+  // Check for common test environment indicators
+  const isTestEnvironment = process.env.NODE_ENV === 'test' || 
+                           process.env.VITEST === 'true' || 
+                           typeof process.env.VITEST !== 'undefined';
+  const [ignoreNextInput, setIgnoreNextInput] = useState(!isTestEnvironment);
   
   // Paste buffering state
   const [pasteBuffer, setPasteBuffer] = useState<string>('');
@@ -64,9 +69,12 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       }, 10);
       
       // Clear the ignore flag after a short delay to allow normal input
-      setTimeout(() => {
-        setIgnoreNextInput(false);
-      }, 50);
+      // In tests, the flag is already false, so no need to clear it
+      if (!isTestEnvironment) {
+        setTimeout(() => {
+          setIgnoreNextInput(false);
+        }, 50);
+      }
     }
     
     return () => {

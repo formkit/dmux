@@ -36,7 +36,6 @@ import LoadingIndicator from './components/LoadingIndicator.js';
 import RunningIndicator from './components/RunningIndicator.js';
 import UpdatingIndicator from './components/UpdatingIndicator.js';
 import CreatingIndicator from './components/CreatingIndicator.js';
-import UpdateDialog from './components/UpdateDialog.js';
 import FooterHelp from './components/FooterHelp.js';
 
 
@@ -59,7 +58,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
   // Update state handled by hook
-  const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate } = useAutoUpdater(autoUpdater, setStatusMessage);
+  const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
 
   // Agent selection state
@@ -73,7 +72,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
 
   // Panes state and persistence
   const skipLoading = showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
-    !!showCommandPrompt || showFileCopyPrompt || showUpdateDialog;
+    !!showCommandPrompt || showFileCopyPrompt;
   const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, skipLoading);
 
   // Worktree actions
@@ -140,14 +139,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         !showCloseOptions && 
         !showCommandPrompt && 
         !showFileCopyPrompt && 
-        !showUpdateDialog &&
         !showAgentChoiceDialog &&
         !isCreatingPane &&
         !runningCommand &&
         !isUpdating) {
       setShowNewPaneDialog(true);
     }
-  }, [isLoading, panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showUpdateDialog, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+  }, [isLoading, panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
   // Update checking moved to useAutoUpdater
 
@@ -163,7 +161,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     panes,
     setPanes,
     panesFile,
-    suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt || showUpdateDialog,
+    suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt,
     loadPanes,
   });
 
@@ -651,16 +649,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       return;
     }
     
-    if (showUpdateDialog && updateInfo) {
-      if (input === 'u' || input === 'U') {
-        await performUpdate();
-      } else if (input === 's' || input === 'S') {
-        await skipUpdate();
-      } else if (input === 'l' || input === 'L' || key.escape) {
-        dismissUpdate();
-      }
-      return;
-    }
     
     if (showFileCopyPrompt) {
       if (input === 'y' || input === 'Y') {
@@ -933,9 +921,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         <UpdatingIndicator />
       )}
 
-      {showUpdateDialog && updateInfo && (
-        <UpdateDialog updateInfo={updateInfo} />
-      )}
 
       {statusMessage && (
         <Box marginTop={1}>
@@ -955,7 +940,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       />
 
       <Box marginTop={1}>
-        <Text dimColor>dmux v{packageJson.version}</Text>
+        <Text dimColor>
+          dmux v{packageJson.version}
+          {updateAvailable && updateInfo && (
+            <Text color="yellow"> • New version {updateInfo.latestVersion} available! Run: npm i -g dmux@latest</Text>
+          )}
+        </Text>
       </Box>
     </Box>
   );

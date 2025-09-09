@@ -62,7 +62,10 @@
       "Bash(do tmux send-keys -t test-final Right)",
       "Bash(do tmux send-keys -t test-features Left)",
       "Bash(./test-pane-persistence.sh:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(npm test)",
+      "Bash(npx vitest run:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": [],

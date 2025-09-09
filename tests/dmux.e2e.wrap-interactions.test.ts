@@ -53,10 +53,11 @@ describe.sequential('dmux e2e: input wrapping interactions', () => {
       execSync(`tmux -L ${server} resize-pane -t ${session}:0.0 -x 27 -y 20`, { stdio: 'pipe' });
 
       execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${runner!.cmd}' Enter`, { stdio: 'pipe' });
+      // Wait longer for dmux to fully initialize
+      await sleep(1000);
       // Open New Pane dialog
-      await sleep(500);
       execSync(`tmux -L ${server} send-keys -t ${session}:0.0 n`, { stdio: 'pipe' });
-      await sleep(300);
+      await sleep(500);
 
       const width = 20; // based on 27 cols - 7 padding
       const text = 'lorem ipsum dolor sit amet consectetur';
