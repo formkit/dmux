@@ -1,62 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import CleanTextInput from './CleanTextInput.js';
-import StyledTextInput from './StyledTextInput.js';
-import SimpleEnhancedInput from './SimpleEnhancedInput.js';
-import chalk from 'chalk';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { createRequire } from 'module';
-import type { AutoUpdater } from './AutoUpdater.js';
+
+// Hooks
+import usePanes from './hooks/usePanes.js';
+import useProjectSettings from './hooks/useProjectSettings.js';
+import useTerminalWidth from './hooks/useTerminalWidth.js';
+import useNavigation from './hooks/useNavigation.js';
+import useAutoUpdater from './hooks/useAutoUpdater.js';
+import useAgentDetection from './hooks/useAgentDetection.js';
+import useAgentStatus from './hooks/useAgentStatus.js';
+import useWorktreeActions from './hooks/useWorktreeActions.js';
+import usePaneRunner from './hooks/usePaneRunner.js';
+import usePaneCreation from './hooks/usePaneCreation.js';
+
+// Utils
+import { getPanePositions, applySmartLayout } from './utils/tmux.js';
+import { suggestCommand } from './utils/commands.js';
+import { generateSlug } from './utils/slug.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
+import type { DmuxPane, PanePosition, ProjectSettings, DmuxAppProps } from './types.js';
+import PanesGrid from './components/PanesGrid.js';
+import NewPaneDialog from './components/NewPaneDialog.js';
+import AgentChoiceDialog from './components/AgentChoiceDialog.js';
+import CloseOptionsDialog from './components/CloseOptionsDialog.js';
+import MergeConfirmationDialog from './components/MergeConfirmationDialog.js';
+import CommandPromptDialog from './components/CommandPromptDialog.js';
+import FileCopyPrompt from './components/FileCopyPrompt.js';
+import LoadingIndicator from './components/LoadingIndicator.js';
+import RunningIndicator from './components/RunningIndicator.js';
+import UpdatingIndicator from './components/UpdatingIndicator.js';
+import CreatingIndicator from './components/CreatingIndicator.js';
+import UpdateDialog from './components/UpdateDialog.js';
+import FooterHelp from './components/FooterHelp.js';
 
-interface DmuxPane {
-  id: string;
-  slug: string;
-  prompt: string;
-  paneId: string;
-  worktreePath?: string;
-  testWindowId?: string;  // Background window for tests
-  testStatus?: 'running' | 'passed' | 'failed';
-  testOutput?: string;
-  devWindowId?: string;   // Background window for dev server
-  devStatus?: 'running' | 'stopped';
-  devUrl?: string;        // Detected dev server URL
-  agent?: 'claude' | 'opencode';
-  agentStatus?: 'working' | 'waiting' | 'idle';  // Agent working/attention status
-  lastAgentCheck?: number;  // Timestamp of last status check
-}
-
-interface PanePosition {
-  paneId: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-interface ProjectSettings {
-  testCommand?: string;
-  devCommand?: string;
-  firstTestRun?: boolean;  // Track if test has been run before
-  firstDevRun?: boolean;   // Track if dev has been run before
-}
-
-interface DmuxAppProps {
-  dmuxDir: string;
-  panesFile: string;
-  projectName: string;
-  sessionName: string;
-  projectRoot?: string;
-  settingsFile: string;
-  autoUpdater?: AutoUpdater; // AutoUpdater instance
-}
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sessionName, settingsFile, autoUpdater }) => {
-  const [panes, setPanes] = useState<DmuxPane[]>([]);
+  /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
   const [newPanePrompt, setNewPanePrompt] = useState('');
@@ -67,50 +52,63 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
   const [selectedCloseOption, setSelectedCloseOption] = useState(0);
   const [closingPane, setClosingPane] = useState<DmuxPane | null>(null);
   const [isCreatingPane, setIsCreatingPane] = useState(false);
-  const [projectSettings, setProjectSettings] = useState<ProjectSettings>({});
+  const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
   const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
   const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<any>(null);
-  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  // Update state handled by hook
+  const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
 
   // Agent selection state
-  const [availableAgents, setAvailableAgents] = useState<Array<'claude' | 'opencode'>>([]);
+  const { availableAgents } = useAgentDetection();
   const [showAgentChoiceDialog, setShowAgentChoiceDialog] = useState(false);
   const [agentChoice, setAgentChoice] = useState<'claude' | 'opencode' | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState('');
 
   // Track terminal dimensions for responsive layout
-  const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
+  const terminalWidth = useTerminalWidth();
+
+  // Panes state and persistence
+  const skipLoading = showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
+    !!showCommandPrompt || showFileCopyPrompt || showUpdateDialog;
+  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, skipLoading);
+
+  // Worktree actions
+  const { closePane, mergeWorktree, mergeAndPrune, deleteUnsavedChanges, handleCloseOption } = useWorktreeActions({
+    panes,
+    savePanes,
+    setStatusMessage,
+    setShowMergeConfirmation,
+    setMergedPane,
+  });
+
+  // Pane runner
+  const { copyNonGitFiles, runCommandInternal, monitorTestOutput, monitorDevOutput, attachBackgroundWindow } = usePaneRunner({
+    panes,
+    savePanes,
+    projectSettings,
+    setStatusMessage,
+    setRunningCommand,
+  });
+
+  // Pane creation
+  const { openInEditor: openEditor2, createNewPane: createNewPaneHook } = usePaneCreation({
+    panes,
+    savePanes,
+    projectName,
+    setIsCreatingPane,
+    setStatusMessage,
+    setNewPanePrompt,
+    loadPanes,
+  });
   
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
-    // Load immediately for initial data
-    loadPanes();
-    loadSettings();
-    
-    // Start polling after a short delay to avoid competing with startup
-    let pollingInterval: NodeJS.Timeout | undefined;
-    const startPolling = setTimeout(() => {
-      pollingInterval = setInterval(loadPanes, 3000); // Poll every 3 seconds instead of 2
-    }, 1000); // Wait 1 second before starting polling
-    
-    // Handle terminal resize
-    const handleResize = () => {
-      setTerminalWidth(process.stdout.columns || 80);
-    };
-    
-    // Add resize listener
-    process.stdout.on('resize', handleResize);
-    
     // Add cleanup handlers for process termination
     const handleTermination = () => {
-      // Clear screen before exit
       process.stdout.write('\x1b[2J\x1b[H');
       process.stdout.write('\x1b[3J');
       try {
@@ -118,14 +116,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       } catch {}
       process.exit(0);
     };
-    
+
     process.on('SIGINT', handleTermination);
     process.on('SIGTERM', handleTermination);
-    
+
     return () => {
-      clearTimeout(startPolling);
-      if (pollingInterval) clearInterval(pollingInterval);
-      process.stdout.removeListener('resize', handleResize);
       process.removeListener('SIGINT', handleTermination);
       process.removeListener('SIGTERM', handleTermination);
     };
@@ -154,769 +149,45 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   }, [isLoading, panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showUpdateDialog, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
-  // Check for updates periodically
+  // Update checking moved to useAutoUpdater
+
+  // Set default agent choice when detection completes
   useEffect(() => {
-    if (!autoUpdater) return;
-
-    const checkForUpdates = async () => {
-      try {
-        const info = await autoUpdater.checkForUpdates();
-        if (await autoUpdater.shouldShowUpdateNotification(info)) {
-          setUpdateInfo(info);
-          setShowUpdateDialog(true);
-        }
-      } catch {
-        // Silently ignore update check failures
-      }
-    };
-
-    // Delay initial update check to avoid slowing startup
-    const initialCheckTimer = setTimeout(() => {
-      checkForUpdates();
-    }, 3000); // Check after 3 seconds
-
-    // Check for updates every 6 hours
-    const updateInterval = setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
-    
-    return () => {
-      clearTimeout(initialCheckTimer);
-      clearInterval(updateInterval);
-    };
-  }, [autoUpdater]);
-
-  // Detect available agents on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const agents: Array<'claude' | 'opencode'> = [];
-        const hasClaude = await findClaudeCommand();
-        if (hasClaude) agents.push('claude');
-        const hasopencode = await findopencodeCommand();
-        if (hasopencode) agents.push('opencode');
-        setAvailableAgents(agents);
-        setAgentChoice(agents[0] || 'claude');
-      } catch {}
-    })();
-  }, []);
-
-  // Monitor Claude status in all panes with proper dependency tracking
-  useEffect(() => {
-    if (panes.length === 0) return;
-
-    // Defer Claude monitoring to avoid slowing down startup and dialog interactions
-    const startupDelay = setTimeout(() => {
-      const monitorAgentStatus = async () => {
-        // Skip monitoring if any dialog is open to avoid UI freezing
-        if (showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
-            showCommandPrompt || showFileCopyPrompt || showUpdateDialog) {
-          return;
-        }
-        
-        // Monitor agent status for all panes
-        const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
-        try {
-          // Skip if recently checked (within 500ms to avoid overlapping checks)
-          if (pane.lastAgentCheck && Date.now() - pane.lastAgentCheck < 500) {
-            return pane;
-          }
-          
-          // First check if pane exists before trying to capture
-          let paneExists = false;
-          try {
-            const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
-              encoding: 'utf-8',
-              stdio: 'pipe',
-              timeout: 500 // Quick timeout
-            }).trim().split('\n').filter(id => id && id.startsWith('%'));
-            
-            paneExists = paneIds.includes(pane.paneId);
-          } catch {
-            // If we can't check, assume pane exists to avoid false removals
-            paneExists = true;
-          }
-          
-          if (!paneExists) {
-            // Pane doesn't exist anymore, mark for removal
-            return null;
-          }
-          
-          // Capture the last 30 lines of the pane for better detection
-          const captureOutput = execSync(
-            `tmux capture-pane -t '${pane.paneId}' -p -S -30`,
-            { encoding: 'utf-8', stdio: 'pipe' }
-          );
-          
-          const lines = captureOutput.split('\n');
-          const lastLines = lines.slice(-10).join('\n');
-          
-          // Determine working patterns based on agent
-          let isWorking = false;
-          if (pane.agent === 'opencode') {
-            const workingPatterns = [
-              /esc\s+(to\s+)?interrupt/i,
-              /working(\.|\.{2}|\.{3})/i,
-            ];
-            isWorking = workingPatterns.some(pattern => pattern.test(lastLines));
-          } else {
-            // Default to Claude patterns
-            const workingPatterns = [
-              /esc to interrupt/i,
-            ];
-            isWorking = workingPatterns.some(pattern => pattern.test(captureOutput));
-          }
-          
-          // Attention patterns - generic prompts needing user input
-          const attentionPatterns = [
-            /\?\s*$/m,
-            /y\/n/i,
-            /yes.*no/i,
-            /\ballow\b.*\?/i,
-            /\bapprove\b.*\?/i,
-            /\bgrant\b.*\?/i,
-            /\btrust\b.*\?/i,
-            /\baccept\b.*\?/i,
-            /\bcontinue\b.*\?/i,
-            /\bproceed\b.*\?/i,
-            /permission/i,
-            /confirmation/i,
-            /press.*enter/i,
-            /waiting for/i,
-            /are you sure/i,
-            /would you like/i,
-            /do you want/i,
-            /please confirm/i,
-            /requires.*approval/i,
-            /needs.*input/i,
-            /⏵⏵\s*accept edits/i,
-            /shift\+tab to cycle/i,
-          ];
-          
-          // Claude-specific input box detection
-          const hasClaudeInputBox = /╭─+╮/.test(lastLines) && /╰─+╯/.test(lastLines) && /│\s+>\s+.*│/.test(lastLines);
-          
-          const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput)) || (pane.agent !== 'opencode' && hasClaudeInputBox);
-          
-          // Determine status - working takes precedence
-          let newStatus: 'working' | 'waiting' | 'idle' = 'idle';
-          if (isWorking) {
-            newStatus = 'working';
-          } else if (needsAttention && !isWorking) {
-            newStatus = 'waiting';
-          }
-          
-          // Additional Claude-specific checks
-          if (pane.agent !== 'opencode') {
-            if (/accept edits/i.test(captureOutput) && !/esc to interrupt/i.test(captureOutput)) {
-              newStatus = 'waiting';
-            }
-            if (hasClaudeInputBox && !isWorking) {
-              newStatus = 'waiting';
-            }
-            const claudeQuestionPatterns = [
-              /I (can|could|should|would|will|may|might)/i,
-              /Let me know/i,
-              /Please (tell|let|inform|advise)/i,
-              /Would you prefer/i,
-              /Should I (proceed|continue|go ahead)/i,
-            ];
-            if (claudeQuestionPatterns.some(pattern => pattern.test(lastLines)) && !isWorking) {
-              newStatus = 'waiting';
-            }
-          }
-          
-          // Return updated pane if status changed
-          if (pane.agentStatus !== newStatus) {
-            return {
-              ...pane,
-              agentStatus: newStatus,
-              lastAgentCheck: Date.now()
-            };
-          }
-          
-          // Just update timestamp
-          return {
-            ...pane,
-            lastAgentCheck: Date.now()
-          };
-        } catch (error) {
-          // If we can't capture the pane, it might be dead - mark it for removal
-          return null; // Will be filtered out below
-        }
-      }));
-      
-      // Filter out null values (dead panes) and keep only valid panes
-      const updatedPanes = updatedPanesWithNulls.filter((pane): pane is DmuxPane => pane !== null);
-      
-      // Check if panes were removed
-      const panesRemoved = updatedPanes.length < panes.length;
-      
-      if (panesRemoved) {
-        // Save the updated list with removed panes
-        await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
-        // Reload to sync state properly
-        await loadPanes();
-      } else {
-        // Only update status if no structural changes
-        const hasStatusChanges = updatedPanes.some((pane, index) => 
-          pane.agentStatus !== panes[index]?.agentStatus
-        );
-        
-        if (hasStatusChanges) {
-          // Update state with new status but don't save to file
-          // Agent status is ephemeral and shouldn't persist
-          setPanes(updatedPanes);
-        }
-      }
-      };
-
-      // Run monitoring after delay
-      monitorAgentStatus();
-      
-      // Set up interval for continuous monitoring (less frequent for better performance)
-      const agentInterval = setInterval(monitorAgentStatus, 2000); // Check every 2 seconds
-      
-      return () => {
-        clearInterval(agentInterval);
-      };
-    }, 500); // Wait 500ms before starting monitoring
-    
-    return () => {
-      clearTimeout(startupDelay);
-    };
-  }, [panes, panesFile, showNewPaneDialog, showMergeConfirmation, showCloseOptions, 
-      showCommandPrompt, showFileCopyPrompt, showUpdateDialog]); // Re-run when panes or dialogs change
-
-  const loadSettings = async () => {
-    try {
-      const content = await fs.readFile(settingsFile, 'utf-8');
-      const settings = JSON.parse(content) as ProjectSettings;
-      setProjectSettings(settings);
-    } catch {
-      // Settings file doesn't exist yet, that's ok
-      setProjectSettings({});
+    if (agentChoice == null && availableAgents.length > 0) {
+      setAgentChoice(availableAgents[0] || 'claude');
     }
-  };
+  }, [availableAgents]);
 
-  const saveSettings = async (settings: ProjectSettings) => {
-    await fs.writeFile(settingsFile, JSON.stringify(settings, null, 2));
-    setProjectSettings(settings);
-  };
+  // Monitor agent status across panes
+  useAgentStatus({
+    panes,
+    setPanes,
+    panesFile,
+    suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt || showUpdateDialog,
+    loadPanes,
+  });
 
-  const loadPanes = async () => {
-    // Skip loading if any dialog is open to avoid UI freezing
-    if (showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
-        showCommandPrompt || showFileCopyPrompt || showUpdateDialog) {
-      return;
-    }
-    
-    if (isLoading) {
-      // Don't set loading to false immediately - keep it true for initial load
-    }
-    try {
-      const content = await fs.readFile(panesFile, 'utf-8');
-      const loadedPanes = JSON.parse(content) as DmuxPane[];
-      
-      // Get all pane IDs with retries for stability
-      let allPaneIds: string[] = [];
-      let retryCount = 0;
-      const maxRetries = 2;
-      
-      while (retryCount <= maxRetries) {
-        try {
-          const output = execSync(`tmux list-panes -F '#{pane_id}'`, { 
-            encoding: 'utf-8',
-            stdio: 'pipe',
-            timeout: 1000 // 1 second timeout
-          });
-          
-          allPaneIds = output.trim().split('\n').filter(id => id && id.startsWith('%'));
-          
-          // If we got results, break out of retry loop
-          if (allPaneIds.length > 0 || retryCount === maxRetries) {
-            break;
-          }
-        } catch (error) {
-          // On error, wait a bit before retry
-          if (retryCount < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-        }
-        retryCount++;
-      }
-      
-      // Filter out dead panes - but keep panes from file as source of truth
-      // Only remove panes that definitively don't exist
-      const activePanes = loadedPanes.filter(pane => {
-        // If we couldn't get pane list, keep all panes (safer)
-        if (allPaneIds.length === 0) {
-          return true;
-        }
-        return allPaneIds.includes(pane.paneId);
-      });
-      
-      // Only update state if there's an actual change to avoid re-renders
-      const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
-      const newPaneIds = activePanes.map(p => p.paneId).sort().join(',');
-      
-      if (currentPaneIds !== newPaneIds || panes.length === 0) {
-        // Batch update all pane titles in one go (only if needed)
-        if (activePanes.length > 0) {
-          // Update titles for all active panes at once
-          activePanes.forEach(pane => {
-            try {
-              execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-            } catch {
-              // Ignore if setting title fails
-            }
-          });
-        }
-        
-        setPanes(activePanes);
-        
-        // Save cleaned list
-        if (activePanes.length !== loadedPanes.length) {
-          await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
-        }
-      }
-      
-      // Set loading to false after first load
-      if (isLoading) {
-        setIsLoading(false);
-      }
-    } catch {
-      // Don't clear panes on error - keep current state
-      // Set loading to false even on error
-      if (isLoading) {
-        setIsLoading(false);
-      }
-    }
-  };
 
-  const getPanePositions = (): PanePosition[] => {
-    try {
-      const output = execSync(
-        `tmux list-panes -F '#{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      
-      return output.split('\n').map(line => {
-        const [paneId, left, top, width, height] = line.split(' ');
-        return {
-          paneId,
-          left: parseInt(left),
-          top: parseInt(top),
-          width: parseInt(width),
-          height: parseInt(height)
-        };
-      });
-    } catch {
-      return [];
-    }
-  };
 
-  // Calculate the visual grid position of cards based on their index
-  const getCardGridPosition = (index: number): { row: number; col: number } => {
-    // Cards are displayed in a flexbox with wrapping
-    // With card width of 35 and typical terminal width of 80-120, we get 2-3 cards per row
-    const cardWidth = 35 + 2; // Card width plus gap
-    const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
-    
-    const row = Math.floor(index / cardsPerRow);
-    const col = index % cardsPerRow;
-    
-    return { row, col };
-  };
+  // loadPanes moved to usePanes
 
-  const findCardInDirection = (currentIndex: number, direction: 'up' | 'down' | 'left' | 'right'): number | null => {
-    const totalItems = panes.length + (isLoading ? 0 : 1); // +1 for "New dmux pane" button when not loading
-    const currentPos = getCardGridPosition(currentIndex);
-    
-    // Calculate cards per row based on current terminal width
-    const cardWidth = 35 + 2; // Card width plus gap
-    const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
-    
-    let targetIndex: number | null = null;
-    
-    switch (direction) {
-      case 'up':
-        // Move up one row, same column
-        if (currentPos.row > 0) {
-          targetIndex = (currentPos.row - 1) * cardsPerRow + currentPos.col;
-          // Make sure target exists
-          if (targetIndex >= totalItems) {
-            // Try to find the last item in the row above
-            targetIndex = Math.min((currentPos.row - 1) * cardsPerRow + cardsPerRow - 1, totalItems - 1);
-          }
-        }
-        break;
-        
-      case 'down':
-        // Move down one row, same column
-        targetIndex = (currentPos.row + 1) * cardsPerRow + currentPos.col;
-        if (targetIndex >= totalItems) {
-          // If moving down from last row, try to go to "New dmux pane" if not already there
-          if (currentIndex < totalItems - 1) {
-            targetIndex = totalItems - 1;
-          } else {
-            targetIndex = null;
-          }
-        }
-        break;
-        
-      case 'left':
-        // Move left one column, same row
-        if (currentPos.col > 0) {
-          targetIndex = currentIndex - 1;
-        } else if (currentPos.row > 0) {
-          // Wrap to end of previous row
-          targetIndex = currentPos.row * cardsPerRow - 1;
-          if (targetIndex >= totalItems) {
-            targetIndex = totalItems - 1;
-          }
-        }
-        break;
-        
-      case 'right':
-        // Move right one column, same row
-        if (currentPos.col < cardsPerRow - 1 && currentIndex < totalItems - 1) {
-          targetIndex = currentIndex + 1;
-        } else if ((currentPos.row + 1) * cardsPerRow < totalItems) {
-          // Wrap to start of next row
-          targetIndex = (currentPos.row + 1) * cardsPerRow;
-        }
-        break;
-    }
-    
-    // Validate target index
-    if (targetIndex !== null && targetIndex >= 0 && targetIndex < totalItems) {
-      return targetIndex;
-    }
-    
-    return null;
-  };
+  // getPanePositions moved to utils/tmux
 
-  const findPaneInDirection = (currentPane: DmuxPane, direction: 'up' | 'down' | 'left' | 'right'): DmuxPane | null => {
-    const positions = getPanePositions();
-    const currentPos = positions.find(p => p.paneId === currentPane.paneId);
-    
-    if (!currentPos) return null;
-    
-    // Calculate center point of current pane
-    const currentCenterX = currentPos.left + currentPos.width / 2;
-    const currentCenterY = currentPos.top + currentPos.height / 2;
-    
-    // Filter panes based on direction
-    const candidatePanes = panes.filter(pane => {
-      if (pane.paneId === currentPane.paneId) return false;
-      
-      const pos = positions.find(p => p.paneId === pane.paneId);
-      if (!pos) return false;
-      
-      const centerX = pos.left + pos.width / 2;
-      const centerY = pos.top + pos.height / 2;
-      
-      switch (direction) {
-        case 'up':
-          return centerY < currentCenterY;
-        case 'down':
-          return centerY > currentCenterY;
-        case 'left':
-          return centerX < currentCenterX;
-        case 'right':
-          return centerX > currentCenterX;
-        default:
-          return false;
-      }
-    });
-    
-    if (candidatePanes.length === 0) return null;
-    
-    // Find the closest pane in the given direction
-    let closestPane = candidatePanes[0];
-    let minDistance = Infinity;
-    
-    for (const pane of candidatePanes) {
-      const pos = positions.find(p => p.paneId === pane.paneId);
-      if (!pos) continue;
-      
-      const centerX = pos.left + pos.width / 2;
-      const centerY = pos.top + pos.height / 2;
-      
-      let distance: number;
-      
-      switch (direction) {
-        case 'up':
-        case 'down':
-          // For vertical movement, prioritize vertical alignment, then distance
-          const xDiff = Math.abs(centerX - currentCenterX);
-          const yDiff = Math.abs(centerY - currentCenterY);
-          // Weight horizontal difference less than vertical
-          distance = yDiff + xDiff * 0.3;
-          break;
-        case 'left':
-        case 'right':
-          // For horizontal movement, prioritize horizontal alignment, then distance
-          const xDiff2 = Math.abs(centerX - currentCenterX);
-          const yDiff2 = Math.abs(centerY - currentCenterY);
-          // Weight vertical difference less than horizontal
-          distance = xDiff2 + yDiff2 * 0.3;
-          break;
-      }
-      
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestPane = pane;
-      }
-    }
-    
-    return closestPane;
-  };
+  // Navigation logic moved to hook
+  const { getCardGridPosition, findCardInDirection } = useNavigation(terminalWidth, panes.length, isLoading);
 
-  const savePanes = async (newPanes: DmuxPane[]) => {
-    // Filter out any panes that no longer exist in tmux before saving
-    let activePanes = newPanes;
-    
-    try {
-      const paneIds = execSync(`tmux list-panes -F '#{pane_id}'`, { 
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: 1000
-      }).trim().split('\n').filter(id => id && id.startsWith('%'));
-      
-      // Only keep panes that still exist
-      activePanes = newPanes.filter(pane => paneIds.includes(pane.paneId));
-    } catch {
-      // If we can't verify, save all panes
-      activePanes = newPanes;
-    }
-    
-    await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
-    setPanes(activePanes);
-  };
+  // findCardInDirection provided by useNavigation
 
-  const applySmartLayout = (paneCount: number) => {
-    try {
-      // Progressive layout strategy based on pane count
-      if (paneCount <= 2) {
-        // 2 panes: side by side
-        execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
-      } else if (paneCount === 3) {
-        // 3 panes: primary top, two bottom
-        execSync('tmux select-layout main-horizontal', { stdio: 'pipe' });
-      } else if (paneCount === 4) {
-        // 4 panes: 2x2 grid
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-      } else if (paneCount === 5) {
-        // 5 panes: 2 top, 3 bottom
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-        // Custom adjustment for better 2-over-3 layout
-        try {
-          execSync('tmux resize-pane -t 0 -y 50%', { stdio: 'pipe' });
-        } catch {}
-      } else if (paneCount === 6) {
-        // 6 panes: 3x2 grid
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-      } else if (paneCount <= 9) {
-        // 7-9 panes: 3x3 grid
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-      } else if (paneCount <= 12) {
-        // 10-12 panes: 3x4 grid
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-      } else if (paneCount <= 16) {
-        // 13-16 panes: 4x4 grid
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-      } else {
-        // More than 16: use tiled for best automatic arrangement
-        execSync('tmux select-layout tiled', { stdio: 'pipe' });
-      }
-      
-      // Refresh client to ensure layout is applied
-      execSync('tmux refresh-client', { stdio: 'pipe' });
-    } catch (error) {
-      // Fallback to even-horizontal if custom layout fails
-      try {
-        execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
-      } catch {}
-    }
-  };
 
-  const findClaudeCommand = async (): Promise<string | null> => {
-    // Prefer passive detection to avoid triggering installers
-    try {
-      const userShell = process.env.SHELL || '/bin/bash';
-      const result = execSync(
-        `${userShell} -i -c "command -v claude 2>/dev/null || which claude 2>/dev/null"`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      if (result) return result.split('\n')[0];
-    } catch {}
+  // savePanes moved to usePanes
 
-    // Check common installation paths without executing
-    const commonPaths = [
-      `${process.env.HOME}/.claude/local/claude`,
-      `${process.env.HOME}/.local/bin/claude`,
-      '/usr/local/bin/claude',
-      '/opt/homebrew/bin/claude',
-      '/usr/bin/claude',
-      `${process.env.HOME}/bin/claude`,
-    ];
+  // applySmartLayout moved to utils/tmux
 
-    for (const p of commonPaths) {
-      try {
-        await fs.access(p);
-        return p;
-      } catch {}
-    }
 
-    return null;
-  };
 
-  const findopencodeCommand = async (): Promise<string | null> => {
-    // Passive detection only (no execution)
-    try {
-      const userShell = process.env.SHELL || '/bin/bash';
-      const result = execSync(
-        `${userShell} -i -c "command -v opencode 2>/dev/null || which opencode 2>/dev/null"`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      if (result) return result.split('\n')[0];
-    } catch {}
 
-    const commonPaths = [
-      '/opt/homebrew/bin/opencode',
-      '/usr/local/bin/opencode',
-      `${process.env.HOME}/.local/bin/opencode`,
-      `${process.env.HOME}/bin/opencode`,
-    ];
-    for (const p of commonPaths) {
-      try {
-        await fs.access(p);
-        return p;
-      } catch {}
-    }
 
-    return null;
-  };
 
-  const callClaudeCode = async (prompt: string): Promise<string | null> => {
-    try {
-      // Use a simpler approach: pipe the prompt via stdin and capture output
-      const result = execSync(
-        `echo "${prompt.replace(/"/g, '\\"')}" | claude --no-interactive --max-turns 1 2>/dev/null | head -n 5`,
-        { 
-          encoding: 'utf-8', 
-          stdio: 'pipe',
-          timeout: 5000 // 5 second timeout
-        }
-      );
-      
-      // Extract just the content (first few lines should have the response)
-      const lines = result.trim().split('\n');
-      const response = lines.join(' ').trim();
-      return response || null;
-    } catch (error) {
-      // Claude not available or error occurred
-      return null;
-    }
-  };
-
-  const generateSlug = async (prompt: string): Promise<string> => {
-    if (!prompt) {
-      return `dmux-${Date.now()}`;
-    }
-
-    // Try OpenRouter first if API key is available
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (apiKey) {
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'openai/gpt-4o-mini',
-            messages: [
-              {
-                role: 'user',
-                content: `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
-              }
-            ],
-            max_tokens: 10,
-            temperature: 0.3
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const slug = data.choices[0].message.content.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-          if (slug) return slug;
-        }
-      } catch {
-        // Fall through to Claude Code
-      }
-    }
-
-    // Try Claude Code as fallback
-    const claudeResponse = await callClaudeCode(
-      `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
-    );
-    
-    if (claudeResponse) {
-      const slug = claudeResponse.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-      if (slug) return slug;
-    }
-
-    // Final fallback
-    return `dmux-${Date.now()}`;
-  };
-
-  const openInEditor = async () => {
-    try {
-      const os = require('os');
-      const fs = require('fs');
-      const tmpFile = path.join(os.tmpdir(), `dmux-prompt-${Date.now()}.md`);
-      
-      // Write current prompt to temp file
-      fs.writeFileSync(tmpFile, newPanePrompt || '# Enter your Claude prompt here\n\n');
-      
-      // Get editor from environment or use default
-      const editor = process.env.EDITOR || process.env.VISUAL || 'nano';
-      
-      // Clear screen and open editor
-      process.stdout.write('\x1b[2J\x1b[H');
-      
-      // Use spawn to open editor in foreground
-      const { spawn } = require('child_process');
-      const editorProcess = spawn(editor, [tmpFile], {
-        stdio: 'inherit',
-        shell: true
-      });
-      
-      editorProcess.on('close', (code: number) => {
-        // Read the file back
-        try {
-          const content = fs.readFileSync(tmpFile, 'utf8')
-            .replace(/^# Enter your Claude prompt here\s*\n*/m, '')
-            .trim();
-          setNewPanePrompt(content);
-          
-          // Clean up temp file
-          fs.unlinkSync(tmpFile);
-          
-          // Clear screen and return to dmux
-          process.stdout.write('\x1b[2J\x1b[H');
-        } catch (error) {
-          // If file read fails, just continue
-        }
-      });
-      
-    } catch (error) {
-      // If editor fails, just continue with inline input
-    }
-  };
-  
   const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
     setIsCreatingPane(true);
     setStatusMessage('Generating slug...');
@@ -1257,401 +528,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   };
 
-  const closePane = async (pane: DmuxPane) => {
-    try {
-      // Kill associated test/dev windows if they exist
-      if (pane.testWindowId) {
-        try {
-          execSync(`tmux kill-window -t '${pane.testWindowId}'`, { stdio: 'pipe' });
-        } catch {}
-      }
-      if (pane.devWindowId) {
-        try {
-          execSync(`tmux kill-window -t '${pane.devWindowId}'`, { stdio: 'pipe' });
-        } catch {}
-      }
-      
-      // Multiple clearing strategies to prevent artifacts
-      // 1. Clear screen with ANSI codes
-      process.stdout.write('\x1b[2J\x1b[H');
-      
-      // 2. Fill with blank lines to push content off screen
-      process.stdout.write('\n'.repeat(100));
-      
-      // 3. Clear tmux history and send clear command
-      try {
-        execSync('tmux clear-history', { stdio: 'pipe' });
-        execSync('tmux send-keys C-l', { stdio: 'pipe' });
-      } catch {}
-      
-      // 4. Force tmux to refresh the display
-      try {
-        execSync('tmux refresh-client', { stdio: 'pipe' });
-      } catch {}
-      
-      // Small delay to let clearing complete
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Kill the tmux pane
-      execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
-      
-      // Get current pane count to determine layout
-      const paneCount = parseInt(
-        execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
-      );
-      
-      // Apply smart layout after pane removal
-      if (paneCount > 1) {
-        applySmartLayout(paneCount);
-      }
-      
-      // Remove from list
-      const updatedPanes = panes.filter(p => p.id !== pane.id);
-      await savePanes(updatedPanes);
-      
-      setStatusMessage(`Closed pane: ${pane.slug}`);
-      setTimeout(() => setStatusMessage(''), 3000);
-    } catch {
-      setStatusMessage('Failed to close pane');
-      setTimeout(() => setStatusMessage(''), 2000);
-    }
-  };
 
-  const mergeAndPrune = async (pane: DmuxPane) => {
-    if (!pane.worktreePath) {
-      setStatusMessage('No worktree to merge');
-      setTimeout(() => setStatusMessage(''), 2000);
-      return;
-    }
 
-    try {
-      setStatusMessage('Checking worktree status...');
-      
-      // Get current branch
-      const mainBranch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
-      
-      // Check for uncommitted changes in the worktree
-      const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
-      
-      if (statusOutput.trim()) {
-        setStatusMessage('Generating commit message...');
-        
-        // Get the diff for uncommitted changes
-        const diffOutput = execSync(`git -C "${pane.worktreePath}" diff HEAD`, { encoding: 'utf-8' });
-        const statusDetails = execSync(`git -C "${pane.worktreePath}" status`, { encoding: 'utf-8' });
-        
-        // Generate commit message using LLM
-        const commitMessage = await generateCommitMessage(`${statusDetails}\n\n${diffOutput}`);
-        
-        setStatusMessage('Committing changes...');
-        
-        // Stage all changes and commit with generated message
-        execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
-        
-        // Escape the commit message for shell
-        const escapedMessage = commitMessage.replace(/'/g, "'\\''");
-        execSync(`git -C "${pane.worktreePath}" commit -m '${escapedMessage}'`, { stdio: 'pipe' });
-      }
-      
-      setStatusMessage('Merging into main...');
-      
-      // Try to merge the worktree branch
-      try {
-        execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
-      } catch (mergeError: any) {
-        // Check if this is a merge conflict
-        const errorMessage = mergeError.message || mergeError.toString();
-        if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
-          // Merge conflict detected - exit dmux and inform user
-          // Merge conflict detected - exit dmux and inform user
-          process.stderr.write('\n\x1b[31m✗ Merge conflict detected!\x1b[0m\n');
-          process.stderr.write(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.\n`);
-          process.stderr.write('\nTo resolve:\n');
-          process.stderr.write('1. Manually resolve the merge conflicts in your editor\n');
-          process.stderr.write('2. Stage the resolved files: git add <resolved-files>\n');
-          process.stderr.write('3. Complete the merge: git commit\n');
-          process.stderr.write('4. Run dmux again to continue managing your panes\n');
-          process.stderr.write('\nExiting dmux now...\n\n');
-          
-          // Clean exit
-          process.stdout.write('\x1b[2J\x1b[H');
-          process.stdout.write('\x1b[3J');
-          try {
-            execSync('tmux clear-history', { stdio: 'pipe' });
-          } catch {}
-          
-          process.exit(1);
-        } else {
-          // Some other merge error
-          throw mergeError;
-        }
-      }
-      
-      // Remove worktree
-      execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
-      
-      // Delete branch
-      execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
-      
-      // Close the pane (includes clearing)
-      await closePane(pane);
-      
-      setStatusMessage(`Merged ${pane.slug} into ${mainBranch} and closed pane`);
-      setTimeout(() => setStatusMessage(''), 3000);
-    } catch (error) {
-      setStatusMessage('Failed to merge - check git status');
-      setTimeout(() => setStatusMessage(''), 3000);
-    }
-  };
 
-  const deleteUnsavedChanges = async (pane: DmuxPane) => {
-    if (!pane.worktreePath) {
-      // No worktree, just close the pane (includes clearing)
-      await closePane(pane);
-      return;
-    }
 
-    try {
-      setStatusMessage('Removing worktree with unsaved changes...');
-      
-      // Force remove worktree (discards uncommitted changes)
-      execSync(`git worktree remove --force "${pane.worktreePath}"`, { stdio: 'pipe' });
-      
-      // Delete branch
-      try {
-        execSync(`git branch -D ${pane.slug}`, { stdio: 'pipe' });
-      } catch {
-        // Branch might not exist or have commits, that's ok
-      }
-      
-      // Close the pane (includes clearing)
-      await closePane(pane);
-      
-      setStatusMessage(`Deleted worktree ${pane.slug} and closed pane`);
-      setTimeout(() => setStatusMessage(''), 3000);
-    } catch (error) {
-      setStatusMessage('Failed to delete worktree');
-      setTimeout(() => setStatusMessage(''), 3000);
-    }
-  };
 
-  const handleCloseOption = async (option: number, pane: DmuxPane) => {
-    setShowCloseOptions(false);
-    setClosingPane(null);
-    setSelectedCloseOption(0);
 
-    switch (option) {
-      case 0: // Merge & Prune
-        await mergeAndPrune(pane);
-        break;
-      case 1: // Merge Only
-        await mergeWorktree(pane);
-        break;
-      case 2: // Delete Unsaved Changes
-        await deleteUnsavedChanges(pane);
-        break;
-      case 3: // Just Close
-        await closePane(pane);
-        break;
-    }
-  };
 
-  const generateCommitMessage = async (changes: string): Promise<string> => {
-    // Try OpenRouter first if API key is available
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (apiKey) {
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'openai/gpt-4o-mini',
-            messages: [
-              {
-                role: 'system',
-                content: 'You are a git commit message generator. Generate semantic commit messages following conventional commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:). Be concise and specific.'
-              },
-              {
-                role: 'user',
-                content: `Generate a semantic commit message for these changes:\n\n${changes.substring(0, 3000)}`
-              }
-            ],
-            max_tokens: 100,
-            temperature: 0.3
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const message = data.choices[0].message.content.trim();
-          if (message) return message;
-        }
-      } catch {
-        // Fall through to Claude Code
-      }
-    }
-
-    // Try Claude Code as fallback
-    const systemPrompt = 'You are a git commit message generator. Generate semantic commit messages following conventional commits format (feat:, fix:, docs:, style:, refactor:, test:, chore:). Be concise and specific.';
-    const userPrompt = `${systemPrompt}\n\nGenerate a semantic commit message for these changes:\n\n${changes.substring(0, 3000)}`;
-    
-    const claudeResponse = await callClaudeCode(userPrompt);
-    if (claudeResponse) {
-      const message = claudeResponse.trim();
-      if (message) return message;
-    }
-
-    // Final fallback
-    return 'chore: merge worktree changes';
-  };
-
-  const detectPackageManager = async (): Promise<{ manager: string | null, hasPackageJson: boolean }> => {
-    try {
-      // Get project root
-      const projectRoot = execSync('git rev-parse --show-toplevel', { 
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      }).trim();
-      
-      // Check if package.json exists
-      try {
-        await fs.access(path.join(projectRoot, 'package.json'));
-        
-        // Check for lock files to determine package manager
-        const files = await fs.readdir(projectRoot);
-        
-        if (files.includes('pnpm-lock.yaml')) {
-          return { manager: 'pnpm', hasPackageJson: true };
-        } else if (files.includes('yarn.lock')) {
-          return { manager: 'yarn', hasPackageJson: true };
-        } else if (files.includes('package-lock.json')) {
-          return { manager: 'npm', hasPackageJson: true };
-        } else {
-          // Default to npm if no lock file found
-          return { manager: 'npm', hasPackageJson: true };
-        }
-      } catch {
-        // No package.json found
-        return { manager: null, hasPackageJson: false };
-      }
-    } catch {
-      return { manager: null, hasPackageJson: false };
-    }
-  };
-
-  const suggestCommand = async (type: 'test' | 'dev'): Promise<string | null> => {
-    const { manager, hasPackageJson } = await detectPackageManager();
-    
-    if (!hasPackageJson) {
-      return null;
-    }
-    
-    // Suggest standard commands based on package manager
-    if (type === 'test') {
-      return `${manager} run test`;
-    } else {
-      return `${manager} run dev`;
-    }
-  };
-
-  const copyNonGitFiles = async (worktreePath: string) => {
-    try {
-      setStatusMessage('Copying non-git files from main...');
-      
-      // Get project root
-      const projectRoot = execSync('git rev-parse --show-toplevel', { 
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      }).trim();
-      
-      // Use rsync to copy non-tracked files
-      // This copies everything except git-tracked files, .git, and common build directories
-      const rsyncCmd = `rsync -avz --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='build' --exclude='.next' --exclude='.turbo' "${projectRoot}/" "${worktreePath}/"`;
-      
-      execSync(rsyncCmd, { stdio: 'pipe' });
-      
-      setStatusMessage('Non-git files copied successfully');
-      setTimeout(() => setStatusMessage(''), 2000);
-    } catch (error) {
-      setStatusMessage('Failed to copy non-git files');
-      setTimeout(() => setStatusMessage(''), 2000);
-    }
-  };
-
-  const runCommandInternal = async (type: 'test' | 'dev', pane: DmuxPane) => {
-    if (!pane.worktreePath) {
-      setStatusMessage('No worktree path for this pane');
-      setTimeout(() => setStatusMessage(''), 2000);
-      return;
-    }
-
-    const command = type === 'test' ? projectSettings.testCommand : projectSettings.devCommand;
-    
-    if (!command) {
-      setStatusMessage('No command configured');
-      setTimeout(() => setStatusMessage(''), 2000);
-      return;
-    }
-
-    try {
-      setRunningCommand(true);
-      setStatusMessage(`Starting ${type} in background window...`);
-      
-      // Kill existing window if present
-      const existingWindowId = type === 'test' ? pane.testWindowId : pane.devWindowId;
-      if (existingWindowId) {
-        try {
-          execSync(`tmux kill-window -t '${existingWindowId}'`, { stdio: 'pipe' });
-        } catch {}
-      }
-      
-      // Create a new background window for the command
-      const windowName = `${pane.slug}-${type}`;
-      const windowId = execSync(
-        `tmux new-window -d -n '${windowName}' -P -F '#{window_id}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      
-      // Create a log file to capture output
-      const logFile = `/tmp/dmux-${pane.id}-${type}.log`;
-      
-      // Build the command with output capture
-      const fullCommand = `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`;
-      
-      // Send the command to the new window
-      execSync(`tmux send-keys -t '${windowId}' '${fullCommand.replace(/'/g, "'\\''")}' Enter`, { stdio: 'pipe' });
-      
-      // Update pane with window info
-      const updatedPane: DmuxPane = {
-        ...pane,
-        [type === 'test' ? 'testWindowId' : 'devWindowId']: windowId,
-        [type === 'test' ? 'testStatus' : 'devStatus']: 'running'
-      };
-      
-      const updatedPanes = panes.map(p => p.id === pane.id ? updatedPane : p);
-      await savePanes(updatedPanes);
-      
-      // Start monitoring the output
-      if (type === 'test') {
-        // For tests, monitor for completion
-        setTimeout(() => monitorTestOutput(pane.id, logFile), 2000);
-      } else {
-        // For dev, monitor for server URL
-        setTimeout(() => monitorDevOutput(pane.id, logFile), 2000);
-      }
-      
-      setRunningCommand(false);
-      setStatusMessage(`${type === 'test' ? 'Test' : 'Dev server'} started in background`);
-      setTimeout(() => setStatusMessage(''), 3000);
-    } catch (error) {
-      setRunningCommand(false);
-      setStatusMessage(`Failed to run ${type} command`);
-      setTimeout(() => setStatusMessage(''), 3000);
-    }
-  };
 
   const runCommand = async (type: 'test' | 'dev', pane: DmuxPane) => {
     if (!pane.worktreePath) {
@@ -1740,258 +623,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
     }
   };
   
-  const monitorTestOutput = async (paneId: string, logFile: string) => {
-    try {
-      const content = await fs.readFile(logFile, 'utf-8');
-      
-      // Look for common test result patterns
-      let status: 'passed' | 'failed' | 'running' = 'running';
-      if (content.match(/(?:tests?|specs?) (?:passed|✓|succeeded)/i) || 
-          content.match(/\b0 fail(?:ing|ed|ures?)\b/i)) {
-        status = 'passed';
-      } else if (content.match(/(?:tests?|specs?) (?:failed|✗|✖)/i) || 
-                 content.match(/\d+ fail(?:ing|ed|ures?)/i) ||
-                 content.match(/error:/i)) {
-        status = 'failed';
-      }
-      
-      // Check if process is still running
-      const pane = panes.find(p => p.id === paneId);
-      if (pane?.testWindowId) {
-        try {
-          execSync(`tmux list-windows -F '#{window_id}' | grep -q '${pane.testWindowId}'`, { stdio: 'pipe' });
-          // Window still exists, check if command is done
-          const paneOutput = execSync(`tmux capture-pane -t '${pane.testWindowId}' -p | tail -5`, { encoding: 'utf-8' });
-          if (paneOutput.includes('$') || paneOutput.includes('#')) {
-            // Command prompt returned, test is done
-            if (status === 'running') status = 'passed'; // Assume success if no errors found
-          }
-        } catch {
-          // Window doesn't exist or command failed
-          if (status === 'running') status = 'failed';
-        }
-      }
-      
-      // Update pane status
-      const updatedPanes = panes.map(p => 
-        p.id === paneId 
-          ? { ...p, testStatus: status, testOutput: content.slice(-5000) } // Keep last 5000 chars
-          : p
-      );
-      await savePanes(updatedPanes);
-      
-      // Continue monitoring if still running
-      if (status === 'running') {
-        setTimeout(() => monitorTestOutput(paneId, logFile), 2000);
-      }
-    } catch {}
-  };
-  
-  const monitorDevOutput = async (paneId: string, logFile: string) => {
-    try {
-      const content = await fs.readFile(logFile, 'utf-8');
-      
-      // Look for dev server URLs
-      const urlMatch = content.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+/i) ||
-                       content.match(/Local:\s+(https?:\/\/[^\s]+)/i) ||
-                       content.match(/listening on port (\d+)/i);
-      
-      let devUrl = '';
-      if (urlMatch) {
-        if (urlMatch[0].startsWith('http')) {
-          devUrl = urlMatch[0];
-        } else if (urlMatch[1]) {
-          // If we just found a port number
-          devUrl = `http://localhost:${urlMatch[1]}`;
-        }
-      }
-      
-      // Check if process is still running
-      const pane = panes.find(p => p.id === paneId);
-      let status: 'running' | 'stopped' = 'running';
-      if (pane?.devWindowId) {
-        try {
-          execSync(`tmux list-windows -F '#{window_id}' | grep -q '${pane.devWindowId}'`, { stdio: 'pipe' });
-        } catch {
-          // Window doesn't exist
-          status = 'stopped';
-        }
-      }
-      
-      // Update pane status
-      const updatedPanes = panes.map(p => 
-        p.id === paneId 
-          ? { ...p, devStatus: status, devUrl: devUrl || p.devUrl }
-          : p
-      );
-      await savePanes(updatedPanes);
-      
-      // Continue monitoring if still running
-      if (status === 'running') {
-        setTimeout(() => monitorDevOutput(paneId, logFile), 2000);
-      }
-    } catch {}
-  };
 
-  const attachBackgroundWindow = async (pane: DmuxPane, type: 'test' | 'dev') => {
-    const windowId = type === 'test' ? pane.testWindowId : pane.devWindowId;
-    if (!windowId) {
-      setStatusMessage(`No ${type} window to attach`);
-      setTimeout(() => setStatusMessage(''), 2000);
-      return;
-    }
-    
-    try {
-      // Join the window to current window as a pane
-      execSync(`tmux join-pane -h -s '${windowId}'`, { stdio: 'pipe' });
-      
-      // Apply smart layout
-      const paneCount = parseInt(
-        execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
-      );
-      applySmartLayout(paneCount);
-      
-      // Focus on the newly attached pane
-      execSync(`tmux select-pane -t '{last}'`, { stdio: 'pipe' });
-      
-      setStatusMessage(`Attached ${type} window`);
-      setTimeout(() => setStatusMessage(''), 2000);
-    } catch (error) {
-      setStatusMessage(`Failed to attach ${type} window`);
-      setTimeout(() => setStatusMessage(''), 2000);
-    }
-  };
 
-  const mergeWorktree = async (pane: DmuxPane) => {
-    if (!pane.worktreePath) {
-      setStatusMessage('No worktree to merge');
-      setTimeout(() => setStatusMessage(''), 2000);
-      return;
-    }
 
-    try {
-      setStatusMessage('Checking worktree status...');
-      
-      // Get current branch
-      const mainBranch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
-      
-      // Check for uncommitted changes in the worktree
-      const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
-      
-      if (statusOutput.trim()) {
-        setStatusMessage('Staging changes...');
-        
-        // Stage all changes first (including untracked files)
-        execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
-        
-        setStatusMessage('Generating commit message...');
-        
-        // Get the diff of staged changes (after adding files)
-        const diffOutput = execSync(`git -C "${pane.worktreePath}" diff --cached`, { encoding: 'utf-8' });
-        const statusDetails = execSync(`git -C "${pane.worktreePath}" status`, { encoding: 'utf-8' });
-        
-        // Generate commit message using LLM
-        const commitMessage = await generateCommitMessage(`${statusDetails}\n\n${diffOutput}`);
-        
-        setStatusMessage('Committing changes...');
-        
-        // Escape the commit message for shell
-        const escapedMessage = commitMessage.replace(/'/g, "'\\''");
-        execSync(`git -C "${pane.worktreePath}" commit -m '${escapedMessage}'`, { stdio: 'pipe' });
-      }
-      
-      setStatusMessage('Merging into main...');
-      
-      // Try to merge the worktree branch
-      try {
-        execSync(`git merge ${pane.slug}`, { stdio: 'pipe' });
-      } catch (mergeError: any) {
-        // Check if this is a merge conflict
-        const errorMessage = mergeError.message || mergeError.toString();
-        if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
-          // Merge conflict detected - exit dmux and inform user
-          // Merge conflict detected - exit dmux and inform user
-          process.stderr.write('\n\x1b[31m✗ Merge conflict detected!\x1b[0m\n');
-          process.stderr.write(`\nThere are merge conflicts when merging branch '${pane.slug}' into '${mainBranch}'.\n`);
-          process.stderr.write('\nTo resolve:\n');
-          process.stderr.write('1. Manually resolve the merge conflicts in your editor\n');
-          process.stderr.write('2. Stage the resolved files: git add <resolved-files>\n');
-          process.stderr.write('3. Complete the merge: git commit\n');
-          process.stderr.write('4. Run dmux again to continue managing your panes\n');
-          process.stderr.write('\nExiting dmux now...\n\n');
-          
-          // Clean exit
-          process.stdout.write('\x1b[2J\x1b[H');
-          process.stdout.write('\x1b[3J');
-          try {
-            execSync('tmux clear-history', { stdio: 'pipe' });
-          } catch {}
-          
-          process.exit(1);
-        } else {
-          // Some other merge error
-          throw mergeError;
-        }
-      }
-      
-      // Remove worktree
-      execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
-      
-      // Delete branch
-      execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
-      
-      setStatusMessage(`Merged ${pane.slug} into ${mainBranch}`);
-      setTimeout(() => setStatusMessage(''), 3000);
-      
-      // Show confirmation dialog to close the pane
-      setMergedPane(pane);
-      setShowMergeConfirmation(true);
-    } catch (error) {
-      setStatusMessage('Failed to merge - check git status');
-      setTimeout(() => setStatusMessage(''), 3000);
-    }
-  };
-
-  // Update handling functions
-  const performUpdate = async () => {
-    if (!autoUpdater || !updateInfo) return;
-
-    try {
-      setIsUpdating(true);
-      setStatusMessage('Updating dmux...');
-      
-      const success = await autoUpdater.performUpdate(updateInfo);
-      
-      if (success) {
-        setStatusMessage('Update completed successfully! Please restart dmux.');
-        setTimeout(() => {
-          process.exit(0);
-        }, 3000);
-      } else {
-        setStatusMessage('Update failed. Please update manually.');
-        setTimeout(() => setStatusMessage(''), 3000);
-      }
-    } catch (error) {
-      setStatusMessage('Update failed. Please update manually.');
-      setTimeout(() => setStatusMessage(''), 3000);
-    } finally {
-      setIsUpdating(false);
-      setShowUpdateDialog(false);
-    }
-  };
-
-  const skipUpdate = async () => {
-    if (!autoUpdater || !updateInfo) return;
-    
-    await autoUpdater.skipVersion(updateInfo.latestVersion);
-    setShowUpdateDialog(false);
-    setUpdateInfo(null);
-  };
-
-  const dismissUpdate = () => {
-    setShowUpdateDialog(false);
-    setUpdateInfo(null);
-  };
+  // Update handling moved to useAutoUpdater
 
   // Cleanup function for exit
   const cleanExit = () => {
@@ -2131,7 +766,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         setNewPanePrompt('');
       } else if (key.ctrl && input === 'o') {
         // Open in external editor
-        openInEditor();
+        openEditor2(newPanePrompt, setNewPanePrompt);
       }
       // TextInput handles other input events
       return;
@@ -2234,298 +869,72 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         </Text>
       </Box>
 
-      {/* Flex container for pane cards with wrapping */}
-      <Box flexDirection="row" flexWrap="wrap" gap={1}>
-        {panes.map((pane, index) => {
-          // Determine border color based on status
-          let borderColor = 'gray';
-          if (selectedIndex === index) {
-            borderColor = 'cyan';
-          } else if (pane.devStatus === 'running') {
-            borderColor = 'green';
-          } else if (pane.testStatus === 'running') {
-            borderColor = 'yellow';
-          } else if (pane.testStatus === 'failed') {
-            borderColor = 'red';
-          }
-          
-          return (
-            <Box
-              key={pane.id}
-              paddingX={1}
-              borderStyle="single"
-              borderColor={borderColor}
-              width={35}  // Max width for cards
-              flexShrink={0}
-            >
-              <Box flexDirection="column">
-                <Box>
-                  <Text color={selectedIndex === index ? 'cyan' : 'white'} bold wrap="truncate">
-                    {pane.slug}
-                  </Text>
-                  {pane.worktreePath && (
-                    <Text color="gray"> (wt)</Text>
-                  )}
-                  {pane.agent && (
-                    <Text color="gray"> ({pane.agent === 'claude' ? 'cc' : 'oc'})</Text>
-                  )}
-                </Box>
-                <Text color="gray" dimColor wrap="truncate">
-                  {pane.prompt.substring(0, 30)}
-                </Text>
-                
-                {/* Claude status indicator */}
-                {pane.agentStatus && (
-                  <Box>
-                    {pane.agentStatus === 'working' && (
-                      <Text color="cyan">✻ Working...</Text>
-                    )}
-                    {pane.agentStatus === 'waiting' && (
-                      <Text color="yellow" bold>⚠ Needs attention</Text>
-                    )}
-                  </Box>
-                )}
-                
-                {/* Compact status indicators */}
-                {(pane.testStatus || pane.devStatus) && (
-                  <Box>
-                    {pane.testStatus === 'running' && (
-                      <Text color="yellow">⏳ Test</Text>
-                    )}
-                    {pane.testStatus === 'passed' && (
-                      <Text color="green">✓ Test</Text>
-                    )}
-                    {pane.testStatus === 'failed' && (
-                      <Text color="red">✗ Test</Text>
-                    )}
-                    {pane.devStatus === 'running' && (
-                      <Text color="green">
-                        ▶ Dev
-                        {pane.devUrl && (
-                          <Text color="cyan" wrap="truncate"> {pane.devUrl.replace(/https?:\/\//, '').substring(0, 15)}</Text>
-                        )}
-                      </Text>
-                    )}
-                  </Box>
-                )}
-              </Box>
-            </Box>
-          );
-        })}
-
-        {/* New pane button - only show when not loading and not showing dialogs */}
-        {!isLoading && !showNewPaneDialog && (
-          <Box
-            paddingX={1}
-            borderStyle="single"
-            borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
-            width={35}  // Match card width
-            flexShrink={0}
-          >
-            <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
-              + New dmux pane
-            </Text>
-          </Box>
-        )}
-      </Box>
+      <PanesGrid panes={panes} selectedIndex={selectedIndex} isLoading={isLoading} showNewPaneDialog={showNewPaneDialog} />
 
       {/* Loading dialog */}
-      {isLoading && (
-        <Box borderStyle="round" borderColor="cyan" paddingX={2} marginTop={1}>
-          <Box flexDirection="row" gap={1}>
-            <Text color="cyan">⏳</Text>
-            <Text>Loading dmux sessions...</Text>
-          </Box>
-        </Box>
-      )}
+      {isLoading && (<LoadingIndicator />)}
 
       {showNewPaneDialog && !showAgentChoiceDialog && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text>Enter initial prompt (ESC to cancel):</Text>
-          <Box borderStyle="round" borderColor="#E67E22" paddingX={1} marginTop={1}>
-              <CleanTextInput
-                value={newPanePrompt}
-                onChange={setNewPanePrompt}
-                onSubmit={(expandedValue) => {
-                  const promptValue = expandedValue || newPanePrompt;
-                  const agents = availableAgents;
-                   if (agents.length === 0) {
-                     setShowNewPaneDialog(false);
-                     setNewPanePrompt('');
-                     createNewPane(promptValue);
-                  } else if (agents.length === 1) {
-                    setShowNewPaneDialog(false);
-                    setNewPanePrompt('');
-                    createNewPane(promptValue, agents[0]);
-                  } else {
-                    setPendingPrompt(promptValue);
-                    setShowNewPaneDialog(false);
-                    setNewPanePrompt('');
-                    setShowAgentChoiceDialog(true);
-                    setAgentChoice(agentChoice || 'claude');
-                  }
-                }}
-              />
-          </Box>
-          <Box marginTop={1}>
-            <Text dimColor italic>
-              Press Ctrl+O to open in $EDITOR for complex multi-line input
-            </Text>
-          </Box>
-        </Box>
+        <NewPaneDialog
+          value={newPanePrompt}
+          onChange={setNewPanePrompt}
+          onSubmit={(value) => {
+            const promptValue = value;
+            const agents = availableAgents;
+            if (agents.length === 0) {
+              setShowNewPaneDialog(false);
+              setNewPanePrompt('');
+              createNewPaneHook(promptValue);
+            } else if (agents.length === 1) {
+              setShowNewPaneDialog(false);
+              setNewPanePrompt('');
+              createNewPaneHook(promptValue, agents[0]);
+            } else {
+              setPendingPrompt(promptValue);
+              setShowNewPaneDialog(false);
+              setNewPanePrompt('');
+              setShowAgentChoiceDialog(true);
+              setAgentChoice(agentChoice || 'claude');
+            }
+          }}
+        />
       )}
 
       {showAgentChoiceDialog && (
-        <Box borderStyle="round" borderColor="cyan" paddingX={1} marginTop={1}>
-          <Box flexDirection="column">
-            <Text>Select agent (←/→, 1/2, C/O, Enter, ESC):</Text>
-            <Box marginTop={1} gap={3}>
-              <Text color={agentChoice === 'claude' ? 'cyan' : 'white'}>
-                {agentChoice === 'claude' ? '▶ Claude Code' : '  Claude Code'}
-              </Text>
-              <Text color={agentChoice === 'opencode' ? 'cyan' : 'white'}>
-                {agentChoice === 'opencode' ? '▶ opencode' : '  opencode'}
-              </Text>
-            </Box>
-          </Box>
-        </Box>
+        <AgentChoiceDialog agentChoice={agentChoice} />
       )}
 
        {isCreatingPane && (
-        <Box borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Text color="yellow">
-            <Text bold>⏳ Creating new pane... </Text>
-            {statusMessage}
-          </Text>
-        </Box>
+        <CreatingIndicator message={statusMessage} />
       )}
 
       {showMergeConfirmation && mergedPane && (
-        <Box borderStyle="double" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Box flexDirection="column">
-            <Text color="yellow" bold>Worktree merged successfully!</Text>
-            <Text>Close the pane "{mergedPane.slug}"? (y/n)</Text>
-          </Box>
-        </Box>
+        <MergeConfirmationDialog pane={mergedPane} />
       )}
 
       {showCloseOptions && closingPane && (
-        <Box borderStyle="double" borderColor="red" paddingX={1} marginTop={1}>
-          <Box flexDirection="column">
-            <Text color="red" bold>Close pane "{closingPane.slug}"?</Text>
-            <Text dimColor>Select an option (ESC to cancel):</Text>
-            <Box flexDirection="column" marginTop={1}>
-              <Box>
-                <Text color={selectedCloseOption === 0 ? 'cyan' : 'white'}>
-                  {selectedCloseOption === 0 ? '▶ ' : '  '}Merge & Prune - Merge worktree to main and close
-                </Text>
-              </Box>
-              <Box>
-                <Text color={selectedCloseOption === 1 ? 'cyan' : 'white'}>
-                  {selectedCloseOption === 1 ? '▶ ' : '  '}Merge Only - Merge worktree but keep pane open
-                </Text>
-              </Box>
-              <Box>
-                <Text color={selectedCloseOption === 2 ? 'cyan' : 'white'}>
-                  {selectedCloseOption === 2 ? '▶ ' : '  '}Delete Unsaved - Remove worktree (discard changes)
-                </Text>
-              </Box>
-              <Box>
-                <Text color={selectedCloseOption === 3 ? 'cyan' : 'white'}>
-                  {selectedCloseOption === 3 ? '▶ ' : '  '}Just Close - Close pane only
-                </Text>
-              </Box>
-            </Box>
-          </Box>
-        </Box>
+        <CloseOptionsDialog pane={closingPane} selectedIndex={selectedCloseOption} />
       )}
 
       {showCommandPrompt && (
-        <Box borderStyle="round" borderColor="gray" paddingX={1} marginTop={1}>
-          <Box flexDirection="column">
-            <Text color="magenta" bold>
-              Configure {showCommandPrompt === 'test' ? 'Test' : 'Dev'} Command
-            </Text>
-            <Text dimColor>
-              Enter command to run {showCommandPrompt === 'test' ? 'tests' : 'dev server'} in worktrees
-            </Text>
-            <Text dimColor>
-              (Press Enter with empty input for suggested command, ESC to cancel)
-            </Text>
-            <Box marginTop={1}>
-              <StyledTextInput
-                value={commandInput}
-                onChange={setCommandInput}
-                placeholder={showCommandPrompt === 'test' ? 'e.g., npm test, pnpm test' : 'e.g., npm run dev, pnpm dev'}
-              />
-            </Box>
-          </Box>
-        </Box>
+        <CommandPromptDialog type={showCommandPrompt} value={commandInput} onChange={setCommandInput} />
       )}
 
       {showFileCopyPrompt && (
-        <Box borderStyle="double" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Box flexDirection="column">
-            <Text color="yellow" bold>First Run Setup</Text>
-            <Text>
-              Copy non-git files (like .env, configs) from main to worktree?
-            </Text>
-            <Text dimColor>
-              This includes files not tracked by git but excludes node_modules, dist, etc.
-            </Text>
-            <Box marginTop={1}>
-              <Text>(y/n):</Text>
-            </Box>
-          </Box>
-        </Box>
+        <FileCopyPrompt />
       )}
 
 
       {runningCommand && (
-        <Box borderStyle="single" borderColor="blue" paddingX={1} marginTop={1}>
-          <Text color="blue">
-            <Text bold>▶ Running command...</Text>
-          </Text>
-        </Box>
+        <RunningIndicator />
       )}
 
       {isUpdating && (
-        <Box borderStyle="single" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Text color="yellow">
-            <Text bold>⬇ Updating dmux...</Text>
-          </Text>
-        </Box>
+        <UpdatingIndicator />
       )}
 
       {showUpdateDialog && updateInfo && (
-        <Box borderStyle="double" borderColor="green" paddingX={1} marginTop={1}>
-          <Box flexDirection="column">
-            <Text color="green" bold>🎉 dmux Update Available!</Text>
-            <Text>
-              Current version: <Text color="cyan">{updateInfo.currentVersion}</Text>
-            </Text>
-            <Text>
-              Latest version: <Text color="green">{updateInfo.latestVersion}</Text>
-            </Text>
-            {updateInfo.installMethod === 'global' && updateInfo.packageManager && (
-              <Text>
-                Detected global install via: <Text color="yellow">{updateInfo.packageManager}</Text>
-              </Text>
-            )}
-            <Box marginTop={1}>
-              {updateInfo.installMethod === 'global' && updateInfo.packageManager ? (
-                <Text>
-                  [U]pdate now • [S]kip this version • [L]ater
-                </Text>
-              ) : (
-                <Text>
-                  Manual update required: <Text color="cyan">{updateInfo.packageManager || 'npm'} update -g dmux</Text>
-                  {'\n'}[S]kip this version • [L]ater
-                </Text>
-              )}
-            </Box>
-          </Box>
-        </Box>
+        <UpdateDialog updateInfo={updateInfo} />
       )}
 
       {statusMessage && (
@@ -2534,27 +943,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
         </Box>
       )}
 
-      {!showNewPaneDialog && !showCommandPrompt && (
-        <Box marginTop={1} flexDirection="column">
-          <Text dimColor>
-            Commands: [j]ump • [t]est • [d]ev • [o]pen • [x]close • [m]erge • [n]ew • [q]uit
-          </Text>
-          <Text dimColor>
-            Use arrow keys (↑↓←→) for spatial navigation, Enter to select
-          </Text>
-          {/* Debug info - can be removed after testing */}
-          {process.env.DEBUG_DMUX && (
-            <Text dimColor>
-              Grid: {Math.max(1, Math.floor(terminalWidth / 37))} cols × {Math.ceil((panes.length + 1) / Math.max(1, Math.floor(terminalWidth / 37)))} rows | 
-              Selected: {(() => {
-                const pos = getCardGridPosition(selectedIndex);
-                return ` row ${pos.row}, col ${pos.col}`;
-              })()} | 
-              Terminal: {terminalWidth}w
-            </Text>
-          )}
-        </Box>
-      )}
+      <FooterHelp
+        show={!showNewPaneDialog && !showCommandPrompt}
+        gridInfo={(() => {
+          if (!process.env.DEBUG_DMUX) return undefined;
+          const cols = Math.max(1, Math.floor(terminalWidth / 37));
+          const rows = Math.ceil((panes.length + 1) / cols);
+          const pos = getCardGridPosition(selectedIndex);
+          return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`;
+        })()}
+      />
 
       <Box marginTop={1}>
         <Text dimColor>dmux v{packageJson.version}</Text>
