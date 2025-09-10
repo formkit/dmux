@@ -102,11 +102,12 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
       execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, { stdio: 'pipe' });
       execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
       if (prompt && prompt.trim()) {
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1500));
         const bufName = `dmux_prompt_${Date.now()}`;
         const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
         execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, { stdio: 'pipe' });
-        execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}' -p`, { stdio: 'pipe' });
+        execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}'`, { stdio: 'pipe' });
+        await new Promise(r => setTimeout(r, 200));
         execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: 'pipe' });
         execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
       }
