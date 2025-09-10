@@ -25,6 +25,7 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               return pane;
             }
 
+            let effectivePaneId = pane.paneId;
             let paneExists = false;
             try {
               const paneIds = execSync(`tmux list-panes -s -F '#{pane_id}'`, {
@@ -32,7 +33,28 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
                 stdio: 'pipe',
                 timeout: 500,
               }).trim().split('\n').filter(id => id && id.startsWith('%'));
-              paneExists = paneIds.includes(pane.paneId);
+              paneExists = paneIds.includes(effectivePaneId);
+              if (!paneExists) {
+                try {
+                  const out = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
+                    encoding: 'utf-8',
+                    stdio: 'pipe',
+                    timeout: 500,
+                  }).trim();
+                  if (out) {
+                    const titleToId = new Map<string, string>();
+                    out.split('\n').forEach(line => {
+                      const [id, title] = line.split('::');
+                      if (id && title) titleToId.set(title.trim(), id);
+                    });
+                    const remappedId = titleToId.get(pane.slug);
+                    if (remappedId) {
+                      effectivePaneId = remappedId;
+                      paneExists = true;
+                    }
+                  }
+                } catch {}
+              }
             } catch {
               paneExists = true;
             }
@@ -40,7 +62,7 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
             if (!paneExists) return null;
 
             const captureOutput = execSync(
-              `tmux capture-pane -t '${pane.paneId}' -p -S -30`,
+              `tmux capture-pane -t '${effectivePaneId}' -p -S -30`,
               { encoding: 'utf-8', stdio: 'pipe' }
             );
 
@@ -110,10 +132,10 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
             }
 
             if (pane.agentStatus !== newStatus) {
-              return { ...pane, agentStatus: newStatus, lastAgentCheck: Date.now() };
+              return { ...pane, paneId: effectivePaneId, agentStatus: newStatus, lastAgentCheck: Date.now() };
             }
 
-            return { ...pane, lastAgentCheck: Date.now() };
+            return { ...pane, paneId: effectivePaneId, lastAgentCheck: Date.now() };
           } catch {
             return null;
           }
@@ -121,8 +143,9 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
 
         const updatedPanes = updatedPanesWithNulls.filter((pane): pane is DmuxPane => pane !== null);
         const panesRemoved = updatedPanes.length < panes.length;
+        const idsChanged = updatedPanes.some((pane, index) => pane.paneId !== panes[index]?.paneId);
 
-        if (panesRemoved) {
+        if (panesRemoved || idsChanged) {
           await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
           await loadPanes();
         } else {

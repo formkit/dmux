@@ -15,17 +15,27 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       const loadedPanes = JSON.parse(content) as DmuxPane[];
 
       let allPaneIds: string[] = [];
+      let titleToId = new Map<string, string>();
       let retryCount = 0;
       const maxRetries = 2;
 
       while (retryCount <= maxRetries) {
         try {
-          const output = execSync(`tmux list-panes -s -F '#{pane_id}'`, { 
+          const output = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
             encoding: 'utf-8',
             stdio: 'pipe',
             timeout: 1000
-          });
-          allPaneIds = output.trim().split('\n').filter(id => id && id.startsWith('%'));
+          }).trim();
+          if (output) {
+            const lines = output.split('\n');
+            for (const line of lines) {
+              const [id, title] = line.split('::');
+              if (id && id.startsWith('%')) {
+                allPaneIds.push(id);
+                if (title) titleToId.set(title.trim(), id);
+              }
+            }
+          }
           if (allPaneIds.length > 0 || retryCount === maxRetries) break;
         } catch {
           if (retryCount < maxRetries) await new Promise(r => setTimeout(r, 100));
@@ -33,11 +43,20 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         retryCount++;
       }
 
+      // Attempt to rebind panes whose IDs changed by matching on title (slug)
+      const reboundPanes = loadedPanes.map(p => {
+        if (allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)) {
+          const remappedId = titleToId.get(p.slug);
+          if (remappedId) return { ...p, paneId: remappedId };
+        }
+        return p;
+      });
+
       // Only filter panes if we successfully got the pane list
       // If tmux command failed (allPaneIds is empty), keep existing state
-      const activePanes = allPaneIds.length > 0 
-        ? loadedPanes.filter(pane => allPaneIds.includes(pane.paneId))
-        : panes.length > 0 ? panes : loadedPanes;
+      const activePanes = allPaneIds.length > 0
+        ? reboundPanes.filter(pane => allPaneIds.includes(pane.paneId))
+        : panes.length > 0 ? panes : reboundPanes;
 
       const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
       const newPaneIds = activePanes.map(p => p.paneId).sort().join(',');
@@ -51,7 +70,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           });
         }
         setPanes(activePanes);
-        if (activePanes.length !== loadedPanes.length) {
+        // Persist updated list if IDs changed or panes were filtered
+        if (JSON.stringify(activePanes) !== JSON.stringify(loadedPanes)) {
           await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
         }
       }
@@ -65,12 +85,31 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
   const savePanes = async (newPanes: DmuxPane[]) => {
     let activePanes = newPanes;
     try {
-      const paneIds = execSync(`tmux list-panes -s -F '#{pane_id}'`, { 
+      const out = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
         encoding: 'utf-8',
         stdio: 'pipe',
         timeout: 1000
-      }).trim().split('\n').filter(id => id && id.startsWith('%'));
-      activePanes = newPanes.filter(p => paneIds.includes(p.paneId));
+      }).trim();
+      const paneIds: string[] = [];
+      const titleToId = new Map<string, string>();
+      if (out) {
+        out.split('\n').forEach(line => {
+          const [id, title] = line.split('::');
+          if (id && id.startsWith('%')) paneIds.push(id);
+          if (title) titleToId.set(title.trim(), id);
+        });
+      }
+
+      // Rebind panes by title if their IDs changed, then filter to existing panes when possible
+      activePanes = newPanes
+        .map(p => {
+          if (!paneIds.includes(p.paneId)) {
+            const remappedId = titleToId.get(p.slug);
+            if (remappedId) return { ...p, paneId: remappedId };
+          }
+          return p;
+        })
+        .filter(p => paneIds.length > 0 ? paneIds.includes(p.paneId) : true);
     } catch {
       activePanes = newPanes;
     }
