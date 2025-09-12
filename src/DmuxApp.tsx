@@ -206,8 +206,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ dmuxDir, panesFile, projectName, sess
       projectRoot = process.cwd();
     }
     
-    // Create worktree path relative to project root
-    const worktreePath = path.join(path.dirname(projectRoot), `${path.basename(projectRoot)}-${slug}`);
+    // Create worktree path relative to project root with dmux- prefix
+    const worktreePath = path.join(path.dirname(projectRoot), `dmux-${slug}`);
     
     // Get the original pane ID (where dmux is running) before clearing
     const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();

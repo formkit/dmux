@@ -3,6 +3,7 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 import fs from 'fs/promises';
+import * as fsSync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { render } from 'ink';
@@ -39,10 +40,23 @@ class Dmux {
     // tmux converts dots to underscores, so we do it explicitly to avoid mismatches
     const sanitizedProjectIdentifier = projectIdentifier.replace(/\./g, '-');
     this.sessionName = `dmux-${sanitizedProjectIdentifier}`;
-    // Store panes per project using the unique identifier
-    this.panesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
-    // Store project settings (test/dev commands) per project
-    this.settingsFile = path.join(this.dmuxDir, `${projectIdentifier}-settings.json`);
+    
+    // NEW: Store config in parent directory alongside worktrees
+    const parentDir = path.dirname(this.projectRoot);
+    const configFile = path.join(parentDir, 'dmux.config.json');
+    
+    // Use new config location if parent dir is writable, otherwise fall back to ~/.dmux
+    try {
+      // Check if we can write to parent directory
+      fsSync.accessSync(parentDir, fsSync.constants.W_OK);
+      this.panesFile = configFile;
+      this.settingsFile = configFile; // Same file for all config
+    } catch {
+      // Fall back to old location if parent isn't writable
+      this.panesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
+      this.settingsFile = path.join(this.dmuxDir, `${projectIdentifier}-settings.json`);
+    }
+    
     // Initialize auto-updater
     this.autoUpdater = new AutoUpdater(this.dmuxDir);
   }
@@ -50,8 +64,19 @@ class Dmux {
   async init() {
     await fs.mkdir(this.dmuxDir, { recursive: true });
     
+    // Check for migration from old config location
+    await this.migrateOldConfig();
+    
+    // Initialize config file if it doesn't exist
     if (!await this.fileExists(this.panesFile)) {
-      await fs.writeFile(this.panesFile, '[]');
+      const initialConfig = {
+        projectName: this.projectName,
+        projectRoot: this.projectRoot,
+        panes: [],
+        settings: {},
+        lastUpdated: new Date().toISOString()
+      };
+      await fs.writeFile(this.panesFile, JSON.stringify(initialConfig, null, 2));
     }
 
     // Check for updates in background if needed
@@ -133,6 +158,60 @@ class Dmux {
       const cwd = process.cwd();
       Dmux.cachedProjectRoot = cwd;
       return cwd;
+    }
+  }
+
+  private async migrateOldConfig() {
+    // Check if we're using the new config location
+    const parentDir = path.dirname(this.projectRoot);
+    const newConfigFile = path.join(parentDir, 'dmux.config.json');
+    
+    if (this.panesFile === newConfigFile && !await this.fileExists(newConfigFile)) {
+      // Look for old config files to migrate
+      const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
+      const projectIdentifier = `${this.projectName}-${projectHash}`;
+      const oldPanesFile = path.join(this.dmuxDir, `${projectIdentifier}-panes.json`);
+      const oldSettingsFile = path.join(this.dmuxDir, `${projectIdentifier}-settings.json`);
+      
+      let panes = [];
+      let settings = {};
+      
+      // Try to read old panes file
+      if (await this.fileExists(oldPanesFile)) {
+        try {
+          const oldPanesContent = await fs.readFile(oldPanesFile, 'utf-8');
+          panes = JSON.parse(oldPanesContent);
+        } catch {}
+      }
+      
+      // Try to read old settings file
+      if (await this.fileExists(oldSettingsFile)) {
+        try {
+          const oldSettingsContent = await fs.readFile(oldSettingsFile, 'utf-8');
+          settings = JSON.parse(oldSettingsContent);
+        } catch {}
+      }
+      
+      // If we found old config, migrate it
+      if (panes.length > 0 || Object.keys(settings).length > 0) {
+        const migratedConfig = {
+          projectName: this.projectName,
+          projectRoot: this.projectRoot,
+          panes: panes,
+          settings: settings,
+          lastUpdated: new Date().toISOString(),
+          migratedFrom: 'dmux-legacy'
+        };
+        await fs.writeFile(newConfigFile, JSON.stringify(migratedConfig, null, 2));
+        
+        // Clean up old files after successful migration
+        try {
+          await fs.unlink(oldPanesFile);
+        } catch {}
+        try {
+          await fs.unlink(oldSettingsFile);
+        } catch {}
+      }
     }
   }
 

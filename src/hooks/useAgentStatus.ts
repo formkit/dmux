@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
@@ -12,6 +12,9 @@ interface UseAgentStatusParams {
 }
 
 export default function useAgentStatus({ panes, setPanes, panesFile, suspend, loadPanes }: UseAgentStatusParams) {
+  // Track last check times separately from pane state to avoid re-renders
+  const lastCheckTimes = useRef<Map<string, number>>(new Map());
+  
   useEffect(() => {
     if (panes.length === 0) return;
 
@@ -21,9 +24,14 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
 
         const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
           try {
-            if (pane.lastAgentCheck && Date.now() - pane.lastAgentCheck < 500) {
+            // Check against our ref instead of pane state
+            const lastCheck = lastCheckTimes.current.get(pane.id) || 0;
+            if (Date.now() - lastCheck < 500) {
               return pane;
             }
+            
+            // Update check time in ref
+            lastCheckTimes.current.set(pane.id, Date.now());
 
             let effectivePaneId = pane.paneId;
             let paneExists = false;
@@ -131,11 +139,13 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               }
             }
 
-            if (pane.agentStatus !== newStatus) {
-              return { ...pane, paneId: effectivePaneId, agentStatus: newStatus, lastAgentCheck: Date.now() };
+            // Only return updated pane if status actually changed
+            if (pane.agentStatus !== newStatus || pane.paneId !== effectivePaneId) {
+              return { ...pane, paneId: effectivePaneId, agentStatus: newStatus };
             }
 
-            return { ...pane, paneId: effectivePaneId, lastAgentCheck: Date.now() };
+            // No changes, return original pane
+            return pane;
           } catch {
             return null;
           }
@@ -146,10 +156,25 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
         const idsChanged = updatedPanes.some((pane, index) => pane.paneId !== panes[index]?.paneId);
 
         if (panesRemoved || idsChanged) {
-          await fs.writeFile(panesFile, JSON.stringify(updatedPanes, null, 2));
+          // Save in config format
+          let config: any = { panes: [] };
+          try {
+            const content = await fs.readFile(panesFile, 'utf-8');
+            const parsed = JSON.parse(content);
+            if (!Array.isArray(parsed)) {
+              config = parsed;
+            }
+          } catch {}
+          
+          config.panes = updatedPanes;
+          config.lastUpdated = new Date().toISOString();
+          await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
           await loadPanes();
         } else {
-          const hasStatusChanges = updatedPanes.some((pane, index) => pane.agentStatus !== panes[index]?.agentStatus);
+          const hasStatusChanges = updatedPanes.some((pane, index) => {
+            const oldPane = panes[index];
+            return oldPane && (pane.agentStatus !== oldPane.agentStatus || pane.paneId !== oldPane.paneId);
+          });
           if (hasStatusChanges) setPanes(updatedPanes);
         }
       };
@@ -162,5 +187,5 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
     return () => {
       clearTimeout(startupDelay);
     };
-  }, [JSON.stringify(panes.map(p => ({ id: p.id, paneId: p.paneId, agent: p.agent, agentStatus: p.agentStatus }))), suspend, panesFile]);
+  }, [JSON.stringify(panes.map(p => ({ id: p.id, paneId: p.paneId, agent: p.agent }))), suspend, panesFile]);
 }

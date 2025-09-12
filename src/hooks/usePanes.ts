@@ -3,6 +3,15 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
 
+// Separate config structure to match new format
+interface DmuxConfig {
+  projectName?: string;
+  projectRoot?: string;
+  panes: DmuxPane[];
+  settings?: any;
+  lastUpdated?: string;
+}
+
 export default function usePanes(panesFile: string, skipLoading: boolean) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -12,7 +21,15 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
     try {
       const content = await fs.readFile(panesFile, 'utf-8');
-      const loadedPanes = JSON.parse(content) as DmuxPane[];
+      // Handle both old array format and new config format
+      let loadedPanes: DmuxPane[];
+      let parsed: any = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        loadedPanes = parsed as DmuxPane[];
+      } else {
+        const config = parsed as DmuxConfig;
+        loadedPanes = config.panes || [];
+      }
 
       let allPaneIds: string[] = [];
       let titleToId = new Map<string, string>();
@@ -56,12 +73,13 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       // If tmux command failed (allPaneIds is empty), keep existing state
       const activePanes = allPaneIds.length > 0
         ? reboundPanes.filter(pane => allPaneIds.includes(pane.paneId))
-        : panes.length > 0 ? panes : reboundPanes;
+        : panes; // Always preserve existing panes when tmux fails
 
       const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
       const newPaneIds = activePanes.map(p => p.paneId).sort().join(',');
 
-      if (currentPaneIds !== newPaneIds || panes.length === 0) {
+      // Only update if there's a real change, not just on initial load
+      if (currentPaneIds !== newPaneIds && (panes.length > 0 || activePanes.length > 0)) {
         if (activePanes.length > 0) {
           activePanes.forEach(pane => {
             try {
@@ -72,7 +90,13 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         setPanes(activePanes);
         // Persist updated list if IDs changed or panes were filtered
         if (JSON.stringify(activePanes) !== JSON.stringify(loadedPanes)) {
-          await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
+          // Save in new config format
+          const config: DmuxConfig = {
+            ...parsed,
+            panes: activePanes,
+            lastUpdated: new Date().toISOString()
+          };
+          await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
         }
       }
     } catch {
@@ -114,7 +138,20 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       activePanes = newPanes;
     }
 
-    await fs.writeFile(panesFile, JSON.stringify(activePanes, null, 2));
+    // Read existing config to preserve other fields
+    let config: DmuxConfig = { panes: [] };
+    try {
+      const content = await fs.readFile(panesFile, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (!Array.isArray(parsed)) {
+        config = parsed;
+      }
+    } catch {}
+    
+    // Save in config format
+    config.panes = activePanes;
+    config.lastUpdated = new Date().toISOString();
+    await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
     setPanes(activePanes);
   };
 
