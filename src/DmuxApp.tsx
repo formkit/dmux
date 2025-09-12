@@ -785,9 +785,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       } else if (key.downArrow) {
         setSelectedCloseOption(Math.min(3, selectedCloseOption + 1));
       } else if (key.return && closingPane) {
-        handleCloseOption(selectedCloseOption, closingPane).catch(error => {
+        handleCloseOption(selectedCloseOption, closingPane).then(() => {
+          // Close the dialog after the action is performed
+          setShowCloseOptions(false);
+          setClosingPane(null);
+          setSelectedCloseOption(0);
+        }).catch(error => {
           setStatusMessage('Failed to close pane');
           setTimeout(() => setStatusMessage(''), 2000);
+          // Also close the dialog on error
+          setShowCloseOptions(false);
+          setClosingPane(null);
+          setSelectedCloseOption(0);
         });
       }
       return;
