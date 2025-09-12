@@ -22,17 +22,21 @@ interface UpdateSettings {
 }
 
 export class AutoUpdater {
-  private settingsFile: string;
+  private configFile: string;
   private checkIntervalMs: number = 24 * 60 * 60 * 1000; // 24 hours
 
-  constructor(dmuxDir: string) {
-    this.settingsFile = path.join(dmuxDir, 'update-settings.json');
+  constructor(configFile: string) {
+    this.configFile = configFile;
   }
 
   async loadSettings(): Promise<UpdateSettings> {
     try {
-      const content = await fs.readFile(this.settingsFile, 'utf-8');
-      return JSON.parse(content) as UpdateSettings;
+      const content = await fs.readFile(this.configFile, 'utf-8');
+      const config = JSON.parse(content);
+      return config.updateSettings || {
+        checkIntervalHours: 24,
+        autoUpdateEnabled: true
+      };
     } catch {
       return {
         checkIntervalHours: 24,
@@ -42,7 +46,15 @@ export class AutoUpdater {
   }
 
   async saveSettings(settings: UpdateSettings): Promise<void> {
-    await fs.writeFile(this.settingsFile, JSON.stringify(settings, null, 2));
+    let config: any = {};
+    try {
+      const content = await fs.readFile(this.configFile, 'utf-8');
+      config = JSON.parse(content);
+    } catch {}
+    
+    config.updateSettings = settings;
+    config.lastUpdated = new Date().toISOString();
+    await fs.writeFile(this.configFile, JSON.stringify(config, null, 2));
   }
 
   async shouldCheckForUpdates(): Promise<boolean> {

@@ -31,7 +31,6 @@ export interface ProjectSettings {
 }
 
 export interface DmuxAppProps {
-  dmuxDir: string;
   panesFile: string;
   projectName: string;
   sessionName: string;

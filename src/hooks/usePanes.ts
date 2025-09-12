@@ -69,10 +69,75 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         return p;
       });
 
-      // Only filter panes if we successfully got the pane list
-      // If tmux command failed (allPaneIds is empty), keep existing state
+      // Find panes that exist in config but not in tmux
+      const missingPanes = allPaneIds.length > 0 
+        ? reboundPanes.filter(pane => !allPaneIds.includes(pane.paneId))
+        : [];
+
+      // Recreate missing panes
+      for (const missingPane of missingPanes) {
+        try {
+          // Create new pane
+          const newPaneId = execSync(`tmux split-window -h -P -F '#{pane_id}' -c "${missingPane.worktreePath || process.cwd()}"`, {
+            encoding: 'utf-8',
+            stdio: 'pipe'
+          }).trim();
+
+          // Set pane title
+          execSync(`tmux select-pane -t '${newPaneId}' -T "${missingPane.slug}"`, { stdio: 'pipe' });
+
+          // Update the pane with new ID
+          missingPane.paneId = newPaneId;
+
+          // Send a message to the pane indicating it was restored
+          execSync(`tmux send-keys -t '${newPaneId}' "# Pane restored: ${missingPane.slug}" Enter`, { stdio: 'pipe' });
+          execSync(`tmux send-keys -t '${newPaneId}' "# Original prompt: ${missingPane.prompt?.substring(0, 50)}..." Enter`, { stdio: 'pipe' });
+          execSync(`tmux send-keys -t '${newPaneId}' "cd ${missingPane.worktreePath || process.cwd()}" Enter`, { stdio: 'pipe' });
+        } catch (error) {
+          // If we can't create the pane, skip it
+          console.error(`Failed to recreate pane ${missingPane.slug}:`, error);
+        }
+      }
+
+      // Re-fetch pane IDs after recreation
+      if (missingPanes.length > 0) {
+        // Apply even-horizontal layout after creating panes
+        try {
+          execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+        } catch {}
+
+        allPaneIds = [];
+        titleToId.clear();
+        try {
+          const output = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
+            encoding: 'utf-8',
+            stdio: 'pipe',
+            timeout: 1000
+          }).trim();
+          if (output) {
+            const lines = output.split('\n');
+            for (const line of lines) {
+              const [id, title] = line.split('::');
+              if (id && id.startsWith('%')) {
+                allPaneIds.push(id);
+                if (title) titleToId.set(title.trim(), id);
+              }
+            }
+          }
+        } catch {}
+
+        // Re-rebind after recreation
+        loadedPanes.forEach(p => {
+          if (!allPaneIds.includes(p.paneId)) {
+            const remappedId = titleToId.get(p.slug);
+            if (remappedId) p.paneId = remappedId;
+          }
+        });
+      }
+
+      // Now filter to only include panes that exist in tmux
       const activePanes = allPaneIds.length > 0
-        ? reboundPanes.filter(pane => allPaneIds.includes(pane.paneId))
+        ? loadedPanes.filter(pane => allPaneIds.includes(pane.paneId))
         : panes; // Always preserve existing panes when tmux fails
 
       const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
