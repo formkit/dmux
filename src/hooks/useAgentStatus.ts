@@ -14,6 +14,8 @@ interface UseAgentStatusParams {
 export default function useAgentStatus({ panes, setPanes, panesFile, suspend, loadPanes }: UseAgentStatusParams) {
   // Track last check times separately from pane state to avoid re-renders
   const lastCheckTimes = useRef<Map<string, number>>(new Map());
+  // Track status history for stability (prevent flickering)
+  const statusHistory = useRef<Map<string, Array<'working' | 'waiting' | 'idle'>>>(new Map());
   
   useEffect(() => {
     if (panes.length === 0) return;
@@ -77,6 +79,7 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
             const lines = captureOutput.split('\n');
             const lastLines = lines.slice(-10).join('\n');
 
+            // First, detect if Claude/opencode is actively working
             let isWorking = false;
             if (pane.agent === 'opencode') {
               const workingPatterns = [
@@ -85,63 +88,93 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               ];
               isWorking = workingPatterns.some(pattern => pattern.test(lastLines));
             } else {
-              const workingPatterns = [/esc to interrupt/i];
-              isWorking = workingPatterns.some(pattern => pattern.test(captureOutput));
+              // For Claude, "esc to interrupt" is the primary indicator it's working
+              isWorking = /esc to interrupt/i.test(captureOutput);
             }
 
-            const attentionPatterns = [
-              /\?\s*$/m,
-              /y\/n/i,
-              /yes.*no/i,
-              /\ballow\b.*\?/i,
-              /\bapprove\b.*\?/i,
-              /\bgrant\b.*\?/i,
-              /\btrust\b.*\?/i,
-              /\baccept\b.*\?/i,
-              /\bcontinue\b.*\?/i,
-              /\bproceed\b.*\?/i,
-              /permission/i,
-              /confirmation/i,
-              /press.*enter/i,
-              /waiting for/i,
-              /are you sure/i,
-              /would you like/i,
-              /do you want/i,
-              /please confirm/i,
-              /requires.*approval/i,
-              /needs.*input/i,
-              /⏵⏵\s*accept edits/i,
-              /shift\+tab to cycle/i,
-            ];
-
-            const hasClaudeInputBox = /╭─+╮/.test(lastLines) && /╰─+╯/.test(lastLines) && /│\s+>\s+.*│/.test(lastLines);
-
-            const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput)) || (pane.agent !== 'opencode' && hasClaudeInputBox);
-
+            // If actively working, that takes precedence - don't check other patterns
             let newStatus: 'working' | 'waiting' | 'idle' = 'idle';
-            if (isWorking) newStatus = 'working';
-            else if (needsAttention && !isWorking) newStatus = 'waiting';
+            if (isWorking) {
+              newStatus = 'working';
+            } else {
+              // Only check for attention patterns if NOT working
+              const attentionPatterns = [
+                /\?\s*$/m,
+                /y\/n/i,
+                /yes.*no/i,
+                /\ballow\b.*\?/i,
+                /\bapprove\b.*\?/i,
+                /\bgrant\b.*\?/i,
+                /\btrust\b.*\?/i,
+                /\baccept\b.*\?/i,
+                /\bcontinue\b.*\?/i,
+                /\bproceed\b.*\?/i,
+                /permission/i,
+                /confirmation/i,
+                /press.*enter/i,
+                /waiting for/i,
+                /are you sure/i,
+                /would you like/i,
+                /do you want/i,
+                /please confirm/i,
+                /requires.*approval/i,
+                /needs.*input/i,
+                /⏵⏵\s*accept edits/i,
+                /shift\+tab to cycle/i,
+              ];
 
-            if (pane.agent !== 'opencode') {
-              if (/accept edits/i.test(captureOutput) && !/esc to interrupt/i.test(captureOutput)) {
+              const hasClaudeInputBox = /╭─+╮/.test(lastLines) && /╰─+╯/.test(lastLines) && /│\s+>\s+.*│/.test(lastLines);
+
+              const needsAttention = attentionPatterns.some(pattern => pattern.test(captureOutput)) ||
+                                     (pane.agent !== 'opencode' && hasClaudeInputBox);
+
+              if (needsAttention) {
                 newStatus = 'waiting';
               }
-              if (hasClaudeInputBox && !isWorking) newStatus = 'waiting';
-              const claudeQuestionPatterns = [
-                /I (can|could|should|would|will|may|might)/i,
-                /Let me know/i,
-                /Please (tell|let|inform|advise)/i,
-                /Would you prefer/i,
-                /Should I (proceed|continue|go ahead)/i,
-              ];
-              if (claudeQuestionPatterns.some(pattern => pattern.test(lastLines)) && !isWorking) {
-                newStatus = 'waiting';
+
+              // Additional Claude-specific checks
+              if (pane.agent !== 'opencode') {
+                // Check for accept edits specifically (without esc to interrupt means waiting)
+                if (/accept edits/i.test(captureOutput)) {
+                  newStatus = 'waiting';
+                }
+
+                // Check for Claude questions
+                const claudeQuestionPatterns = [
+                  /I (can|could|should|would|will|may|might)/i,
+                  /Let me know/i,
+                  /Please (tell|let|inform|advise)/i,
+                  /Would you prefer/i,
+                  /Should I (proceed|continue|go ahead)/i,
+                ];
+                if (claudeQuestionPatterns.some(pattern => pattern.test(lastLines))) {
+                  newStatus = 'waiting';
+                }
+              }
+            }
+
+            // Add stability check - require consistent status for 2 checks to change
+            const history = statusHistory.current.get(pane.id) || [];
+            history.push(newStatus);
+            // Keep only last 3 status checks
+            if (history.length > 3) history.shift();
+            statusHistory.current.set(pane.id, history);
+
+            // Determine stable status - if last 2 are the same, use that
+            let stableStatus = newStatus;
+            if (history.length >= 2) {
+              const last2 = history.slice(-2);
+              if (last2[0] === last2[1]) {
+                stableStatus = last2[0];
+              } else {
+                // If inconsistent, prefer current pane status to avoid flicker
+                stableStatus = pane.agentStatus || 'idle';
               }
             }
 
             // Only return updated pane if status actually changed
-            if (pane.agentStatus !== newStatus || pane.paneId !== effectivePaneId) {
-              return { ...pane, paneId: effectivePaneId, agentStatus: newStatus };
+            if (pane.agentStatus !== stableStatus || pane.paneId !== effectivePaneId) {
+              return { ...pane, paneId: effectivePaneId, agentStatus: stableStatus };
             }
 
             // No changes, return original pane
