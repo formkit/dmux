@@ -206,8 +206,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       projectRoot = process.cwd();
     }
     
-    // Create worktree path relative to project root with dmux- prefix
-    const worktreePath = path.join(path.dirname(projectRoot), `dmux-${slug}`);
+    // Create worktree path inside .dmux/worktrees directory
+    const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
     
     // Get the original pane ID (where dmux is running) before clearing
     const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();

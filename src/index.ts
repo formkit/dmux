@@ -11,6 +11,7 @@ import React from 'react';
 import { createHash } from 'crypto';
 import DmuxApp from './DmuxApp.js';
 import { AutoUpdater } from './AutoUpdater.js';
+import readline from 'readline';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,33 +29,36 @@ class Dmux {
     this.projectRoot = this.getProjectRoot();
     // Get project name from git root directory
     this.projectName = path.basename(this.projectRoot);
-    
+
     // Create a unique identifier for this project based on its full path
     // This ensures different projects with the same folder name are kept separate
     const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
     const projectIdentifier = `${this.projectName}-${projectHash}`;
-    
+
     // Create unique session name for this project (sanitize for tmux compatibility)
     // tmux converts dots to underscores, so we do it explicitly to avoid mismatches
     const sanitizedProjectIdentifier = projectIdentifier.replace(/\./g, '-');
     this.sessionName = `dmux-${sanitizedProjectIdentifier}`;
-    
-    // Store config in parent directory alongside worktrees
-    const parentDir = path.dirname(this.projectRoot);
-    const configFile = path.join(parentDir, 'dmux.config.json');
-    
-    // Always use the parent directory config location
+
+    // Store config in .dmux directory inside project root
+    const dmuxDir = path.join(this.projectRoot, '.dmux');
+    const configFile = path.join(dmuxDir, 'dmux.config.json');
+
+    // Always use the .dmux directory config location
     this.panesFile = configFile;
     this.settingsFile = configFile; // Same file for all config
-    
+
     // Initialize auto-updater with config file
     this.autoUpdater = new AutoUpdater(configFile);
   }
 
   async init() {
+    // Ensure .dmux directory exists and is in .gitignore
+    await this.ensureDmuxDirectory();
+
     // Check for migration from old config location
     await this.migrateOldConfig();
-    
+
     // Initialize config file if it doesn't exist
     if (!await this.fileExists(this.panesFile)) {
       const initialConfig = {
@@ -131,10 +135,25 @@ class Dmux {
     if (Dmux.cachedProjectRoot) {
       return Dmux.cachedProjectRoot;
     }
-    
+
     try {
-      // Try to get git root directory
-      const gitRoot = execSync('git rev-parse --show-toplevel', { 
+      // First, try to get the main worktree if we're in a git repository
+      // This ensures we always use the main repository root, even when run from a worktree
+      const worktreeList = execSync('git worktree list --porcelain', {
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      }).trim();
+
+      // The first line contains the main worktree path
+      const mainWorktreeLine = worktreeList.split('\n')[0];
+      if (mainWorktreeLine && mainWorktreeLine.startsWith('worktree ')) {
+        const mainWorktreePath = mainWorktreeLine.substring(9).trim();
+        Dmux.cachedProjectRoot = mainWorktreePath;
+        return mainWorktreePath;
+      }
+
+      // Fallback to git rev-parse if worktree list fails
+      const gitRoot = execSync('git rev-parse --show-toplevel', {
         encoding: 'utf-8',
         stdio: 'pipe'
       }).trim();
@@ -148,19 +167,88 @@ class Dmux {
     }
   }
 
+  private async ensureDmuxDirectory() {
+    const dmuxDir = path.join(this.projectRoot, '.dmux');
+    const worktreesDir = path.join(dmuxDir, 'worktrees');
+
+    // Create .dmux directory if it doesn't exist
+    if (!await this.fileExists(dmuxDir)) {
+      await fs.mkdir(dmuxDir, { recursive: true });
+    }
+
+    // Create worktrees directory if it doesn't exist
+    if (!await this.fileExists(worktreesDir)) {
+      await fs.mkdir(worktreesDir, { recursive: true });
+    }
+
+    // Check if .gitignore exists and if .dmux is in it
+    const gitignorePath = path.join(this.projectRoot, '.gitignore');
+    if (await this.fileExists(gitignorePath)) {
+      const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+      const lines = gitignoreContent.split('\n');
+      const hasDmuxEntry = lines.some(line =>
+        line.trim() === '.dmux' ||
+        line.trim() === '.dmux/' ||
+        line.trim() === '/.dmux' ||
+        line.trim() === '/.dmux/'
+      );
+
+      if (!hasDmuxEntry) {
+        // Prompt user to add .dmux to .gitignore
+        const shouldAdd = await this.promptUser(
+          'The .dmux directory is not in .gitignore. Would you like to add it? (y/n): '
+        );
+
+        if (shouldAdd) {
+          // Add .dmux to .gitignore
+          const newGitignore = gitignoreContent.endsWith('\n')
+            ? gitignoreContent + '.dmux/\n'
+            : gitignoreContent + '\n.dmux/\n';
+          await fs.writeFile(gitignorePath, newGitignore);
+          console.log(chalk.green('✓ Added .dmux/ to .gitignore'));
+        }
+      }
+    } else {
+      // No .gitignore exists, prompt to create one
+      const shouldCreate = await this.promptUser(
+        'No .gitignore file found. Would you like to create one with .dmux/ entry? (y/n): '
+      );
+
+      if (shouldCreate) {
+        await fs.writeFile(gitignorePath, '.dmux/\n');
+        console.log(chalk.green('✓ Created .gitignore with .dmux/ entry'));
+      }
+    }
+  }
+
+  private async promptUser(question: string): Promise<boolean> {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    return new Promise((resolve) => {
+      rl.question(question, (answer) => {
+        rl.close();
+        resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
+      });
+    });
+  }
+
   private async migrateOldConfig() {
     // Check if we're using the new config location
-    const parentDir = path.dirname(this.projectRoot);
-    const newConfigFile = path.join(parentDir, 'dmux.config.json');
-    const dmuxDir = path.join(process.env.HOME!, '.dmux');
-    
+    const dmuxDir = path.join(this.projectRoot, '.dmux');
+    const newConfigFile = path.join(dmuxDir, 'dmux.config.json');
+    const oldParentConfigFile = path.join(path.dirname(this.projectRoot), 'dmux.config.json');
+    const homeDmuxDir = path.join(process.env.HOME!, '.dmux');
+
     if (this.panesFile === newConfigFile && !await this.fileExists(newConfigFile)) {
       // Look for old config files to migrate
       const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
       const projectIdentifier = `${this.projectName}-${projectHash}`;
-      const oldPanesFile = path.join(dmuxDir, `${projectIdentifier}-panes.json`);
-      const oldSettingsFile = path.join(dmuxDir, `${projectIdentifier}-settings.json`);
-      const oldUpdateSettingsFile = path.join(dmuxDir, 'update-settings.json');
+      const oldPanesFile = path.join(homeDmuxDir, `${projectIdentifier}-panes.json`);
+      const oldSettingsFile = path.join(homeDmuxDir, `${projectIdentifier}-settings.json`);
+      const oldUpdateSettingsFile = path.join(homeDmuxDir, 'update-settings.json');
       
       let panes = [];
       let settings = {};
@@ -190,6 +278,16 @@ class Dmux {
         } catch {}
       }
       
+      // Check for config from previous parent directory location
+      if (await this.fileExists(oldParentConfigFile)) {
+        try {
+          const oldConfig = JSON.parse(await fs.readFile(oldParentConfigFile, 'utf-8'));
+          if (oldConfig.panes) panes = oldConfig.panes;
+          if (oldConfig.settings) settings = oldConfig.settings;
+          if (oldConfig.updateSettings) updateSettings = oldConfig.updateSettings;
+        } catch {}
+      }
+
       // If we found old config, migrate it
       if (panes.length > 0 || Object.keys(settings).length > 0 || Object.keys(updateSettings).length > 0) {
         const migratedConfig = {
@@ -202,7 +300,7 @@ class Dmux {
           migratedFrom: 'dmux-legacy'
         };
         await fs.writeFile(newConfigFile, JSON.stringify(migratedConfig, null, 2));
-        
+
         // Clean up old files after successful migration
         try {
           await fs.unlink(oldPanesFile);
@@ -212,6 +310,9 @@ class Dmux {
         } catch {}
         try {
           await fs.unlink(oldUpdateSettingsFile);
+        } catch {}
+        try {
+          await fs.unlink(oldParentConfigFile);
         } catch {}
       }
     }

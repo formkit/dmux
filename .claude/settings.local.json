@@ -67,7 +67,9 @@
       "Bash(npx vitest run:*)",
       "Bash(npm test:*)",
       "Read(//Users/justinschroeder/Projects/dmux/**)",
-      "Bash(./test-dmux.sh:*)"
+      "Bash(./test-dmux.sh:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git branch:*)"
     ],
     "deny": [],
     "ask": [],

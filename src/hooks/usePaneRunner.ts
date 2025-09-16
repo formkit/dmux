@@ -16,7 +16,7 @@ export default function usePaneRunner({ panes, savePanes, projectSettings, setSt
     try {
       setStatusMessage('Copying non-git files from main...');
       const projectRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf-8', stdio: 'pipe' }).trim();
-      const rsyncCmd = `rsync -avz --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='build' --exclude='.next' --exclude='.turbo' "${projectRoot}/" "${worktreePath}/"`;
+      const rsyncCmd = `rsync -avz --exclude='.git' --exclude='.dmux' --exclude='node_modules' --exclude='dist' --exclude='build' --exclude='.next' --exclude='.turbo' "${projectRoot}/" "${worktreePath}/"`;
       execSync(rsyncCmd, { stdio: 'pipe' });
       setStatusMessage('Non-git files copied successfully');
       setTimeout(() => setStatusMessage(''), 2000);

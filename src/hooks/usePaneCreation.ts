@@ -50,7 +50,7 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
       projectRoot = process.cwd();
     }
 
-    const worktreePath = path.join(path.dirname(projectRoot), `${path.basename(projectRoot)}-${slug}`);
+    const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
     const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
 
     process.stdout.write('\x1b[2J\x1b[H');

@@ -63,8 +63,10 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 ├── tsconfig.json         # TypeScript configuration
 ├── .gitignore           # Git ignore rules
 ├── CLAUDE.md            # This documentation file
-└── ~/.dmux/             # Runtime data directory
-    └── {project}-panes.json  # Per-project pane tracking
+└── .dmux/               # Project-specific dmux data (gitignored)
+    ├── dmux.config.json # Configuration and pane tracking
+    └── worktrees/       # Git worktrees for each pane
+        └── {slug}/      # Individual worktree directories
 ```
 
 ## Installation & Setup
@@ -132,11 +134,16 @@ Every new pane creates a complete development environment:
 ```
 main-project/              # Original repository
 ├── .git/                  # Git directory
-└── src/                   # Your code
-
-main-project-fix-bug/      # Worktree for "fix bug" pane
-├── .git                   # Worktree git file
-└── src/                   # Independent working copy
+├── src/                   # Your code
+└── .dmux/                 # dmux data directory (gitignored)
+    ├── dmux.config.json   # Configuration file
+    └── worktrees/         # All worktrees for this project
+        ├── fix-bug/       # Worktree for "fix bug" pane
+        │   ├── .git       # Worktree git file
+        │   └── src/       # Independent working copy
+        └── add-feature/   # Worktree for "add feature" pane
+            ├── .git       # Worktree git file
+            └── src/       # Independent working copy
 ```
 
 **Benefits:**
@@ -201,7 +208,7 @@ Analyzes git diffs to create semantic commit messages:
 4. Clear current pane (multiple strategies for clean display)
 5. Exit Ink app gracefully
 6. Create horizontal tmux split
-7. Create git worktree: `git worktree add ../{project}-{slug} -b {slug}`
+7. Create git worktree: `git worktree add .dmux/worktrees/{slug} -b {slug}`
 8. Change to worktree directory
 9. Launch agent:
    - Claude: `claude "{prompt}" --permission-mode=acceptEdits`
