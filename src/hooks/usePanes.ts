@@ -69,12 +69,13 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         return p;
       });
 
-      // Find panes that exist in config but not in tmux
-      const missingPanes = allPaneIds.length > 0 
+      // Only attempt to recreate missing panes on initial load
+      // This prevents disruptive recreation during regular polling
+      const missingPanes = (allPaneIds.length > 0 && panes.length === 0)
         ? reboundPanes.filter(pane => !allPaneIds.includes(pane.paneId))
         : [];
 
-      // Recreate missing panes
+      // Recreate missing panes (only on initial load)
       for (const missingPane of missingPanes) {
         try {
           // Create new pane
@@ -138,13 +139,31 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       // Now filter to only include panes that exist in tmux
       const activePanes = allPaneIds.length > 0
         ? loadedPanes.filter(pane => allPaneIds.includes(pane.paneId))
-        : panes; // Always preserve existing panes when tmux fails
+        : loadedPanes; // Use loaded panes when tmux fails, not current state
 
-      const currentPaneIds = panes.map(p => p.paneId).sort().join(',');
-      const newPaneIds = activePanes.map(p => p.paneId).sort().join(',');
+      // For initial load (when panes is empty), always set the loaded panes
+      if (panes.length === 0 && activePanes.length > 0) {
+        // Initial load - set pane titles and update state
+        activePanes.forEach(pane => {
+          try {
+            execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+          } catch {}
+        });
+        setPanes(activePanes);
+        return; // Exit early for initial load
+      }
 
-      // Only update if there's a real change, not just on initial load
-      if (currentPaneIds !== newPaneIds && (panes.length > 0 || activePanes.length > 0)) {
+      // For subsequent loads, only update if there's a meaningful change
+      // Create sets for comparison to handle order changes
+      const currentPaneSet = new Set(panes.map(p => p.paneId));
+      const newPaneSet = new Set(activePanes.map(p => p.paneId));
+
+      // Check if sets are different (ignoring order)
+      const panesAdded = [...newPaneSet].some(id => !currentPaneSet.has(id));
+      const panesRemoved = [...currentPaneSet].some(id => !newPaneSet.has(id));
+
+      // Only update if panes were actually added or removed
+      if (panesAdded || panesRemoved) {
         if (activePanes.length > 0) {
           activePanes.forEach(pane => {
             try {
