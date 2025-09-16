@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
 
@@ -16,12 +16,18 @@ export type AgentStatusMap = Map<string, 'working' | 'waiting' | 'idle' | undefi
 
 export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams): AgentStatusMap {
   const [statuses, setStatuses] = useState<AgentStatusMap>(new Map());
+  const statusesRef = useRef(statuses);
+  const panesRef = useRef(panes);
+
+  // Keep refs up to date
+  statusesRef.current = statuses;
+  panesRef.current = panes;
 
   useEffect(() => {
     if (panes.length === 0) return;
 
     // Clean up maps for panes that no longer exist
-    const currentPaneIds = new Set(panes.map(p => p.id));
+    const currentPaneIds = new Set(panesRef.current.map(p => p.id));
     for (const [paneId] of lastCheckTimes) {
       if (!currentPaneIds.has(paneId)) {
         lastCheckTimes.delete(paneId);
@@ -35,13 +41,13 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
 
         const newStatuses = new Map<string, 'working' | 'waiting' | 'idle' | undefined>();
 
-        await Promise.all(panes.map(async (pane) => {
+        await Promise.all(panesRef.current.map(async (pane) => {
           try {
             // Check against our map instead of pane state
             const lastCheck = lastCheckTimes.get(pane.id) || 0;
             if (Date.now() - lastCheck < 500) {
               // Keep current status if too soon to check again
-              newStatuses.set(pane.id, statuses.get(pane.id));
+              newStatuses.set(pane.id, statusesRef.current.get(pane.id));
               return;
             }
 
@@ -84,7 +90,7 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
 
             if (!paneExists) {
               // Keep current status if pane doesn't exist in tmux
-              newStatuses.set(pane.id, statuses.get(pane.id));
+              newStatuses.set(pane.id, statusesRef.current.get(pane.id));
               return;
             }
 
@@ -172,7 +178,7 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
 
             // Add stability check - require consistent status for multiple checks
             const history = statusHistory.get(pane.id) || [];
-            const currentStatus = statuses.get(pane.id) || 'idle';
+            const currentStatus = statusesRef.current.get(pane.id) || 'idle';
 
             // Initialize with current status if no history
             if (history.length === 0 && currentStatus !== 'idle') {
@@ -212,7 +218,7 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
             newStatuses.set(pane.id, stableStatus);
           } catch (error) {
             // On error, keep the current status
-            newStatuses.set(pane.id, statuses.get(pane.id));
+            newStatuses.set(pane.id, statusesRef.current.get(pane.id));
           }
         }));
 
@@ -228,7 +234,7 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
     return () => {
       clearTimeout(startupDelay);
     };
-  }, [panes, suspend, statuses]); // Re-run when panes change
+  }, [panes.length, suspend]); // Only re-run if number of panes changes or suspend changes
 
   return statuses;
 }
