@@ -1,6 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { execSync } from 'child_process';
-import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
 
 interface UseAgentStatusParams {
@@ -11,14 +10,23 @@ interface UseAgentStatusParams {
   loadPanes: () => Promise<void>;
 }
 
+// Move these outside the component to persist across re-renders
+const lastCheckTimes = new Map<string, number>();
+const statusHistory = new Map<string, Array<'working' | 'waiting' | 'idle'>>();
+
 export default function useAgentStatus({ panes, setPanes, panesFile, suspend, loadPanes }: UseAgentStatusParams) {
-  // Track last check times separately from pane state to avoid re-renders
-  const lastCheckTimes = useRef<Map<string, number>>(new Map());
-  // Track status history for stability (prevent flickering)
-  const statusHistory = useRef<Map<string, Array<'working' | 'waiting' | 'idle'>>>(new Map());
-  
+
   useEffect(() => {
     if (panes.length === 0) return;
+
+    // Clean up maps for panes that no longer exist
+    const currentPaneIds = new Set(panes.map(p => p.id));
+    for (const [paneId] of lastCheckTimes) {
+      if (!currentPaneIds.has(paneId)) {
+        lastCheckTimes.delete(paneId);
+        statusHistory.delete(paneId);
+      }
+    }
 
     const startupDelay = setTimeout(() => {
       const monitorAgentStatus = async () => {
@@ -26,14 +34,14 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
 
         const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
           try {
-            // Check against our ref instead of pane state
-            const lastCheck = lastCheckTimes.current.get(pane.id) || 0;
+            // Check against our map instead of pane state
+            const lastCheck = lastCheckTimes.get(pane.id) || 0;
             if (Date.now() - lastCheck < 500) {
               return pane;
             }
-            
-            // Update check time in ref
-            lastCheckTimes.current.set(pane.id, Date.now());
+
+            // Update check time in map
+            lastCheckTimes.set(pane.id, Date.now());
 
             let effectivePaneId = pane.paneId;
             let paneExists = false;
@@ -154,11 +162,11 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
             }
 
             // Add stability check - require consistent status for 2 checks to change
-            const history = statusHistory.current.get(pane.id) || [];
+            const history = statusHistory.get(pane.id) || [];
             history.push(newStatus);
             // Keep only last 3 status checks
             if (history.length > 3) history.shift();
-            statusHistory.current.set(pane.id, history);
+            statusHistory.set(pane.id, history);
 
             // Determine stable status - if last 2 are the same, use that
             let stableStatus = newStatus;
@@ -185,30 +193,16 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
         }));
 
         const updatedPanes = updatedPanesWithNulls.filter((pane): pane is DmuxPane => pane !== null);
-        const panesRemoved = updatedPanes.length < panes.length;
-        const idsChanged = updatedPanes.some((pane, index) => pane.paneId !== panes[index]?.paneId);
 
-        if (panesRemoved || idsChanged) {
-          // Save in config format
-          let config: any = { panes: [] };
-          try {
-            const content = await fs.readFile(panesFile, 'utf-8');
-            const parsed = JSON.parse(content);
-            if (!Array.isArray(parsed)) {
-              config = parsed;
-            }
-          } catch {}
-          
-          config.panes = updatedPanes;
-          config.lastUpdated = new Date().toISOString();
-          await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
-          await loadPanes();
-        } else {
-          const hasStatusChanges = updatedPanes.some((pane, index) => {
-            const oldPane = panes[index];
-            return oldPane && (pane.agentStatus !== oldPane.agentStatus || pane.paneId !== oldPane.paneId);
-          });
-          if (hasStatusChanges) setPanes(updatedPanes);
+        // Only update state if agent status changed - don't write to file
+        // The file operations should be handled by savePanes only
+        const hasStatusChanges = updatedPanes.some((pane, index) => {
+          const oldPane = panes[index];
+          return oldPane && pane.agentStatus !== oldPane.agentStatus;
+        });
+
+        if (hasStatusChanges) {
+          setPanes(updatedPanes);
         }
       };
 
@@ -220,5 +214,5 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
     return () => {
       clearTimeout(startupDelay);
     };
-  }, [JSON.stringify(panes.map(p => ({ id: p.id, paneId: p.paneId, agent: p.agent }))), suspend, panesFile]);
+  }, [panes.length, suspend]); // Only re-run if number of panes changes or suspend changes
 }
