@@ -102,6 +102,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     setStatusMessage,
     setNewPanePrompt,
     loadPanes,
+    panesFile,
   });
   
   // Load panes and settings on mount and refresh periodically

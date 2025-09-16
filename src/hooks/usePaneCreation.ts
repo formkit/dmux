@@ -12,9 +12,10 @@ interface Params {
   setStatusMessage: (msg: string) => void;
   setNewPanePrompt: (v: string) => void;
   loadPanes: () => Promise<void>;
+  panesFile: string;
 }
 
-export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, setNewPanePrompt, loadPanes }: Params) {
+export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, setNewPanePrompt, loadPanes, panesFile }: Params) {
   const openInEditor = async (currentPrompt: string, setPrompt: (v: string) => void) => {
     try {
       const os = await import('os');
@@ -126,6 +127,25 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
 
     const updatedPanes = [...panes, newPane];
     await savePanes(updatedPanes);
+
+    // Validate the pane was saved by checking the config
+    // This helps catch race conditions
+    await new Promise(r => setTimeout(r, 100)); // Small delay to ensure write completes
+    try {
+      const fs = await import('fs');
+      const configContent = await fs.promises.readFile(panesFile, 'utf-8');
+      const config = JSON.parse(configContent);
+      const savedPanes = Array.isArray(config) ? config : config.panes || [];
+      const paneExists = savedPanes.some((p: DmuxPane) => p.id === newPane.id);
+
+      if (!paneExists) {
+        // Retry the save if pane wasn't found
+        console.error('Warning: Pane not found in config after save, retrying...');
+        await savePanes(updatedPanes);
+      }
+    } catch (error) {
+      console.error('Warning: Could not validate pane save:', error);
+    }
 
     execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
     try { execSync(`tmux select-pane -t '${originalPaneId}' -T "dmux-${projectName}"`, { stdio: 'pipe' }); } catch {}
