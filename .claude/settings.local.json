@@ -69,7 +69,11 @@
       "Read(//Users/justinschroeder/Projects/dmux/**)",
       "Bash(./test-dmux.sh:*)",
       "Bash(git rev-parse:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(claude \"test\" --permission-mode=acceptEdits)",
+      "Bash(claude)",
+      "Bash(./test-permission-fix.sh:*)",
+      "Bash(/Users/justinschroeder/Projects/dmux/main/.dmux/worktrees/dmux-panel-access/dmux)"
     ],
     "deny": [],
     "ask": [],

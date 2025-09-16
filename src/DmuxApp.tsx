@@ -375,7 +375,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         /Yes\/No/i,
         /\[Y\/n\]/i,  // Default yes pattern
         /press.*enter.*accept/i,  // Press enter to accept
-        /press.*enter.*continue/i  // Press enter to continue
+        /press.*enter.*continue/i,  // Press enter to continue
+        /❯\s*1\.\s*Yes,\s*proceed/i,  // New Claude numbered menu format
+        /Enter to confirm.*Esc to exit/i,  // New Claude confirmation format
+        /1\.\s*Yes,\s*proceed/i,  // Yes proceed option
+        /2\.\s*No,\s*exit/i  // No exit option
       ];
       
       for (let i = 0; i < maxChecks; i++) {
@@ -420,19 +424,29 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             // Content is stable and we found a prompt
             if (stableContentCount >= 2) {
               console.error('[TRUST DEBUG] Content is stable, attempting to auto-approve trust prompt...');
-              
-              // Try multiple response methods to ensure it works
-              
-              // Method 1: Send 'y' followed by Enter (most explicit)
-              console.error('[TRUST DEBUG] Sending "y" + Enter');
-              execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
-              await new Promise(resolve => setTimeout(resolve, 50));
-              execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
 
-              // Method 2: Just Enter (if it's a yes/no with default yes)
-              await new Promise(resolve => setTimeout(resolve, 100));
-              console.error('[TRUST DEBUG] Sending additional Enter');
-              execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+              // Check if this is the new Claude numbered menu format
+              const isNewClaudeFormat = /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
+                                      /Enter to confirm.*Esc to exit/i.test(paneContent);
+
+              if (isNewClaudeFormat) {
+                // For new Claude format, just press Enter to confirm default "Yes, proceed"
+                console.error('[TRUST DEBUG] Detected new Claude format, sending Enter to confirm default option');
+                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+              } else {
+                // Try multiple response methods for older formats
+
+                // Method 1: Send 'y' followed by Enter (most explicit)
+                console.error('[TRUST DEBUG] Sending "y" + Enter for legacy format');
+                execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
+                await new Promise(resolve => setTimeout(resolve, 50));
+                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+
+                // Method 2: Just Enter (if it's a yes/no with default yes)
+                await new Promise(resolve => setTimeout(resolve, 100));
+                console.error('[TRUST DEBUG] Sending additional Enter');
+                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+              }
               
               // Mark as handled to avoid duplicate responses
               promptHandled = true;
