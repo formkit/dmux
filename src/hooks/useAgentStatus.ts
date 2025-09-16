@@ -32,7 +32,9 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
       const monitorAgentStatus = async () => {
         if (suspend) return;
 
-        const updatedPanesWithNulls = await Promise.all(panes.map(async (pane) => {
+        // Process all panes but keep track of which ones actually changed
+        let hasAnyChanges = false;
+        const updatedPanes: DmuxPane[] = await Promise.all(panes.map(async (pane): Promise<DmuxPane> => {
           try {
             // Check against our map instead of pane state
             const lastCheck = lastCheckTimes.get(pane.id) || 0;
@@ -77,7 +79,7 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               paneExists = true;
             }
 
-            if (!paneExists) return null;
+            if (!paneExists) return pane; // Return unchanged if pane doesn't exist in tmux
 
             const captureOutput = execSync(
               `tmux capture-pane -t '${effectivePaneId}' -p -S -30`,
@@ -161,47 +163,68 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               }
             }
 
-            // Add stability check - require consistent status for 2 checks to change
+            // Add stability check - require consistent status for multiple checks
             const history = statusHistory.get(pane.id) || [];
+
+            // Initialize with current status if no history
+            if (history.length === 0 && pane.agentStatus) {
+              history.push(pane.agentStatus);
+            }
+
             history.push(newStatus);
-            // Keep only last 3 status checks
-            if (history.length > 3) history.shift();
+            // Keep only last 4 status checks for better stability
+            if (history.length > 4) history.shift();
             statusHistory.set(pane.id, history);
 
-            // Determine stable status - if last 2 are the same, use that
-            let stableStatus = newStatus;
+            // Determine stable status - require 2 consistent readings to change
+            let stableStatus = pane.agentStatus || 'idle';
+
             if (history.length >= 2) {
-              const last2 = history.slice(-2);
-              if (last2[0] === last2[1]) {
-                stableStatus = last2[0];
-              } else {
-                // If inconsistent, prefer current pane status to avoid flicker
-                stableStatus = pane.agentStatus || 'idle';
+              // Count occurrences of each status in recent history
+              const statusCounts = new Map<string, number>();
+              history.forEach(s => statusCounts.set(s, (statusCounts.get(s) || 0) + 1));
+
+              // Find the most common status
+              let maxCount = 0;
+              let mostCommonStatus = stableStatus;
+              for (const [status, count] of statusCounts) {
+                if (count > maxCount) {
+                  maxCount = count;
+                  mostCommonStatus = status as 'working' | 'waiting' | 'idle';
+                }
+              }
+
+              // Only change if new status appears at least twice
+              if (mostCommonStatus !== pane.agentStatus && maxCount >= 2) {
+                stableStatus = mostCommonStatus;
               }
             }
 
-            // Only return updated pane if status actually changed
-            if (pane.agentStatus !== stableStatus || pane.paneId !== effectivePaneId) {
+            // Check if anything changed
+            const statusChanged = pane.agentStatus !== stableStatus;
+            const idChanged = pane.paneId !== effectivePaneId;
+
+            if (statusChanged) {
+              hasAnyChanges = true;
+            }
+
+            // Only create new object if something changed
+            if (statusChanged || idChanged) {
               return { ...pane, paneId: effectivePaneId, agentStatus: stableStatus };
             }
 
-            // No changes, return original pane
+            // No changes, return the exact same object reference
             return pane;
-          } catch {
-            return null;
+          } catch (error) {
+            // On error, return the original pane unchanged instead of null
+            // This prevents panes from disappearing/reappearing
+            return pane;
           }
         }));
 
-        const updatedPanes = updatedPanesWithNulls.filter((pane): pane is DmuxPane => pane !== null);
-
-        // Only update state if agent status changed - don't write to file
-        // The file operations should be handled by savePanes only
-        const hasStatusChanges = updatedPanes.some((pane, index) => {
-          const oldPane = panes[index];
-          return oldPane && pane.agentStatus !== oldPane.agentStatus;
-        });
-
-        if (hasStatusChanges) {
+        // Only update state if agent status actually changed
+        // Make sure we only call setPanes if there were real status changes
+        if (hasAnyChanges && updatedPanes.length === panes.length) {
           setPanes(updatedPanes);
         }
       };
@@ -214,5 +237,5 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
     return () => {
       clearTimeout(startupDelay);
     };
-  }, [panes.length, suspend]); // Only re-run if number of panes changes or suspend changes
+  }, [panes.length, suspend, setPanes]); // Include setPanes in dependencies
 }
