@@ -171,6 +171,11 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               history.push(pane.agentStatus);
             }
 
+            // Debug: log what was detected
+            if (newStatus !== (history[history.length - 1] || pane.agentStatus)) {
+              console.error(`[${pane.slug}] Detected: ${newStatus} (was: ${history[history.length - 1] || pane.agentStatus})`);
+            }
+
             history.push(newStatus);
             // Keep only last 4 status checks for better stability
             if (history.length > 4) history.shift();
@@ -197,6 +202,8 @@ export default function useAgentStatus({ panes, setPanes, panesFile, suspend, lo
               // Only change if new status appears at least twice
               if (mostCommonStatus !== pane.agentStatus && maxCount >= 2) {
                 stableStatus = mostCommonStatus;
+                // Debug log for status changes
+                console.error(`[${pane.slug}] Status change: ${pane.agentStatus} -> ${stableStatus} (history: ${history.join(',')})`);
               }
             }
 
