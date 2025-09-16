@@ -75,8 +75,8 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
     }
   };
 
-  const checkForConflicts = (): boolean => {
-    const result = runCommand('git status --porcelain');
+  const checkForConflicts = (cwd?: string): boolean => {
+    const result = runCommand('git status --porcelain', cwd);
     if (result.success) {
       const conflicts = result.output
         .split('\n')
@@ -130,7 +130,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
   const performMerge = async () => {
     setStatus('checking');
 
-    // Step 1: Check for uncommitted changes
+    // Step 1: Check for uncommitted changes in the worktree
     const statusResult = runCommand('git status --porcelain');
     if (statusResult.success && statusResult.output.trim()) {
       setStatus('uncommitted-changes');
@@ -140,7 +140,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
       const message = await generateCommitMessage();
       setCommitMessage(message);
 
-      // Stage and commit changes
+      // Stage and commit changes in the worktree
       runCommand('git add -A');
       const commitResult = runCommand(`git commit -m "${message}"`);
       if (!commitResult.success) {
@@ -150,22 +150,33 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
       }
     }
 
-    // Step 2: Switch to main branch
-    setStatus('switching-branch');
-    const checkoutResult = runCommand(`git checkout ${mainBranch}`);
-    if (!checkoutResult.success) {
-      setError(`Failed to switch to ${mainBranch} branch`);
+    // Step 2: Get the main repository path (parent of .dmux/worktrees)
+    const mainRepoPath = pane.worktreePath?.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+    if (!mainRepoPath) {
+      setError('Could not determine main repository path');
       setStatus('error');
       return;
     }
 
-    // Step 3: Attempt merge
+    // Step 3: Switch to main repository and checkout main branch
+    setStatus('switching-branch');
+    const checkoutResult = runCommand(`git checkout ${mainBranch}`, mainRepoPath);
+    if (!checkoutResult.success) {
+      // If main is already checked out, that's fine
+      if (!checkoutResult.error?.includes('already on')) {
+        setError(`Failed to switch to ${mainBranch} branch: ${checkoutResult.error}`);
+        setStatus('error');
+        return;
+      }
+    }
+
+    // Step 4: Attempt merge in the main repository
     setStatus('merging');
-    const mergeResult = runCommand(`git merge ${pane.slug} --no-ff`);
+    const mergeResult = runCommand(`git merge ${pane.slug} --no-ff`, mainRepoPath);
 
     if (!mergeResult.success) {
       // Check if it's a merge conflict
-      if (mergeResult.error?.includes('Automatic merge failed') || checkForConflicts()) {
+      if (mergeResult.error?.includes('Automatic merge failed') || checkForConflicts(mainRepoPath)) {
         setStatus('merge-conflict');
         setShowResolutionPrompt(true);
         return;
@@ -176,10 +187,10 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
       }
     }
 
-    // Step 4: Clean up worktree and branch
+    // Step 5: Clean up worktree and branch
     setStatus('completing');
-    runCommand(`git worktree remove ${pane.worktreePath} --force`);
-    runCommand(`git branch -d ${pane.slug}`);
+    runCommand(`git worktree remove ${pane.worktreePath} --force`, mainRepoPath);
+    runCommand(`git branch -d ${pane.slug}`, mainRepoPath);
 
     setStatus('success');
   };
@@ -193,24 +204,27 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
     setShowAgentPromptInput(false);
     setStatus('resolving-with-agent');
 
+    // Get the main repository path
+    const mainRepoPath = pane.worktreePath?.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+
     // Exit the app and launch agent with conflict resolution prompt
     const fullPrompt = agentPrompt || `Fix the merge conflicts in the following files: ${conflictFiles.join(', ')}. Resolve them appropriately based on the changes from branch ${pane.slug} (${pane.prompt}) and ensure the code remains functional.`;
 
     // Clear screen and exit
     process.stdout.write('\x1b[2J\x1b[H');
 
-    // Launch Claude to resolve conflicts
+    // Launch Claude to resolve conflicts in the main repository
     try {
       execSync(`claude "${fullPrompt}" --permission-mode=acceptEdits`, {
         stdio: 'inherit',
-        cwd: process.cwd()
+        cwd: mainRepoPath || process.cwd()
       });
     } catch {
       // Try opencode as fallback
       try {
         execSync(`echo "${fullPrompt}" | opencode`, {
           stdio: 'inherit',
-          cwd: process.cwd()
+          cwd: mainRepoPath || process.cwd()
         });
       } catch {}
     }
