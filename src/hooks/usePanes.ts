@@ -171,26 +171,15 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
       // Update pane IDs if they've changed (rebinding), but DON'T filter out panes
       // This prevents race conditions where panes get removed from config
-      // IMPORTANT: Preserve agentStatus from current state to avoid resetting it
       const activePanes = loadedPanes.map(loadedPane => {
-        // Find the current pane in state to preserve runtime fields like agentStatus
-        const currentPane = panes.find(p => p.id === loadedPane.id);
-
         // If we have tmux data and this pane's ID isn't found, try to rebind by title
         if (allPaneIds.length > 0 && !allPaneIds.includes(loadedPane.paneId)) {
           const remappedId = titleToId.get(loadedPane.slug);
           if (remappedId) {
-            return {
-              ...loadedPane,
-              paneId: remappedId,
-              // Preserve runtime status from current state
-              agentStatus: currentPane?.agentStatus
-            };
+            return { ...loadedPane, paneId: remappedId };
           }
         }
-
-        // Preserve agentStatus from current state if it exists
-        return currentPane ? { ...loadedPane, agentStatus: currentPane.agentStatus } : loadedPane;
+        return loadedPane;
       });
 
       // For initial load (when panes is empty), always set the loaded panes

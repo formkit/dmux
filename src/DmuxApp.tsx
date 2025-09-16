@@ -157,13 +157,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     }
   }, [availableAgents]);
 
-  // Monitor agent status across panes
-  useAgentStatus({
+  // Monitor agent status across panes (returns a map of pane ID to status)
+  const agentStatuses = useAgentStatus({
     panes,
-    setPanes,
-    panesFile,
     suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt,
-    loadPanes,
   });
 
 
@@ -868,7 +865,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         </Text>
       </Box>
 
-      <PanesGrid panes={panes} selectedIndex={selectedIndex} isLoading={isLoading} showNewPaneDialog={showNewPaneDialog} />
+      <PanesGrid panes={panes} selectedIndex={selectedIndex} isLoading={isLoading} showNewPaneDialog={showNewPaneDialog} agentStatuses={agentStatuses} />
 
       {/* Loading dialog */}
       {isLoading && (<LoadingIndicator />)}
