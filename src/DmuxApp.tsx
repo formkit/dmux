@@ -21,6 +21,7 @@ import usePaneCreation from './hooks/usePaneCreation.js';
 import { getPanePositions, applySmartLayout } from './utils/tmux.js';
 import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
+import { getMainBranch } from './utils/git.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -37,6 +38,7 @@ import RunningIndicator from './components/RunningIndicator.js';
 import UpdatingIndicator from './components/UpdatingIndicator.js';
 import CreatingIndicator from './components/CreatingIndicator.js';
 import FooterHelp from './components/FooterHelp.js';
+import MergePane from './MergePane.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater }) => {
@@ -47,6 +49,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [statusMessage, setStatusMessage] = useState('');
   const [showMergeConfirmation, setShowMergeConfirmation] = useState(false);
   const [mergedPane, setMergedPane] = useState<DmuxPane | null>(null);
+  const [showMergePane, setShowMergePane] = useState(false);
+  const [mergingPane, setMergingPane] = useState<DmuxPane | null>(null);
   const [showCloseOptions, setShowCloseOptions] = useState(false);
   const [selectedCloseOption, setSelectedCloseOption] = useState(0);
   const [closingPane, setClosingPane] = useState<DmuxPane | null>(null);
@@ -71,8 +75,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const terminalWidth = useTerminalWidth();
 
   // Panes state and persistence
-  const skipLoading = showNewPaneDialog || showMergeConfirmation || showCloseOptions || 
-    !!showCommandPrompt || showFileCopyPrompt;
+  const skipLoading = showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
+    !!showCommandPrompt || showFileCopyPrompt || showMergePane;
   const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, skipLoading);
 
   // Worktree actions
@@ -160,7 +164,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
     panes,
-    suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt,
+    suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt || showMergePane,
   });
 
 
@@ -747,6 +751,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
     
+    if (showMergePane) {
+      // MergePane handles its own input
+      return;
+    }
+
     if (showNewPaneDialog) {
       if (key.escape) {
         setShowNewPaneDialog(false);
@@ -834,7 +843,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       setShowCloseOptions(true);
       setSelectedCloseOption(0);
     } else if (input === 'm' && selectedIndex < panes.length) {
-      mergeWorktree(panes[selectedIndex]);
+      setMergingPane(panes[selectedIndex]);
+      setShowMergePane(true);
     } else if (input === 't' && selectedIndex < panes.length) {
       await runCommand('test', panes[selectedIndex]);
     } else if (input === 'd' && selectedIndex < panes.length) {
@@ -856,6 +866,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       jumpToPane(panes[selectedIndex].paneId);
     }
   });
+
+  // If showing merge pane, render only that
+  if (showMergePane && mergingPane) {
+    return (
+      <MergePane
+        pane={mergingPane}
+        mainBranch={getMainBranch()}
+        onComplete={() => {
+          // Close the pane after successful merge
+          closePane(mergingPane);
+          setShowMergePane(false);
+          setMergingPane(null);
+        }}
+        onCancel={() => {
+          setShowMergePane(false);
+          setMergingPane(null);
+        }}
+      />
+    );
+  }
 
   return (
     <Box flexDirection="column">
