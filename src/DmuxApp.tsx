@@ -113,12 +113,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   useEffect(() => {
     // Add cleanup handlers for process termination
     const handleTermination = () => {
-      process.stdout.write('\x1b[2J\x1b[H');
-      process.stdout.write('\x1b[3J');
+      // Clear screen multiple times to ensure no artifacts
+      process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
+      process.stdout.write('\x1b[3J'); // Clear scrollback buffer
+      process.stdout.write('\n'.repeat(100)); // Push any remaining content off screen
+
+      // Clear tmux pane
       try {
         execSync('tmux clear-history', { stdio: 'pipe' });
+        execSync('tmux send-keys C-l', { stdio: 'pipe' });
       } catch {}
-      process.exit(0);
+
+      // Wait a moment for clearing to settle, then show goodbye message
+      setTimeout(() => {
+        process.stdout.write('\x1b[2J\x1b[H');
+        process.stdout.write('\n\n  dmux session ended.\n\n');
+        process.exit(0);
+      }, 100);
     };
 
     process.on('SIGINT', handleTermination);
@@ -642,15 +653,22 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
     process.stdout.write('\x1b[3J'); // Clear scrollback buffer
     process.stdout.write('\n'.repeat(100)); // Push any remaining content off screen
-    
+
     // Clear tmux pane
     try {
       execSync('tmux clear-history', { stdio: 'pipe' });
       execSync('tmux send-keys C-l', { stdio: 'pipe' });
     } catch {}
-    
-    // Exit the app
-    exit();
+
+    // Wait a moment for clearing to settle
+    setTimeout(() => {
+      // Final clear and show goodbye message
+      process.stdout.write('\x1b[2J\x1b[H');
+      process.stdout.write('\n\n  dmux session ended.\n\n');
+
+      // Exit the app
+      exit();
+    }, 100);
   };
 
   useInput(async (input: string, key: any) => {

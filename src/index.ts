@@ -53,6 +53,9 @@ class Dmux {
   }
 
   async init() {
+    // Set up global signal handlers for clean exit
+    this.setupGlobalSignalHandlers();
+
     // Ensure .dmux directory exists and is in .gitignore
     await this.ensureDmuxDirectory();
 
@@ -350,6 +353,45 @@ class Dmux {
 
   getAutoUpdater() {
     return this.autoUpdater;
+  }
+
+  private setupGlobalSignalHandlers() {
+    const cleanTerminalExit = () => {
+      // Clear screen multiple times to ensure no artifacts
+      process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
+      process.stdout.write('\x1b[3J'); // Clear scrollback buffer
+      process.stdout.write('\n'.repeat(100)); // Push any remaining content off screen
+
+      // Clear tmux pane if we're in tmux
+      if (process.env.TMUX) {
+        try {
+          execSync('tmux clear-history', { stdio: 'pipe' });
+          execSync('tmux send-keys C-l', { stdio: 'pipe' });
+        } catch {}
+      }
+
+      // Wait a moment for clearing to settle, then show goodbye message
+      setTimeout(() => {
+        process.stdout.write('\x1b[2J\x1b[H');
+        process.stdout.write('\n\n  dmux session ended.\n\n');
+        process.exit(0);
+      }, 100);
+    };
+
+    // Handle Ctrl+C and SIGTERM
+    process.on('SIGINT', cleanTerminalExit);
+    process.on('SIGTERM', cleanTerminalExit);
+
+    // Handle uncaught exceptions and unhandled rejections
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught exception:', error);
+      cleanTerminalExit();
+    });
+
+    process.on('unhandledRejection', (reason) => {
+      console.error('Unhandled rejection:', reason);
+      cleanTerminalExit();
+    });
   }
 }
 
