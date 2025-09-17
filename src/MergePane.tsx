@@ -274,7 +274,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
       if (input === 'y' || input === 'Y' || key.return) {
         onComplete();
       } else if (input === 'n' || input === 'N') {
-        exit();
+        onCancel();
       }
     }
 
