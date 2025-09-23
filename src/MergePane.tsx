@@ -238,14 +238,6 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
     // Show instructions and exit
     process.stdout.write('\x1b[2J\x1b[H');
-    console.log(chalk.yellow('\nManual merge conflict resolution required:\n'));
-    console.log(chalk.white('Conflicted files:'));
-    conflictFiles.forEach(file => console.log(chalk.red(`  - ${file}`)));
-    console.log(chalk.white('\nTo resolve manually:'));
-    console.log(chalk.gray('1. Edit the conflicted files to resolve merge markers'));
-    console.log(chalk.gray('2. Stage the resolved files: git add <files>'));
-    console.log(chalk.gray('3. Complete the merge: git commit'));
-    console.log(chalk.gray('4. Clean up the worktree manually if needed\n'));
 
     exit();
   };

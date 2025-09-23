@@ -208,7 +208,6 @@ class Dmux {
             ? gitignoreContent + '.dmux/\n'
             : gitignoreContent + '\n.dmux/\n';
           await fs.writeFile(gitignorePath, newGitignore);
-          console.log(chalk.green('✓ Added .dmux/ to .gitignore'));
         }
       }
     } else {
@@ -219,7 +218,6 @@ class Dmux {
 
       if (shouldCreate) {
         await fs.writeFile(gitignorePath, '.dmux/\n');
-        console.log(chalk.green('✓ Created .gitignore with .dmux/ entry'));
       }
     }
   }
