@@ -421,7 +421,16 @@ The `CleanTextInput` component (`src/CleanTextInput.tsx`) is a highly sophistica
 - [ ] Character that triggers wrap displays immediately
 - [ ] No UI freezing when dialog opens
 
-### 6. Tmux Command Execution
+### 6. PaneAnalyzer (`src/PaneAnalyzer.ts`)
+
+Uses LLM (x-ai/grok-4-fast:free) to detect the state of AI agents in tmux panes.
+
+**Input**: tmux pane ID
+**Output**: State (`option_dialog`, `open_prompt`, or `in_progress`) and extracted options if applicable
+**Purpose**: Enables automation by determining if an agent needs input, is working, or presenting choices
+**Key indicator**: "(esc to interrupt)" = agent is working
+
+### 7. Tmux Command Execution
 
 All tmux operations use `child_process.execSync`:
 ```typescript
@@ -775,12 +784,13 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 
 ### Recent Changes
 - Enhanced screen clearing with multiple strategies
-- Added merge confirmation dialogs  
+- Added merge confirmation dialogs
 - Improved focus management for new panes
 - Implemented comprehensive worktree workflows
 - Fixed boot reliability issues
 - **opencode support**: Agent detection, selection UI, and working-status detection
 - **Custom CleanTextInput component**: Complete rewrite of text input with advanced features
+- **LLM-based Pane State Detection**: Intelligent detection of agent states using AI
 
 ### Known Issues
 1. **Error handling**: Claude command availability not verified
