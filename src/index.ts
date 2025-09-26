@@ -12,6 +12,8 @@ import { createHash } from 'crypto';
 import DmuxApp from './DmuxApp.js';
 import { AutoUpdater } from './AutoUpdater.js';
 import readline from 'readline';
+import { DmuxServer } from './server/index.js';
+import { StateManager } from './shared/StateManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +24,8 @@ class Dmux {
   private sessionName: string;
   private projectRoot: string;
   private autoUpdater: AutoUpdater;
+  private server: DmuxServer;
+  private stateManager: StateManager;
   private static cachedProjectRoot: string | null = null;
 
   constructor() {
@@ -50,6 +54,10 @@ class Dmux {
 
     // Initialize auto-updater with config file
     this.autoUpdater = new AutoUpdater(configFile);
+
+    // Initialize server and state manager
+    this.server = new DmuxServer();
+    this.stateManager = StateManager.getInstance();
   }
 
   async init() {
@@ -112,16 +120,37 @@ class Dmux {
     } catch {
       // Ignore if it fails (might not have permission or tmux version doesn't support it)
     }
-    
+
+    // Update state manager with project info
+    this.stateManager.updateProjectInfo(this.projectName, this.sessionName, this.projectRoot);
+
+    // Start the HTTP server
+    let serverInfo = { port: 0, url: '' };
+    try {
+      serverInfo = await this.server.start();
+      console.error(`Server started on ${serverInfo.url}`);
+    } catch (err) {
+      console.error('Failed to start HTTP server:', err);
+      // Continue without server - not critical for main functionality
+    }
+
     // Launch the Ink app
-    render(React.createElement(DmuxApp, {
+    const app = render(React.createElement(DmuxApp, {
       panesFile: this.panesFile,
       settingsFile: this.settingsFile,
       projectName: this.projectName,
       sessionName: this.sessionName,
       projectRoot: this.projectRoot,
-      autoUpdater: this.autoUpdater
+      autoUpdater: this.autoUpdater,
+      serverPort: serverInfo.port,
+      serverUrl: serverInfo.url
     }));
+
+    // Clean shutdown on app exit
+    app.waitUntilExit().then(async () => {
+      await this.server.stop();
+      process.exit(0);
+    });
   }
 
   private async fileExists(path: string): Promise<boolean> {

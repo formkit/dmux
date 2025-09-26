@@ -1,0 +1,333 @@
+import { Worker } from 'worker_threads';
+import { randomUUID } from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import type { DmuxPane } from '../types.js';
+import type { WorkerMessageBus } from './WorkerMessageBus.js';
+import type {
+  InboundMessage,
+  OutboundMessage,
+  WorkerConfig
+} from '../workers/WorkerMessages.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+interface WorkerInfo {
+  worker: Worker;
+  paneId: string;
+  tmuxPaneId: string;
+  startTime: number;
+  restartCount: number;
+}
+
+/**
+ * Manages lifecycle of pane worker threads
+ */
+export class PaneWorkerManager {
+  private workers = new Map<string, WorkerInfo>();
+  private messageBus: WorkerMessageBus;
+  private isShuttingDown = false;
+  private workerPath: string;
+
+  constructor(messageBus: WorkerMessageBus) {
+    this.messageBus = messageBus;
+    // Path to compiled worker file
+    this.workerPath = path.join(__dirname, '..', 'workers', 'PaneWorker.js');
+  }
+
+  /**
+   * Create a new worker for a pane
+   */
+  createWorker(pane: DmuxPane): void {
+    // Don't create if already exists or shutting down
+    if (this.workers.has(pane.id) || this.isShuttingDown) {
+      return;
+    }
+
+    try {
+      const config: WorkerConfig = {
+        paneId: pane.id,
+        tmuxPaneId: pane.paneId,
+        agent: pane.agent,
+        pollInterval: 1000 // 1 second polling
+      };
+
+      const worker = new Worker(this.workerPath, {
+        workerData: config
+      });
+
+      const workerInfo: WorkerInfo = {
+        worker,
+        paneId: pane.id,
+        tmuxPaneId: pane.paneId,
+        startTime: Date.now(),
+        restartCount: 0
+      };
+
+      // Handle messages from worker
+      worker.on('message', (message: OutboundMessage) => {
+        this.handleWorkerMessage(pane.id, message);
+      });
+
+      // Handle worker errors
+      worker.on('error', (error) => {
+        console.error(`Worker ${pane.id} error:`, error);
+        this.handleWorkerError(pane.id, error);
+      });
+
+      // Handle worker exit
+      worker.on('exit', (code) => {
+        if (code !== 0 && !this.isShuttingDown) {
+          console.error(`Worker ${pane.id} exited with code ${code}`);
+          this.handleWorkerExit(pane.id);
+        }
+      });
+
+      this.workers.set(pane.id, workerInfo);
+    } catch (error) {
+      console.error(`Failed to create worker for pane ${pane.id}:`, error);
+    }
+  }
+
+  /**
+   * Send message to a specific worker
+   */
+  async sendToWorker(
+    paneId: string,
+    message: Omit<InboundMessage, 'id'>
+  ): Promise<OutboundMessage> {
+    const workerInfo = this.workers.get(paneId);
+    if (!workerInfo) {
+      throw new Error(`No worker found for pane ${paneId}`);
+    }
+
+    const messageId = randomUUID();
+    const fullMessage: InboundMessage = {
+      ...message,
+      id: messageId,
+      timestamp: Date.now()
+    };
+
+    // Set up response promise before sending
+    const responsePromise = this.messageBus.waitForResponse(messageId);
+
+    // Send message to worker
+    workerInfo.worker.postMessage(fullMessage);
+
+    return responsePromise;
+  }
+
+  /**
+   * Send notification to a worker without waiting for response
+   */
+  notifyWorker(
+    paneId: string,
+    message: Omit<InboundMessage, 'id'>
+  ): void {
+    const workerInfo = this.workers.get(paneId);
+    if (!workerInfo) {
+      console.error(`No worker found for pane ${paneId}`);
+      return;
+    }
+
+    const fullMessage: InboundMessage = {
+      ...message,
+      id: randomUUID(),
+      timestamp: Date.now()
+    };
+
+    try {
+      workerInfo.worker.postMessage(fullMessage);
+    } catch (error) {
+      console.error(`Failed to notify worker ${paneId}:`, error);
+    }
+  }
+
+  /**
+   * Broadcast message to all workers
+   */
+  broadcastToWorkers(message: Omit<InboundMessage, 'id'>): void {
+    this.workers.forEach((workerInfo, paneId) => {
+      try {
+        const fullMessage: InboundMessage = {
+          ...message,
+          id: randomUUID(),
+          timestamp: Date.now()
+        };
+        workerInfo.worker.postMessage(fullMessage);
+      } catch (error) {
+        console.error(`Failed to broadcast to worker ${paneId}:`, error);
+      }
+    });
+  }
+
+  /**
+   * Destroy a specific worker
+   */
+  async destroyWorker(paneId: string): Promise<void> {
+    const workerInfo = this.workers.get(paneId);
+    if (!workerInfo) return;
+
+    try {
+      // Send shutdown message
+      await this.sendToWorker(paneId, {
+        type: 'shutdown',
+        timestamp: Date.now()
+      }).catch(() => {});
+
+      // Wait a bit for graceful shutdown
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Force terminate if still running
+      await workerInfo.worker.terminate();
+    } catch (error) {
+      console.error(`Error destroying worker ${paneId}:`, error);
+    } finally {
+      this.workers.delete(paneId);
+    }
+  }
+
+  /**
+   * Update workers based on current panes
+   */
+  async updateWorkers(panes: DmuxPane[]): Promise<void> {
+    const currentPaneIds = new Set(panes.map(p => p.id));
+
+    // Create workers for new panes
+    for (const pane of panes) {
+      if (!this.workers.has(pane.id)) {
+        this.createWorker(pane);
+      } else {
+        // Check if tmux pane ID changed
+        const workerInfo = this.workers.get(pane.id)!;
+        if (workerInfo.tmuxPaneId !== pane.paneId) {
+          // Pane ID changed, recreate worker
+          await this.destroyWorker(pane.id);
+          this.createWorker(pane);
+        }
+      }
+    }
+
+    // Destroy workers for removed panes
+    const workersToRemove: string[] = [];
+    for (const [paneId] of this.workers) {
+      if (!currentPaneIds.has(paneId)) {
+        workersToRemove.push(paneId);
+      }
+    }
+
+    await Promise.all(workersToRemove.map(id => this.destroyWorker(id)));
+  }
+
+  /**
+   * Handle message from worker
+   */
+  private handleWorkerMessage(paneId: string, message: OutboundMessage): void {
+    // Forward to message bus
+    this.messageBus.handleWorkerMessage(paneId, message);
+  }
+
+  /**
+   * Handle worker error
+   */
+  private handleWorkerError(paneId: string, error: Error): void {
+    const workerInfo = this.workers.get(paneId);
+    if (!workerInfo) return;
+
+    // Attempt restart if not too many attempts
+    if (workerInfo.restartCount < 3) {
+      console.log(`Restarting worker ${paneId} (attempt ${workerInfo.restartCount + 1})`);
+      this.restartWorker(paneId);
+    } else {
+      console.error(`Worker ${paneId} failed too many times, not restarting`);
+      this.workers.delete(paneId);
+    }
+  }
+
+  /**
+   * Handle worker exit
+   */
+  private handleWorkerExit(paneId: string): void {
+    if (!this.isShuttingDown) {
+      const workerInfo = this.workers.get(paneId);
+      if (workerInfo && workerInfo.restartCount < 3) {
+        this.restartWorker(paneId);
+      } else {
+        this.workers.delete(paneId);
+      }
+    }
+  }
+
+  /**
+   * Restart a worker
+   */
+  private async restartWorker(paneId: string): Promise<void> {
+    const workerInfo = this.workers.get(paneId);
+    if (!workerInfo) return;
+
+    const tmuxPaneId = workerInfo.tmuxPaneId;
+    const restartCount = workerInfo.restartCount + 1;
+
+    // Destroy old worker
+    this.workers.delete(paneId);
+    try {
+      await workerInfo.worker.terminate();
+    } catch {}
+
+    // Wait before restart
+    await new Promise(resolve => setTimeout(resolve, 1000 * restartCount));
+
+    // Create new worker with updated restart count
+    if (!this.isShuttingDown) {
+      this.createWorker({
+        id: paneId,
+        paneId: tmuxPaneId,
+        slug: '',
+        prompt: ''
+      } as DmuxPane);
+
+      const newWorkerInfo = this.workers.get(paneId);
+      if (newWorkerInfo) {
+        newWorkerInfo.restartCount = restartCount;
+      }
+    }
+  }
+
+  /**
+   * Get worker statistics
+   */
+  getStats(): {
+    workerCount: number;
+    workers: Array<{
+      paneId: string;
+      uptime: number;
+      restartCount: number;
+    }>;
+  } {
+    const workers = Array.from(this.workers.entries()).map(([paneId, info]) => ({
+      paneId,
+      uptime: Date.now() - info.startTime,
+      restartCount: info.restartCount
+    }));
+
+    return {
+      workerCount: this.workers.size,
+      workers
+    };
+  }
+
+  /**
+   * Shutdown all workers
+   */
+  async shutdown(): Promise<void> {
+    this.isShuttingDown = true;
+
+    // Send shutdown to all workers
+    const shutdownPromises = Array.from(this.workers.keys()).map(paneId =>
+      this.destroyWorker(paneId)
+    );
+
+    await Promise.all(shutdownPromises);
+    this.workers.clear();
+  }
+}

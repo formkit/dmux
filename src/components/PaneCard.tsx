@@ -43,8 +43,14 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected }) => {
             {pane.agentStatus === 'working' && (
               <Text color="cyan">✻ Working...</Text>
             )}
+            {pane.agentStatus === 'analyzing' && (
+              <Text color="magenta">⟳ Analyzing...</Text>
+            )}
             {pane.agentStatus === 'waiting' && (
               <Text color="yellow" bold>⚠ Needs attention</Text>
+            )}
+            {pane.agentStatus === 'idle' && (
+              <Text color="gray">◌ Idle</Text>
             )}
           </Box>
         )}

@@ -1,3 +1,6 @@
+// Agent status with new analyzing state
+export type AgentStatus = 'idle' | 'analyzing' | 'waiting' | 'working';
+
 export interface DmuxPane {
   id: string;
   slug: string;
@@ -11,8 +14,10 @@ export interface DmuxPane {
   devStatus?: 'running' | 'stopped';
   devUrl?: string;        // Detected dev server URL
   agent?: 'claude' | 'opencode';
-  agentStatus?: 'working' | 'waiting' | 'idle';  // Agent working/attention status
+  agentStatus?: AgentStatus;  // Agent working/attention status
   lastAgentCheck?: number;  // Timestamp of last status check
+  lastDeterministicStatus?: 'ambiguous' | 'working';  // For LLM detection coordination
+  llmRequestId?: string;  // Track active LLM request
 }
 
 export interface PanePosition {
@@ -37,4 +42,6 @@ export interface DmuxAppProps {
   projectRoot?: string;
   settingsFile: string;
   autoUpdater?: any; // AutoUpdater instance
+  serverPort?: number;
+  serverUrl?: string;
 }

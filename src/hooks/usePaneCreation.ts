@@ -119,7 +119,7 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
     const newPane: DmuxPane = {
       id: `dmux-${Date.now()}`,
       slug,
-      prompt: prompt ? (prompt.substring(0, 50) + (prompt.length > 50 ? '...' : '')) : 'No initial prompt',
+      prompt: prompt || 'No initial prompt',
       paneId: paneInfo,
       worktreePath,
       agent,

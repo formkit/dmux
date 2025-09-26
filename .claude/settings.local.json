@@ -73,7 +73,9 @@
       "Bash(claude \"test\" --permission-mode=acceptEdits)",
       "Bash(claude)",
       "Bash(./test-permission-fix.sh:*)",
-      "Bash(/Users/justinschroeder/Projects/dmux/main/.dmux/worktrees/dmux-panel-access/dmux)"
+      "Bash(/Users/justinschroeder/Projects/dmux/main/.dmux/worktrees/dmux-panel-access/dmux)",
+      "Bash(lsof:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": [],
