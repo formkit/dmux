@@ -21,6 +21,7 @@ class PaneWorker {
   private lastStaticContent: string = '';
   private lastAnalysisTime: number = 0;
   private isShuttingDown: boolean = false;
+  private idleConfirmed: boolean = false; // Block LLM requests when idle is confirmed
 
   constructor(config: WorkerConfig) {
     this.paneId = config.paneId;
@@ -96,9 +97,15 @@ class PaneWorker {
       );
 
       // First check for deterministic agent working indicators
-      const hasWorkingIndicators = this.hasAgentWorkingIndicators(output);
+      // Check the last 20 lines - enough to catch working state but avoid old output
+      const lines = output.split('\n');
+      const recentLines = lines.slice(-20).join('\n');
+      const hasWorkingIndicators = this.hasAgentWorkingIndicators(recentLines);
 
       if (hasWorkingIndicators) {
+        // Reset idle confirmation - working state always breaks out of idle
+        this.idleConfirmed = false;
+
         if (this.currentStatus !== 'working') {
           this.updateStatus('working');
         }
@@ -141,6 +148,12 @@ class PaneWorker {
           return;
         }
 
+        // If we're in confirmed idle state, don't request more LLM analysis
+        // until we see working indicators (which reset the block)
+        if (this.idleConfirmed) {
+          return;
+        }
+
         // Significant changes that aren't user typing
         // Could be agent output or major state change
         // Request LLM analysis to determine state
@@ -155,6 +168,11 @@ class PaneWorker {
         // Check if this is new static content
         if (staticContent !== this.lastStaticContent) {
           this.lastStaticContent = staticContent;
+
+          // If we're in confirmed idle state, don't request more LLM analysis
+          if (this.idleConfirmed) {
+            return;
+          }
 
           // Don't request analysis if we're too soon after last one
           const timeSinceLastAnalysis = Date.now() - this.lastAnalysisTime;
@@ -209,6 +227,10 @@ class PaneWorker {
   private handleAnalysisComplete(payload: any): void {
     if (payload?.status) {
       this.updateStatus(payload.status);
+      // If LLM determined it's idle, confirm it to block future requests
+      if (payload.status === 'idle') {
+        this.idleConfirmed = true;
+      }
     }
   }
 
