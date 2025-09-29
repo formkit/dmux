@@ -1,3 +1,33 @@
+export function getTerminalViewerHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terminal Viewer - dmux</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="terminal-page">
+    <div class="terminal-header">
+      <a href="/" class="back-button">← Back to Dashboard</a>
+      <span class="terminal-title" id="terminal-title">Terminal</span>
+      <div class="terminal-status">
+        <span id="terminal-dimensions">80x24</span>
+        <span id="terminal-connection" class="status-indicator">● Connecting</span>
+      </div>
+    </div>
+
+    <div class="terminal-content">
+      <pre id="terminal-output" class="terminal-output"></pre>
+    </div>
+  </div>
+
+  <script src="/terminal.js"></script>
+</body>
+</html>`;
+}
+
 export function getDashboardHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -451,7 +481,66 @@ footer {
 .term-bold { font-weight: bold; }
 .term-dim { opacity: 0.7; }
 .term-italic { font-style: italic; }
-.term-underline { text-decoration: underline; }`;
+.term-underline { text-decoration: underline; }
+
+/* Terminal Page Layout */
+.terminal-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #000;
+}
+
+.terminal-page .terminal-header {
+  background: #2d2d2d;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #444;
+}
+
+.back-button {
+  color: #667eea;
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+
+.back-button:hover {
+  color: #5568d3;
+}
+
+.terminal-page .terminal-title {
+  color: #fff;
+  font-weight: 500;
+  font-size: 14px;
+  flex: 1;
+  text-align: center;
+}
+
+.terminal-page .terminal-status {
+  display: flex;
+  gap: 15px;
+  font-size: 12px;
+  color: #999;
+}
+
+.terminal-content {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+}
+
+.terminal-page .terminal-output {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #f0f0f0;
+  white-space: pre;
+  margin: 0;
+  min-height: 100%;
+}`;
 }
 
 export function getDashboardJs(): string {
@@ -718,13 +807,11 @@ function renderPanes(panes) {
 }
 
 function createPaneCard(pane) {
-  const card = document.createElement('div');
+  const card = document.createElement('a');
+  card.href = \`/panes/\${pane.id}\`;
   card.className = 'pane-card';
-  card.style.cursor = 'pointer';
-  card.onclick = () => {
-    console.log('Card clicked!', pane.id, pane.slug);
-    openTerminal(pane.id, pane.slug);
-  };
+  card.style.textDecoration = 'none';
+  card.style.color = 'inherit';
 
   const agentStatus = pane.agentStatus || 'idle';
   const testStatus = pane.testStatus || 'none';
@@ -900,4 +987,396 @@ document.addEventListener('DOMContentLoaded', () => {
   startAutoRefresh();
   setupTooltips();
 });`;
+}
+
+export function getTerminalJs(): string {
+  return `// Terminal viewer with ANSI parsing and HTML rendering
+const paneId = window.location.pathname.split('/').pop();
+let terminalBuffer = [];
+let terminalDimensions = { width: 80, height: 24 };
+let currentAttrs = {};
+let cursorRow = 0;
+let cursorCol = 0;
+
+// Initialize terminal
+function initTerminal() {
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map(() =>
+    Array(terminalDimensions.width).fill(null).map(() => ({
+      char: ' ',
+      fg: null,
+      bg: null,
+      bold: false,
+      dim: false,
+      italic: false,
+      underline: false
+    }))
+  );
+}
+
+// Parse ANSI codes and update buffer
+function parseAnsiAndUpdate(text) {
+  let i = 0;
+
+  while (i < text.length) {
+    const char = text[i];
+
+    if (char === '\\x1b' || char === '\\u001b' || text.charCodeAt(i) === 27) {
+      // Escape sequence
+      const seqEnd = findEscapeSequenceEnd(text, i);
+      if (seqEnd > i) {
+        handleEscapeSequence(text.substring(i, seqEnd));
+        i = seqEnd;
+        continue;
+      }
+    }
+
+    // Regular character
+    handleCharacter(char);
+    i++;
+  }
+}
+
+function findEscapeSequenceEnd(text, start) {
+  if (start + 1 >= text.length) return start + 1;
+
+  const next = text[start + 1];
+
+  // CSI sequence: ESC[
+  if (next === '[') {
+    for (let i = start + 2; i < text.length; i++) {
+      const c = text[i];
+      if ((c >= '@' && c <= '~')) {
+        return i + 1;
+      }
+    }
+  }
+
+  // OSC sequence: ESC]
+  if (next === ']') {
+    for (let i = start + 2; i < text.length; i++) {
+      if (text[i] === '\\x07' || text.charCodeAt(i) === 7) {
+        return i + 1;
+      }
+      if (text[i] === '\\x1b' && text[i + 1] === '\\\\') {
+        return i + 2;
+      }
+    }
+  }
+
+  // Simple escape
+  return start + 2;
+}
+
+function handleEscapeSequence(seq) {
+  if (seq.length < 2) return;
+
+  if (seq[1] === '[') {
+    // CSI sequence
+    const params = seq.substring(2, seq.length - 1);
+    const command = seq[seq.length - 1];
+    handleCSI(params, command);
+  }
+}
+
+function handleCSI(params, command) {
+  const args = params.split(';').map(p => parseInt(p) || 0);
+
+  switch (command) {
+    case 'H': // Cursor position
+    case 'f':
+      cursorRow = Math.min(Math.max((args[0] || 1) - 1, 0), terminalDimensions.height - 1);
+      cursorCol = Math.min(Math.max((args[1] || 1) - 1, 0), terminalDimensions.width - 1);
+      break;
+
+    case 'A': // Cursor up
+      cursorRow = Math.max(cursorRow - (args[0] || 1), 0);
+      break;
+
+    case 'B': // Cursor down
+      cursorRow = Math.min(cursorRow + (args[0] || 1), terminalDimensions.height - 1);
+      break;
+
+    case 'C': // Cursor forward
+      cursorCol = Math.min(cursorCol + (args[0] || 1), terminalDimensions.width - 1);
+      break;
+
+    case 'D': // Cursor back
+      cursorCol = Math.max(cursorCol - (args[0] || 1), 0);
+      break;
+
+    case 'J': // Erase display
+      handleEraseDisplay(args[0] || 0);
+      break;
+
+    case 'K': // Erase line
+      handleEraseLine(args[0] || 0);
+      break;
+
+    case 'm': // SGR (colors and attributes)
+      handleSGR(args);
+      break;
+  }
+}
+
+function handleSGR(args) {
+  if (args.length === 0 || args[0] === 0) {
+    currentAttrs = {};
+    return;
+  }
+
+  for (const arg of args) {
+    if (arg === 0) {
+      currentAttrs = {};
+    } else if (arg === 1) {
+      currentAttrs.bold = true;
+    } else if (arg === 2) {
+      currentAttrs.dim = true;
+    } else if (arg === 3) {
+      currentAttrs.italic = true;
+    } else if (arg === 4) {
+      currentAttrs.underline = true;
+    } else if (arg === 22) {
+      currentAttrs.bold = false;
+      currentAttrs.dim = false;
+    } else if (arg === 23) {
+      currentAttrs.italic = false;
+    } else if (arg === 24) {
+      currentAttrs.underline = false;
+    } else if (arg >= 30 && arg <= 37) {
+      currentAttrs.fg = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 30];
+    } else if (arg === 39) {
+      currentAttrs.fg = null;
+    } else if (arg >= 40 && arg <= 47) {
+      currentAttrs.bg = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 40];
+    } else if (arg === 49) {
+      currentAttrs.bg = null;
+    } else if (arg >= 90 && arg <= 97) {
+      currentAttrs.fg = 'bright-' + ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 90];
+    } else if (arg >= 100 && arg <= 107) {
+      currentAttrs.bg = 'bright-' + ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 100];
+    }
+  }
+}
+
+function handleCharacter(char) {
+  if (char === '\\n') {
+    cursorRow++;
+    cursorCol = 0;
+    if (cursorRow >= terminalDimensions.height) {
+      // Scroll up
+      terminalBuffer.shift();
+      terminalBuffer.push(Array(terminalDimensions.width).fill(null).map(() => ({
+        char: ' ',
+        fg: null,
+        bg: null,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false
+      })));
+      cursorRow = terminalDimensions.height - 1;
+    }
+    return;
+  }
+
+  if (char === '\\r') {
+    cursorCol = 0;
+    return;
+  }
+
+  if (char === '\\t') {
+    cursorCol = Math.min(Math.floor((cursorCol + 8) / 8) * 8, terminalDimensions.width - 1);
+    return;
+  }
+
+  if (cursorCol >= terminalDimensions.width) {
+    cursorCol = 0;
+    cursorRow++;
+    if (cursorRow >= terminalDimensions.height) {
+      terminalBuffer.shift();
+      terminalBuffer.push(Array(terminalDimensions.width).fill(null).map(() => ({
+        char: ' ',
+        fg: null,
+        bg: null,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false
+      })));
+      cursorRow = terminalDimensions.height - 1;
+    }
+  }
+
+  if (cursorRow < terminalDimensions.height && cursorCol < terminalDimensions.width) {
+    terminalBuffer[cursorRow][cursorCol] = {
+      char: char,
+      ...currentAttrs
+    };
+    cursorCol++;
+  }
+}
+
+function handleEraseDisplay(mode) {
+  // Implement erase display modes
+  if (mode === 2) {
+    initTerminal();
+  }
+}
+
+function handleEraseLine(mode) {
+  if (mode === 0) {
+    for (let col = cursorCol; col < terminalDimensions.width; col++) {
+      terminalBuffer[cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+    }
+  } else if (mode === 2) {
+    for (let col = 0; col < terminalDimensions.width; col++) {
+      terminalBuffer[cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+    }
+  }
+}
+
+// Render buffer to HTML
+function renderToHtml() {
+  const outputElement = document.getElementById('terminal-output');
+  let html = '';
+
+  for (let row = 0; row < terminalBuffer.length; row++) {
+    for (let col = 0; col < terminalBuffer[row].length; col++) {
+      const cell = terminalBuffer[row][col];
+      const char = cell.char === ' ' ? ' ' : cell.char;
+
+      if (cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline) {
+        const classes = [];
+        if (cell.fg) classes.push('term-fg-' + cell.fg);
+        if (cell.bg) classes.push('term-bg-' + cell.bg);
+        if (cell.bold) classes.push('term-bold');
+        if (cell.dim) classes.push('term-dim');
+        if (cell.italic) classes.push('term-italic');
+        if (cell.underline) classes.push('term-underline');
+
+        html += \`<span class="\${classes.join(' ')}">\${char}</span>\`;
+      } else {
+        html += char;
+      }
+    }
+    html += '\\n';
+  }
+
+  outputElement.innerHTML = html;
+}
+
+// Connect to stream
+function connectToStream() {
+  const url = \`/api/stream/\${paneId}\`;
+
+  fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error('Failed to connect');
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      updateConnectionStatus(true);
+
+      const processStream = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let newlineIndex;
+            while ((newlineIndex = buffer.indexOf('\\n')) !== -1) {
+              const message = buffer.substring(0, newlineIndex);
+              buffer = buffer.substring(newlineIndex + 1);
+
+              if (message) {
+                processMessage(message);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Stream error:', error);
+          updateConnectionStatus(false);
+        }
+      };
+
+      processStream();
+    })
+    .catch(error => {
+      console.error('Connection failed:', error);
+      updateConnectionStatus(false);
+    });
+}
+
+function processMessage(message) {
+  const colonIndex = message.indexOf(':');
+  if (colonIndex === -1) return;
+
+  const type = message.substring(0, colonIndex);
+  const jsonStr = message.substring(colonIndex + 1);
+
+  try {
+    const data = JSON.parse(jsonStr);
+
+    switch (type) {
+      case 'INIT':
+        terminalDimensions = { width: data.width, height: data.height };
+        document.getElementById('terminal-dimensions').textContent = \`\${data.width}x\${data.height}\`;
+        initTerminal();
+        parseAnsiAndUpdate(data.content || '');
+        renderToHtml();
+        break;
+
+      case 'PATCH':
+        data.changes.forEach(change => {
+          parseAnsiAndUpdate(change.text);
+        });
+        renderToHtml();
+        break;
+
+      case 'RESIZE':
+        terminalDimensions = { width: data.width, height: data.height };
+        document.getElementById('terminal-dimensions').textContent = \`\${data.width}x\${data.height}\`;
+        initTerminal();
+        parseAnsiAndUpdate(data.content || '');
+        renderToHtml();
+        break;
+
+      case 'HEARTBEAT':
+        break;
+    }
+  } catch (error) {
+    console.error('Failed to parse message:', error);
+  }
+}
+
+function updateConnectionStatus(connected) {
+  const statusElement = document.getElementById('terminal-connection');
+  if (connected) {
+    statusElement.innerHTML = '● Connected';
+    statusElement.style.color = '#4ade80';
+  } else {
+    statusElement.innerHTML = '● Disconnected';
+    statusElement.style.color = '#f87171';
+  }
+}
+
+// Load pane info and start streaming
+fetch('/api/panes')
+  .then(r => r.json())
+  .then(data => {
+    const pane = data.panes.find(p => p.id === paneId);
+    if (pane) {
+      document.getElementById('terminal-title').textContent = \`Terminal: \${pane.slug}\`;
+    }
+    connectToStream();
+  })
+  .catch(err => {
+    console.error('Failed to load pane info:', err);
+    connectToStream(); // Try connecting anyway
+  });`;
 }

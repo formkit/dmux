@@ -11,7 +11,7 @@ import {
 } from 'h3';
 import { StateManager } from '../shared/StateManager.js';
 import type { DmuxPane } from '../types.js';
-import { getDashboardHtml, getDashboardCss, getDashboardJs } from './static.js';
+import { getDashboardHtml, getDashboardCss, getDashboardJs, getTerminalViewerHtml, getTerminalJs } from './static.js';
 import { getTerminalStreamer } from '../services/TerminalStreamer.js';
 import { formatStreamMessage, type HeartbeatMessage } from '../shared/StreamProtocol.js';
 
@@ -231,6 +231,12 @@ export function setupRoutes(app: App) {
       return getDashboardHtml();
     }
 
+    // Terminal viewer page
+    if (path.startsWith('/panes/')) {
+      setHeader(event, 'Content-Type', 'text/html');
+      return getTerminalViewerHtml();
+    }
+
     if (path === '/styles.css') {
       setHeader(event, 'Content-Type', 'text/css');
       return getDashboardCss();
@@ -239,6 +245,11 @@ export function setupRoutes(app: App) {
     if (path === '/dashboard.js') {
       setHeader(event, 'Content-Type', 'application/javascript');
       return getDashboardJs();
+    }
+
+    if (path === '/terminal.js') {
+      setHeader(event, 'Content-Type', 'application/javascript');
+      return getTerminalJs();
     }
 
     // 404 for unknown routes
