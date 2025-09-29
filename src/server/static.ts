@@ -493,6 +493,208 @@ function updateDashboard(data) {
   updateLastUpdateTime();
 }
 
+// Terminal Viewer functionality
+let currentStream = null;
+let terminalBuffer = [];
+let terminalDimensions = { width: 80, height: 24 };
+
+function openTerminal(paneId, paneTitle) {
+  const modal = document.getElementById('terminal-modal');
+  const titleElement = document.querySelector('.terminal-title');
+  const outputElement = document.getElementById('terminal-output');
+
+  titleElement.textContent = \`Terminal: \${paneTitle}\`;
+  modal.style.display = 'flex';
+  outputElement.innerHTML = 'Connecting...';
+  terminalBuffer = [];
+
+  if (currentStream) {
+    currentStream.close();
+    currentStream = null;
+  }
+
+  connectToStream(paneId);
+}
+
+function closeTerminal() {
+  const modal = document.getElementById('terminal-modal');
+  modal.style.display = 'none';
+
+  if (currentStream) {
+    currentStream.close();
+    currentStream = null;
+  }
+
+  updateConnectionStatus(false);
+}
+
+function connectToStream(paneId) {
+  const outputElement = document.getElementById('terminal-output');
+
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map(() =>
+    Array(terminalDimensions.width).fill(' ')
+  );
+
+  const url = \`/api/stream/\${paneId}\`;
+
+  fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error('Failed to connect');
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      updateConnectionStatus(true);
+
+      const processStream = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let newlineIndex;
+            while ((newlineIndex = buffer.indexOf('\\n')) !== -1) {
+              const message = buffer.substring(0, newlineIndex);
+              buffer = buffer.substring(newlineIndex + 1);
+
+              if (message) {
+                processMessage(message);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Stream error:', error);
+          updateConnectionStatus(false);
+        }
+      };
+
+      currentStream = reader;
+      processStream();
+    })
+    .catch(error => {
+      console.error('Connection failed:', error);
+      outputElement.innerHTML = 'Failed to connect to terminal stream';
+      updateConnectionStatus(false);
+    });
+}
+
+function processMessage(message) {
+  const colonIndex = message.indexOf(':');
+  if (colonIndex === -1) return;
+
+  const type = message.substring(0, colonIndex);
+  const jsonStr = message.substring(colonIndex + 1);
+
+  try {
+    const data = JSON.parse(jsonStr);
+
+    switch (type) {
+      case 'INIT':
+        handleInitMessage(data);
+        break;
+      case 'PATCH':
+        handlePatchMessage(data);
+        break;
+      case 'RESIZE':
+        handleResizeMessage(data);
+        break;
+      case 'HEARTBEAT':
+        break;
+    }
+  } catch (error) {
+    console.error('Failed to parse message:', error);
+  }
+}
+
+function handleInitMessage(data) {
+  const outputElement = document.getElementById('terminal-output');
+  const dimensionsElement = document.getElementById('terminal-dimensions');
+
+  terminalDimensions = { width: data.width, height: data.height };
+  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
+  outputElement.textContent = data.content || '';
+
+  const lines = (data.content || '').split('\\n');
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
+    const line = lines[i] || '';
+    return Array(terminalDimensions.width).fill(null).map((_, j) =>
+      line[j] || ' '
+    );
+  });
+}
+
+function handlePatchMessage(data) {
+  data.changes.forEach(change => {
+    const { row, col, text } = change;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const targetRow = row + Math.floor((col + i) / terminalDimensions.width);
+      const targetCol = (col + i) % terminalDimensions.width;
+
+      if (targetRow < terminalBuffer.length && targetCol < terminalBuffer[targetRow].length) {
+        if (char === '\\n') {
+          continue;
+        }
+        terminalBuffer[targetRow][targetCol] = char;
+      }
+    }
+  });
+
+  renderTerminal();
+}
+
+function handleResizeMessage(data) {
+  const outputElement = document.getElementById('terminal-output');
+  const dimensionsElement = document.getElementById('terminal-dimensions');
+
+  terminalDimensions = { width: data.width, height: data.height };
+  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
+  outputElement.textContent = data.content || '';
+
+  const lines = (data.content || '').split('\\n');
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
+    const line = lines[i] || '';
+    return Array(terminalDimensions.width).fill(null).map((_, j) =>
+      line[j] || ' '
+    );
+  });
+}
+
+function renderTerminal() {
+  const outputElement = document.getElementById('terminal-output');
+
+  const content = terminalBuffer.map(row =>
+    row.join('')
+  ).join('\\n');
+
+  outputElement.textContent = content;
+}
+
+function updateConnectionStatus(connected) {
+  const statusElement = document.getElementById('terminal-connection');
+  if (connected) {
+    statusElement.innerHTML = '● Connected';
+    statusElement.className = 'connected';
+  } else {
+    statusElement.innerHTML = '● Disconnected';
+    statusElement.className = 'disconnected';
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('terminal-modal');
+    if (modal.style.display === 'flex') {
+      closeTerminal();
+    }
+  }
+});
+
 function renderPanes(panes) {
   const grid = document.getElementById('panes-grid');
   grid.innerHTML = '';
@@ -677,239 +879,6 @@ function setupTooltips() {
     }
   });
 }
-
-// Terminal Viewer functionality
-let currentStream = null;
-let terminalBuffer = [];
-let terminalDimensions = { width: 80, height: 24 };
-
-function openTerminal(paneId, paneTitle) {
-  const modal = document.getElementById('terminal-modal');
-  const titleElement = document.querySelector('.terminal-title');
-  const outputElement = document.getElementById('terminal-output');
-
-  // Update title
-  titleElement.textContent = \`Terminal: \${paneTitle}\`;
-
-  // Show modal
-  modal.style.display = 'flex';
-
-  // Clear previous content
-  outputElement.innerHTML = 'Connecting...';
-  terminalBuffer = [];
-
-  // Close existing stream if any
-  if (currentStream) {
-    currentStream.close();
-    currentStream = null;
-  }
-
-  // Start streaming
-  connectToStream(paneId);
-}
-
-function closeTerminal() {
-  const modal = document.getElementById('terminal-modal');
-  modal.style.display = 'none';
-
-  // Close stream
-  if (currentStream) {
-    currentStream.close();
-    currentStream = null;
-  }
-
-  updateConnectionStatus(false);
-}
-
-function connectToStream(paneId) {
-  const outputElement = document.getElementById('terminal-output');
-  const dimensionsElement = document.getElementById('terminal-dimensions');
-
-  // Initialize terminal buffer
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map(() =>
-    Array(terminalDimensions.width).fill(' ')
-  );
-
-  // Create connection
-  const url = \`/api/stream/\${paneId}\`;
-
-  fetch(url)
-    .then(response => {
-      if (!response.ok) throw new Error('Failed to connect');
-      if (!response.body) throw new Error('No response body');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      updateConnectionStatus(true);
-
-      // Read stream
-      const processStream = async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // Process complete messages
-            let newlineIndex;
-            while ((newlineIndex = buffer.indexOf('\\n')) !== -1) {
-              const message = buffer.substring(0, newlineIndex);
-              buffer = buffer.substring(newlineIndex + 1);
-
-              if (message) {
-                processMessage(message);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Stream error:', error);
-          updateConnectionStatus(false);
-        }
-      };
-
-      currentStream = reader;
-      processStream();
-    })
-    .catch(error => {
-      console.error('Connection failed:', error);
-      outputElement.innerHTML = 'Failed to connect to terminal stream';
-      updateConnectionStatus(false);
-    });
-}
-
-function processMessage(message) {
-  // Parse message format: "TYPE:JSON"
-  const colonIndex = message.indexOf(':');
-  if (colonIndex === -1) return;
-
-  const type = message.substring(0, colonIndex);
-  const jsonStr = message.substring(colonIndex + 1);
-
-  try {
-    const data = JSON.parse(jsonStr);
-
-    switch (type) {
-      case 'INIT':
-        handleInitMessage(data);
-        break;
-      case 'PATCH':
-        handlePatchMessage(data);
-        break;
-      case 'RESIZE':
-        handleResizeMessage(data);
-        break;
-      case 'HEARTBEAT':
-        // Keep connection alive
-        break;
-    }
-  } catch (error) {
-    console.error('Failed to parse message:', error);
-  }
-}
-
-function handleInitMessage(data) {
-  const outputElement = document.getElementById('terminal-output');
-  const dimensionsElement = document.getElementById('terminal-dimensions');
-
-  // Update dimensions
-  terminalDimensions = { width: data.width, height: data.height };
-  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
-
-  // Set initial content
-  outputElement.textContent = data.content || '';
-
-  // Initialize buffer from content
-  const lines = (data.content || '').split('\\n');
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
-    const line = lines[i] || '';
-    return Array(terminalDimensions.width).fill(null).map((_, j) =>
-      line[j] || ' '
-    );
-  });
-}
-
-function handlePatchMessage(data) {
-  const outputElement = document.getElementById('terminal-output');
-
-  // Apply patches to buffer
-  data.changes.forEach(change => {
-    const { row, col, text } = change;
-
-    // Apply text to buffer
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      const targetRow = row + Math.floor((col + i) / terminalDimensions.width);
-      const targetCol = (col + i) % terminalDimensions.width;
-
-      if (targetRow < terminalBuffer.length && targetCol < terminalBuffer[targetRow].length) {
-        if (char === '\\n') {
-          // Handle newlines
-          continue;
-        }
-        terminalBuffer[targetRow][targetCol] = char;
-      }
-    }
-  });
-
-  // Render buffer
-  renderTerminal();
-}
-
-function handleResizeMessage(data) {
-  const outputElement = document.getElementById('terminal-output');
-  const dimensionsElement = document.getElementById('terminal-dimensions');
-
-  // Update dimensions
-  terminalDimensions = { width: data.width, height: data.height };
-  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
-
-  // Set new content
-  outputElement.textContent = data.content || '';
-
-  // Reinitialize buffer
-  const lines = (data.content || '').split('\\n');
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
-    const line = lines[i] || '';
-    return Array(terminalDimensions.width).fill(null).map((_, j) =>
-      line[j] || ' '
-    );
-  });
-}
-
-function renderTerminal() {
-  const outputElement = document.getElementById('terminal-output');
-
-  // Convert buffer to string
-  const content = terminalBuffer.map(row =>
-    row.join('')
-  ).join('\\n');
-
-  outputElement.textContent = content;
-}
-
-function updateConnectionStatus(connected) {
-  const statusElement = document.getElementById('terminal-connection');
-  if (connected) {
-    statusElement.innerHTML = '● Connected';
-    statusElement.className = 'connected';
-  } else {
-    statusElement.innerHTML = '● Disconnected';
-    statusElement.className = 'disconnected';
-  }
-}
-
-// Add keyboard handler for escape key
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    const modal = document.getElementById('terminal-modal');
-    if (modal.style.display === 'flex') {
-      closeTerminal();
-    }
-  }
-});
 
 // Start on page load
 document.addEventListener('DOMContentLoaded', () => {
