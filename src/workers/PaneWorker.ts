@@ -317,7 +317,8 @@ class PaneWorker {
   private hasAgentWorkingIndicators(content: string): boolean {
     // The most reliable indicator for both agents is "esc to interrupt"
     // This ONLY appears when the agent is actively processing
-    const universalWorkingPattern = /\(esc\s+to\s+interrupt\)/i;
+    // Match "(esc to interrupt" at the beginning, but allow additional text after like timing info
+    const universalWorkingPattern = /\(esc\s+to\s+interrupt/i;
 
     if (universalWorkingPattern.test(content)) {
       return true;
@@ -327,9 +328,10 @@ class PaneWorker {
     if (this.agent === 'claude') {
       // Claude shows specific animations when working
       // Look for the germinating/thinking messages WITH esc to interrupt nearby
+      // Allow for additional text after "interrupt" like timing info
       const claudeActivePatterns = [
-        /·\s+(Germinating|Thinking|Planning|Writing|Reading|Analyzing|Building|Testing|Running|Searching|Reviewing|Understanding)[.…]+\s*\(esc\s+to\s+interrupt\)/i,
-        /⏸\s*Claude\s+is\s+working.*\(esc\s+to\s+interrupt\)/i
+        /·\s+(Germinating|Thinking|Planning|Writing|Reading|Analyzing|Building|Testing|Running|Searching|Reviewing|Understanding)[.…]+\s*\(esc\s+to\s+interrupt/i,
+        /⏸\s*Claude\s+is\s+working.*\(esc\s+to\s+interrupt/i
       ];
       return claudeActivePatterns.some(pattern => pattern.test(content));
     } else if (this.agent === 'opencode') {

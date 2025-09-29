@@ -1,19 +1,19 @@
 import { EventEmitter } from 'events';
 import { execSync, spawn, ChildProcess } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
+import { Readable } from 'stream';
+import type { InitMessage, PatchMessage, ResizeMessage } from '../shared/StreamProtocol.js';
+import { formatStreamMessage } from '../shared/StreamProtocol.js';
 
-// h3 doesn't export this type directly, so we define it
-interface SSEStream {
-  push: (data: string) => Promise<void>;
-  close: () => void;
-}
+// Stream interface - now using Node.js Readable stream
+type StreamClient = Readable;
 
 interface StreamInfo {
   paneId: string;
   tmuxPaneId: string;
   pipePath: string;
   tailProcess?: ChildProcess;
-  clients: Set<SSEStream>;
+  clients: Set<StreamClient>;
   width: number;
   height: number;
   lastContent: string;
@@ -40,9 +40,10 @@ export class TerminalStreamer extends EventEmitter {
   async startStream(
     paneId: string,
     tmuxPaneId: string,
-    client: SSEStream
+    client: StreamClient
   ): Promise<void> {
     if (this.isShuttingDown) return;
+
 
     // Get or create stream info for this pane
     let stream = this.streams.get(paneId);
@@ -67,7 +68,7 @@ export class TerminalStreamer extends EventEmitter {
   /**
    * Stop streaming to a specific client
    */
-  stopStream(paneId: string, client: SSEStream): void {
+  stopStream(paneId: string, client: StreamClient): void {
     const stream = this.streams.get(paneId);
     if (!stream) return;
 
@@ -114,9 +115,9 @@ export class TerminalStreamer extends EventEmitter {
    */
   private async sendInitialState(
     stream: StreamInfo,
-    client: SSEStream
+    client: StreamClient
   ): Promise<void> {
-    const initMessage = {
+    const initMessage: InitMessage = {
       type: 'init',
       width: stream.width,
       height: stream.height,
@@ -125,9 +126,10 @@ export class TerminalStreamer extends EventEmitter {
     };
 
     try {
-      await client.push(JSON.stringify(initMessage));
+      // Send as delimited message using protocol formatter
+      client.push(formatStreamMessage(initMessage));
     } catch (error) {
-      console.error(`Failed to send initial state to client:`, error);
+      // Client disconnected during init
     }
   }
 
@@ -138,11 +140,12 @@ export class TerminalStreamer extends EventEmitter {
     if (stream.isActive) return;
 
     try {
+      // Create pipe file first
+      execSync(`touch ${stream.pipePath}`, { stdio: 'pipe' });
+
       // Start tmux pipe-pane
-      execSync(
-        `tmux pipe-pane -t '${stream.tmuxPaneId}' -o 'cat >> ${stream.pipePath}'`,
-        { stdio: 'pipe' }
-      );
+      const pipeCmd = `tmux pipe-pane -t ${stream.tmuxPaneId} -o 'cat >> ${stream.pipePath}'`;
+      execSync(pipeCmd, { stdio: 'pipe' });
 
       // Start tailing the pipe file
       stream.tailProcess = spawn('tail', ['-f', stream.pipePath]);
@@ -155,7 +158,8 @@ export class TerminalStreamer extends EventEmitter {
       stream.tailProcess.stdout?.on('data', (data: Buffer) => {
         if (this.isShuttingDown) return;
 
-        outputBuffer += data.toString();
+        const chunk = data.toString();
+        outputBuffer += chunk;
 
         // Clear existing timeout
         if (bufferTimeout) {
@@ -173,7 +177,7 @@ export class TerminalStreamer extends EventEmitter {
 
       // Handle tail process errors
       stream.tailProcess.on('error', (error) => {
-        console.error(`Tail process error for pane ${stream.paneId}:`, error);
+        // Silently handle tail errors - they're usually benign
       });
 
       // Start resize monitoring
@@ -183,7 +187,7 @@ export class TerminalStreamer extends EventEmitter {
 
       stream.isActive = true;
     } catch (error) {
-      console.error(`Failed to activate stream for pane ${stream.paneId}:`, error);
+      // Stream activation failed silently
     }
   }
 
@@ -205,9 +209,9 @@ export class TerminalStreamer extends EventEmitter {
 
     // Stop tmux pipe
     try {
-      execSync(`tmux pipe-pane -t '${stream.tmuxPaneId}'`, { stdio: 'pipe' });
+      execSync(`tmux pipe-pane -t ${stream.tmuxPaneId}`, { stdio: 'pipe' });
     } catch (error) {
-      console.error(`Failed to stop pipe for pane ${stream.paneId}:`, error);
+      // Ignore pipe-pane stop errors
     }
 
     // Clean up pipe file
@@ -215,7 +219,7 @@ export class TerminalStreamer extends EventEmitter {
       try {
         unlinkSync(stream.pipePath);
       } catch (error) {
-        console.error(`Failed to clean up pipe file:`, error);
+        // Ignore cleanup errors
       }
     }
 
@@ -226,23 +230,25 @@ export class TerminalStreamer extends EventEmitter {
    * Process output and send updates to clients
    */
   private processAndSendUpdates(stream: StreamInfo, output: string): void {
-    // For now, send raw output as patch
-    // TODO: Implement proper diffing algorithm
-    const patchMessage = {
+    // For now, send raw output as a single patch
+    // TODO: Implement proper diffing algorithm in Phase 4
+    const patchMessage: PatchMessage = {
       type: 'patch',
-      content: output, // Will be replaced with proper patches
+      changes: [{
+        row: 0,  // Will be calculated properly in Phase 4
+        col: 0,
+        text: output
+      }],
       timestamp: Date.now()
     };
-
-    const messageStr = JSON.stringify(patchMessage);
 
     // Send to all connected clients
     stream.clients.forEach(client => {
       try {
-        client.push(messageStr);
+        // Send as delimited message using protocol formatter
+        client.push(formatStreamMessage(patchMessage));
       } catch (error) {
-        console.error(`Failed to send update to client:`, error);
-        // Remove failed client
+        // Client disconnected, remove from list
         stream.clients.delete(client);
       }
     });
@@ -267,7 +273,7 @@ export class TerminalStreamer extends EventEmitter {
       stream.lastContent = content;
 
       // Send resize message to all clients
-      const resizeMessage = {
+      const resizeMessage: ResizeMessage = {
         type: 'resize',
         width: dimensions.width,
         height: dimensions.height,
@@ -275,13 +281,12 @@ export class TerminalStreamer extends EventEmitter {
         timestamp: Date.now()
       };
 
-      const messageStr = JSON.stringify(resizeMessage);
-
       stream.clients.forEach(client => {
         try {
-          client.push(messageStr);
+          // Send as delimited message using protocol formatter
+          client.push(formatStreamMessage(resizeMessage));
         } catch (error) {
-          console.error(`Failed to send resize to client:`, error);
+          // Client disconnected, remove from list
           stream.clients.delete(client);
         }
       });
@@ -297,7 +302,7 @@ export class TerminalStreamer extends EventEmitter {
   private restartPiping(stream: StreamInfo): void {
     // Stop current pipe
     try {
-      execSync(`tmux pipe-pane -t '${stream.tmuxPaneId}'`, { stdio: 'pipe' });
+      execSync(`tmux pipe-pane -t ${stream.tmuxPaneId}`, { stdio: 'pipe' });
     } catch {}
 
     // Kill tail process
@@ -329,7 +334,7 @@ export class TerminalStreamer extends EventEmitter {
   private getPaneDimensions(tmuxPaneId: string): PaneDimensions {
     try {
       const output = execSync(
-        `tmux display-message -p "#{pane_width}x#{pane_height}" -t '${tmuxPaneId}'`,
+        `tmux display-message -p -t ${tmuxPaneId} -F "#{pane_width}x#{pane_height}"`,
         { encoding: 'utf-8', stdio: 'pipe' }
       ).trim();
 
@@ -337,7 +342,7 @@ export class TerminalStreamer extends EventEmitter {
 
       return { width: width || 80, height: height || 24 };
     } catch (error) {
-      console.error(`Failed to get pane dimensions:`, error);
+      // Return defaults on error
       return { width: 80, height: 24 }; // Default dimensions
     }
   }
@@ -348,11 +353,11 @@ export class TerminalStreamer extends EventEmitter {
   private capturePaneContent(tmuxPaneId: string): string {
     try {
       return execSync(
-        `tmux capture-pane -ep -t '${tmuxPaneId}'`,
+        `tmux capture-pane -ep -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {
-      console.error(`Failed to capture pane content:`, error);
+      // Return empty on error
       return '';
     }
   }

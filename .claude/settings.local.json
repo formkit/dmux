@@ -75,7 +75,8 @@
       "Bash(./test-permission-fix.sh:*)",
       "Bash(/Users/justinschroeder/Projects/dmux/main/.dmux/worktrees/dmux-panel-access/dmux)",
       "Bash(lsof:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": [],

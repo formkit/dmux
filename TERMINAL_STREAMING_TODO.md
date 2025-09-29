@@ -35,7 +35,7 @@ Implement real-time HTTP streaming of tmux panes to browser using Server-Sent Ev
   - [x] Implement heartbeat/keepalive
 
 ### Phase 3: Message Protocol
-- [ ] Define message types in `src/shared/StreamProtocol.ts`
+- [x] Define message types in `src/shared/StreamProtocol.ts`
   ```typescript
   interface InitMessage {
     type: 'init';

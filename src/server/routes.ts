@@ -1,16 +1,19 @@
 import {
   eventHandler,
   getRouterParams,
+  getRouterParam,
   readBody,
   setHeader,
   send,
   createEventStream,
+  createRouter,
   type App
 } from 'h3';
 import { StateManager } from '../shared/StateManager.js';
 import type { DmuxPane } from '../types.js';
 import { getDashboardHtml, getDashboardCss, getDashboardJs } from './static.js';
 import { getTerminalStreamer } from '../services/TerminalStreamer.js';
+import { formatStreamMessage, type HeartbeatMessage } from '../shared/StreamProtocol.js';
 
 const stateManager = StateManager.getInstance();
 
@@ -118,8 +121,17 @@ export function setupRoutes(app: App) {
   }));
 
   // GET /api/stream/:paneId - Stream terminal output
-  app.use('/api/stream/:paneId', eventHandler(async (event) => {
-    const { paneId } = getRouterParams(event);
+  // MUST be before the catch-all route
+  app.use('/api/stream', eventHandler(async (event) => {
+    const url = event.node.req.url || '';
+    // When using app.use('/api/stream'), the URL is already stripped
+    // So we just need to remove the leading slash
+    const paneId = url.startsWith('/') ? url.substring(1) : url;
+
+    if (!paneId || paneId.includes('/')) {
+      event.node.res.statusCode = 404;
+      return { error: 'Invalid pane ID' };
+    }
 
     if (!paneId) {
       event.node.res.statusCode = 400;
@@ -135,23 +147,37 @@ export function setupRoutes(app: App) {
       return { error: 'Pane not found' };
     }
 
-    // Create SSE stream
-    const eventStream = createEventStream(event);
+    // Create a readable stream
+    const { Readable } = await import('stream');
+    const stream = new Readable({
+      read() {} // No-op, we'll push data as it arrives
+    });
+
     const streamer = getTerminalStreamer();
 
-    // Start streaming
-    await streamer.startStream(pane.id, pane.paneId, eventStream);
+    // Send initial test message immediately
+    try {
+      const success = stream.push('INIT:Stream connected\n');
+    } catch (error) {
+    }
+
+    // Start streaming - pass the stream object
+    await streamer.startStream(pane.id, pane.paneId, stream);
 
     // Handle client disconnect
     event.node.req.on('close', () => {
-      streamer.stopStream(pane.id, eventStream);
-      eventStream.close();
+      streamer.stopStream(pane.id, stream);
+      stream.destroy();
     });
 
     // Send heartbeat every 30 seconds to keep connection alive
     const heartbeat = setInterval(() => {
       try {
-        eventStream.push(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
+        const heartbeatMessage: HeartbeatMessage = {
+          type: 'heartbeat',
+          timestamp: Date.now()
+        };
+        stream.push(formatStreamMessage(heartbeatMessage));
       } catch {
         clearInterval(heartbeat);
       }
@@ -160,10 +186,11 @@ export function setupRoutes(app: App) {
     // Cleanup heartbeat on disconnect
     event.node.req.on('close', () => {
       clearInterval(heartbeat);
+      stream.destroy();
     });
 
-    // Keep connection open
-    await eventStream.send();
+    // Return the readable stream - h3 will pipe it to the response
+    return stream;
   }));
 
   // GET /api/stream-stats - Get streaming statistics
@@ -172,9 +199,32 @@ export function setupRoutes(app: App) {
     return streamer.getStats();
   }));
 
+  // GET /api/test-stream - Simple test stream
+  app.use('/api/test-stream', eventHandler(async (event) => {
+    const { Readable } = await import('stream');
+    const stream = new Readable({
+      read() {}
+    });
+
+    // Send some test data
+    stream.push('TEST:First message\n');
+    setTimeout(() => stream.push('TEST:Second message\n'), 100);
+    setTimeout(() => stream.push('TEST:Third message\n'), 200);
+    setTimeout(() => stream.push(null), 300); // End stream
+
+    return stream;
+  }));
+
   // Static files - Dashboard HTML
+  // IMPORTANT: This must be last to avoid catching API routes
   app.use('/', eventHandler(async (event) => {
     const path = event.node.req.url || '/';
+
+    // Skip API routes - let them 404 naturally
+    if (path.startsWith('/api/')) {
+      event.node.res.statusCode = 404;
+      return { error: 'API endpoint not found' };
+    }
 
     if (path === '/' || path === '/index.html') {
       setHeader(event, 'Content-Type', 'text/html');
