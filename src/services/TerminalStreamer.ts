@@ -125,11 +125,14 @@ export class TerminalStreamer extends EventEmitter {
     stream: StreamInfo,
     client: StreamClient
   ): Promise<void> {
+    // Get clean parsed content from differ (ANSI codes already processed)
+    const content = stream.differ ? stream.differ.getFullState() : stream.lastContent;
+
     const initMessage: InitMessage = {
       type: 'init',
       width: stream.width,
       height: stream.height,
-      content: stream.lastContent,
+      content: content,
       timestamp: Date.now()
     };
 
@@ -296,12 +299,15 @@ export class TerminalStreamer extends EventEmitter {
         stream.differ.applyAndDiff(content);
       }
 
+      // Get clean parsed content from differ
+      const cleanContent = stream.differ ? stream.differ.getFullState() : content;
+
       // Send resize message to all clients
       const resizeMessage: ResizeMessage = {
         type: 'resize',
         width: dimensions.width,
         height: dimensions.height,
-        content: content,
+        content: cleanContent,
         timestamp: Date.now()
       };
 
