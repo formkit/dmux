@@ -498,10 +498,29 @@ let currentStream = null;
 let terminalBuffer = [];
 let terminalDimensions = { width: 80, height: 24 };
 
+// Strip ANSI escape codes from text
+function stripAnsiCodes(text) {
+  return text
+    // CSI sequences (ESC[...m for colors, ESC[...H for cursor, etc)
+    .replace(/\\x1b\\[[0-9;?]*[a-zA-Z]/g, '')
+    // OSC sequences (ESC]...BEL or ESC]...ESC\\)
+    .replace(/\\x1b\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)/g, '')
+    // Other escape sequences
+    .replace(/\\x1b[=>NOPQRSTUVWXYZ\\[\\\\\\]^_]/g, '')
+    // Control characters (except newline, tab, carriage return)
+    .replace(/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/g, '');
+}
+
 function openTerminal(paneId, paneTitle) {
+  console.log('openTerminal called with:', paneId, paneTitle);
   const modal = document.getElementById('terminal-modal');
   const titleElement = document.querySelector('.terminal-title');
   const outputElement = document.getElementById('terminal-output');
+
+  if (!modal) {
+    console.error('Modal not found!');
+    return;
+  }
 
   titleElement.textContent = \`Terminal: \${paneTitle}\`;
   modal.style.display = 'flex';
@@ -616,9 +635,12 @@ function handleInitMessage(data) {
 
   terminalDimensions = { width: data.width, height: data.height };
   dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
-  outputElement.textContent = data.content || '';
 
-  const lines = (data.content || '').split('\\n');
+  // Strip ANSI codes from initial content
+  const cleanContent = stripAnsiCodes(data.content || '');
+  outputElement.textContent = cleanContent;
+
+  const lines = cleanContent.split('\\n');
   terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
     const line = lines[i] || '';
     return Array(terminalDimensions.width).fill(null).map((_, j) =>
@@ -631,8 +653,11 @@ function handlePatchMessage(data) {
   data.changes.forEach(change => {
     const { row, col, text } = change;
 
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
+    // Strip ANSI codes from patch text
+    const cleanText = stripAnsiCodes(text);
+
+    for (let i = 0; i < cleanText.length; i++) {
+      const char = cleanText[i];
       const targetRow = row + Math.floor((col + i) / terminalDimensions.width);
       const targetCol = (col + i) % terminalDimensions.width;
 
@@ -654,9 +679,12 @@ function handleResizeMessage(data) {
 
   terminalDimensions = { width: data.width, height: data.height };
   dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
-  outputElement.textContent = data.content || '';
 
-  const lines = (data.content || '').split('\\n');
+  // Strip ANSI codes from resize content
+  const cleanContent = stripAnsiCodes(data.content || '');
+  outputElement.textContent = cleanContent;
+
+  const lines = cleanContent.split('\\n');
   terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
     const line = lines[i] || '';
     return Array(terminalDimensions.width).fill(null).map((_, j) =>
@@ -668,6 +696,7 @@ function handleResizeMessage(data) {
 function renderTerminal() {
   const outputElement = document.getElementById('terminal-output');
 
+  // Convert buffer to string (already cleaned of ANSI codes)
   const content = terminalBuffer.map(row =>
     row.join('')
   ).join('\\n');
@@ -709,7 +738,10 @@ function createPaneCard(pane) {
   const card = document.createElement('div');
   card.className = 'pane-card';
   card.style.cursor = 'pointer';
-  card.onclick = () => openTerminal(pane.id, pane.slug);
+  card.onclick = () => {
+    console.log('Card clicked!', pane.id, pane.slug);
+    openTerminal(pane.id, pane.slug);
+  };
 
   const agentStatus = pane.agentStatus || 'idle';
   const testStatus = pane.testStatus || 'none';
