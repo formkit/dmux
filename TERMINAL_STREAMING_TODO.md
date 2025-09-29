@@ -63,19 +63,19 @@ Implement real-time HTTP streaming of tmux panes to browser using Server-Sent Ev
   ```
 
 ### Phase 4: Incremental Update System
-- [ ] Create `src/services/TerminalDiffer.ts`
-  - [ ] Virtual terminal state tracking
-  - [ ] ANSI escape sequence parser
-  - [ ] Diff algorithm (old vs new state)
-  - [ ] Patch generation (minimal change set)
-  - [ ] Buffer management (16ms batching for 60fps)
+- [x] Create `src/services/TerminalDiffer.ts`
+  - [x] Virtual terminal state tracking
+  - [x] ANSI escape sequence parser
+  - [x] Diff algorithm (old vs new state)
+  - [x] Patch generation (minimal change set)
+  - [x] Buffer management (16ms batching for 60fps)
 
 ### Phase 5: Resize Detection
-- [ ] Add dimension monitoring to TerminalStreamer
-  - [ ] Poll dimensions every 500ms during active stream
-  - [ ] Compare with cached dimensions
-  - [ ] On change: capture full state, send resize message
-  - [ ] Restart pipe after resize
+- [x] Add dimension monitoring to TerminalStreamer
+  - [x] Poll dimensions every 500ms during active stream
+  - [x] Compare with cached dimensions
+  - [x] On change: capture full state, send resize message
+  - [x] Restart pipe after resize
 
 ### Phase 6: Frontend Terminal Viewer
 - [ ] Update dashboard HTML in `src/server/static.ts`

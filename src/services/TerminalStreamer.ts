@@ -4,6 +4,7 @@ import { existsSync, unlinkSync } from 'fs';
 import { Readable } from 'stream';
 import type { InitMessage, PatchMessage, ResizeMessage } from '../shared/StreamProtocol.js';
 import { formatStreamMessage } from '../shared/StreamProtocol.js';
+import { TerminalDiffer } from './TerminalDiffer.js';
 
 // Stream interface - now using Node.js Readable stream
 type StreamClient = Readable;
@@ -19,6 +20,7 @@ interface StreamInfo {
   lastContent: string;
   resizeCheckInterval?: NodeJS.Timeout;
   isActive: boolean;
+  differ?: TerminalDiffer;
 }
 
 interface PaneDimensions {
@@ -98,6 +100,11 @@ export class TerminalStreamer extends EventEmitter {
     // Create pipe path
     const pipePath = `/tmp/dmux-pipe-${paneId}-${Date.now()}`;
 
+    // Create differ for this stream
+    const differ = new TerminalDiffer(dimensions.width, dimensions.height);
+    // Initialize differ with current content
+    differ.applyAndDiff(content);
+
     return {
       paneId,
       tmuxPaneId,
@@ -106,7 +113,8 @@ export class TerminalStreamer extends EventEmitter {
       width: dimensions.width,
       height: dimensions.height,
       lastContent: content,
-      isActive: false
+      isActive: false,
+      differ
     };
   }
 
@@ -230,31 +238,36 @@ export class TerminalStreamer extends EventEmitter {
    * Process output and send updates to clients
    */
   private processAndSendUpdates(stream: StreamInfo, output: string): void {
-    // For now, send raw output as a single patch
-    // TODO: Implement proper diffing algorithm in Phase 4
-    const patchMessage: PatchMessage = {
-      type: 'patch',
-      changes: [{
-        row: 0,  // Will be calculated properly in Phase 4
-        col: 0,
-        text: output
-      }],
-      timestamp: Date.now()
-    };
+    if (!stream.differ) {
+      // Fallback if differ not initialized
+      return;
+    }
 
-    // Send to all connected clients
-    stream.clients.forEach(client => {
-      try {
-        // Send as delimited message using protocol formatter
-        client.push(formatStreamMessage(patchMessage));
-      } catch (error) {
-        // Client disconnected, remove from list
-        stream.clients.delete(client);
-      }
-    });
+    // Generate patches using the differ
+    const changes = stream.differ.applyAndDiff(output);
 
-    // Update last content (will be improved with proper state tracking)
-    stream.lastContent += output;
+    // Only send if there are actual changes
+    if (changes.length > 0) {
+      const patchMessage: PatchMessage = {
+        type: 'patch',
+        changes,
+        timestamp: Date.now()
+      };
+
+      // Send to all connected clients
+      stream.clients.forEach(client => {
+        try {
+          // Send as delimited message using protocol formatter
+          client.push(formatStreamMessage(patchMessage));
+        } catch (error) {
+          // Client disconnected, remove from list
+          stream.clients.delete(client);
+        }
+      });
+    }
+
+    // Update last content with full state from differ
+    stream.lastContent = stream.differ.getFullState();
   }
 
   /**
@@ -268,9 +281,20 @@ export class TerminalStreamer extends EventEmitter {
       stream.width = dimensions.width;
       stream.height = dimensions.height;
 
+      // Update differ dimensions
+      if (stream.differ) {
+        stream.differ.resize(dimensions.width, dimensions.height);
+      }
+
       // Capture new full state
       const content = this.capturePaneContent(stream.tmuxPaneId);
       stream.lastContent = content;
+
+      // Re-initialize differ with new content after resize
+      if (stream.differ) {
+        stream.differ.reset();
+        stream.differ.applyAndDiff(content);
+      }
 
       // Send resize message to all clients
       const resizeMessage: ResizeMessage = {
@@ -319,6 +343,13 @@ export class TerminalStreamer extends EventEmitter {
 
     // Create new pipe path
     stream.pipePath = `/tmp/dmux-pipe-${stream.paneId}-${Date.now()}`;
+
+    // Recreate differ with new dimensions if it exists
+    if (stream.differ) {
+      const content = this.capturePaneContent(stream.tmuxPaneId);
+      stream.differ = new TerminalDiffer(stream.width, stream.height);
+      stream.differ.applyAndDiff(content);
+    }
 
     // Restart piping
     setTimeout(() => {
