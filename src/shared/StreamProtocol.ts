@@ -29,6 +29,8 @@ export interface PatchMessage {
     text: string;     // New text to insert
     length?: number;  // Number of chars to replace (default: text.length)
   }>;
+  cursorRow?: number; // Cursor row position after update (0-based)
+  cursorCol?: number; // Cursor column position after update (0-based)
   timestamp: number;
 }
 

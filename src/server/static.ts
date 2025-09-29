@@ -483,6 +483,26 @@ footer {
 .term-italic { font-style: italic; }
 .term-underline { text-decoration: underline; }
 
+/* Cursor styling - disabled by default for Ink apps */
+.term-cursor {
+  /* Cursor hidden by default since Ink apps don't have meaningful cursor position */
+  /* background-color: rgba(255, 255, 255, 0.3); */
+  /* animation: cursor-blink 1s step-end infinite; */
+}
+
+/* Uncomment to enable cursor display */
+/*
+.term-cursor {
+  background-color: rgba(255, 255, 255, 0.3);
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 50% { background-color: rgba(255, 255, 255, 0.3); }
+  51%, 100% { background-color: transparent; }
+}
+*/
+
 /* Terminal Page Layout */
 .terminal-page {
   display: flex;
@@ -1339,10 +1359,16 @@ function renderToHtml() {
     for (let col = 0; col < terminalBuffer[row].length; col++) {
       const cell = terminalBuffer[row][col];
       const char = cell.char === ' ' ? ' ' : cell.char;
+      const isCursor = (row === cursorRow && col === cursorCol);
 
-      if (cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline) {
+      if (cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || isCursor) {
         const classes = [];
         const styles = [];
+
+        // Add cursor class if this is the cursor position
+        if (isCursor) {
+          classes.push('term-cursor');
+        }
 
         // Handle foreground color
         if (cell.fg) {
@@ -1469,9 +1495,39 @@ function processMessage(message) {
         break;
 
       case 'PATCH':
+        const startCursorRow = cursorRow;
+
         data.changes.forEach(change => {
           parseAnsiAndUpdate(change.text);
         });
+
+        const endCursorRow = cursorRow;
+
+        // Override cursor position with actual tmux position if provided
+        if (data.cursorRow !== undefined && data.cursorCol !== undefined) {
+          // If patch wrote to rows above the final cursor position, clear those rows
+          // This handles Ink's redraws that write to wrong locations
+          if (endCursorRow < data.cursorRow) {
+            for (let row = endCursorRow; row < data.cursorRow; row++) {
+              if (row >= 0 && row < terminalBuffer.length) {
+                for (let col = 0; col < terminalDimensions.width; col++) {
+                  terminalBuffer[row][col] = {
+                    char: ' ',
+                    fg: null,
+                    bg: null,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false
+                  };
+                }
+              }
+            }
+          }
+
+          cursorRow = data.cursorRow;
+          cursorCol = data.cursorCol;
+        }
         renderToHtml();
         break;
 

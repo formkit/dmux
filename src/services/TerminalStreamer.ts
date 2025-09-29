@@ -19,6 +19,7 @@ interface StreamInfo {
   height: number;
   lastContent: string;
   resizeCheckInterval?: NodeJS.Timeout;
+  refreshInterval?: NodeJS.Timeout;
   isActive: boolean;
 }
 
@@ -164,12 +165,22 @@ export class TerminalStreamer extends EventEmitter {
     if (stream.isActive) return;
 
     try {
-      // Create pipe file first
-      execSync(`touch ${stream.pipePath}`, { stdio: 'pipe' });
+      // Stop any existing pipe-pane first
+      try {
+        execSync(`tmux pipe-pane -t ${stream.tmuxPaneId}`, { stdio: 'pipe' });
+      } catch {
+        // No existing pipe, which is fine
+      }
+
+      // Create empty pipe file (using touch to avoid any output)
+      execSync(`> ${stream.pipePath}`, { stdio: 'pipe' });
 
       // Start tmux pipe-pane
       const pipeCmd = `tmux pipe-pane -t ${stream.tmuxPaneId} -o 'cat >> ${stream.pipePath}'`;
       execSync(pipeCmd, { stdio: 'pipe' });
+
+      // Small delay to ensure pipe-pane is ready
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Start tailing the pipe file
       stream.tailProcess = spawn('tail', ['-f', stream.pipePath]);
@@ -225,6 +236,34 @@ export class TerminalStreamer extends EventEmitter {
         this.checkForResize(stream);
       }, 500);
 
+      // Periodic full refresh to handle Ink apps that use complex cursor positioning
+      // This prevents drift from incremental updates
+      stream.refreshInterval = setInterval(() => {
+        const content = this.capturePaneContent(stream.tmuxPaneId);
+        const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+
+        // Send full refresh as INIT message to reset buffer
+        const refreshMessage: InitMessage = {
+          type: 'init',
+          width: stream.width,
+          height: stream.height,
+          content: content,
+          cursorRow: cursorPos.row,
+          cursorCol: cursorPos.col,
+          timestamp: Date.now()
+        };
+
+        stream.clients.forEach(client => {
+          try {
+            client.push(formatStreamMessage(refreshMessage));
+          } catch (error) {
+            stream.clients.delete(client);
+          }
+        });
+
+        stream.lastContent = content;
+      }, 2000); // Full refresh every 2 seconds
+
       stream.isActive = true;
     } catch (error) {
       // Stream activation failed silently
@@ -239,6 +278,12 @@ export class TerminalStreamer extends EventEmitter {
     if (stream.resizeCheckInterval) {
       clearInterval(stream.resizeCheckInterval);
       stream.resizeCheckInterval = undefined;
+    }
+
+    // Stop refresh interval
+    if (stream.refreshInterval) {
+      clearInterval(stream.refreshInterval);
+      stream.refreshInterval = undefined;
     }
 
     // Stop tail process
@@ -270,6 +315,9 @@ export class TerminalStreamer extends EventEmitter {
    * Process output and send updates to clients
    */
   private processAndSendUpdates(stream: StreamInfo, output: string): void {
+    // Get current cursor position for accurate rendering
+    const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+
     // Send raw output with ANSI codes - frontend will parse
     const patchMessage: PatchMessage = {
       type: 'patch',
@@ -278,6 +326,8 @@ export class TerminalStreamer extends EventEmitter {
         col: 0,
         text: output
       }],
+      cursorRow: cursorPos.row,
+      cursorCol: cursorPos.col,
       timestamp: Date.now()
     };
 
@@ -388,11 +438,16 @@ export class TerminalStreamer extends EventEmitter {
 
   /**
    * Capture current pane content with ANSI codes
+   * Only captures the visible area (no scrollback) so cursor position matches
    */
   private capturePaneContent(tmuxPaneId: string): string {
     try {
+      // -p: print to stdout
+      // -e: include escape sequences
+      // -J: join wrapped lines
+      // Captures only visible pane (no -S means current screen)
       return execSync(
-        `tmux capture-pane -ep -t ${tmuxPaneId}`,
+        `tmux capture-pane -epJ -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {

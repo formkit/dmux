@@ -84,6 +84,62 @@ export function setupRoutes(app: App) {
     return formatPaneResponse(pane);
   }));
 
+  // GET /api/panes/:id/snapshot - Get current pane snapshot
+  app.use('/api/panes/:id/snapshot', eventHandler(async (event) => {
+    if (event.node.req.method !== 'GET') return;
+
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
+    }
+
+    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
+
+    if (!pane) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    // Capture current pane state from tmux
+    const { execSync } = await import('child_process');
+
+    try {
+      // Get dimensions
+      const dimensionsOutput = execSync(
+        `tmux display-message -p -t ${pane.paneId} -F "#{pane_width},#{pane_height}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      const [width, height] = dimensionsOutput.split(',').map(Number);
+
+      // Get content
+      const content = execSync(
+        `tmux capture-pane -epJ -t ${pane.paneId}`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      );
+
+      // Get cursor position
+      const cursorOutput = execSync(
+        `tmux display-message -p -t ${pane.paneId} -F "#{cursor_y},#{cursor_x}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      const [cursorRow, cursorCol] = cursorOutput.split(',').map(Number);
+
+      return {
+        width: width || 80,
+        height: height || 24,
+        content,
+        cursorRow: cursorRow || 0,
+        cursorCol: cursorCol || 0
+      };
+    } catch (error) {
+      event.node.res.statusCode = 500;
+      return { error: 'Failed to capture pane state' };
+    }
+  }));
+
   // POST /api/panes/:id/actions - Execute action on pane
   app.use('/api/panes/:id/actions', eventHandler(async (event) => {
     if (event.node.req.method !== 'POST') return;
