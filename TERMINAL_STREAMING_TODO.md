@@ -78,17 +78,17 @@ Implement real-time HTTP streaming of tmux panes to browser using Server-Sent Ev
   - [x] Restart pipe after resize
 
 ### Phase 6: Frontend Terminal Viewer
-- [ ] Update dashboard HTML in `src/server/static.ts`
-  - [ ] Add click handler to pane cards
-  - [ ] Create modal/overlay for terminal view
-  - [ ] Add close button and escape key handler
+- [x] Update dashboard HTML in `src/server/static.ts`
+  - [x] Add click handler to pane cards
+  - [x] Create modal/overlay for terminal view
+  - [x] Add close button and escape key handler
 
-- [ ] Implement terminal renderer
-  - [ ] Create EventSource connection
-  - [ ] Handle init message (setup display)
-  - [ ] Handle patch messages (apply changes)
-  - [ ] Handle resize messages (rebuild display)
-  - [ ] Error handling and reconnection
+- [x] Implement terminal renderer
+  - [x] Create fetch-based stream connection
+  - [x] Handle init message (setup display)
+  - [x] Handle patch messages (apply changes)
+  - [x] Handle resize messages (rebuild display)
+  - [x] Error handling and connection status
 
 ### Phase 7: DOM Rendering Optimization
 - [ ] Implement efficient patching algorithm

@@ -37,6 +37,23 @@ export function getDashboardHtml(): string {
     </footer>
   </div>
 
+  <!-- Terminal Modal -->
+  <div id="terminal-modal" class="terminal-modal" style="display: none;">
+    <div class="terminal-container">
+      <div class="terminal-header">
+        <span class="terminal-title">Terminal Output</span>
+        <button class="terminal-close" onclick="closeTerminal()">×</button>
+      </div>
+      <div class="terminal-body">
+        <pre id="terminal-output" class="terminal-output"></pre>
+      </div>
+      <div class="terminal-status">
+        <span id="terminal-dimensions">80x24</span>
+        <span id="terminal-connection">● Connected</span>
+      </div>
+    </div>
+  </div>
+
   <script src="/dashboard.js"></script>
 </body>
 </html>`;
@@ -290,7 +307,151 @@ footer {
   .session-info {
     flex-wrap: wrap;
   }
-}`;
+}
+
+/* Terminal Modal Styles */
+.terminal-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.terminal-container {
+  background: #1e1e1e;
+  border-radius: 8px;
+  width: 90%;
+  height: 80%;
+  max-width: 1200px;
+  max-height: 800px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.terminal-header {
+  background: #2d2d2d;
+  padding: 12px 20px;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #444;
+}
+
+.terminal-title {
+  color: #fff;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.terminal-close {
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.terminal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.terminal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  background: #000;
+}
+
+.terminal-output {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #f0f0f0;
+  white-space: pre;
+  margin: 0;
+  min-height: 100%;
+  position: relative;
+}
+
+.terminal-status {
+  background: #2d2d2d;
+  padding: 8px 20px;
+  border-top: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #999;
+}
+
+#terminal-dimensions {
+  font-family: monospace;
+}
+
+#terminal-connection {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#terminal-connection.connected {
+  color: #4ade80;
+}
+
+#terminal-connection.disconnected {
+  color: #f87171;
+}
+
+/* Terminal text colors */
+.term-fg-black { color: #000000; }
+.term-fg-red { color: #cd3131; }
+.term-fg-green { color: #0dbc79; }
+.term-fg-yellow { color: #e5e510; }
+.term-fg-blue { color: #2472c8; }
+.term-fg-magenta { color: #bc3fbc; }
+.term-fg-cyan { color: #11a8cd; }
+.term-fg-white { color: #e5e5e5; }
+
+.term-fg-bright-black { color: #666666; }
+.term-fg-bright-red { color: #f14c4c; }
+.term-fg-bright-green { color: #23d18b; }
+.term-fg-bright-yellow { color: #f5f543; }
+.term-fg-bright-blue { color: #3b8eea; }
+.term-fg-bright-magenta { color: #d670d6; }
+.term-fg-bright-cyan { color: #29b8db; }
+.term-fg-bright-white { color: #ffffff; }
+
+.term-bg-black { background-color: #000000; }
+.term-bg-red { background-color: #cd3131; }
+.term-bg-green { background-color: #0dbc79; }
+.term-bg-yellow { background-color: #e5e510; }
+.term-bg-blue { background-color: #2472c8; }
+.term-bg-magenta { background-color: #bc3fbc; }
+.term-bg-cyan { background-color: #11a8cd; }
+.term-bg-white { background-color: #e5e5e5; }
+
+.term-bold { font-weight: bold; }
+.term-dim { opacity: 0.7; }
+.term-italic { font-style: italic; }
+.term-underline { text-decoration: underline; }`;
 }
 
 export function getDashboardJs(): string {
@@ -345,6 +506,8 @@ function renderPanes(panes) {
 function createPaneCard(pane) {
   const card = document.createElement('div');
   card.className = 'pane-card';
+  card.style.cursor = 'pointer';
+  card.onclick = () => openTerminal(pane.id, pane.slug);
 
   const agentStatus = pane.agentStatus || 'idle';
   const testStatus = pane.testStatus || 'none';
@@ -514,6 +677,239 @@ function setupTooltips() {
     }
   });
 }
+
+// Terminal Viewer functionality
+let currentStream = null;
+let terminalBuffer = [];
+let terminalDimensions = { width: 80, height: 24 };
+
+function openTerminal(paneId, paneTitle) {
+  const modal = document.getElementById('terminal-modal');
+  const titleElement = document.querySelector('.terminal-title');
+  const outputElement = document.getElementById('terminal-output');
+
+  // Update title
+  titleElement.textContent = \`Terminal: \${paneTitle}\`;
+
+  // Show modal
+  modal.style.display = 'flex';
+
+  // Clear previous content
+  outputElement.innerHTML = 'Connecting...';
+  terminalBuffer = [];
+
+  // Close existing stream if any
+  if (currentStream) {
+    currentStream.close();
+    currentStream = null;
+  }
+
+  // Start streaming
+  connectToStream(paneId);
+}
+
+function closeTerminal() {
+  const modal = document.getElementById('terminal-modal');
+  modal.style.display = 'none';
+
+  // Close stream
+  if (currentStream) {
+    currentStream.close();
+    currentStream = null;
+  }
+
+  updateConnectionStatus(false);
+}
+
+function connectToStream(paneId) {
+  const outputElement = document.getElementById('terminal-output');
+  const dimensionsElement = document.getElementById('terminal-dimensions');
+
+  // Initialize terminal buffer
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map(() =>
+    Array(terminalDimensions.width).fill(' ')
+  );
+
+  // Create connection
+  const url = \`/api/stream/\${paneId}\`;
+
+  fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error('Failed to connect');
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      updateConnectionStatus(true);
+
+      // Read stream
+      const processStream = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete messages
+            let newlineIndex;
+            while ((newlineIndex = buffer.indexOf('\\n')) !== -1) {
+              const message = buffer.substring(0, newlineIndex);
+              buffer = buffer.substring(newlineIndex + 1);
+
+              if (message) {
+                processMessage(message);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Stream error:', error);
+          updateConnectionStatus(false);
+        }
+      };
+
+      currentStream = reader;
+      processStream();
+    })
+    .catch(error => {
+      console.error('Connection failed:', error);
+      outputElement.innerHTML = 'Failed to connect to terminal stream';
+      updateConnectionStatus(false);
+    });
+}
+
+function processMessage(message) {
+  // Parse message format: "TYPE:JSON"
+  const colonIndex = message.indexOf(':');
+  if (colonIndex === -1) return;
+
+  const type = message.substring(0, colonIndex);
+  const jsonStr = message.substring(colonIndex + 1);
+
+  try {
+    const data = JSON.parse(jsonStr);
+
+    switch (type) {
+      case 'INIT':
+        handleInitMessage(data);
+        break;
+      case 'PATCH':
+        handlePatchMessage(data);
+        break;
+      case 'RESIZE':
+        handleResizeMessage(data);
+        break;
+      case 'HEARTBEAT':
+        // Keep connection alive
+        break;
+    }
+  } catch (error) {
+    console.error('Failed to parse message:', error);
+  }
+}
+
+function handleInitMessage(data) {
+  const outputElement = document.getElementById('terminal-output');
+  const dimensionsElement = document.getElementById('terminal-dimensions');
+
+  // Update dimensions
+  terminalDimensions = { width: data.width, height: data.height };
+  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
+
+  // Set initial content
+  outputElement.textContent = data.content || '';
+
+  // Initialize buffer from content
+  const lines = (data.content || '').split('\\n');
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
+    const line = lines[i] || '';
+    return Array(terminalDimensions.width).fill(null).map((_, j) =>
+      line[j] || ' '
+    );
+  });
+}
+
+function handlePatchMessage(data) {
+  const outputElement = document.getElementById('terminal-output');
+
+  // Apply patches to buffer
+  data.changes.forEach(change => {
+    const { row, col, text } = change;
+
+    // Apply text to buffer
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const targetRow = row + Math.floor((col + i) / terminalDimensions.width);
+      const targetCol = (col + i) % terminalDimensions.width;
+
+      if (targetRow < terminalBuffer.length && targetCol < terminalBuffer[targetRow].length) {
+        if (char === '\\n') {
+          // Handle newlines
+          continue;
+        }
+        terminalBuffer[targetRow][targetCol] = char;
+      }
+    }
+  });
+
+  // Render buffer
+  renderTerminal();
+}
+
+function handleResizeMessage(data) {
+  const outputElement = document.getElementById('terminal-output');
+  const dimensionsElement = document.getElementById('terminal-dimensions');
+
+  // Update dimensions
+  terminalDimensions = { width: data.width, height: data.height };
+  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
+
+  // Set new content
+  outputElement.textContent = data.content || '';
+
+  // Reinitialize buffer
+  const lines = (data.content || '').split('\\n');
+  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
+    const line = lines[i] || '';
+    return Array(terminalDimensions.width).fill(null).map((_, j) =>
+      line[j] || ' '
+    );
+  });
+}
+
+function renderTerminal() {
+  const outputElement = document.getElementById('terminal-output');
+
+  // Convert buffer to string
+  const content = terminalBuffer.map(row =>
+    row.join('')
+  ).join('\\n');
+
+  outputElement.textContent = content;
+}
+
+function updateConnectionStatus(connected) {
+  const statusElement = document.getElementById('terminal-connection');
+  if (connected) {
+    statusElement.innerHTML = '● Connected';
+    statusElement.className = 'connected';
+  } else {
+    statusElement.innerHTML = '● Disconnected';
+    statusElement.className = 'disconnected';
+  }
+}
+
+// Add keyboard handler for escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('terminal-modal');
+    if (modal.style.display === 'flex') {
+      closeTerminal();
+    }
+  }
+});
 
 // Start on page load
 document.addEventListener('DOMContentLoaded', () => {
