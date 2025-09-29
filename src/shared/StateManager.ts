@@ -65,6 +65,10 @@ export class StateManager extends EventEmitter {
     return this.state.panes.find(pane => pane.id === id);
   }
 
+  getPanes(): DmuxPane[] {
+    return [...this.state.panes];
+  }
+
   subscribe(callback: (state: DmuxState) => void): () => void {
     this.updateCallbacks.add(callback);
     return () => {

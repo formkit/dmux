@@ -4,11 +4,13 @@ import {
   readBody,
   setHeader,
   send,
+  createEventStream,
   type App
 } from 'h3';
 import { StateManager } from '../shared/StateManager.js';
 import type { DmuxPane } from '../types.js';
 import { getDashboardHtml, getDashboardCss, getDashboardJs } from './static.js';
+import { getTerminalStreamer } from '../services/TerminalStreamer.js';
 
 const stateManager = StateManager.getInstance();
 
@@ -113,6 +115,61 @@ export function setupRoutes(app: App) {
       event.node.res.statusCode = 400;
       return { error: 'Invalid request body' };
     }
+  }));
+
+  // GET /api/stream/:paneId - Stream terminal output
+  app.use('/api/stream/:paneId', eventHandler(async (event) => {
+    const { paneId } = getRouterParams(event);
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Pane ID required' };
+    }
+
+    // Find the pane
+    const panes = stateManager.getPanes();
+    const pane = panes.find((p: DmuxPane) => p.id === paneId);
+
+    if (!pane || !pane.paneId) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    // Create SSE stream
+    const eventStream = createEventStream(event);
+    const streamer = getTerminalStreamer();
+
+    // Start streaming
+    await streamer.startStream(pane.id, pane.paneId, eventStream);
+
+    // Handle client disconnect
+    event.node.req.on('close', () => {
+      streamer.stopStream(pane.id, eventStream);
+      eventStream.close();
+    });
+
+    // Send heartbeat every 30 seconds to keep connection alive
+    const heartbeat = setInterval(() => {
+      try {
+        eventStream.push(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 30000);
+
+    // Cleanup heartbeat on disconnect
+    event.node.req.on('close', () => {
+      clearInterval(heartbeat);
+    });
+
+    // Keep connection open
+    await eventStream.send();
+  }));
+
+  // GET /api/stream-stats - Get streaming statistics
+  app.use('/api/stream-stats', eventHandler(async () => {
+    const streamer = getTerminalStreamer();
+    return streamer.getStats();
   }));
 
   // Static files - Dashboard HTML

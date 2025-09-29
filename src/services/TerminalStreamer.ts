@@ -1,14 +1,19 @@
 import { EventEmitter } from 'events';
 import { execSync, spawn, ChildProcess } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
-import type { ServerSentEventStream } from 'h3';
+
+// h3 doesn't export this type directly, so we define it
+interface SSEStream {
+  push: (data: string) => Promise<void>;
+  close: () => void;
+}
 
 interface StreamInfo {
   paneId: string;
   tmuxPaneId: string;
   pipePath: string;
   tailProcess?: ChildProcess;
-  clients: Set<ServerSentEventStream>;
+  clients: Set<SSEStream>;
   width: number;
   height: number;
   lastContent: string;
@@ -35,7 +40,7 @@ export class TerminalStreamer extends EventEmitter {
   async startStream(
     paneId: string,
     tmuxPaneId: string,
-    client: ServerSentEventStream
+    client: SSEStream
   ): Promise<void> {
     if (this.isShuttingDown) return;
 
@@ -62,7 +67,7 @@ export class TerminalStreamer extends EventEmitter {
   /**
    * Stop streaming to a specific client
    */
-  stopStream(paneId: string, client: ServerSentEventStream): void {
+  stopStream(paneId: string, client: SSEStream): void {
     const stream = this.streams.get(paneId);
     if (!stream) return;
 
@@ -109,7 +114,7 @@ export class TerminalStreamer extends EventEmitter {
    */
   private async sendInitialState(
     stream: StreamInfo,
-    client: ServerSentEventStream
+    client: SSEStream
   ): Promise<void> {
     const initMessage = {
       type: 'init',

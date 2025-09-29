@@ -27,12 +27,12 @@ Implement real-time HTTP streaming of tmux panes to browser using Server-Sent Ev
   - [x] Monitor pipe file with tail process
 
 ### Phase 2: SSE Endpoint
-- [ ] Create `/api/stream/:paneId` endpoint in `src/server/routes.ts`
-  - [ ] Set SSE headers (Content-Type: text/event-stream)
-  - [ ] Send initial `init` message with dimensions and content
-  - [ ] Stream incremental updates as `patch` messages
-  - [ ] Handle client disconnect cleanup
-  - [ ] Implement heartbeat/keepalive
+- [x] Create `/api/stream/:paneId` endpoint in `src/server/routes.ts`
+  - [x] Set SSE headers (Content-Type: text/event-stream)
+  - [x] Send initial `init` message with dimensions and content
+  - [x] Stream incremental updates as `patch` messages
+  - [x] Handle client disconnect cleanup
+  - [x] Implement heartbeat/keepalive
 
 ### Phase 3: Message Protocol
 - [ ] Define message types in `src/shared/StreamProtocol.ts`
@@ -187,9 +187,9 @@ tail -f /tmp/dmux-pipe-15
 ## Progress Tracking
 
 ### Current Status
-**Phase**: Planning
-**Completed**: TODO file creation
-**Next Step**: Create TerminalStreamer service
+**Phase**: Phase 3 - Message Protocol
+**Completed**: Phase 1 & 2 (Backend Infrastructure, SSE Endpoint)
+**Next Step**: Define message protocol types
 
 ### Notes for Future Sessions
 When continuing this feature:
