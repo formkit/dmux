@@ -430,7 +430,43 @@ Uses LLM (x-ai/grok-4-fast:free) to detect the state of AI agents in tmux panes.
 **Purpose**: Enables automation by determining if an agent needs input, is working, or presenting choices
 **Key indicator**: "(esc to interrupt)" = agent is working
 
-### 7. Tmux Command Execution
+### 7. HTTP Server and Status Detection System
+
+#### Architecture
+The system uses a worker-based architecture for non-blocking pane status monitoring:
+
+**Components:**
+- **HTTP Server** (`src/server/`): Auto-selects port, serves dashboard at `http://127.0.0.1:{port}`
+- **Worker Threads** (`src/workers/PaneWorker.ts`): One per pane, polls every 1 second
+- **StatusDetector** (`src/services/StatusDetector.ts`): Coordinates workers and LLM analysis
+- **Message Bus** (`src/services/WorkerMessageBus.ts`): Routes messages between workers and main thread
+- **StateManager** (`src/shared/StateManager.ts`): Singleton for shared state between TUI and server
+
+#### Status Detection Logic
+```
+1. Check for "(esc to interrupt)" in last 20 lines → Working
+2. No working indicators:
+   - Terminal changing + not user typing → Request LLM analysis
+   - Terminal static → After 5s, request LLM analysis
+   - User typing at prompt → Maintain current status
+3. LLM determines: idle vs waiting (needs attention)
+4. Once idle confirmed → Block further LLM requests until working detected
+```
+
+#### API Endpoints
+- `GET /` - Dashboard HTML interface
+- `GET /api/panes` - JSON list of panes with statuses
+- `GET /api/session` - Session information
+- `GET /api/health` - Server health check
+
+#### Key Features
+- **Activity-based detection**: Motion = working, static = analyze
+- **User typing detection**: Prevents false "working" status
+- **LLM optimization**: Only calls when ambiguous, cancels in-flight requests
+- **Real-time updates**: Dashboard refreshes every 2 seconds
+- **Portable**: All assets embedded in binary, no external dependencies
+
+### 8. Tmux Command Execution
 
 All tmux operations use `child_process.execSync`:
 ```typescript
@@ -791,6 +827,9 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 - **opencode support**: Agent detection, selection UI, and working-status detection
 - **Custom CleanTextInput component**: Complete rewrite of text input with advanced features
 - **LLM-based Pane State Detection**: Intelligent detection of agent states using AI
+- **HTTP Dashboard**: Real-time web interface showing pane statuses at auto-selected port
+- **Worker-based Monitoring**: Non-blocking status detection via worker threads (1s polling)
+- **Smart Activity Detection**: Distinguishes user typing from agent working states
 
 ### Known Issues
 1. **Error handling**: Claude command availability not verified

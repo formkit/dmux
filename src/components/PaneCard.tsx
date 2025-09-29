@@ -55,7 +55,8 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected }) => {
           </Box>
         )}
 
-        {(pane.testStatus || pane.devStatus) && (
+        {/* Test and Dev status indicators - commented out for now */}
+        {/* {(pane.testStatus || pane.devStatus) && (
           <Box>
             {pane.testStatus === 'running' && (
               <Text color="yellow">⏳ Test</Text>
@@ -75,7 +76,7 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected }) => {
               </Text>
             )}
           </Box>
-        )}
+        )} */}
       </Box>
     </Box>
   );

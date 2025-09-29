@@ -13,18 +13,18 @@ Implement real-time HTTP streaming of tmux panes to browser using Server-Sent Ev
 ## Implementation Checklist
 
 ### Phase 1: Backend Infrastructure
-- [ ] Create `src/services/TerminalStreamer.ts` service class
-  - [ ] Track active streams Map<paneId, StreamInfo>
-  - [ ] Implement stream lifecycle (start/stop)
-  - [ ] Handle multiple clients per pane
-  - [ ] Cleanup on disconnect
+- [x] Create `src/services/TerminalStreamer.ts` service class
+  - [x] Track active streams Map<paneId, StreamInfo>
+  - [x] Implement stream lifecycle (start/stop)
+  - [x] Handle multiple clients per pane
+  - [x] Cleanup on disconnect
 
-- [ ] Implement tmux integration methods
-  - [ ] Get pane dimensions: `tmux display -p "#{pane_width}x#{pane_height}" -t {paneId}`
-  - [ ] Capture pane state: `tmux capture-pane -ep -t {paneId}`
-  - [ ] Start pipe: `tmux pipe-pane -t {paneId} -o 'cat >> /tmp/dmux-pipe-{id}'`
-  - [ ] Stop pipe: `tmux pipe-pane -t {paneId}`
-  - [ ] Monitor pipe file with tail process
+- [x] Implement tmux integration methods
+  - [x] Get pane dimensions: `tmux display -p "#{pane_width}x#{pane_height}" -t {paneId}`
+  - [x] Capture pane state: `tmux capture-pane -ep -t {paneId}`
+  - [x] Start pipe: `tmux pipe-pane -t {paneId} -o 'cat >> /tmp/dmux-pipe-{id}'`
+  - [x] Stop pipe: `tmux pipe-pane -t {paneId}`
+  - [x] Monitor pipe file with tail process
 
 ### Phase 2: SSE Endpoint
 - [ ] Create `/api/stream/:paneId` endpoint in `src/server/routes.ts`

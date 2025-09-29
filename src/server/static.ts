@@ -369,14 +369,16 @@ function createPaneCard(pane) {
         </span>
       </div>
 
-      \${testStatus !== 'none' ? \`
+      \${/* Test status display commented out for now
+      testStatus !== 'none' ? \`
       <div class="status-item">
         <span class="status-label">Tests:</span>
         <span class="status-value">
           <span class="status-badge \${testStatus}">\${testStatus}</span>
         </span>
       </div>
-      \` : ''}
+      \` : '' */
+      ''}
 
       \${devStatus !== 'stopped' ? \`
       <div class="status-item">
