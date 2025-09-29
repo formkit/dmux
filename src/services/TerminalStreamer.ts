@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { execSync, spawn, ChildProcess } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
 import { Readable } from 'stream';
+import { StringDecoder } from 'string_decoder';
 import type { InitMessage, PatchMessage, ResizeMessage } from '../shared/StreamProtocol.js';
 import { formatStreamMessage } from '../shared/StreamProtocol.js';
 
@@ -117,12 +118,17 @@ export class TerminalStreamer extends EventEmitter {
     stream: StreamInfo,
     client: StreamClient
   ): Promise<void> {
+    // Get cursor position from tmux
+    const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+
     // Send raw content with ANSI codes - frontend will parse
     const initMessage: InitMessage = {
       type: 'init',
       width: stream.width,
       height: stream.height,
       content: stream.lastContent,
+      cursorRow: cursorPos.row,
+      cursorCol: cursorPos.col,
       timestamp: Date.now()
     };
 
@@ -131,6 +137,23 @@ export class TerminalStreamer extends EventEmitter {
       client.push(formatStreamMessage(initMessage));
     } catch (error) {
       // Client disconnected during init
+    }
+  }
+
+  /**
+   * Get cursor position from tmux
+   */
+  private getCursorPosition(tmuxPaneId: string): { row: number; col: number } {
+    try {
+      const output = execSync(
+        `tmux display-message -p -t ${tmuxPaneId} -F "#{cursor_y},#{cursor_x}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+
+      const [row, col] = output.split(',').map(Number);
+      return { row: row || 0, col: col || 0 };
+    } catch (error) {
+      return { row: 0, col: 0 };
     }
   }
 
@@ -155,11 +178,15 @@ export class TerminalStreamer extends EventEmitter {
       let outputBuffer = '';
       let bufferTimeout: NodeJS.Timeout | null = null;
 
+      // String decoder to handle multi-byte UTF-8 sequences across chunks
+      const decoder = new StringDecoder('utf8');
+
       // Handle tail output
       stream.tailProcess.stdout?.on('data', (data: Buffer) => {
         if (this.isShuttingDown) return;
 
-        const chunk = data.toString();
+        // Use StringDecoder to properly handle multi-byte UTF-8 sequences
+        const chunk = decoder.write(data);
         outputBuffer += chunk;
 
         // Clear existing timeout
@@ -174,6 +201,18 @@ export class TerminalStreamer extends EventEmitter {
             outputBuffer = '';
           }
         }, 16);
+      });
+
+      // Handle tail process end - flush any remaining bytes
+      stream.tailProcess.stdout?.on('end', () => {
+        const remaining = decoder.end();
+        if (remaining) {
+          outputBuffer += remaining;
+          if (outputBuffer) {
+            this.processAndSendUpdates(stream, outputBuffer);
+            outputBuffer = '';
+          }
+        }
       });
 
       // Handle tail process errors

@@ -12,6 +12,8 @@ export interface InitMessage {
   width: number;
   height: number;
   content: string; // Full terminal content with ANSI codes
+  cursorRow?: number; // Cursor row position (0-based)
+  cursorCol?: number; // Cursor column position (0-based)
   timestamp: number;
 }
 

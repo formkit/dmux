@@ -1018,9 +1018,10 @@ function parseAnsiAndUpdate(text) {
   let i = 0;
 
   while (i < text.length) {
-    const char = text[i];
+    const code = text.charCodeAt(i);
 
-    if (char === '\\x1b' || char === '\\u001b' || text.charCodeAt(i) === 27) {
+    // Check for escape sequence (ESC = 27)
+    if (code === 27) {
       // Escape sequence
       const seqEnd = findEscapeSequenceEnd(text, i);
       if (seqEnd > i) {
@@ -1030,8 +1031,17 @@ function parseAnsiAndUpdate(text) {
       }
     }
 
+    // Handle backspace
+    if (code === 8) {
+      if (cursorCol > 0) {
+        cursorCol--;
+      }
+      i++;
+      continue;
+    }
+
     // Regular character
-    handleCharacter(char);
+    handleCharacter(text[i]);
     i++;
   }
 }
@@ -1054,10 +1064,11 @@ function findEscapeSequenceEnd(text, start) {
   // OSC sequence: ESC]
   if (next === ']') {
     for (let i = start + 2; i < text.length; i++) {
-      if (text[i] === '\\x07' || text.charCodeAt(i) === 7) {
+      const code = text.charCodeAt(i);
+      if (code === 7) { // BEL
         return i + 1;
       }
-      if (text[i] === '\\x1b' && text[i + 1] === '\\\\') {
+      if (code === 27 && i + 1 < text.length && text[i + 1] === '\\\\') { // ESC \\
         return i + 2;
       }
     }
@@ -1124,7 +1135,10 @@ function handleSGR(args) {
     return;
   }
 
-  for (const arg of args) {
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+
     if (arg === 0) {
       currentAttrs = {};
     } else if (arg === 1) {
@@ -1143,18 +1157,50 @@ function handleSGR(args) {
     } else if (arg === 24) {
       currentAttrs.underline = false;
     } else if (arg >= 30 && arg <= 37) {
+      // Standard foreground colors
       currentAttrs.fg = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 30];
+    } else if (arg === 38) {
+      // Extended foreground color
+      if (i + 1 < args.length) {
+        if (args[i + 1] === 5 && i + 2 < args.length) {
+          // 256 color: 38;5;n
+          currentAttrs.fg = 'c' + args[i + 2];
+          i += 2;
+        } else if (args[i + 1] === 2 && i + 4 < args.length) {
+          // RGB color: 38;2;r;g;b
+          currentAttrs.fg = \`rgb(\${args[i + 2]},\${args[i + 3]},\${args[i + 4]})\`;
+          i += 4;
+        }
+      }
     } else if (arg === 39) {
       currentAttrs.fg = null;
     } else if (arg >= 40 && arg <= 47) {
+      // Standard background colors
       currentAttrs.bg = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 40];
+    } else if (arg === 48) {
+      // Extended background color
+      if (i + 1 < args.length) {
+        if (args[i + 1] === 5 && i + 2 < args.length) {
+          // 256 color: 48;5;n
+          currentAttrs.bg = 'c' + args[i + 2];
+          i += 2;
+        } else if (args[i + 1] === 2 && i + 4 < args.length) {
+          // RGB color: 48;2;r;g;b
+          currentAttrs.bg = \`rgb(\${args[i + 2]},\${args[i + 3]},\${args[i + 4]})\`;
+          i += 4;
+        }
+      }
     } else if (arg === 49) {
       currentAttrs.bg = null;
     } else if (arg >= 90 && arg <= 97) {
+      // Bright foreground colors
       currentAttrs.fg = 'bright-' + ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 90];
     } else if (arg >= 100 && arg <= 107) {
+      // Bright background colors
       currentAttrs.bg = 'bright-' + ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 100];
     }
+
+    i++;
   }
 }
 
@@ -1235,6 +1281,55 @@ function handleEraseLine(mode) {
   }
 }
 
+// 256-color palette (xterm colors)
+const colorPalette = [
+  // 0-15: Standard and bright colors
+  '#000000', '#800000', '#008000', '#808000', '#000080', '#800080', '#008080', '#c0c0c0',
+  '#808080', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff',
+  // 16-231: 6x6x6 color cube
+  '#000000', '#00005f', '#000087', '#0000af', '#0000d7', '#0000ff',
+  '#005f00', '#005f5f', '#005f87', '#005faf', '#005fd7', '#005fff',
+  '#008700', '#00875f', '#008787', '#0087af', '#0087d7', '#0087ff',
+  '#00af00', '#00af5f', '#00af87', '#00afaf', '#00afd7', '#00afff',
+  '#00d700', '#00d75f', '#00d787', '#00d7af', '#00d7d7', '#00d7ff',
+  '#00ff00', '#00ff5f', '#00ff87', '#00ffaf', '#00ffd7', '#00ffff',
+  '#5f0000', '#5f005f', '#5f0087', '#5f00af', '#5f00d7', '#5f00ff',
+  '#5f5f00', '#5f5f5f', '#5f5f87', '#5f5faf', '#5f5fd7', '#5f5fff',
+  '#5f8700', '#5f875f', '#5f8787', '#5f87af', '#5f87d7', '#5f87ff',
+  '#5faf00', '#5faf5f', '#5faf87', '#5fafaf', '#5fafd7', '#5fafff',
+  '#5fd700', '#5fd75f', '#5fd787', '#5fd7af', '#5fd7d7', '#5fd7ff',
+  '#5fff00', '#5fff5f', '#5fff87', '#5fffaf', '#5fffd7', '#5fffff',
+  '#870000', '#87005f', '#870087', '#8700af', '#8700d7', '#8700ff',
+  '#875f00', '#875f5f', '#875f87', '#875faf', '#875fd7', '#875fff',
+  '#878700', '#87875f', '#878787', '#8787af', '#8787d7', '#8787ff',
+  '#87af00', '#87af5f', '#87af87', '#87afaf', '#87afd7', '#87afff',
+  '#87d700', '#87d75f', '#87d787', '#87d7af', '#87d7d7', '#87d7ff',
+  '#87ff00', '#87ff5f', '#87ff87', '#87ffaf', '#87ffd7', '#87ffff',
+  '#af0000', '#af005f', '#af0087', '#af00af', '#af00d7', '#af00ff',
+  '#af5f00', '#af5f5f', '#af5f87', '#af5faf', '#af5fd7', '#af5fff',
+  '#af8700', '#af875f', '#af8787', '#af87af', '#af87d7', '#af87ff',
+  '#afaf00', '#afaf5f', '#afaf87', '#afafaf', '#afafd7', '#afafff',
+  '#afd700', '#afd75f', '#afd787', '#afd7af', '#afd7d7', '#afd7ff',
+  '#afff00', '#afff5f', '#afff87', '#afffaf', '#afffd7', '#afffff',
+  '#d70000', '#d7005f', '#d70087', '#d700af', '#d700d7', '#d700ff',
+  '#d75f00', '#d75f5f', '#d75f87', '#d75faf', '#d75fd7', '#d75fff',
+  '#d78700', '#d7875f', '#d78787', '#d787af', '#d787d7', '#d787ff',
+  '#d7af00', '#d7af5f', '#d7af87', '#d7afaf', '#d7afd7', '#d7afff',
+  '#d7d700', '#d7d75f', '#d7d787', '#d7d7af', '#d7d7d7', '#d7d7ff',
+  '#d7ff00', '#d7ff5f', '#d7ff87', '#d7ffaf', '#d7ffd7', '#d7ffff',
+  '#ff0000', '#ff005f', '#ff0087', '#ff00af', '#ff00d7', '#ff00ff',
+  '#ff5f00', '#ff5f5f', '#ff5f87', '#ff5faf', '#ff5fd7', '#ff5fff',
+  '#ff8700', '#ff875f', '#ff8787', '#ff87af', '#ff87d7', '#ff87ff',
+  '#ffaf00', '#ffaf5f', '#ffaf87', '#ffafaf', '#ffafd7', '#ffafff',
+  '#ffd700', '#ffd75f', '#ffd787', '#ffd7af', '#ffd7d7', '#ffd7ff',
+  '#ffff00', '#ffff5f', '#ffff87', '#ffffaf', '#ffffd7', '#ffffff',
+  // 232-255: Grayscale
+  '#080808', '#121212', '#1c1c1c', '#262626', '#303030', '#3a3a3a',
+  '#444444', '#4e4e4e', '#585858', '#626262', '#6c6c6c', '#767676',
+  '#808080', '#8a8a8a', '#949494', '#9e9e9e', '#a8a8a8', '#b2b2b2',
+  '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee'
+];
+
 // Render buffer to HTML
 function renderToHtml() {
   const outputElement = document.getElementById('terminal-output');
@@ -1247,14 +1342,51 @@ function renderToHtml() {
 
       if (cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline) {
         const classes = [];
-        if (cell.fg) classes.push('term-fg-' + cell.fg);
-        if (cell.bg) classes.push('term-bg-' + cell.bg);
+        const styles = [];
+
+        // Handle foreground color
+        if (cell.fg) {
+          if (cell.fg.startsWith('rgb(')) {
+            // RGB color
+            styles.push(\`color: \${cell.fg}\`);
+          } else if (cell.fg.startsWith('c')) {
+            // 256-color palette
+            const colorIndex = parseInt(cell.fg.substring(1));
+            if (colorIndex >= 0 && colorIndex < colorPalette.length) {
+              styles.push(\`color: \${colorPalette[colorIndex]}\`);
+            }
+          } else {
+            // Named color
+            classes.push('term-fg-' + cell.fg);
+          }
+        }
+
+        // Handle background color
+        if (cell.bg) {
+          if (cell.bg.startsWith('rgb(')) {
+            // RGB color
+            styles.push(\`background-color: \${cell.bg}\`);
+          } else if (cell.bg.startsWith('c')) {
+            // 256-color palette
+            const colorIndex = parseInt(cell.bg.substring(1));
+            if (colorIndex >= 0 && colorIndex < colorPalette.length) {
+              styles.push(\`background-color: \${colorPalette[colorIndex]}\`);
+            }
+          } else {
+            // Named color
+            classes.push('term-bg-' + cell.bg);
+          }
+        }
+
+        // Add attribute classes
         if (cell.bold) classes.push('term-bold');
         if (cell.dim) classes.push('term-dim');
         if (cell.italic) classes.push('term-italic');
         if (cell.underline) classes.push('term-underline');
 
-        html += \`<span class="\${classes.join(' ')}">\${char}</span>\`;
+        const classAttr = classes.length ? \` class="\${classes.join(' ')}"\` : '';
+        const styleAttr = styles.length ? \` style="\${styles.join('; ')}"\` : '';
+        html += \`<span\${classAttr}\${styleAttr}>\${char}</span>\`;
       } else {
         html += char;
       }
@@ -1328,6 +1460,11 @@ function processMessage(message) {
         document.getElementById('terminal-dimensions').textContent = \`\${data.width}x\${data.height}\`;
         initTerminal();
         parseAnsiAndUpdate(data.content || '');
+        // Set cursor to actual tmux cursor position if provided
+        if (data.cursorRow !== undefined && data.cursorCol !== undefined) {
+          cursorRow = data.cursorRow;
+          cursorCol = data.cursorCol;
+        }
         renderToHtml();
         break;
 

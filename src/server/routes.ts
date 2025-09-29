@@ -155,12 +155,6 @@ export function setupRoutes(app: App) {
 
     const streamer = getTerminalStreamer();
 
-    // Send initial test message immediately
-    try {
-      const success = stream.push('INIT:Stream connected\n');
-    } catch (error) {
-    }
-
     // Start streaming - pass the stream object
     await streamer.startStream(pane.id, pane.paneId, stream);
 
