@@ -53,7 +53,7 @@ export class StatusDetector extends EventEmitter {
 
     // Handle worker ready events
     this.messageBus.subscribe('ready', (paneId) => {
-      console.log(`Worker ready for pane ${paneId}`);
+      // Worker ready, no action needed
     });
   }
 
