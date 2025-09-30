@@ -240,6 +240,14 @@ export class TerminalStreamer extends EventEmitter {
       // This prevents drift from incremental updates
       stream.refreshInterval = setInterval(() => {
         const content = this.capturePaneContent(stream.tmuxPaneId);
+
+        // Skip refresh if content is empty (pane might be closed or capture failed)
+        if (!content || content.trim().length === 0) {
+          console.error('[TerminalStreamer] Skipping periodic refresh - empty content');
+          return;
+        }
+
+        console.error('[TerminalStreamer] Sending periodic refresh, content length:', content.length);
         const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
 
         // Send full refresh as INIT message to reset buffer
@@ -446,10 +454,8 @@ export class TerminalStreamer extends EventEmitter {
       // -p: print to stdout
       // -e: include escape sequences
       // -J: join wrapped lines
-      // -S 0: start from line 0 (top of visible pane)
-      // Explicitly capture from top to ensure we don't miss the first line
       return execSync(
-        `tmux capture-pane -epJ -S 0 -t ${tmuxPaneId}`,
+        `tmux capture-pane -epJ -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {

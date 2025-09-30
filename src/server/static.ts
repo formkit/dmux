@@ -1228,13 +1228,37 @@ function processMessage(message) {
 
     switch (type) {
       case 'INIT':
-        terminalDimensions = { width: data.width, height: data.height };
+        console.log('[INIT] Received, dimensions:', data.width, 'x', data.height,
+                    'content length:', data.content?.length || 0,
+                    'cursor:', data.cursorRow, ',', data.cursorCol);
+        console.log('[INIT] First 200 chars:', data.content?.substring(0, 200));
+        console.log('[INIT] Last 200 chars:', data.content?.substring(Math.max(0, (data.content?.length || 0) - 200)));
+        window.terminalDimensions = { width: data.width, height: data.height };
         initTerminal();
-        parseAnsiAndUpdate(data.content || '');
+        console.log('[INIT] After initTerminal, buffer is', window.terminalBuffer.length, 'rows');
+
+        // Reset cursor to top-left before parsing INIT content
+        window.cursorRow = 0;
+        window.cursorCol = 0;
+
+        // Parse content - NO scrolling for INIT, just clamp cursor to buffer
+        // This prevents losing the first line when content fills the entire buffer
+        parseAnsiAndUpdate(data.content || '', false, false);
+
         // Set cursor to actual tmux cursor position if provided
         if (data.cursorRow !== undefined && data.cursorCol !== undefined) {
-          cursorRow = data.cursorRow;
-          cursorCol = data.cursorCol;
+          window.cursorRow = data.cursorRow;
+          window.cursorCol = data.cursorCol;
+        }
+        console.log('[INIT] After parse, buffer rows:', window.terminalBuffer.length,
+                    'final cursor:', window.cursorRow, ',', window.cursorCol);
+        // Sample first non-empty row
+        const firstNonEmpty = window.terminalBuffer.findIndex(row =>
+          row.some(cell => cell.char !== ' ')
+        );
+        if (firstNonEmpty >= 0) {
+          console.log('[INIT] First non-empty row index:', firstNonEmpty,
+                      'first 20 chars:', window.terminalBuffer[firstNonEmpty].slice(0, 20).map(c => c.char).join(''));
         }
         renderToHtml();
         break;
