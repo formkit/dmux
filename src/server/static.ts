@@ -859,20 +859,25 @@ function handleEscapeSequence(seq) {
 
 function handleCSI(params, command) {
   const args = params.split(';').map(p => parseInt(p) || 0);
+  const oldRow = window.cursorRow;
+  const oldCol = window.cursorCol;
 
   switch (command) {
     case 'H': // Cursor position
     case 'f':
       window.cursorRow = Math.min(Math.max((args[0] || 1) - 1, 0), window.terminalDimensions.height - 1);
       window.cursorCol = Math.min(Math.max((args[1] || 1) - 1, 0), window.terminalDimensions.width - 1);
+      console.log('[CSI ' + command + '] (' + oldRow + ',' + oldCol + ') -> (' + window.cursorRow + ',' + window.cursorCol + ')');
       break;
 
     case 'A': // Cursor up
       window.cursorRow = Math.max(window.cursorRow - (args[0] || 1), 0);
+      console.log('[CSI A] up ' + (args[0] || 1) + ' (' + oldRow + ',' + oldCol + ') -> (' + window.cursorRow + ',' + window.cursorCol + ')');
       break;
 
     case 'B': // Cursor down
       window.cursorRow = Math.min(window.cursorRow + (args[0] || 1), window.terminalDimensions.height - 1);
+      console.log('[CSI B] down ' + (args[0] || 1) + ' (' + oldRow + ',' + oldCol + ') -> (' + window.cursorRow + ',' + window.cursorCol + ')');
       break;
 
     case 'C': // Cursor forward
@@ -1171,7 +1176,8 @@ function buildStyleAttrs(cell) {
 // Render buffer to HTML with one div per row
 // Connect to stream
 function connectToStream() {
-  const url = \`/api/stream/\${paneId}\`;
+  const streamPaneId = window.actualPaneId || paneId;
+  const url = \`/api/stream/\${streamPaneId}\`;
 
   fetch(url)
     .then(response => {
@@ -1252,6 +1258,14 @@ function processMessage(message) {
         const targetCursorRow = data.cursorRow;
         const targetCursorCol = data.cursorCol;
 
+        console.log('[PATCH IN] cursor=(' + targetCursorRow + ',' + targetCursorCol + ') changes=' + data.changes.length);
+        data.changes.forEach((change, idx) => {
+          const first50 = change.text.substring(0, 50).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+          const last50 = change.text.substring(Math.max(0, change.text.length - 50)).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+          console.log('[PATCH IN] change[' + idx + '] len=' + change.text.length + ' first50: ' + first50);
+          console.log('[PATCH IN] change[' + idx + '] last50: ' + last50);
+        });
+
         if (targetCursorRow !== undefined && targetCursorCol !== undefined) {
           window.cursorRow = targetCursorRow;
           window.cursorCol = targetCursorCol;
@@ -1268,6 +1282,8 @@ function processMessage(message) {
           window.cursorRow = targetCursorRow;
           window.cursorCol = targetCursorCol;
         }
+
+        console.log('[PATCH DONE] final cursor=(' + window.cursorRow + ',' + window.cursorCol + ')');
         break;
 
       case 'RESIZE':
@@ -1411,9 +1427,15 @@ const app = createApp({
     fetch('/api/panes')
       .then(r => r.json())
       .then(data => {
-        const pane = data.panes.find(p => p.id === paneId);
+        // Try to find pane by ID first, then by slug (for backwards compat)
+        let pane = data.panes.find(p => p.id === paneId);
+        if (!pane) {
+          pane = data.panes.find(p => p.slug === paneId);
+        }
         if (pane) {
           this.paneTitle = 'Terminal: ' + pane.slug;
+          // Use the actual pane ID for streaming
+          window.actualPaneId = pane.id;
         }
         connectToStream();
       })

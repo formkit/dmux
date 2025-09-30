@@ -203,18 +203,31 @@ export class TerminalStreamer extends EventEmitter {
             const remaining = str.substring(i);
             // ESC without following character
             if (remaining.length === 1) return i;
-            // ESC[ (CSI) without terminator (terminators are @ through ~)
+
+            // ESC[ (CSI) without terminator
             if (remaining[1] === '[') {
               let hasTerminator = false;
-              for (let j = 2; j < remaining.length; j++) {
+              let j = 2;
+              for (; j < remaining.length; j++) {
                 const c = remaining.charCodeAt(j);
-                if (c >= 64 && c <= 126) { // @ through ~
+                // Valid CSI parameter/intermediate bytes: 0-9, ;, space through /
+                if ((c >= 48 && c <= 57) || c === 59 || (c >= 32 && c <= 47)) {
+                  continue; // Valid parameter character, keep looking
+                }
+                // Final byte (terminator): @ through ~
+                if (c >= 64 && c <= 126) {
                   hasTerminator = true;
                   break;
                 }
+                // Invalid character, sequence is broken - don't buffer it
+                break;
               }
-              if (!hasTerminator) return i;
+              if (!hasTerminator && j === remaining.length) {
+                // Reached end without finding terminator, and all chars were valid
+                return i;
+              }
             }
+
             // ESC] (OSC) without terminator (BEL or ESC\)
             if (remaining[1] === ']') {
               let hasTerminator = false;
@@ -293,8 +306,9 @@ export class TerminalStreamer extends EventEmitter {
         this.checkForResize(stream);
       }, 500);
 
-      // Periodic full refresh to handle Ink apps that use complex cursor positioning
-      // This prevents drift from incremental updates
+      // DISABLED: Periodic refresh can interfere with streaming cursor positioning
+      // TODO: Consider re-enabling with better synchronization or only when idle
+      /*
       stream.refreshInterval = setInterval(() => {
         const content = this.capturePaneContent(stream.tmuxPaneId);
 
@@ -326,6 +340,7 @@ export class TerminalStreamer extends EventEmitter {
 
         stream.lastContent = content;
       }, 10000); // Full refresh every 10 seconds
+      */
 
       stream.isActive = true;
     } catch (error) {
@@ -380,6 +395,13 @@ export class TerminalStreamer extends EventEmitter {
   private processAndSendUpdates(stream: StreamInfo, output: string): void {
     // Get current cursor position for accurate rendering
     const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+
+    // DEBUG: Log patch details
+    const first100 = output.substring(0, 100).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    const last100 = output.substring(Math.max(0, output.length - 100)).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    console.error(`[PATCH OUT] pane=${stream.paneId} cursor=(${cursorPos.row},${cursorPos.col}) len=${output.length}`);
+    console.error(`[PATCH OUT] first100: ${first100}`);
+    console.error(`[PATCH OUT] last100: ${last100}`);
 
     // Send raw output with ANSI codes - frontend will parse
     // Keep \r\n sequences - frontend handles them properly

@@ -77,7 +77,9 @@
       "Bash(lsof:*)",
       "Bash(python3:*)",
       "Bash(curl:*)",
-      "Bash(tmux display-message:*)"
+      "Bash(tmux display-message:*)",
+      "Bash(npx playwright install:*)",
+      "Bash(./run-test-cycle.sh:*)"
     ],
     "deny": [],
     "ask": [],
