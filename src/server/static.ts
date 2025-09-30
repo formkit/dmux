@@ -454,6 +454,54 @@ footer {
   margin: 0;
   padding: 0;
   line-height: 1.0;
+}
+
+/* Mobile toolbar */
+.mobile-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.toolbar-key {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #e0e0e0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: 'SF Mono', Monaco, monospace;
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 44px;
+  transition: all 0.15s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toolbar-key:active {
+  background: #3d3d3d;
+  transform: scale(0.95);
+}
+
+.toolbar-key.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: #fff;
+}
+
+/* Hidden mobile input */
+.mobile-input {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
 }`;
 }
 
@@ -1325,7 +1373,11 @@ const app = createApp({
       connected: false,
       cursorRow: 0,
       cursorCol: 0,
-      paneTitle: 'Terminal'
+      paneTitle: 'Terminal',
+      isMobile: false,
+      ctrlActive: false,
+      altActive: false,
+      mobileInputValue: ''
     };
   },
   template: \`
@@ -1341,7 +1393,33 @@ const app = createApp({
         </div>
       </div>
 
-      <div class="terminal-content">
+      <!-- Mobile keyboard toolbar -->
+      <div v-if="isMobile" class="mobile-toolbar">
+        <button @click="toggleCtrl" :class="{ active: ctrlActive }" class="toolbar-key">Ctrl</button>
+        <button @click="toggleAlt" :class="{ active: altActive }" class="toolbar-key">Alt</button>
+        <button @click="sendKey('Escape')" class="toolbar-key">Esc</button>
+        <button @click="sendKey('Tab')" class="toolbar-key">Tab</button>
+        <button @click="sendKey('ArrowUp')" class="toolbar-key">↑</button>
+        <button @click="sendKey('ArrowDown')" class="toolbar-key">↓</button>
+        <button @click="sendKey('ArrowLeft')" class="toolbar-key">←</button>
+        <button @click="sendKey('ArrowRight')" class="toolbar-key">→</button>
+      </div>
+
+      <!-- Hidden input for mobile keyboard -->
+      <input
+        v-if="isMobile"
+        ref="mobileInput"
+        type="text"
+        class="mobile-input"
+        v-model="mobileInputValue"
+        @input="handleMobileInput"
+        @keydown="handleMobileKeydown"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+      />
+
+      <div class="terminal-content" @click="focusMobileInput">
         <div class="terminal-output" :style="terminalContainerStyle">
           <div
             v-for="(row, rowIndex) in terminalBuffer"
@@ -1407,12 +1485,91 @@ const app = createApp({
       }
 
       return html;
+    },
+    toggleCtrl() {
+      this.ctrlActive = !this.ctrlActive;
+      if (this.ctrlActive && this.altActive) {
+        this.altActive = false;
+      }
+    },
+    toggleAlt() {
+      this.altActive = !this.altActive;
+      if (this.altActive && this.ctrlActive) {
+        this.ctrlActive = false;
+      }
+    },
+    async sendKey(key) {
+      const keystrokeData = {
+        key: key,
+        ctrlKey: this.ctrlActive,
+        altKey: this.altActive,
+        shiftKey: false,
+        metaKey: false
+      };
+
+      // Reset modifiers after sending
+      this.ctrlActive = false;
+      this.altActive = false;
+
+      try {
+        await fetch(\`/api/keys/\${window.actualPaneId}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(keystrokeData)
+        });
+      } catch (error) {
+        // Silently ignore
+      }
+    },
+    focusMobileInput() {
+      if (this.isMobile && this.$refs.mobileInput) {
+        this.$refs.mobileInput.focus();
+      }
+    },
+    handleMobileInput(event) {
+      // Get the new character(s) added
+      const newValue = event.target.value;
+      const oldValue = this.mobileInputValue;
+
+      if (newValue.length > oldValue.length) {
+        // Characters were added
+        const addedChars = newValue.substring(oldValue.length);
+
+        // Send each character
+        for (const char of addedChars) {
+          this.sendKey(char);
+        }
+      } else if (newValue.length < oldValue.length) {
+        // Characters were deleted - send backspace
+        const deletedCount = oldValue.length - newValue.length;
+        for (let i = 0; i < deletedCount; i++) {
+          this.sendKey('Backspace');
+        }
+      }
+
+      // Clear the input to allow continuous typing
+      this.$nextTick(() => {
+        this.mobileInputValue = '';
+      });
+    },
+    handleMobileKeydown(event) {
+      // Handle special keys
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.sendKey('Enter');
+      } else if (event.key === 'Backspace' && this.mobileInputValue === '') {
+        event.preventDefault();
+        this.sendKey('Backspace');
+      }
     }
   },
   mounted() {
     // Make Vue app instance globally accessible
     window.vueApp = this;
     vueApp = this;
+
+    // Detect mobile device
+    this.isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768;
 
     // Wire up global variables to Vue's reactive properties
     // When code reads/writes terminalBuffer, it actually reads/writes this.terminalBuffer

@@ -83,7 +83,8 @@
       "Bash(pkill:*)",
       "Bash(tee:*)",
       "Bash(awk:*)",
-      "Bash(xargs -I{} sh -c 'echo {} && cat {}')"
+      "Bash(xargs -I{} sh -c 'echo {} && cat {}')",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": [],
