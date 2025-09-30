@@ -42,22 +42,34 @@ export class DmuxServer {
 
         this.server.listen(this.port, '127.0.0.1', async () => {
           const serverUrl = `http://127.0.0.1:${this.port}`;
+          this.stateManager.updateServerInfo(this.port, serverUrl);
 
-          // Start tunnel
-          try {
-            this.tunnelUrl = await tunnelService.start(this.port);
-            this.stateManager.updateServerInfo(this.port, this.tunnelUrl);
-            resolve({ port: this.port, url: serverUrl, tunnelUrl: this.tunnelUrl });
-          } catch (tunnelErr) {
-            console.error('Failed to start tunnel:', tunnelErr);
-            this.stateManager.updateServerInfo(this.port, serverUrl);
-            resolve({ port: this.port, url: serverUrl });
-          }
+          // Don't start tunnel automatically - it will be started on demand when "r" is pressed
+          resolve({ port: this.port, url: serverUrl });
         });
       });
     } catch (err) {
       console.error('Failed to start h3 server:', err);
       throw err;
+    }
+  }
+
+  async startTunnel(): Promise<string> {
+    if (!this.port) {
+      throw new Error('Server not started');
+    }
+
+    if (this.tunnelUrl) {
+      return this.tunnelUrl;
+    }
+
+    try {
+      this.tunnelUrl = await tunnelService.start(this.port);
+      this.stateManager.updateServerInfo(this.port, this.tunnelUrl);
+      return this.tunnelUrl;
+    } catch (error) {
+      console.error('Failed to start tunnel:', error);
+      throw error;
     }
   }
 

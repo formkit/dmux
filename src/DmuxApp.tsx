@@ -43,7 +43,7 @@ import MergePane from './MergePane.js';
 import QRCode from './components/QRCode.js';
 
 
-const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, serverUrl }) => {
+const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
@@ -58,6 +58,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [closingPane, setClosingPane] = useState<DmuxPane | null>(null);
   const [isCreatingPane, setIsCreatingPane] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [isCreatingTunnel, setIsCreatingTunnel] = useState(false);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
@@ -692,7 +694,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   };
 
   useInput(async (input: string, key: any) => {
-    if (isCreatingPane || runningCommand || isUpdating || isLoading) {
+    if (isCreatingPane || runningCommand || isUpdating || isLoading || isCreatingTunnel) {
       // Disable input while performing operations or loading
       return;
     }
@@ -883,9 +885,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     
     if (input === 'q') {
       cleanExit();
-    } else if (input === 'r' && serverUrl) {
-      // Toggle QR code view
-      setShowQRCode(true);
+    } else if (input === 'r' && server) {
+      // Create tunnel if not already created, then show QR code
+      if (!tunnelUrl) {
+        setIsCreatingTunnel(true);
+        setStatusMessage('Creating tunnel...');
+        try {
+          const url = await server.startTunnel();
+          setTunnelUrl(url);
+          setStatusMessage('');
+          setShowQRCode(true);
+        } catch (error) {
+          setStatusMessage('Failed to create tunnel');
+          setTimeout(() => setStatusMessage(''), 3000);
+        } finally {
+          setIsCreatingTunnel(false);
+        }
+      } else {
+        // Tunnel already exists, just show the QR code
+        setShowQRCode(true);
+      }
     } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
       // Clear the prompt and show dialog in next tick to prevent 'n' bleeding through
       setNewPanePrompt('');
@@ -943,7 +962,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   }
 
   // If showing QR code, render only that
-  if (showQRCode && serverUrl) {
+  if (showQRCode && tunnelUrl) {
     return (
       <Box flexDirection="column">
         <Box marginBottom={1}>
@@ -951,7 +970,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             dmux - Remote Access
           </Text>
         </Box>
-        <QRCode url={serverUrl} />
+        <QRCode url={tunnelUrl} />
         <Box marginTop={1}>
           <Text dimColor>Press ESC to return to pane list</Text>
         </Box>
@@ -1031,6 +1050,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         <UpdatingIndicator />
       )}
 
+      {isCreatingTunnel && (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1} marginTop={1}>
+          <Text bold color="cyan">Creating tunnel...</Text>
+          <Box marginTop={1}>
+            <Text dimColor>This may take a few moments...</Text>
+          </Box>
+        </Box>
+      )}
 
       {statusMessage && (
         <Box marginTop={1}>
@@ -1040,7 +1067,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       <FooterHelp
         show={!showNewPaneDialog && !showCommandPrompt}
-        showRemoteKey={!!serverUrl}
+        showRemoteKey={!!server}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined;
           const cols = Math.max(1, Math.floor(terminalWidth / 37));
