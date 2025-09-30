@@ -236,7 +236,6 @@ export class PaneWorkerManager {
 
     // Attempt restart if not too many attempts
     if (workerInfo.restartCount < 3) {
-      console.log(`Restarting worker ${paneId} (attempt ${workerInfo.restartCount + 1})`);
       this.restartWorker(paneId);
     } else {
       console.error(`Worker ${paneId} failed too many times, not restarting`);
