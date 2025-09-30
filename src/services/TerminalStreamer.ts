@@ -306,9 +306,9 @@ export class TerminalStreamer extends EventEmitter {
         this.checkForResize(stream);
       }, 500);
 
-      // DISABLED: Periodic refresh can interfere with streaming cursor positioning
-      // TODO: Consider re-enabling with better synchronization or only when idle
-      /*
+      // Periodic full refresh to fix drift from patch-based streaming
+      // Patches work well for simple terminal output, but complex TUI apps (Ink, etc.)
+      // use cursor positioning that doesn't replay correctly. Full refresh keeps in sync.
       stream.refreshInterval = setInterval(() => {
         const content = this.capturePaneContent(stream.tmuxPaneId);
 
@@ -339,8 +339,7 @@ export class TerminalStreamer extends EventEmitter {
         });
 
         stream.lastContent = content;
-      }, 10000); // Full refresh every 10 seconds
-      */
+      }, 2000); // Full refresh every 2 seconds to fix patch drift
 
       stream.isActive = true;
     } catch (error) {

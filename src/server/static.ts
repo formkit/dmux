@@ -1268,7 +1268,11 @@ function processMessage(message) {
         break;
 
       case 'PATCH':
-        // Set cursor to tmux position before applying patch
+        // PATCH: The backend sends us the raw diff between terminal states
+        // This diff contains ANSI escape sequences that position the cursor
+        // and write text. We need to simply replay these sequences.
+        // The key insight: scrolling already happened in tmux BEFORE we captured
+        // the diff. We're not replaying terminal output - we're applying a diff.
         const targetCursorRow = data.cursorRow;
         const targetCursorCol = data.cursorCol;
 
@@ -1280,18 +1284,13 @@ function processMessage(message) {
           console.log('[PATCH IN] change[' + idx + '] last50: ' + last50);
         });
 
-        if (targetCursorRow !== undefined && targetCursorCol !== undefined) {
-          window.cursorRow = targetCursorRow;
-          window.cursorCol = targetCursorCol;
-        }
-
-        // Apply patch - the patch contains raw terminal output with ANSI codes
-        // Pass the target cursor position so we can clamp to it
+        // Apply changes - NO SCROLLING during patches
+        // The diff tells us exactly what cells changed in the visible buffer
         data.changes.forEach(change => {
-          parseAnsiAndUpdateWithTarget(change.text, targetCursorRow, targetCursorCol);
+          parseAnsiAndUpdate(change.text, false, false);
         });
 
-        // Restore cursor to actual tmux position
+        // Set cursor to final position from tmux
         if (targetCursorRow !== undefined && targetCursorCol !== undefined) {
           window.cursorRow = targetCursorRow;
           window.cursorCol = targetCursorCol;
