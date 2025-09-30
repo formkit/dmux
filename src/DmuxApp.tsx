@@ -57,6 +57,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [selectedCloseOption, setSelectedCloseOption] = useState(0);
   const [closingPane, setClosingPane] = useState<DmuxPane | null>(null);
   const [isCreatingPane, setIsCreatingPane] = useState(false);
+  const [showQRCode, setShowQRCode] = useState(false);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
@@ -690,8 +691,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Disable input while performing operations or loading
       return;
     }
-    
-    
+
+    // Handle QR code view
+    if (showQRCode) {
+      if (key.escape) {
+        setShowQRCode(false);
+      }
+      return;
+    }
+
     if (showFileCopyPrompt) {
       if (input === 'y' || input === 'Y') {
         setShowFileCopyPrompt(false);
@@ -870,6 +878,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     
     if (input === 'q') {
       cleanExit();
+    } else if (input === 'r' && serverUrl) {
+      // Toggle QR code view
+      setShowQRCode(true);
     } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
       // Clear the prompt and show dialog in next tick to prevent 'n' bleeding through
       setNewPanePrompt('');
@@ -923,6 +934,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           setMergingPane(null);
         }}
       />
+    );
+  }
+
+  // If showing QR code, render only that
+  if (showQRCode && serverUrl) {
+    return (
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text bold color="cyan">
+            dmux - Remote Access
+          </Text>
+        </Box>
+        <QRCode url={serverUrl} />
+        <Box marginTop={1}>
+          <Text dimColor>Press ESC to return to pane list</Text>
+        </Box>
+      </Box>
     );
   }
 
@@ -1007,6 +1035,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       <FooterHelp
         show={!showNewPaneDialog && !showCommandPrompt}
+        showRemoteKey={!!serverUrl}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined;
           const cols = Math.max(1, Math.floor(terminalWidth / 37));
@@ -1015,10 +1044,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`;
         })()}
       />
-
-      {serverUrl && (
-        <QRCode url={serverUrl} />
-      )}
 
       <Box marginTop={1}>
         <Text dimColor>
