@@ -40,6 +40,7 @@ import UpdatingIndicator from './components/UpdatingIndicator.js';
 import CreatingIndicator from './components/CreatingIndicator.js';
 import FooterHelp from './components/FooterHelp.js';
 import MergePane from './MergePane.js';
+import QRCode from './components/QRCode.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, serverUrl }) => {
@@ -1015,12 +1016,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         })()}
       />
 
+      {serverUrl && (
+        <QRCode url={serverUrl} />
+      )}
+
       <Box marginTop={1}>
         <Text dimColor>
           dmux v{packageJson.version}
-          {serverUrl && (
-            <Text dimColor> • Dashboard: {serverUrl}</Text>
-          )}
           {updateAvailable && updateInfo && (
             <Text color="yellow"> • New version {updateInfo.latestVersion} available! Run: npm i -g dmux@latest</Text>
           )}
