@@ -446,9 +446,10 @@ export class TerminalStreamer extends EventEmitter {
       // -p: print to stdout
       // -e: include escape sequences
       // -J: join wrapped lines
-      // Captures only visible pane (no -S means current screen)
+      // -S 0: start from line 0 (top of visible pane)
+      // Explicitly capture from top to ensure we don't miss the first line
       return execSync(
-        `tmux capture-pane -epJ -t ${tmuxPaneId}`,
+        `tmux capture-pane -epJ -S 0 -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {

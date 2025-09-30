@@ -302,6 +302,13 @@ export function setupRoutes(app: App) {
       return getTerminalJs();
     }
 
+    if (path === '/vue.esm-browser.js') {
+      setHeader(event, 'Content-Type', 'application/javascript');
+      const fs = await import('fs');
+      const vuePath = new URL('../../node_modules/vue/dist/vue.esm-browser.js', import.meta.url);
+      return fs.readFileSync(vuePath, 'utf-8');
+    }
+
     // 404 for unknown routes
     event.node.res.statusCode = 404;
     return 'Not Found';

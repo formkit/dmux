@@ -8,22 +8,9 @@ export function getTerminalViewerHtml(): string {
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="terminal-page">
-    <div class="terminal-header">
-      <a href="/" class="back-button">← Back to Dashboard</a>
-      <span class="terminal-title" id="terminal-title">Terminal</span>
-      <div class="terminal-status">
-        <span id="terminal-dimensions">80x24</span>
-        <span id="terminal-connection" class="status-indicator">● Connecting</span>
-      </div>
-    </div>
+  <div id="app"></div>
 
-    <div class="terminal-content">
-      <pre id="terminal-output" class="terminal-output"></pre>
-    </div>
-  </div>
-
-  <script src="/terminal.js"></script>
+  <script type="module" src="/terminal.js"></script>
 </body>
 </html>`;
 }
@@ -65,23 +52,6 @@ export function getDashboardHtml(): string {
         <span>Last update: <span id="last-update">Never</span></span>
       </div>
     </footer>
-  </div>
-
-  <!-- Terminal Modal -->
-  <div id="terminal-modal" class="terminal-modal" style="display: none;">
-    <div class="terminal-container">
-      <div class="terminal-header">
-        <span class="terminal-title">Terminal Output</span>
-        <button class="terminal-close" onclick="closeTerminal()">×</button>
-      </div>
-      <div class="terminal-body">
-        <pre id="terminal-output" class="terminal-output"></pre>
-      </div>
-      <div class="terminal-status">
-        <span id="terminal-dimensions">80x24</span>
-        <span id="terminal-connection">● Connected</span>
-      </div>
-    </div>
   </div>
 
   <script src="/dashboard.js"></script>
@@ -339,117 +309,6 @@ footer {
   }
 }
 
-/* Terminal Modal Styles */
-.terminal-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.terminal-container {
-  background: #1e1e1e;
-  border-radius: 8px;
-  width: 90%;
-  height: 80%;
-  max-width: 1200px;
-  max-height: 800px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.terminal-header {
-  background: #2d2d2d;
-  padding: 12px 20px;
-  border-radius: 8px 8px 0 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #444;
-}
-
-.terminal-title {
-  color: #fff;
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.terminal-close {
-  background: transparent;
-  border: none;
-  color: #999;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.terminal-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-.terminal-body {
-  flex: 1;
-  overflow: auto;
-  padding: 10px;
-  background: #000;
-}
-
-.terminal-output {
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
-  font-size: 13px;
-  line-height: 1.4;
-  color: #f0f0f0;
-  white-space: pre;
-  margin: 0;
-  min-height: 100%;
-  position: relative;
-}
-
-.terminal-status {
-  background: #2d2d2d;
-  padding: 8px 20px;
-  border-top: 1px solid #444;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #999;
-}
-
-#terminal-dimensions {
-  font-family: monospace;
-}
-
-#terminal-connection {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-#terminal-connection.connected {
-  color: #4ade80;
-}
-
-#terminal-connection.disconnected {
-  color: #f87171;
-}
-
 /* Terminal text colors */
 .term-fg-black { color: #000000; }
 .term-fg-red { color: #cd3131; }
@@ -608,219 +467,6 @@ function updateDashboard(data) {
   updateLastUpdateTime();
 }
 
-// Terminal Viewer functionality
-let currentStream = null;
-let terminalBuffer = [];
-let terminalDimensions = { width: 80, height: 24 };
-
-function openTerminal(paneId, paneTitle) {
-  console.log('openTerminal called with:', paneId, paneTitle);
-  const modal = document.getElementById('terminal-modal');
-  const titleElement = document.querySelector('.terminal-title');
-  const outputElement = document.getElementById('terminal-output');
-
-  if (!modal) {
-    console.error('Modal not found!');
-    return;
-  }
-
-  titleElement.textContent = \`Terminal: \${paneTitle}\`;
-  modal.style.display = 'flex';
-  outputElement.innerHTML = 'Connecting...';
-  terminalBuffer = [];
-
-  if (currentStream) {
-    currentStream.close();
-    currentStream = null;
-  }
-
-  connectToStream(paneId);
-}
-
-function closeTerminal() {
-  const modal = document.getElementById('terminal-modal');
-  modal.style.display = 'none';
-
-  if (currentStream) {
-    currentStream.close();
-    currentStream = null;
-  }
-
-  updateConnectionStatus(false);
-}
-
-function connectToStream(paneId) {
-  const outputElement = document.getElementById('terminal-output');
-
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map(() =>
-    Array(terminalDimensions.width).fill(' ')
-  );
-
-  const url = \`/api/stream/\${paneId}\`;
-
-  fetch(url)
-    .then(response => {
-      if (!response.ok) throw new Error('Failed to connect');
-      if (!response.body) throw new Error('No response body');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      updateConnectionStatus(true);
-
-      const processStream = async () => {
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            let newlineIndex;
-            while ((newlineIndex = buffer.indexOf('\\n')) !== -1) {
-              const message = buffer.substring(0, newlineIndex);
-              buffer = buffer.substring(newlineIndex + 1);
-
-              if (message) {
-                processMessage(message);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Stream error:', error);
-          updateConnectionStatus(false);
-        }
-      };
-
-      currentStream = reader;
-      processStream();
-    })
-    .catch(error => {
-      console.error('Connection failed:', error);
-      outputElement.innerHTML = 'Failed to connect to terminal stream';
-      updateConnectionStatus(false);
-    });
-}
-
-function processMessage(message) {
-  const colonIndex = message.indexOf(':');
-  if (colonIndex === -1) return;
-
-  const type = message.substring(0, colonIndex);
-  const jsonStr = message.substring(colonIndex + 1);
-
-  try {
-    const data = JSON.parse(jsonStr);
-
-    switch (type) {
-      case 'INIT':
-        handleInitMessage(data);
-        break;
-      case 'PATCH':
-        handlePatchMessage(data);
-        break;
-      case 'RESIZE':
-        handleResizeMessage(data);
-        break;
-      case 'HEARTBEAT':
-        break;
-    }
-  } catch (error) {
-    console.error('Failed to parse message:', error);
-  }
-}
-
-function handleInitMessage(data) {
-  const outputElement = document.getElementById('terminal-output');
-  const dimensionsElement = document.getElementById('terminal-dimensions');
-
-  terminalDimensions = { width: data.width, height: data.height };
-  dimensionsElement.textContent = data.width + 'x' + data.height;
-
-  // Content is already parsed by backend TerminalDiffer
-  outputElement.textContent = data.content || '';
-
-  const lines = (data.content || '').split('\\n');
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
-    const line = lines[i] || '';
-    return Array(terminalDimensions.width).fill(null).map((_, j) =>
-      line[j] || ' '
-    );
-  });
-}
-
-function handlePatchMessage(data) {
-  data.changes.forEach(change => {
-    const { row, col, text } = change;
-
-    // Text is already parsed by backend TerminalDiffer
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      const targetRow = row + Math.floor((col + i) / terminalDimensions.width);
-      const targetCol = (col + i) % terminalDimensions.width;
-
-      if (targetRow < terminalBuffer.length && targetCol < terminalBuffer[targetRow].length) {
-        if (char === '\\n') {
-          continue;
-        }
-        terminalBuffer[targetRow][targetCol] = char;
-      }
-    }
-  });
-
-  renderTerminal();
-}
-
-function handleResizeMessage(data) {
-  const outputElement = document.getElementById('terminal-output');
-  const dimensionsElement = document.getElementById('terminal-dimensions');
-
-  terminalDimensions = { width: data.width, height: data.height };
-  dimensionsElement.textContent = data.width + 'x' + data.height;
-
-  // Content is already parsed by backend TerminalDiffer
-  outputElement.textContent = data.content || '';
-
-  const lines = (data.content || '').split('\\n');
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map((_, i) => {
-    const line = lines[i] || '';
-    return Array(terminalDimensions.width).fill(null).map((_, j) =>
-      line[j] || ' '
-    );
-  });
-}
-
-function renderTerminal() {
-  const outputElement = document.getElementById('terminal-output');
-
-  // Convert buffer to string (already cleaned of ANSI codes)
-  const content = terminalBuffer.map(row =>
-    row.join('')
-  ).join('\\n');
-
-  outputElement.textContent = content;
-}
-
-function updateConnectionStatus(connected) {
-  const statusElement = document.getElementById('terminal-connection');
-  if (connected) {
-    statusElement.innerHTML = '● Connected';
-    statusElement.className = 'connected';
-  } else {
-    statusElement.innerHTML = '● Disconnected';
-    statusElement.className = 'disconnected';
-  }
-}
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    const modal = document.getElementById('terminal-modal');
-    if (modal.style.display === 'flex') {
-      closeTerminal();
-    }
-  }
-});
 
 function renderPanes(panes) {
   const grid = document.getElementById('panes-grid');
@@ -1016,18 +662,67 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 
 export function getTerminalJs(): string {
-  return `// Terminal viewer with ANSI parsing and HTML rendering
-const paneId = window.location.pathname.split('/').pop();
-let terminalBuffer = [];
-let terminalDimensions = { width: 80, height: 24 };
-let currentAttrs = {};
-let cursorRow = 0;
-let cursorCol = 0;
+  return `// Terminal viewer with Vue.js and ANSI parsing
+import { createApp } from '/vue.esm-browser.js';
 
-// Initialize terminal
+const paneId = window.location.pathname.split('/').pop();
+
+// Helper to access Vue reactive data
+let vueApp = null;
+
+// ANSI parsing state
+let currentAttrs = {};
+
+// Convenience accessors for Vue data - these will be bound after Vue mounts
+const getTerminalBuffer = () => window.terminalBuffer || [];
+const setTerminalBuffer = (val) => { window.terminalBuffer = val; };
+const getTerminalDimensions = () => window.terminalDimensions || { width: 80, height: 24 };
+const setTerminalDimensions = (val) => { window.terminalDimensions = val; };
+const getCursorRow = () => window.cursorRow || 0;
+const setCursorRow = (val) => { window.cursorRow = val; };
+const getCursorCol = () => window.cursorCol || 0;
+const setCursorCol = (val) => { window.cursorCol = val; };
+
+// Color palette for 256-color mode
+const colorPalette = [
+  '#000000', '#800000', '#008000', '#808000', '#000080', '#800080', '#008080', '#c0c0c0',
+  '#808080', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff',
+  '#000000', '#00005f', '#000087', '#0000af', '#0000d7', '#0000ff', '#005f00', '#005f5f',
+  '#005f87', '#005faf', '#005fd7', '#005fff', '#008700', '#00875f', '#008787', '#0087af',
+  '#0087d7', '#0087ff', '#00af00', '#00af5f', '#00af87', '#00afaf', '#00afd7', '#00afff',
+  '#00d700', '#00d75f', '#00d787', '#00d7af', '#00d7d7', '#00d7ff', '#00ff00', '#00ff5f',
+  '#00ff87', '#00ffaf', '#00ffd7', '#00ffff', '#5f0000', '#5f005f', '#5f0087', '#5f00af',
+  '#5f00d7', '#5f00ff', '#5f5f00', '#5f5f5f', '#5f5f87', '#5f5faf', '#5f5fd7', '#5f5fff',
+  '#5f8700', '#5f875f', '#5f8787', '#5f87af', '#5f87d7', '#5f87ff', '#5faf00', '#5faf5f',
+  '#5faf87', '#5fafaf', '#5fafd7', '#5fafff', '#5fd700', '#5fd75f', '#5fd787', '#5fd7af',
+  '#5fd7d7', '#5fd7ff', '#5fff00', '#5fff5f', '#5fff87', '#5fffaf', '#5fffd7', '#5fffff',
+  '#870000', '#87005f', '#870087', '#8700af', '#8700d7', '#8700ff', '#875f00', '#875f5f',
+  '#875f87', '#875faf', '#875fd7', '#875fff', '#878700', '#87875f', '#878787', '#8787af',
+  '#8787d7', '#8787ff', '#87af00', '#87af5f', '#87af87', '#87afaf', '#87afd7', '#87afff',
+  '#87d700', '#87d75f', '#87d787', '#87d7af', '#87d7d7', '#87d7ff', '#87ff00', '#87ff5f',
+  '#87ff87', '#87ffaf', '#87ffd7', '#87ffff', '#af0000', '#af005f', '#af0087', '#af00af',
+  '#af00d7', '#af00ff', '#af5f00', '#af5f5f', '#af5f87', '#af5faf', '#af5fd7', '#af5fff',
+  '#af8700', '#af875f', '#af8787', '#af87af', '#af87d7', '#af87ff', '#afaf00', '#afaf5f',
+  '#afaf87', '#afafaf', '#afafd7', '#afafff', '#afd700', '#afd75f', '#afd787', '#afd7af',
+  '#afd7d7', '#afd7ff', '#afff00', '#afff5f', '#afff87', '#afffaf', '#afffd7', '#afffff',
+  '#d70000', '#d7005f', '#d70087', '#d700af', '#d700d7', '#d700ff', '#d75f00', '#d75f5f',
+  '#d75f87', '#d75faf', '#d75fd7', '#d75fff', '#d78700', '#d7875f', '#d78787', '#d787af',
+  '#d787d7', '#d787ff', '#d7af00', '#d7af5f', '#d7af87', '#d7afaf', '#d7afd7', '#d7afff',
+  '#d7d700', '#d7d75f', '#d7d787', '#d7d7af', '#d7d7d7', '#d7d7ff', '#d7ff00', '#d7ff5f',
+  '#d7ff87', '#d7ffaf', '#d7ffd7', '#d7ffff', '#ff0000', '#ff005f', '#ff0087', '#ff00af',
+  '#ff00d7', '#ff00ff', '#ff5f00', '#ff5f5f', '#ff5f87', '#ff5faf', '#ff5fd7', '#ff5fff',
+  '#ff8700', '#ff875f', '#ff8787', '#ff87af', '#ff87d7', '#ff87ff', '#ffaf00', '#ffaf5f',
+  '#ffaf87', '#ffafaf', '#ffafd7', '#ffafff', '#ffd700', '#ffd75f', '#ffd787', '#ffd7af',
+  '#ffd7d7', '#ffd7ff', '#ffff00', '#ffff5f', '#ffff87', '#ffffaf', '#ffffd7', '#ffffff',
+  '#080808', '#121212', '#1c1c1c', '#262626', '#303030', '#3a3a3a', '#444444', '#4e4e4e',
+  '#585858', '#626262', '#6c6c6c', '#767676', '#808080', '#8a8a8a', '#949494', '#9e9e9e',
+  '#a8a8a8', '#b2b2b2', '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee'
+];
+
+// Initialize terminal buffer
 function initTerminal() {
-  terminalBuffer = Array(terminalDimensions.height).fill(null).map(() =>
-    Array(terminalDimensions.width).fill(null).map(() => ({
+  window.terminalBuffer = Array(window.terminalDimensions.height).fill(null).map(() =>
+    Array(window.terminalDimensions.width).fill(null).map(() => ({
       char: ' ',
       fg: null,
       bg: null,
@@ -1039,8 +734,9 @@ function initTerminal() {
   );
 }
 
-// Parse ANSI codes and update buffer
-function parseAnsiAndUpdate(text) {
+// Parse ANSI codes and update buffer with target cursor constraint
+// Used for patches where we know the final cursor position and don't want to go past it
+function parseAnsiAndUpdateWithTarget(text, targetRow, targetCol) {
   let i = 0;
 
   while (i < text.length) {
@@ -1048,7 +744,6 @@ function parseAnsiAndUpdate(text) {
 
     // Check for escape sequence (ESC = 27)
     if (code === 27) {
-      // Escape sequence
       const seqEnd = findEscapeSequenceEnd(text, i);
       if (seqEnd > i) {
         handleEscapeSequence(text.substring(i, seqEnd));
@@ -1059,15 +754,62 @@ function parseAnsiAndUpdate(text) {
 
     // Handle backspace
     if (code === 8) {
-      if (cursorCol > 0) {
-        cursorCol--;
+      if (window.cursorCol > 0) {
+        window.cursorCol--;
+      }
+      i++;
+      continue;
+    }
+
+    // Handle character - don't allow scrolling, clamp to target cursor
+    handleCharacterWithTarget(text[i], targetRow);
+    i++;
+  }
+}
+
+// Parse ANSI codes and update buffer
+// allowScrolling: if false, prevents buffer scrolling (for patches)
+function parseAnsiAndUpdate(text, debugPatch = false, allowScrolling = true) {
+  let i = 0;
+
+  while (i < text.length) {
+    const code = text.charCodeAt(i);
+
+    // Check for escape sequence (ESC = 27)
+    if (code === 27) {
+      // Escape sequence
+      const seqEnd = findEscapeSequenceEnd(text, i);
+      if (seqEnd > i) {
+        const seq = text.substring(i, seqEnd);
+        if (debugPatch) {
+          console.log('[ANSI] Escape seq:', JSON.stringify(seq), 'cursor before:', window.cursorRow, window.cursorCol);
+        }
+        handleEscapeSequence(seq);
+        if (debugPatch) {
+          console.log('[ANSI] Cursor after:', window.cursorRow, window.cursorCol);
+        }
+        i = seqEnd;
+        continue;
+      }
+    }
+
+    // Handle backspace
+    if (code === 8) {
+      if (window.cursorCol > 0) {
+        window.cursorCol--;
       }
       i++;
       continue;
     }
 
     // Regular character
-    handleCharacter(text[i]);
+    if (debugPatch && (code === 13 || code === 10)) {
+      console.log('[CHAR] Special char:', code === 13 ? 'CR' : 'LF', 'cursor before:', window.cursorRow, window.cursorCol);
+    }
+    handleCharacter(text[i], allowScrolling);
+    if (debugPatch && (code === 13 || code === 10)) {
+      console.log('[CHAR] Cursor after:', window.cursorRow, window.cursorCol);
+    }
     i++;
   }
 }
@@ -1121,28 +863,28 @@ function handleCSI(params, command) {
   switch (command) {
     case 'H': // Cursor position
     case 'f':
-      cursorRow = Math.min(Math.max((args[0] || 1) - 1, 0), terminalDimensions.height - 1);
-      cursorCol = Math.min(Math.max((args[1] || 1) - 1, 0), terminalDimensions.width - 1);
+      window.cursorRow = Math.min(Math.max((args[0] || 1) - 1, 0), window.terminalDimensions.height - 1);
+      window.cursorCol = Math.min(Math.max((args[1] || 1) - 1, 0), window.terminalDimensions.width - 1);
       break;
 
     case 'A': // Cursor up
-      cursorRow = Math.max(cursorRow - (args[0] || 1), 0);
+      window.cursorRow = Math.max(window.cursorRow - (args[0] || 1), 0);
       break;
 
     case 'B': // Cursor down
-      cursorRow = Math.min(cursorRow + (args[0] || 1), terminalDimensions.height - 1);
+      window.cursorRow = Math.min(window.cursorRow + (args[0] || 1), window.terminalDimensions.height - 1);
       break;
 
     case 'C': // Cursor forward
-      cursorCol = Math.min(cursorCol + (args[0] || 1), terminalDimensions.width - 1);
+      window.cursorCol = Math.min(window.cursorCol + (args[0] || 1), window.terminalDimensions.width - 1);
       break;
 
     case 'D': // Cursor back
-      cursorCol = Math.max(cursorCol - (args[0] || 1), 0);
+      window.cursorCol = Math.max(window.cursorCol - (args[0] || 1), 0);
       break;
 
     case 'G': // Cursor Horizontal Absolute
-      cursorCol = Math.min(Math.max((args[0] || 1) - 1, 0), terminalDimensions.width - 1);
+      window.cursorCol = Math.min(Math.max((args[0] || 1) - 1, 0), window.terminalDimensions.width - 1);
       break;
 
     case 'J': // Erase display
@@ -1234,61 +976,112 @@ function handleSGR(args) {
   }
 }
 
-function handleCharacter(char) {
+// Handle character with target row constraint - don't go past target
+function handleCharacterWithTarget(char, targetRow) {
   if (char === '\\n') {
-    cursorRow++;
-    cursorCol = 0;
-    if (cursorRow >= terminalDimensions.height) {
-      // Scroll up
-      terminalBuffer.shift();
-      terminalBuffer.push(Array(terminalDimensions.width).fill(null).map(() => ({
-        char: ' ',
-        fg: null,
-        bg: null,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false
-      })));
-      cursorRow = terminalDimensions.height - 1;
+    window.cursorRow++;
+    window.cursorCol = 0;
+    // Clamp to target row - never go past where tmux says we should end up
+    if (window.cursorRow > targetRow) {
+      window.cursorRow = targetRow;
     }
     return;
   }
 
   if (char === '\\r') {
-    cursorCol = 0;
+    window.cursorCol = 0;
     return;
   }
 
   if (char === '\\t') {
-    cursorCol = Math.min(Math.floor((cursorCol + 8) / 8) * 8, terminalDimensions.width - 1);
+    window.cursorCol = Math.min(Math.floor((window.cursorCol + 8) / 8) * 8, window.terminalDimensions.width - 1);
     return;
   }
 
-  if (cursorCol >= terminalDimensions.width) {
-    cursorCol = 0;
-    cursorRow++;
-    if (cursorRow >= terminalDimensions.height) {
-      terminalBuffer.shift();
-      terminalBuffer.push(Array(terminalDimensions.width).fill(null).map(() => ({
-        char: ' ',
-        fg: null,
-        bg: null,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false
-      })));
-      cursorRow = terminalDimensions.height - 1;
+  if (window.cursorCol >= window.terminalDimensions.width) {
+    window.cursorCol = 0;
+    window.cursorRow++;
+    // Clamp to target row
+    if (window.cursorRow > targetRow) {
+      window.cursorRow = targetRow;
     }
   }
 
-  if (cursorRow < terminalDimensions.height && cursorCol < terminalDimensions.width) {
-    terminalBuffer[cursorRow][cursorCol] = {
+  if (window.cursorRow < window.terminalDimensions.height && window.cursorCol < window.terminalDimensions.width) {
+    window.terminalBuffer[window.cursorRow][window.cursorCol] = {
       char: char,
       ...currentAttrs
     };
-    cursorCol++;
+    window.cursorCol++;
+  }
+}
+
+function handleCharacter(char, allowScrolling = true) {
+  if (char === '\\n') {
+    window.cursorRow++;
+    window.cursorCol = 0;
+    if (window.cursorRow >= window.terminalDimensions.height) {
+      if (allowScrolling) {
+        // Scroll up
+        console.log('[SCROLL] Buffer scrolling! cursorRow was', window.cursorRow, 'height is', window.terminalDimensions.height);
+        window.terminalBuffer.shift();
+        window.terminalBuffer.push(Array(window.terminalDimensions.width).fill(null).map(() => ({
+          char: ' ',
+          fg: null,
+          bg: null,
+          bold: false,
+          dim: false,
+          italic: false,
+          underline: false
+        })));
+        window.cursorRow = window.terminalDimensions.height - 1;
+      } else {
+        // Don't scroll during patches - just clamp cursor
+        window.cursorRow = window.terminalDimensions.height - 1;
+      }
+    }
+    return;
+  }
+
+  if (char === '\\r') {
+    window.cursorCol = 0;
+    return;
+  }
+
+  if (char === '\\t') {
+    window.cursorCol = Math.min(Math.floor((window.cursorCol + 8) / 8) * 8, window.terminalDimensions.width - 1);
+    return;
+  }
+
+  if (window.cursorCol >= window.terminalDimensions.width) {
+    window.cursorCol = 0;
+    window.cursorRow++;
+    if (window.cursorRow >= window.terminalDimensions.height) {
+      if (allowScrolling) {
+        window.terminalBuffer.shift();
+        window.terminalBuffer.push(Array(window.terminalDimensions.width).fill(null).map(() => ({
+          char: ' ',
+          fg: null,
+          bg: null,
+          bold: false,
+          dim: false,
+          italic: false,
+          underline: false
+        })));
+        window.cursorRow = window.terminalDimensions.height - 1;
+      } else {
+        // Don't scroll - just clamp
+        window.cursorRow = window.terminalDimensions.height - 1;
+      }
+    }
+  }
+
+  if (window.cursorRow < window.terminalDimensions.height && window.cursorCol < window.terminalDimensions.width) {
+    window.terminalBuffer[window.cursorRow][window.cursorCol] = {
+      char: char,
+      ...currentAttrs
+    };
+    window.cursorCol++;
   }
 }
 
@@ -1301,64 +1094,17 @@ function handleEraseDisplay(mode) {
 
 function handleEraseLine(mode) {
   if (mode === 0) {
-    for (let col = cursorCol; col < terminalDimensions.width; col++) {
-      terminalBuffer[cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+    for (let col = window.cursorCol; col < window.terminalDimensions.width; col++) {
+      window.terminalBuffer[window.cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
     }
   } else if (mode === 2) {
-    for (let col = 0; col < terminalDimensions.width; col++) {
-      terminalBuffer[cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+    for (let col = 0; col < window.terminalDimensions.width; col++) {
+      window.terminalBuffer[window.cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
     }
   }
 }
 
-// 256-color palette (xterm colors)
-const colorPalette = [
-  // 0-15: Standard and bright colors
-  '#000000', '#800000', '#008000', '#808000', '#000080', '#800080', '#008080', '#c0c0c0',
-  '#808080', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff',
-  // 16-231: 6x6x6 color cube
-  '#000000', '#00005f', '#000087', '#0000af', '#0000d7', '#0000ff',
-  '#005f00', '#005f5f', '#005f87', '#005faf', '#005fd7', '#005fff',
-  '#008700', '#00875f', '#008787', '#0087af', '#0087d7', '#0087ff',
-  '#00af00', '#00af5f', '#00af87', '#00afaf', '#00afd7', '#00afff',
-  '#00d700', '#00d75f', '#00d787', '#00d7af', '#00d7d7', '#00d7ff',
-  '#00ff00', '#00ff5f', '#00ff87', '#00ffaf', '#00ffd7', '#00ffff',
-  '#5f0000', '#5f005f', '#5f0087', '#5f00af', '#5f00d7', '#5f00ff',
-  '#5f5f00', '#5f5f5f', '#5f5f87', '#5f5faf', '#5f5fd7', '#5f5fff',
-  '#5f8700', '#5f875f', '#5f8787', '#5f87af', '#5f87d7', '#5f87ff',
-  '#5faf00', '#5faf5f', '#5faf87', '#5fafaf', '#5fafd7', '#5fafff',
-  '#5fd700', '#5fd75f', '#5fd787', '#5fd7af', '#5fd7d7', '#5fd7ff',
-  '#5fff00', '#5fff5f', '#5fff87', '#5fffaf', '#5fffd7', '#5fffff',
-  '#870000', '#87005f', '#870087', '#8700af', '#8700d7', '#8700ff',
-  '#875f00', '#875f5f', '#875f87', '#875faf', '#875fd7', '#875fff',
-  '#878700', '#87875f', '#878787', '#8787af', '#8787d7', '#8787ff',
-  '#87af00', '#87af5f', '#87af87', '#87afaf', '#87afd7', '#87afff',
-  '#87d700', '#87d75f', '#87d787', '#87d7af', '#87d7d7', '#87d7ff',
-  '#87ff00', '#87ff5f', '#87ff87', '#87ffaf', '#87ffd7', '#87ffff',
-  '#af0000', '#af005f', '#af0087', '#af00af', '#af00d7', '#af00ff',
-  '#af5f00', '#af5f5f', '#af5f87', '#af5faf', '#af5fd7', '#af5fff',
-  '#af8700', '#af875f', '#af8787', '#af87af', '#af87d7', '#af87ff',
-  '#afaf00', '#afaf5f', '#afaf87', '#afafaf', '#afafd7', '#afafff',
-  '#afd700', '#afd75f', '#afd787', '#afd7af', '#afd7d7', '#afd7ff',
-  '#afff00', '#afff5f', '#afff87', '#afffaf', '#afffd7', '#afffff',
-  '#d70000', '#d7005f', '#d70087', '#d700af', '#d700d7', '#d700ff',
-  '#d75f00', '#d75f5f', '#d75f87', '#d75faf', '#d75fd7', '#d75fff',
-  '#d78700', '#d7875f', '#d78787', '#d787af', '#d787d7', '#d787ff',
-  '#d7af00', '#d7af5f', '#d7af87', '#d7afaf', '#d7afd7', '#d7afff',
-  '#d7d700', '#d7d75f', '#d7d787', '#d7d7af', '#d7d7d7', '#d7d7ff',
-  '#d7ff00', '#d7ff5f', '#d7ff87', '#d7ffaf', '#d7ffd7', '#d7ffff',
-  '#ff0000', '#ff005f', '#ff0087', '#ff00af', '#ff00d7', '#ff00ff',
-  '#ff5f00', '#ff5f5f', '#ff5f87', '#ff5faf', '#ff5fd7', '#ff5fff',
-  '#ff8700', '#ff875f', '#ff8787', '#ff87af', '#ff87d7', '#ff87ff',
-  '#ffaf00', '#ffaf5f', '#ffaf87', '#ffafaf', '#ffafd7', '#ffafff',
-  '#ffd700', '#ffd75f', '#ffd787', '#ffd7af', '#ffd7d7', '#ffd7ff',
-  '#ffff00', '#ffff5f', '#ffff87', '#ffffaf', '#ffffd7', '#ffffff',
-  // 232-255: Grayscale
-  '#080808', '#121212', '#1c1c1c', '#262626', '#303030', '#3a3a3a',
-  '#444444', '#4e4e4e', '#585858', '#626262', '#6c6c6c', '#767676',
-  '#808080', '#8a8a8a', '#949494', '#9e9e9e', '#a8a8a8', '#b2b2b2',
-  '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee'
-];
+// Removed duplicate colorPalette - using the one declared earlier
 
 // HTML entity encoding
 function escapeHtml(text) {
@@ -1423,66 +1169,6 @@ function buildStyleAttrs(cell) {
 }
 
 // Render buffer to HTML with one div per row
-function renderToHtml() {
-  const outputElement = document.getElementById('terminal-output');
-  let html = '';
-
-  for (let row = 0; row < terminalBuffer.length; row++) {
-    // Start row div
-    html += '<div class="terminal-row" data-row="' + row + '">';
-
-    let col = 0;
-    while (col < terminalBuffer[row].length) {
-      const cell = terminalBuffer[row][col];
-      const isCursor = (row === cursorRow && col === cursorCol);
-
-      // Check if this cell needs styling
-      const hasStyle = cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || isCursor;
-
-      if (!hasStyle) {
-        // No styling - collect consecutive unstyled characters
-        let text = '';
-        while (col < terminalBuffer[row].length) {
-          const c = terminalBuffer[row][col];
-          const isCur = (row === cursorRow && col === cursorCol);
-          if (c.fg || c.bg || c.bold || c.dim || c.italic || c.underline || isCur) break;
-          text += c.char === ' ' ? ' ' : c.char;
-          col++;
-        }
-        html += escapeHtml(text);
-      } else {
-        // Has styling - collect consecutive cells with same style
-        const { classes, styles } = buildStyleAttrs(cell);
-        if (isCursor) classes.push('term-cursor');
-
-        let text = cell.char === ' ' ? ' ' : cell.char;
-        col++;
-
-        // Collect more characters with same styling
-        while (col < terminalBuffer[row].length) {
-          const nextCell = terminalBuffer[row][col];
-          const nextIsCursor = (row === cursorRow && col === cursorCol);
-
-          // Stop if cursor position or style changes
-          if (nextIsCursor || !hasSameStyle(cell, nextCell)) break;
-
-          text += nextCell.char === ' ' ? ' ' : nextCell.char;
-          col++;
-        }
-
-        const classAttr = classes.length ? ' class="' + classes.join(' ') + '"' : '';
-        const styleAttr = styles.length ? ' style="' + styles.join('; ') + '"' : '';
-        html += '<span' + classAttr + styleAttr + '>' + escapeHtml(text) + '</span>';
-      }
-    }
-
-    // Close row div
-    html += '</div>';
-  }
-
-  outputElement.innerHTML = html;
-}
-
 // Connect to stream
 function connectToStream() {
   const url = \`/api/stream/\${paneId}\`;
@@ -1543,7 +1229,6 @@ function processMessage(message) {
     switch (type) {
       case 'INIT':
         terminalDimensions = { width: data.width, height: data.height };
-        document.getElementById('terminal-dimensions').textContent = data.width + 'x' + data.height;
         initTerminal();
         parseAnsiAndUpdate(data.content || '');
         // Set cursor to actual tmux cursor position if provided
@@ -1555,69 +1240,30 @@ function processMessage(message) {
         break;
 
       case 'PATCH':
-        const patchText = data.changes[0].text;
+        // Set cursor to tmux position before applying patch
+        const targetCursorRow = data.cursorRow;
+        const targetCursorCol = data.cursorCol;
 
-        console.log('[PATCH] Length:', patchText.length, 'First 10 bytes:',
-          Array.from(patchText.substring(0, 10)).map(c => c.charCodeAt(0)).join(','),
-          'Text:', JSON.stringify(patchText.substring(0, 100)));
-        console.log('[PATCH] Cursor before:', cursorRow, cursorCol, 'Target:', data.cursorRow, data.cursorCol);
-
-        // Log full buffer state before patch
-        console.log('[PATCH] Full buffer BEFORE:');
-        for (let r = 0; r < terminalBuffer.length; r++) {
-          const rowText = terminalBuffer[r].map(cell => cell.char).join('');
-          if (rowText.trim()) { // Only log non-empty rows
-            console.log('  Row', r + ':', JSON.stringify(rowText));
-          }
+        if (targetCursorRow !== undefined && targetCursorCol !== undefined) {
+          window.cursorRow = targetCursorRow;
+          window.cursorCol = targetCursorCol;
         }
 
-        // Save the actual cursor position before parsing
-        const actualCursorRow = data.cursorRow;
-        const actualCursorCol = data.cursorCol;
-
+        // Apply patch - the patch contains raw terminal output with ANSI codes
+        // Pass the target cursor position so we can clamp to it
         data.changes.forEach(change => {
-          parseAnsiAndUpdate(change.text);
+          parseAnsiAndUpdateWithTarget(change.text, targetCursorRow, targetCursorCol);
         });
 
-        console.log('[PATCH] Cursor after parsing:', cursorRow, cursorCol);
-
-        // Log full buffer state after patch
-        console.log('[PATCH] Full buffer AFTER:');
-        for (let r = 0; r < terminalBuffer.length; r++) {
-          const rowText = terminalBuffer[r].map(cell => cell.char).join('');
-          if (rowText.trim()) { // Only log non-empty rows
-            console.log('  Row', r + ':', JSON.stringify(rowText));
-          }
+        // Restore cursor to actual tmux position
+        if (targetCursorRow !== undefined && targetCursorCol !== undefined) {
+          window.cursorRow = targetCursorRow;
+          window.cursorCol = targetCursorCol;
         }
-
-        // Restore actual cursor position from tmux
-        if (actualCursorRow !== undefined && actualCursorCol !== undefined) {
-          // Always clear the row immediately after where the cursor should be
-          // This handles Ink's CR+LF patterns that temporarily write past the cursor
-          const clearRow = actualCursorRow + 1;
-          if (clearRow >= 0 && clearRow < terminalBuffer.length) {
-            for (let col = 0; col < terminalDimensions.width; col++) {
-              terminalBuffer[clearRow][col] = {
-                char: ' ',
-                fg: null,
-                bg: null,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false
-              };
-            }
-          }
-
-          cursorRow = actualCursorRow;
-          cursorCol = actualCursorCol;
-        }
-        renderToHtml();
         break;
 
       case 'RESIZE':
         terminalDimensions = { width: data.width, height: data.height };
-        document.getElementById('terminal-dimensions').textContent = data.width + 'x' + data.height;
         initTerminal();
         parseAnsiAndUpdate(data.content || '');
         renderToHtml();
@@ -1632,28 +1278,148 @@ function processMessage(message) {
 }
 
 function updateConnectionStatus(connected) {
-  const statusElement = document.getElementById('terminal-connection');
-  if (connected) {
-    statusElement.innerHTML = '● Connected';
-    statusElement.style.color = '#4ade80';
-  } else {
-    statusElement.innerHTML = '● Disconnected';
-    statusElement.style.color = '#f87171';
+  if (vueApp) {
+    vueApp.connected = connected;
   }
 }
 
-// Load pane info and start streaming
-fetch('/api/panes')
-  .then(r => r.json())
-  .then(data => {
-    const pane = data.panes.find(p => p.id === paneId);
-    if (pane) {
-      document.getElementById('terminal-title').textContent = \`Terminal: \${pane.slug}\`;
+// Initialize Vue app
+const app = createApp({
+  data() {
+    return {
+      terminalBuffer: [],
+      dimensions: { width: 80, height: 24 },
+      connected: false,
+      cursorRow: 0,
+      cursorCol: 0,
+      paneTitle: 'Terminal'
+    };
+  },
+  template: \`
+    <div class="terminal-page">
+      <div class="terminal-header">
+        <a href="/" class="back-button">← Back to Dashboard</a>
+        <span class="terminal-title">{{ paneTitle }}</span>
+        <div class="terminal-status">
+          <span>{{ dimensions.width }}x{{ dimensions.height }}</span>
+          <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">
+            ● {{ connected ? 'Connected' : 'Connecting' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="terminal-content">
+        <div class="terminal-output">
+          <div
+            v-for="(row, rowIndex) in terminalBuffer"
+            :key="rowIndex"
+            class="terminal-row"
+            :data-row="rowIndex"
+            v-html="renderRow(row, rowIndex)"
+          ></div>
+        </div>
+      </div>
+    </div>
+  \`,
+  methods: {
+    renderRow(row, rowIndex) {
+      let html = '';
+      let col = 0;
+
+      while (col < row.length) {
+        const cell = row[col];
+        const isCursor = (rowIndex === this.cursorRow && col === this.cursorCol);
+        const hasStyle = cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || isCursor;
+
+        if (!hasStyle) {
+          let text = '';
+          while (col < row.length) {
+            const c = row[col];
+            const isCur = (rowIndex === this.cursorRow && col === this.cursorCol);
+            if (c.fg || c.bg || c.bold || c.dim || c.italic || c.underline || isCur) break;
+            text += c.char;
+            col++;
+          }
+          html += escapeHtml(text);
+        } else {
+          const { classes, styles } = buildStyleAttrs(cell);
+          if (isCursor) classes.push('term-cursor');
+
+          let text = cell.char;
+          col++;
+
+          while (col < row.length) {
+            const nextCell = row[col];
+            const nextIsCursor = (rowIndex === this.cursorRow && col === this.cursorCol);
+            if (nextIsCursor || !hasSameStyle(cell, nextCell)) break;
+            text += nextCell.char;
+            col++;
+          }
+
+          const classAttr = classes.length ? ' class="' + classes.join(' ') + '"' : '';
+          const styleAttr = styles.length ? ' style="' + styles.join('; ') + '"' : '';
+          html += '<span' + classAttr + styleAttr + '>' + escapeHtml(text) + '</span>';
+        }
+      }
+
+      return html;
     }
-    connectToStream();
-  })
-  .catch(err => {
-    console.error('Failed to load pane info:', err);
-    connectToStream(); // Try connecting anyway
-  });`;
+  },
+  mounted() {
+    // Make Vue app instance globally accessible
+    window.vueApp = this;
+    vueApp = this;
+
+    // Wire up global variables to Vue's reactive properties
+    // When code reads/writes terminalBuffer, it actually reads/writes this.terminalBuffer
+    Object.defineProperty(window, 'terminalBuffer', {
+      get: () => this.terminalBuffer,
+      set: (val) => { this.terminalBuffer = val; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'cursorRow', {
+      get: () => this.cursorRow,
+      set: (val) => { this.cursorRow = val; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'cursorCol', {
+      get: () => this.cursorCol,
+      set: (val) => { this.cursorCol = val; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'terminalDimensions', {
+      get: () => this.dimensions,
+      set: (val) => { this.dimensions = val; },
+      configurable: true
+    });
+
+    // Assign to module-level variables so code can use them
+    terminalBuffer = this.terminalBuffer;
+    terminalDimensions = this.dimensions;
+    cursorRow = this.cursorRow;
+    cursorCol = this.cursorCol;
+
+    // Load pane info and start streaming
+    fetch('/api/panes')
+      .then(r => r.json())
+      .then(data => {
+        const pane = data.panes.find(p => p.id === paneId);
+        if (pane) {
+          this.paneTitle = 'Terminal: ' + pane.slug;
+        }
+        connectToStream();
+      })
+      .catch(err => {
+        console.error('Failed to load pane info:', err);
+        connectToStream();
+      });
+  }
+});
+
+app.mount('#app');
+
+// Remove the old renderToHtml function - Vue handles rendering
+function renderToHtml() {
+  // No-op: Vue reactively renders terminalBuffer changes
+}`;
 }
