@@ -528,18 +528,12 @@ export class TerminalStreamer extends EventEmitter {
    */
   private capturePaneContent(tmuxPaneId: string): string {
     try {
-      // Get pane height first
-      const height = execSync(
-        `tmux display-message -p -t ${tmuxPaneId} '#{pane_height}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-
       // -p: print to stdout
       // -e: include escape sequences
       // -J: join wrapped lines
-      // -S -N: start N lines from the end (captures last N lines = visible content)
+      // Captures only visible pane (no -S means current screen)
       return execSync(
-        `tmux capture-pane -epJ -S -${height} -t ${tmuxPaneId}`,
+        `tmux capture-pane -epJ -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {
