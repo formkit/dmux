@@ -14,7 +14,7 @@ export interface InboundMessage extends WorkerMessage {
 
 // Messages sent from worker to main thread
 export interface OutboundMessage extends WorkerMessage {
-  type: 'ready' | 'status-change' | 'capture-result' | 'analysis-needed' | 'error' | 'shutdown-complete';
+  type: 'ready' | 'status-change' | 'capture-result' | 'analysis-needed' | 'error' | 'shutdown-complete' | 'pane-removed';
   paneId: string;
 }
 

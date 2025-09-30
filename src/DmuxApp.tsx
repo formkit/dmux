@@ -191,6 +191,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const agentStatuses = useAgentStatus({
     panes,
     suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt || showMergePane,
+    onPaneRemoved: (paneId: string) => {
+      // Remove pane from list when it no longer exists in tmux
+      const updatedPanes = panes.filter(p => p.id !== paneId);
+      savePanes(updatedPanes);
+    },
   });
 
 
