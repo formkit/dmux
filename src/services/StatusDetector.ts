@@ -46,9 +46,15 @@ export class StatusDetector extends EventEmitter {
       await this.handleAnalysisRequest(paneId, message);
     });
 
-    // Handle worker errors
+    // Handle worker errors (silently - don't log to console)
     this.messageBus.subscribe('error', (paneId, message) => {
-      console.error(`Worker error for pane ${paneId}:`, message.payload);
+      // Errors are internal - emit as events but don't log to console
+      this.emit('worker-error', { paneId, error: message.payload });
+    });
+
+    // Handle pane removal (when pane no longer exists in tmux)
+    this.messageBus.subscribe('pane-removed', (paneId, message) => {
+      this.emit('pane-removed', { paneId, reason: message.payload?.reason });
     });
 
     // Handle worker ready events

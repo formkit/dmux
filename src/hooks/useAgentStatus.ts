@@ -5,18 +5,21 @@ import { getStatusDetector } from '../services/StatusDetector.js';
 interface UseAgentStatusParams {
   panes: DmuxPane[];
   suspend: boolean; // true when dialogs are open to avoid UI freezing
+  onPaneRemoved?: (paneId: string) => void; // callback when a pane no longer exists
 }
 
 // Return type: map of pane ID to status
 export type AgentStatusMap = Map<string, AgentStatus | undefined>;
 
-export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams): AgentStatusMap {
+export default function useAgentStatus({ panes, suspend, onPaneRemoved }: UseAgentStatusParams): AgentStatusMap {
   const [statuses, setStatuses] = useState<AgentStatusMap>(new Map());
   const statusDetector = useRef(getStatusDetector());
   const panesRef = useRef(panes);
+  const onPaneRemovedRef = useRef(onPaneRemoved);
 
   // Keep refs up to date
   panesRef.current = panes;
+  onPaneRemovedRef.current = onPaneRemoved;
 
   useEffect(() => {
     const detector = statusDetector.current;
@@ -30,8 +33,24 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
       });
     };
 
+    // Handle pane removal events
+    const handlePaneRemoved = (event: any) => {
+      // Remove from statuses
+      setStatuses(prevStatuses => {
+        const newStatuses = new Map(prevStatuses);
+        newStatuses.delete(event.paneId);
+        return newStatuses;
+      });
+
+      // Call callback if provided
+      if (onPaneRemovedRef.current) {
+        onPaneRemovedRef.current(event.paneId);
+      }
+    };
+
     // Listen for status updates
     detector.on('status-updated', handleStatusUpdate);
+    detector.on('pane-removed', handlePaneRemoved);
 
     // Initial load of current statuses
     const currentStatuses = detector.getAllStatuses();
@@ -39,6 +58,7 @@ export default function useAgentStatus({ panes, suspend }: UseAgentStatusParams)
 
     return () => {
       detector.off('status-updated', handleStatusUpdate);
+      detector.off('pane-removed', handlePaneRemoved);
     };
   }, []);
 

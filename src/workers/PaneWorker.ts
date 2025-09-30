@@ -191,8 +191,9 @@ class PaneWorker {
       }
     } catch (error: any) {
       // Handle tmux errors gracefully
-      if (error.message?.includes('no pane')) {
-        this.emitError('Pane no longer exists', false);
+      if (error.message?.includes("can't find pane") || error.message?.includes('no pane')) {
+        // Pane no longer exists - emit pane-removed event and shutdown
+        this.emit('pane-removed', { reason: 'Pane no longer exists' });
         this.shutdown();
       } else {
         this.emitError(`Capture error: ${error.message}`, true);
