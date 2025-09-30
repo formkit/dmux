@@ -1274,8 +1274,8 @@ function processMessage(message) {
 
         console.log('[PATCH IN] cursor=(' + targetCursorRow + ',' + targetCursorCol + ') changes=' + data.changes.length);
         data.changes.forEach((change, idx) => {
-          const first50 = change.text.substring(0, 50).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
-          const last50 = change.text.substring(Math.max(0, change.text.length - 50)).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+          const first50 = change.text.substring(0, 50).replace(/\\x1b/g, '\\\\x1b').replace(/\\r/g, '\\\\r').replace(/\\n/g, '\\\\n');
+          const last50 = change.text.substring(Math.max(0, change.text.length - 50)).replace(/\\x1b/g, '\\\\x1b').replace(/\\r/g, '\\\\r').replace(/\\n/g, '\\\\n');
           console.log('[PATCH IN] change[' + idx + '] len=' + change.text.length + ' first50: ' + first50);
           console.log('[PATCH IN] change[' + idx + '] last50: ' + last50);
         });
