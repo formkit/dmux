@@ -22,6 +22,7 @@ import { getPanePositions, applySmartLayout } from './utils/tmux.js';
 import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
+import { StateManager } from './shared/StateManager.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -41,7 +42,7 @@ import FooterHelp from './components/FooterHelp.js';
 import MergePane from './MergePane.js';
 
 
-const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater }) => {
+const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, serverUrl }) => {
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
@@ -109,6 +110,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     panesFile,
   });
   
+  // Sync panes with StateManager
+  useEffect(() => {
+    const stateManager = StateManager.getInstance();
+    stateManager.updatePanes(panes);
+  }, [panes]);
+
+  // Sync settings with StateManager
+  useEffect(() => {
+    const stateManager = StateManager.getInstance();
+    stateManager.updateSettings(projectSettings);
+  }, [projectSettings]);
+
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
     // Add cleanup handlers for process termination
@@ -512,7 +525,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     const newPane: DmuxPane = {
       id: `dmux-${Date.now()}`,
       slug,
-      prompt: prompt ? (prompt.substring(0, 50) + (prompt.length > 50 ? '...' : '')) : 'No initial prompt',
+      prompt: prompt || 'No initial prompt',
       paneId: paneInfo,
       worktreePath,
       agent
@@ -1019,6 +1032,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       <Box marginTop={1}>
         <Text dimColor>
           dmux v{packageJson.version}
+          {serverUrl && (
+            <Text dimColor> • Dashboard: {serverUrl}</Text>
+          )}
           {updateAvailable && updateInfo && (
             <Text color="yellow"> • New version {updateInfo.latestVersion} available! Run: npm i -g dmux@latest</Text>
           )}
