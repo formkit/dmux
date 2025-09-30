@@ -3,7 +3,7 @@ export function getTerminalViewerHtml(): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>Terminal Viewer - dmux</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -20,7 +20,7 @@ export function getDashboardHtml(): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>dmux Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -341,6 +341,7 @@ footer {
 .term-dim { opacity: 0.7; }
 .term-italic { font-style: italic; }
 .term-underline { text-decoration: underline; }
+.term-strikethrough { text-decoration: line-through; }
 
 /* Cursor styling - disabled by default for Ink apps */
 .term-cursor {
@@ -372,18 +373,22 @@ footer {
 
 .terminal-page .terminal-header {
   background: #2d2d2d;
-  padding: 12px 20px;
+  padding: 8px 12px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   border-bottom: 1px solid #444;
 }
 
 .back-button {
   color: #667eea;
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13px;
   transition: color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .back-button:hover {
@@ -393,16 +398,41 @@ footer {
 .terminal-page .terminal-title {
   color: #fff;
   font-weight: 500;
-  font-size: 14px;
-  flex: 1;
+  font-size: 13px;
+  flex: 1 1 auto;
   text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .terminal-page .terminal-status {
   display: flex;
-  gap: 15px;
-  font-size: 12px;
+  gap: 10px;
+  font-size: 11px;
   color: #999;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .terminal-page .terminal-header {
+    padding: 6px 8px;
+  }
+
+  .back-button {
+    font-size: 12px;
+  }
+
+  .terminal-page .terminal-title {
+    font-size: 12px;
+  }
+
+  .terminal-page .terminal-status {
+    font-size: 10px;
+    gap: 8px;
+  }
 }
 
 .terminal-content {
@@ -413,8 +443,7 @@ footer {
 
 .terminal-page .terminal-output {
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
-  font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.0;
   color: #f0f0f0;
   margin: 0;
   min-height: 100%;
@@ -424,7 +453,7 @@ footer {
   white-space: pre;
   margin: 0;
   padding: 0;
-  line-height: 1.4;
+  line-height: 1.0;
 }`;
 }
 
@@ -439,7 +468,6 @@ async function fetchPanes() {
     updateDashboard(data);
     updateStatus('online');
   } catch (err) {
-    console.error('Failed to fetch panes:', err);
     updateStatus('offline');
   }
 }
@@ -729,7 +757,8 @@ function initTerminal() {
       bold: false,
       dim: false,
       italic: false,
-      underline: false
+      underline: false,
+      strikethrough: false
     }))
   );
 }
@@ -781,13 +810,7 @@ function parseAnsiAndUpdate(text, debugPatch = false, allowScrolling = true) {
       const seqEnd = findEscapeSequenceEnd(text, i);
       if (seqEnd > i) {
         const seq = text.substring(i, seqEnd);
-        if (debugPatch) {
-          console.log('[ANSI] Escape seq:', JSON.stringify(seq), 'cursor before:', window.cursorRow, window.cursorCol);
-        }
         handleEscapeSequence(seq);
-        if (debugPatch) {
-          console.log('[ANSI] Cursor after:', window.cursorRow, window.cursorCol);
-        }
         i = seqEnd;
         continue;
       }
@@ -803,13 +826,7 @@ function parseAnsiAndUpdate(text, debugPatch = false, allowScrolling = true) {
     }
 
     // Regular character
-    if (debugPatch && (code === 13 || code === 10)) {
-      console.log('[CHAR] Special char:', code === 13 ? 'CR' : 'LF', 'cursor before:', window.cursorRow, window.cursorCol);
-    }
     handleCharacter(text[i], allowScrolling);
-    if (debugPatch && (code === 13 || code === 10)) {
-      console.log('[CHAR] Cursor after:', window.cursorRow, window.cursorCol);
-    }
     i++;
   }
 }
@@ -867,17 +884,14 @@ function handleCSI(params, command) {
     case 'f':
       window.cursorRow = Math.min(Math.max((args[0] || 1) - 1, 0), window.terminalDimensions.height - 1);
       window.cursorCol = Math.min(Math.max((args[1] || 1) - 1, 0), window.terminalDimensions.width - 1);
-      console.log('[CSI ' + command + '] (' + oldRow + ',' + oldCol + ') -> (' + window.cursorRow + ',' + window.cursorCol + ')');
       break;
 
     case 'A': // Cursor up
       window.cursorRow = Math.max(window.cursorRow - (args[0] || 1), 0);
-      console.log('[CSI A] up ' + (args[0] || 1) + ' (' + oldRow + ',' + oldCol + ') -> (' + window.cursorRow + ',' + window.cursorCol + ')');
       break;
 
     case 'B': // Cursor down
       window.cursorRow = Math.min(window.cursorRow + (args[0] || 1), window.terminalDimensions.height - 1);
-      console.log('[CSI B] down ' + (args[0] || 1) + ' (' + oldRow + ',' + oldCol + ') -> (' + window.cursorRow + ',' + window.cursorCol + ')');
       break;
 
     case 'C': // Cursor forward
@@ -926,6 +940,8 @@ function handleSGR(args) {
       currentAttrs.italic = true;
     } else if (arg === 4) {
       currentAttrs.underline = true;
+    } else if (arg === 9) {
+      currentAttrs.strikethrough = true;
     } else if (arg === 22) {
       currentAttrs.bold = false;
       currentAttrs.dim = false;
@@ -933,6 +949,8 @@ function handleSGR(args) {
       currentAttrs.italic = false;
     } else if (arg === 24) {
       currentAttrs.underline = false;
+    } else if (arg === 29) {
+      currentAttrs.strikethrough = false;
     } else if (arg >= 30 && arg <= 37) {
       // Standard foreground colors
       currentAttrs.fg = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'][arg - 30];
@@ -1028,7 +1046,6 @@ function handleCharacter(char, allowScrolling = true) {
     if (window.cursorRow >= window.terminalDimensions.height) {
       if (allowScrolling) {
         // Scroll up
-        console.log('[SCROLL] Buffer scrolling! cursorRow was', window.cursorRow, 'height is', window.terminalDimensions.height);
         window.terminalBuffer.shift();
         window.terminalBuffer.push(Array(window.terminalDimensions.width).fill(null).map(() => ({
           char: ' ',
@@ -1037,7 +1054,8 @@ function handleCharacter(char, allowScrolling = true) {
           bold: false,
           dim: false,
           italic: false,
-          underline: false
+          underline: false,
+          strikethrough: false
         })));
         window.cursorRow = window.terminalDimensions.height - 1;
       } else {
@@ -1071,7 +1089,8 @@ function handleCharacter(char, allowScrolling = true) {
           bold: false,
           dim: false,
           italic: false,
-          underline: false
+          underline: false,
+          strikethrough: false
         })));
         window.cursorRow = window.terminalDimensions.height - 1;
       } else {
@@ -1100,11 +1119,11 @@ function handleEraseDisplay(mode) {
 function handleEraseLine(mode) {
   if (mode === 0) {
     for (let col = window.cursorCol; col < window.terminalDimensions.width; col++) {
-      window.terminalBuffer[window.cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+      window.terminalBuffer[window.cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false, strikethrough: false };
     }
   } else if (mode === 2) {
     for (let col = 0; col < window.terminalDimensions.width; col++) {
-      window.terminalBuffer[window.cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+      window.terminalBuffer[window.cursorRow][col] = { char: ' ', fg: null, bg: null, bold: false, dim: false, italic: false, underline: false, strikethrough: false };
     }
   }
 }
@@ -1128,7 +1147,8 @@ function hasSameStyle(cell1, cell2) {
          cell1.bold === cell2.bold &&
          cell1.dim === cell2.dim &&
          cell1.italic === cell2.italic &&
-         cell1.underline === cell2.underline;
+         cell1.underline === cell2.underline &&
+         cell1.strikethrough === cell2.strikethrough;
 }
 
 // Build style attributes for a cell
@@ -1169,6 +1189,7 @@ function buildStyleAttrs(cell) {
   if (cell.dim) classes.push('term-dim');
   if (cell.italic) classes.push('term-italic');
   if (cell.underline) classes.push('term-underline');
+  if (cell.strikethrough) classes.push('term-strikethrough');
 
   return { classes, styles };
 }
@@ -1209,7 +1230,6 @@ function connectToStream() {
             }
           }
         } catch (error) {
-          console.error('Stream error:', error);
           updateConnectionStatus(false);
         }
       };
@@ -1217,13 +1237,9 @@ function connectToStream() {
       processStream();
     })
     .catch(error => {
-      console.error('Connection failed:', error);
       updateConnectionStatus(false);
     });
 }
-
-// DEBUG: Track message stats
-window.messageStats = window.messageStats || { init: 0, patch: 0, unknown: 0 };
 
 function processMessage(message) {
   const colonIndex = message.indexOf(':');
@@ -1231,17 +1247,6 @@ function processMessage(message) {
 
   const type = message.substring(0, colonIndex);
   const jsonStr = message.substring(colonIndex + 1);
-
-  // DEBUG: Track message counts
-  if (type === 'INIT') window.messageStats.init++;
-  else if (type === 'PATCH') window.messageStats.patch++;
-  else window.messageStats.unknown++;
-
-  // DEBUG: Update debug display
-  const debugEl = document.getElementById('debug-stats');
-  if (debugEl) {
-    debugEl.textContent = 'INIT:' + window.messageStats.init + ' PATCH:' + window.messageStats.patch + ' UNK:' + window.messageStats.unknown;
-  }
 
   try {
     const data = JSON.parse(jsonStr);
@@ -1276,14 +1281,6 @@ function processMessage(message) {
         const targetCursorRow = data.cursorRow;
         const targetCursorCol = data.cursorCol;
 
-        console.log('[PATCH IN] cursor=(' + targetCursorRow + ',' + targetCursorCol + ') changes=' + data.changes.length);
-        data.changes.forEach((change, idx) => {
-          const first50 = change.text.substring(0, 50).replace(/\\x1b/g, '\\\\x1b').replace(/\\r/g, '\\\\r').replace(/\\n/g, '\\\\n');
-          const last50 = change.text.substring(Math.max(0, change.text.length - 50)).replace(/\\x1b/g, '\\\\x1b').replace(/\\r/g, '\\\\r').replace(/\\n/g, '\\\\n');
-          console.log('[PATCH IN] change[' + idx + '] len=' + change.text.length + ' first50: ' + first50);
-          console.log('[PATCH IN] change[' + idx + '] last50: ' + last50);
-        });
-
         // Apply changes - NO SCROLLING during patches
         // The diff tells us exactly what cells changed in the visible buffer
         data.changes.forEach(change => {
@@ -1296,7 +1293,6 @@ function processMessage(message) {
           window.cursorCol = targetCursorCol;
         }
 
-        console.log('[PATCH DONE] final cursor=(' + window.cursorRow + ',' + window.cursorCol + ')');
         break;
 
       case 'RESIZE':
@@ -1310,7 +1306,7 @@ function processMessage(message) {
         break;
     }
   } catch (error) {
-    console.error('Failed to parse message:', error);
+    // Silently ignore parse errors
   }
 }
 
@@ -1335,10 +1331,9 @@ const app = createApp({
   template: \`
     <div class="terminal-page">
       <div class="terminal-header">
-        <a href="/" class="back-button">← Back to Dashboard</a>
+        <a href="/" class="back-button">← Back</a>
         <span class="terminal-title">{{ paneTitle }}</span>
         <div class="terminal-status">
-          <span id="debug-stats" style="margin-right: 10px; color: yellow;">INIT:0 PATCH:0 UNK:0</span>
           <span>{{ dimensions.width }}x{{ dimensions.height }}</span>
           <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">
             ● {{ connected ? 'Connected' : 'Connecting' }}
@@ -1347,7 +1342,7 @@ const app = createApp({
       </div>
 
       <div class="terminal-content">
-        <div class="terminal-output">
+        <div class="terminal-output" :style="terminalContainerStyle">
           <div
             v-for="(row, rowIndex) in terminalBuffer"
             :key="rowIndex"
@@ -1359,6 +1354,17 @@ const app = createApp({
       </div>
     </div>
   \`,
+  computed: {
+    terminalContainerStyle() {
+      // Set width to fit exactly the terminal columns
+      // Using ch units (character width in monospace fonts)
+      return {
+        width: \`\${this.dimensions.width}ch\`,
+        maxWidth: '100vw',
+        fontSize: \`calc(100vw / \${this.dimensions.width} / 0.6)\`
+      };
+    }
+  },
   methods: {
     renderRow(row, rowIndex) {
       let html = '';
@@ -1367,14 +1373,14 @@ const app = createApp({
       while (col < row.length) {
         const cell = row[col];
         const isCursor = (rowIndex === this.cursorRow && col === this.cursorCol);
-        const hasStyle = cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || isCursor;
+        const hasStyle = cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || cell.strikethrough || isCursor;
 
         if (!hasStyle) {
           let text = '';
           while (col < row.length) {
             const c = row[col];
             const isCur = (rowIndex === this.cursorRow && col === this.cursorCol);
-            if (c.fg || c.bg || c.bold || c.dim || c.italic || c.underline || isCur) break;
+            if (c.fg || c.bg || c.bold || c.dim || c.italic || c.underline || c.strikethrough || isCur) break;
             text += c.char;
             col++;
           }
@@ -1454,9 +1460,49 @@ const app = createApp({
         connectToStream();
       })
       .catch(err => {
-        console.error('Failed to load pane info:', err);
         connectToStream();
       });
+  }
+});
+
+// Keyboard input handling - send keystrokes to backend
+document.addEventListener('keydown', async (event) => {
+  // Don't capture keyboard if user is in browser UI (not focused on terminal)
+  const activeElement = document.activeElement;
+  if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+    return; // Let normal input handling work
+  }
+
+  // Ignore modifier keys by themselves - they should only affect other keys
+  const modifierKeys = ['Shift', 'Control', 'Alt', 'Meta'];
+  if (modifierKeys.includes(event.key)) {
+    return;
+  }
+
+  // Prevent default for most keys to avoid browser shortcuts
+  if (!event.metaKey && !event.ctrlKey || event.key === 'c' || event.key === 'd') {
+    event.preventDefault();
+  }
+
+  // Build the keystroke data
+  const keystrokeData = {
+    key: event.key,
+    ctrlKey: event.ctrlKey,
+    altKey: event.altKey,
+    shiftKey: event.shiftKey,
+    metaKey: event.metaKey
+  };
+
+  try {
+    const response = await fetch(\`/api/keys/\${window.actualPaneId}\`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(keystrokeData)
+    });
+  } catch (error) {
+    // Silently ignore keystroke errors
   }
 });
 

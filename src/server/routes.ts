@@ -243,6 +243,110 @@ export function setupRoutes(app: App) {
     return stream;
   }));
 
+  // POST /api/keys/:paneId - Send keystrokes to pane
+  app.use('/api/keys', eventHandler(async (event) => {
+    // Only accept POST requests
+    if (event.node.req.method !== 'POST') {
+      event.node.res.statusCode = 405;
+      return { error: 'Method not allowed' };
+    }
+
+    const url = event.node.req.url || '';
+    const paneId = url.startsWith('/') ? url.substring(1) : url;
+
+    if (!paneId || paneId.includes('/')) {
+      event.node.res.statusCode = 404;
+      return { error: 'Invalid pane ID' };
+    }
+
+    // Find the pane
+    const panes = stateManager.getPanes();
+    const pane = panes.find((p: DmuxPane) => p.id === paneId);
+
+    if (!pane || !pane.paneId) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    // Read the keystroke data from the request body
+    const body = await readBody(event);
+    if (!body || typeof body.key !== 'string') {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing or invalid key data' };
+    }
+
+    try {
+      const { execSync } = await import('child_process');
+
+      // Map special keys to tmux send-keys format
+      const key = body.key;
+      let tmuxKey = key;
+
+      // Handle special keys
+      const specialKeys: Record<string, string> = {
+        'Enter': 'Enter',
+        'Tab': 'Tab',
+        'Backspace': 'BSpace',
+        'Delete': 'DC',      // Delete Character
+        'Escape': 'Escape',
+        'ArrowUp': 'Up',
+        'ArrowDown': 'Down',
+        'ArrowLeft': 'Left',
+        'ArrowRight': 'Right',
+        'Home': 'Home',
+        'End': 'End',
+        'PageUp': 'PageUp',
+        'PageDown': 'PageDown',
+        'Space': 'Space'
+      };
+
+      // Priority order: Ctrl/Alt combinations first, then special keys, then regular
+
+      // Handle Ctrl+ combinations with regular characters
+      if (body.ctrlKey && key.length === 1 && !specialKeys[key]) {
+        tmuxKey = `C-${key.toLowerCase()}`;
+      }
+      // Handle Alt+ combinations with regular characters
+      else if (body.altKey && key.length === 1 && !specialKeys[key]) {
+        tmuxKey = `M-${key.toLowerCase()}`;
+      }
+      // Handle Shift+Tab
+      else if (body.shiftKey && key === 'Tab') {
+        tmuxKey = 'BTab';
+      }
+      // Handle Ctrl+ with special keys
+      else if (body.ctrlKey && specialKeys[key]) {
+        tmuxKey = `C-${specialKeys[key]}`;
+      }
+      // Handle Alt+ with special keys
+      else if (body.altKey && specialKeys[key]) {
+        tmuxKey = `M-${specialKeys[key]}`;
+      }
+      // Handle special keys alone
+      else if (specialKeys[key]) {
+        tmuxKey = specialKeys[key];
+      }
+      // Regular character - use -l flag to send literally
+      else if (key.length === 1) {
+        execSync(`tmux send-keys -t ${pane.paneId} -l ${JSON.stringify(key)}`, {
+          stdio: 'pipe'
+        });
+        return { success: true, key: key };
+      }
+
+      // Send the key to tmux (for all non-literal keys)
+      execSync(`tmux send-keys -t ${pane.paneId} ${tmuxKey}`, {
+        stdio: 'pipe'
+      });
+
+      return { success: true, key: tmuxKey };
+    } catch (error: any) {
+      console.error('Failed to send keys to pane:', error);
+      event.node.res.statusCode = 500;
+      return { error: 'Failed to send keys', details: error.message };
+    }
+  }));
+
   // GET /api/stream-stats - Get streaming statistics
   app.use('/api/stream-stats', eventHandler(async () => {
     const streamer = getTerminalStreamer();
