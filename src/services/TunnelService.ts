@@ -10,7 +10,7 @@ export class TunnelService {
         port,
         acceptCloudflareNotice: true
       });
-      this.tunnelUrl = this.tunnel.url || null;
+      this.tunnelUrl = await this.tunnel.getURL();
       if (!this.tunnelUrl) {
         throw new Error('Tunnel URL is null');
       }
