@@ -531,8 +531,9 @@ export class TerminalStreamer extends EventEmitter {
       // -p: print to stdout
       // -e: include escape sequences
       // -J: join wrapped lines
+      // -S -: start from beginning of visible area (not history)
       return execSync(
-        `tmux capture-pane -epJ -t ${tmuxPaneId}`,
+        `tmux capture-pane -epJ -S - -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {

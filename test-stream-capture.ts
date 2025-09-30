@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { chromium } from 'playwright';
 import { execSync } from 'child_process';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync, appendFileSync } from 'fs';
 import { resolve } from 'path';
 
 /**
@@ -45,8 +45,8 @@ async function main() {
     }
   }
 
-  const streamUrl = `http://127.0.0.1:${serverPort}/panes/${paneId}`;
-  console.log(`[TEST] Stream URL: ${streamUrl}`);
+  const dashboardUrl = `http://127.0.0.1:${serverPort}/`;
+  console.log(`[TEST] Dashboard URL: ${dashboardUrl}`);
 
   // Launch browser
   const browser = await chromium.launch({
@@ -59,14 +59,18 @@ async function main() {
 
   const page = await context.newPage();
 
-  // Log console messages
+  // Log console messages to file
+  const consoleLogPath = resolve(OUTPUT_DIR, 'browser-console.log');
+  writeFileSync(consoleLogPath, ''); // Clear file
+
   page.on('console', msg => {
     const type = msg.type();
     const text = msg.text();
+    const logLine = `[BROWSER ${type.toUpperCase()}] ${text}\n`;
 
-    if (type === 'error' || type === 'warning') {
-      console.log(`[BROWSER ${type.toUpperCase()}]`, text);
-    }
+    // Log all console messages to see PATCH debug output
+    console.log(logLine.trim());
+    appendFileSync(consoleLogPath, logLine);
   });
 
   // Log page errors
@@ -74,12 +78,34 @@ async function main() {
     console.error('[BROWSER ERROR]', error.message);
   });
 
-  // Navigate to stream
+  // Navigate to dashboard first
   try {
-    await page.goto(streamUrl, { waitUntil: 'networkidle', timeout: 10000 });
-    console.log('[TEST] Page loaded');
+    await page.goto(dashboardUrl, { waitUntil: 'networkidle', timeout: 10000 });
+    console.log('[TEST] Dashboard loaded');
   } catch (error) {
-    console.error('[TEST] Failed to load page:', error);
+    console.error('[TEST] Failed to load dashboard:', error);
+    await browser.close();
+    process.exit(1);
+  }
+
+  // Find and click the pane link
+  try {
+    console.log(`[TEST] Looking for pane: ${paneId}`);
+
+    // Wait for pane cards to load
+    await page.waitForSelector('.pane-card', { timeout: 5000 });
+
+    // Find the pane card containing the slug and click it
+    const paneCard = await page.locator(`.pane-card:has-text("${paneId}")`).first();
+    await paneCard.click();
+
+    console.log('[TEST] Clicked pane, waiting for terminal to load...');
+
+    // Wait for terminal to appear
+    await page.waitForSelector('.terminal-page', { timeout: 5000 });
+    console.log('[TEST] Terminal page loaded');
+  } catch (error) {
+    console.error('[TEST] Failed to navigate to pane:', error);
     await browser.close();
     process.exit(1);
   }

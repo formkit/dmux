@@ -1222,12 +1222,26 @@ function connectToStream() {
     });
 }
 
+// DEBUG: Track message stats
+window.messageStats = window.messageStats || { init: 0, patch: 0, unknown: 0 };
+
 function processMessage(message) {
   const colonIndex = message.indexOf(':');
   if (colonIndex === -1) return;
 
   const type = message.substring(0, colonIndex);
   const jsonStr = message.substring(colonIndex + 1);
+
+  // DEBUG: Track message counts
+  if (type === 'INIT') window.messageStats.init++;
+  else if (type === 'PATCH') window.messageStats.patch++;
+  else window.messageStats.unknown++;
+
+  // DEBUG: Update debug display
+  const debugEl = document.getElementById('debug-stats');
+  if (debugEl) {
+    debugEl.textContent = 'INIT:' + window.messageStats.init + ' PATCH:' + window.messageStats.patch + ' UNK:' + window.messageStats.unknown;
+  }
 
   try {
     const data = JSON.parse(jsonStr);
@@ -1325,6 +1339,7 @@ const app = createApp({
         <a href="/" class="back-button">← Back to Dashboard</a>
         <span class="terminal-title">{{ paneTitle }}</span>
         <div class="terminal-status">
+          <span id="debug-stats" style="margin-right: 10px; color: yellow;">INIT:0 PATCH:0 UNK:0</span>
           <span>{{ dimensions.width }}x{{ dimensions.height }}</span>
           <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">
             ● {{ connected ? 'Connected' : 'Connecting' }}

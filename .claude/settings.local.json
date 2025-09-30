@@ -79,7 +79,11 @@
       "Bash(curl:*)",
       "Bash(tmux display-message:*)",
       "Bash(npx playwright install:*)",
-      "Bash(./run-test-cycle.sh:*)"
+      "Bash(./run-test-cycle.sh:*)",
+      "Bash(pkill:*)",
+      "Bash(tee:*)",
+      "Bash(awk:*)",
+      "Bash(xargs -I{} sh -c 'echo {} && cat {}')"
     ],
     "deny": [],
     "ask": [],
