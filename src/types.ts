@@ -43,5 +43,5 @@ export interface DmuxAppProps {
   settingsFile: string;
   autoUpdater?: any; // AutoUpdater instance
   serverPort?: number;
-  serverUrl?: string;
+  server?: any; // DmuxServer instance
 }

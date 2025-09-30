@@ -128,7 +128,7 @@ class Dmux {
     let serverInfo: { port: number; url: string; tunnelUrl?: string } = { port: 0, url: '' };
     try {
       serverInfo = await this.server.start();
-      // Don't log the local URL - we'll show the tunnel URL in the TUI
+      // Don't log the local URL - tunnel will be created on demand when "r" is pressed
     } catch (err) {
       console.error('Failed to start HTTP server:', err);
       // Continue without server - not critical for main functionality
@@ -143,7 +143,7 @@ class Dmux {
       projectRoot: this.projectRoot,
       autoUpdater: this.autoUpdater,
       serverPort: serverInfo.port,
-      serverUrl: serverInfo.tunnelUrl || serverInfo.url
+      server: this.server
     }));
 
     // Clean shutdown on app exit
