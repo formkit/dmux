@@ -192,6 +192,49 @@ export class TerminalStreamer extends EventEmitter {
       // String decoder to handle multi-byte UTF-8 sequences across chunks
       const decoder = new StringDecoder('utf8');
 
+      /**
+       * Check if string ends with incomplete ANSI escape sequence
+       * Returns the index where the incomplete sequence starts, or -1 if complete
+       */
+      const findIncompleteEscape = (str: string): number => {
+        // Check last few characters for start of escape sequences
+        for (let i = Math.max(0, str.length - 10); i < str.length; i++) {
+          if (str.charCodeAt(i) === 27) { // ESC
+            const remaining = str.substring(i);
+            // ESC without following character
+            if (remaining.length === 1) return i;
+            // ESC[ (CSI) without terminator (terminators are @ through ~)
+            if (remaining[1] === '[') {
+              let hasTerminator = false;
+              for (let j = 2; j < remaining.length; j++) {
+                const c = remaining.charCodeAt(j);
+                if (c >= 64 && c <= 126) { // @ through ~
+                  hasTerminator = true;
+                  break;
+                }
+              }
+              if (!hasTerminator) return i;
+            }
+            // ESC] (OSC) without terminator (BEL or ESC\)
+            if (remaining[1] === ']') {
+              let hasTerminator = false;
+              for (let j = 2; j < remaining.length; j++) {
+                if (remaining.charCodeAt(j) === 7) { // BEL
+                  hasTerminator = true;
+                  break;
+                }
+                if (remaining.charCodeAt(j) === 27 && remaining[j + 1] === '\\') { // ESC\
+                  hasTerminator = true;
+                  break;
+                }
+              }
+              if (!hasTerminator) return i;
+            }
+          }
+        }
+        return -1;
+      };
+
       // Handle tail output
       stream.tailProcess.stdout?.on('data', (data: Buffer) => {
         if (this.isShuttingDown) return;
@@ -208,8 +251,22 @@ export class TerminalStreamer extends EventEmitter {
         // Buffer for 16ms (60fps)
         bufferTimeout = setTimeout(() => {
           if (outputBuffer) {
-            this.processAndSendUpdates(stream, outputBuffer);
-            outputBuffer = '';
+            // Check for incomplete escape sequences
+            const incompleteIndex = findIncompleteEscape(outputBuffer);
+
+            if (incompleteIndex >= 0) {
+              // Send complete portion, keep incomplete sequence in buffer
+              const completeOutput = outputBuffer.substring(0, incompleteIndex);
+              outputBuffer = outputBuffer.substring(incompleteIndex);
+
+              if (completeOutput) {
+                this.processAndSendUpdates(stream, completeOutput);
+              }
+            } else {
+              // Everything is complete, send it all
+              this.processAndSendUpdates(stream, outputBuffer);
+              outputBuffer = '';
+            }
           }
         }, 16);
       });
@@ -243,11 +300,9 @@ export class TerminalStreamer extends EventEmitter {
 
         // Skip refresh if content is empty (pane might be closed or capture failed)
         if (!content || content.trim().length === 0) {
-          console.error('[TerminalStreamer] Skipping periodic refresh - empty content');
           return;
         }
 
-        console.error('[TerminalStreamer] Sending periodic refresh, content length:', content.length);
         const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
 
         // Send full refresh as INIT message to reset buffer
