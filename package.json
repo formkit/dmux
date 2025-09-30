@@ -66,11 +66,13 @@
     "vue": "^3.5.22"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.1",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "bumpp": "^10.2.3",
     "ink-testing-library": "^4.0.0",
     "npm-run-all2": "^8.0.4",
+    "playwright": "^1.55.1",
     "strip-ansi": "^7.1.2",
     "tsx": "^4.7.0",
     "typescript": "^5.9.2",

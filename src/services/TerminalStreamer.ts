@@ -192,6 +192,62 @@ export class TerminalStreamer extends EventEmitter {
       // String decoder to handle multi-byte UTF-8 sequences across chunks
       const decoder = new StringDecoder('utf8');
 
+      /**
+       * Check if string ends with incomplete ANSI escape sequence
+       * Returns the index where the incomplete sequence starts, or -1 if complete
+       */
+      const findIncompleteEscape = (str: string): number => {
+        // Check last few characters for start of escape sequences
+        for (let i = Math.max(0, str.length - 10); i < str.length; i++) {
+          if (str.charCodeAt(i) === 27) { // ESC
+            const remaining = str.substring(i);
+            // ESC without following character
+            if (remaining.length === 1) return i;
+
+            // ESC[ (CSI) without terminator
+            if (remaining[1] === '[') {
+              let hasTerminator = false;
+              let j = 2;
+              for (; j < remaining.length; j++) {
+                const c = remaining.charCodeAt(j);
+                // Valid CSI parameter/intermediate bytes: 0-9, ;, space through /
+                if ((c >= 48 && c <= 57) || c === 59 || (c >= 32 && c <= 47)) {
+                  continue; // Valid parameter character, keep looking
+                }
+                // Final byte (terminator): @ through ~
+                if (c >= 64 && c <= 126) {
+                  hasTerminator = true;
+                  break;
+                }
+                // Invalid character, sequence is broken - don't buffer it
+                break;
+              }
+              if (!hasTerminator && j === remaining.length) {
+                // Reached end without finding terminator, and all chars were valid
+                return i;
+              }
+            }
+
+            // ESC] (OSC) without terminator (BEL or ESC\)
+            if (remaining[1] === ']') {
+              let hasTerminator = false;
+              for (let j = 2; j < remaining.length; j++) {
+                if (remaining.charCodeAt(j) === 7) { // BEL
+                  hasTerminator = true;
+                  break;
+                }
+                if (remaining.charCodeAt(j) === 27 && remaining[j + 1] === '\\') { // ESC\
+                  hasTerminator = true;
+                  break;
+                }
+              }
+              if (!hasTerminator) return i;
+            }
+          }
+        }
+        return -1;
+      };
+
       // Handle tail output
       stream.tailProcess.stdout?.on('data', (data: Buffer) => {
         if (this.isShuttingDown) return;
@@ -208,8 +264,22 @@ export class TerminalStreamer extends EventEmitter {
         // Buffer for 16ms (60fps)
         bufferTimeout = setTimeout(() => {
           if (outputBuffer) {
-            this.processAndSendUpdates(stream, outputBuffer);
-            outputBuffer = '';
+            // Check for incomplete escape sequences
+            const incompleteIndex = findIncompleteEscape(outputBuffer);
+
+            if (incompleteIndex >= 0) {
+              // Send complete portion, keep incomplete sequence in buffer
+              const completeOutput = outputBuffer.substring(0, incompleteIndex);
+              outputBuffer = outputBuffer.substring(incompleteIndex);
+
+              if (completeOutput) {
+                this.processAndSendUpdates(stream, completeOutput);
+              }
+            } else {
+              // Everything is complete, send it all
+              this.processAndSendUpdates(stream, outputBuffer);
+              outputBuffer = '';
+            }
           }
         }, 16);
       });
@@ -236,10 +306,17 @@ export class TerminalStreamer extends EventEmitter {
         this.checkForResize(stream);
       }, 500);
 
-      // Periodic full refresh to handle Ink apps that use complex cursor positioning
-      // This prevents drift from incremental updates
+      // Periodic full refresh to fix drift from patch-based streaming
+      // Patches work well for simple terminal output, but complex TUI apps (Ink, etc.)
+      // use cursor positioning that doesn't replay correctly. Full refresh keeps in sync.
       stream.refreshInterval = setInterval(() => {
         const content = this.capturePaneContent(stream.tmuxPaneId);
+
+        // Skip refresh if content is empty (pane might be closed or capture failed)
+        if (!content || content.trim().length === 0) {
+          return;
+        }
+
         const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
 
         // Send full refresh as INIT message to reset buffer
@@ -262,7 +339,7 @@ export class TerminalStreamer extends EventEmitter {
         });
 
         stream.lastContent = content;
-      }, 10000); // Full refresh every 10 seconds
+      }, 2000); // Full refresh every 2 seconds to fix patch drift
 
       stream.isActive = true;
     } catch (error) {
@@ -317,6 +394,13 @@ export class TerminalStreamer extends EventEmitter {
   private processAndSendUpdates(stream: StreamInfo, output: string): void {
     // Get current cursor position for accurate rendering
     const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+
+    // DEBUG: Log patch details
+    const first100 = output.substring(0, 100).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    const last100 = output.substring(Math.max(0, output.length - 100)).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    console.error(`[PATCH OUT] pane=${stream.paneId} cursor=(${cursorPos.row},${cursorPos.col}) len=${output.length}`);
+    console.error(`[PATCH OUT] first100: ${first100}`);
+    console.error(`[PATCH OUT] last100: ${last100}`);
 
     // Send raw output with ANSI codes - frontend will parse
     // Keep \r\n sequences - frontend handles them properly
@@ -446,10 +530,9 @@ export class TerminalStreamer extends EventEmitter {
       // -p: print to stdout
       // -e: include escape sequences
       // -J: join wrapped lines
-      // -S 0: start from line 0 (top of visible pane)
-      // Explicitly capture from top to ensure we don't miss the first line
+      // Captures only visible pane (no -S means current screen)
       return execSync(
-        `tmux capture-pane -epJ -S 0 -t ${tmuxPaneId}`,
+        `tmux capture-pane -epJ -t ${tmuxPaneId}`,
         { encoding: 'utf-8', stdio: 'pipe' }
       );
     } catch (error) {
