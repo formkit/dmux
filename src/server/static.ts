@@ -25,36 +25,9 @@ export function getDashboardHtml(): string {
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>dmux Dashboard</h1>
-      <div class="session-info">
-        <span id="project-name">Loading...</span>
-        <span id="session-name"></span>
-        <span id="server-status" class="status-indicator">●</span>
-      </div>
-    </header>
+  <div id="app"></div>
 
-    <main>
-      <div id="panes-grid" class="panes-grid">
-        <!-- Panes will be rendered here -->
-      </div>
-
-      <div id="no-panes" class="no-panes" style="display: none;">
-        <p>No dmux panes active</p>
-        <p class="hint">Press 'n' in dmux to create a new pane</p>
-      </div>
-    </main>
-
-    <footer>
-      <div class="footer-info">
-        <span>Auto-refresh: <span id="refresh-status">ON</span></span>
-        <span>Last update: <span id="last-update">Never</span></span>
-      </div>
-    </footer>
-  </div>
-
-  <script src="/dashboard.js"></script>
+  <script type="module" src="/dashboard.js"></script>
 </body>
 </html>`;
 }
@@ -653,235 +626,150 @@ footer {
 }
 
 export function getDashboardJs(): string {
-  return `let refreshInterval = null;
-let lastUpdate = null;
+  return `// Dashboard with Vue.js
+import { createApp } from '/vue.esm-browser.js';
 
-async function fetchPanes() {
-  try {
-    const response = await fetch('/api/panes');
-    const data = await response.json();
-    updateDashboard(data);
-    updateStatus('online');
-  } catch (err) {
-    updateStatus('offline');
-  }
-}
+let refreshInterval = null;
 
-function updateDashboard(data) {
-  // Update header info
-  document.getElementById('project-name').textContent = data.projectName || 'Unknown Project';
-  document.getElementById('session-name').textContent = data.sessionName || '';
+const app = createApp({
+  data() {
+    return {
+      projectName: 'Loading...',
+      sessionName: '',
+      connected: false,
+      panes: [],
+      lastUpdate: null,
+      timeSinceUpdate: 'Never'
+    };
+  },
+  template: \`
+    <div class="container">
+      <header>
+        <h1>dmux Dashboard</h1>
+        <div class="session-info">
+          <span>{{ projectName }}</span>
+          <span v-if="sessionName">{{ sessionName }}</span>
+          <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
+        </div>
+      </header>
 
-  // Update panes grid
-  const grid = document.getElementById('panes-grid');
-  const noPanes = document.getElementById('no-panes');
+      <main>
+        <div v-if="panes.length === 0" class="no-panes">
+          <p>No dmux panes active</p>
+          <p class="hint">Press 'n' in dmux to create a new pane</p>
+        </div>
 
-  if (data.panes.length === 0) {
-    grid.style.display = 'none';
-    noPanes.style.display = 'block';
-  } else {
-    grid.style.display = 'grid';
-    noPanes.style.display = 'none';
-    renderPanes(data.panes);
-  }
+        <div v-else class="panes-grid">
+          <a
+            v-for="pane in panes"
+            :key="pane.id"
+            :href="'/panes/' + pane.id"
+            class="pane-card"
+          >
+            <div class="pane-header">
+              <div>
+                <div class="pane-title">{{ pane.slug }}</div>
+                <div class="pane-id">Pane: {{ pane.paneId }}</div>
+              </div>
+              <span class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
+            </div>
 
-  // Update last update time
-  lastUpdate = new Date();
-  updateLastUpdateTime();
-}
+            <div class="pane-prompt" :title="pane.prompt || 'No prompt'">
+              {{ pane.prompt || 'No prompt' }}
+            </div>
 
+            <div class="pane-status">
+              <div class="status-item">
+                <span class="status-label">Agent:</span>
+                <span class="status-value">
+                  <span class="status-badge" :class="pane.agentStatus || 'idle'">
+                    {{ pane.agentStatus || 'idle' }}
+                  </span>
+                </span>
+              </div>
 
-function renderPanes(panes) {
-  const grid = document.getElementById('panes-grid');
-  grid.innerHTML = '';
+              <div v-if="pane.devStatus && pane.devStatus !== 'stopped'" class="status-item">
+                <span class="status-label">Dev Server:</span>
+                <span class="status-value">
+                  <span class="status-badge" :class="pane.devStatus">{{ pane.devStatus }}</span>
+                  <a v-if="pane.devUrl" :href="pane.devUrl" target="_blank">↗</a>
+                </span>
+              </div>
+            </div>
+          </a>
+        </div>
+      </main>
 
-  panes.forEach(pane => {
-    const card = createPaneCard(pane);
-    grid.appendChild(card);
-  });
-}
-
-function createPaneCard(pane) {
-  const card = document.createElement('a');
-  card.href = \`/panes/\${pane.id}\`;
-  card.className = 'pane-card';
-  card.style.textDecoration = 'none';
-  card.style.color = 'inherit';
-
-  const agentStatus = pane.agentStatus || 'idle';
-  const testStatus = pane.testStatus || 'none';
-  const devStatus = pane.devStatus || 'stopped';
-
-  card.innerHTML = \`
-    <div class="pane-header">
-      <div>
-        <div class="pane-title">\${escapeHtml(pane.slug)}</div>
-        <div class="pane-id">Pane: \${escapeHtml(pane.paneId)}</div>
-      </div>
-      <span class="pane-agent \${pane.agent || ''}">\${pane.agent || 'unknown'}</span>
+      <footer>
+        <div class="footer-info">
+          <span>Auto-refresh: <span>ON</span></span>
+          <span>Last update: <span>{{ timeSinceUpdate }}</span></span>
+        </div>
+      </footer>
     </div>
+  \`,
+  methods: {
+    async fetchPanes() {
+      try {
+        const response = await fetch('/api/panes');
+        const data = await response.json();
+        this.projectName = data.projectName || 'Unknown Project';
+        this.sessionName = data.sessionName || '';
+        this.panes = data.panes || [];
+        this.lastUpdate = new Date();
+        this.connected = true;
+        this.updateTimeSinceUpdate();
+      } catch (err) {
+        this.connected = false;
+      }
+    },
+    updateTimeSinceUpdate() {
+      if (!this.lastUpdate) return;
 
-    <div class="pane-prompt" title="\${escapeHtml(pane.prompt || 'No prompt')}">\${escapeHtml(pane.prompt || 'No prompt')}</div>
+      const now = new Date();
+      const diff = Math.floor((now - this.lastUpdate) / 1000);
 
-    <div class="pane-status">
-      <div class="status-item">
-        <span class="status-label">Agent:</span>
-        <span class="status-value">
-          <span class="status-badge \${agentStatus}">\${agentStatus}</span>
-        </span>
-      </div>
+      if (diff < 60) {
+        this.timeSinceUpdate = diff + 's ago';
+      } else if (diff < 3600) {
+        this.timeSinceUpdate = Math.floor(diff / 60) + 'm ago';
+      } else {
+        this.timeSinceUpdate = Math.floor(diff / 3600) + 'h ago';
+      }
+    },
+    startAutoRefresh() {
+      this.fetchPanes();
+      refreshInterval = setInterval(() => {
+        this.fetchPanes();
+      }, 2000);
 
-      \${/* Test status display commented out for now
-      testStatus !== 'none' ? \`
-      <div class="status-item">
-        <span class="status-label">Tests:</span>
-        <span class="status-value">
-          <span class="status-badge \${testStatus}">\${testStatus}</span>
-        </span>
-      </div>
-      \` : '' */
-      ''}
+      // Update time display every second
+      setInterval(() => {
+        this.updateTimeSinceUpdate();
+      }, 1000);
+    },
+    stopAutoRefresh() {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+    }
+  },
+  mounted() {
+    this.startAutoRefresh();
 
-      \${devStatus !== 'stopped' ? \`
-      <div class="status-item">
-        <span class="status-label">Dev Server:</span>
-        <span class="status-value">
-          <span class="status-badge \${devStatus}">\${devStatus}</span>
-          \${pane.devUrl ? \`<a href="\${pane.devUrl}" target="_blank">↗</a>\` : ''}
-        </span>
-      </div>
-      \` : ''}
-    </div>
-  \`;
-
-  return card;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function updateStatus(status) {
-  const indicator = document.getElementById('server-status');
-  if (status === 'online') {
-    indicator.style.color = '#4ade80';
-  } else {
-    indicator.style.color = '#f87171';
-  }
-}
-
-function updateLastUpdateTime() {
-  if (!lastUpdate) return;
-
-  const element = document.getElementById('last-update');
-  const now = new Date();
-  const diff = Math.floor((now - lastUpdate) / 1000);
-
-  if (diff < 60) {
-    element.textContent = diff + 's ago';
-  } else if (diff < 3600) {
-    element.textContent = Math.floor(diff / 60) + 'm ago';
-  } else {
-    element.textContent = Math.floor(diff / 3600) + 'h ago';
-  }
-}
-
-function startAutoRefresh() {
-  fetchPanes();
-  refreshInterval = setInterval(() => {
-    fetchPanes();
-  }, 2000);
-
-  // Update time display every second
-  setInterval(updateLastUpdateTime, 1000);
-}
-
-function stopAutoRefresh() {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
-  }
-}
-
-// Handle page visibility to pause/resume updates
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    stopAutoRefresh();
-  } else {
-    startAutoRefresh();
+    // Handle page visibility to pause/resume updates
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.stopAutoRefresh();
+      } else {
+        this.startAutoRefresh();
+      }
+    });
   }
 });
 
-// Tooltip functionality
-function setupTooltips() {
-  let tooltip = null;
-  let tooltipTimeout = null;
-
-  document.addEventListener('mouseover', (e) => {
-    const target = e.target;
-    if (target.classList && target.classList.contains('pane-prompt')) {
-      // Clear any existing timeout
-      if (tooltipTimeout) {
-        clearTimeout(tooltipTimeout);
-      }
-
-      // Show tooltip after 500ms hover
-      tooltipTimeout = setTimeout(() => {
-        // Remove existing tooltip
-        if (tooltip) {
-          tooltip.remove();
-        }
-
-        // Create new tooltip
-        tooltip = document.createElement('div');
-        tooltip.className = 'tooltip';
-        tooltip.textContent = target.getAttribute('title') || target.textContent;
-
-        // Position tooltip
-        document.body.appendChild(tooltip);
-        const rect = target.getBoundingClientRect();
-        tooltip.style.left = rect.left + 'px';
-        tooltip.style.top = (rect.bottom + 5) + 'px';
-
-        // Adjust if tooltip goes off screen
-        const tooltipRect = tooltip.getBoundingClientRect();
-        if (tooltipRect.right > window.innerWidth) {
-          tooltip.style.left = (window.innerWidth - tooltipRect.width - 10) + 'px';
-        }
-        if (tooltipRect.bottom > window.innerHeight) {
-          tooltip.style.top = (rect.top - tooltipRect.height - 5) + 'px';
-        }
-      }, 500);
-    }
-  });
-
-  document.addEventListener('mouseout', (e) => {
-    const target = e.target;
-    if (target.classList && target.classList.contains('pane-prompt')) {
-      // Clear timeout
-      if (tooltipTimeout) {
-        clearTimeout(tooltipTimeout);
-        tooltipTimeout = null;
-      }
-
-      // Remove tooltip after small delay
-      setTimeout(() => {
-        if (tooltip && !tooltip.matches(':hover')) {
-          tooltip.remove();
-          tooltip = null;
-        }
-      }, 100);
-    }
-  });
-}
-
-// Start on page load
-document.addEventListener('DOMContentLoaded', () => {
-  startAutoRefresh();
-  setupTooltips();
-});`;
+app.mount('#app');`;
 }
 
 export function getTerminalJs(): string {
