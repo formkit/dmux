@@ -356,7 +356,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     if (agent === 'claude') {
       // Monitor for Claude Code trust prompt and auto-respond
     const autoApproveTrust = async () => {
-      console.error('[TRUST DEBUG] Starting autoApproveTrust monitoring...');
       // Wait for Claude to start up before checking for prompts
       await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -406,7 +405,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           );
 
           if (i % 10 === 0) {  // Log every 10 checks (every second)
-            console.error(`[TRUST DEBUG] Check ${i + 1}/${maxChecks}, content preview: "${paneContent.substring(0, 100).replace(/\n/g, '\\n')}"...`);
           }
           
           // Check if content has stabilized (same for 3 checks = prompt is waiting)
@@ -431,12 +429,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             (paneContent.includes('folder') && paneContent.includes('?'));
           
           if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
-            console.error(`[TRUST DEBUG] Trust prompt detected! Pattern match: ${hasTrustPrompt}, Permission text: ${hasClaudePermissionPrompt}, Stable count: ${stableContentCount}`);
-            console.error(`[TRUST DEBUG] Content that triggered detection: "${paneContent}"`);
 
             // Content is stable and we found a prompt
             if (stableContentCount >= 2) {
-              console.error('[TRUST DEBUG] Content is stable, attempting to auto-approve trust prompt...');
 
               // Check if this is the new Claude numbered menu format
               const isNewClaudeFormat = /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
@@ -444,20 +439,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
               if (isNewClaudeFormat) {
                 // For new Claude format, just press Enter to confirm default "Yes, proceed"
-                console.error('[TRUST DEBUG] Detected new Claude format, sending Enter to confirm default option');
                 execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
               } else {
                 // Try multiple response methods for older formats
 
                 // Method 1: Send 'y' followed by Enter (most explicit)
-                console.error('[TRUST DEBUG] Sending "y" + Enter for legacy format');
                 execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
                 await new Promise(resolve => setTimeout(resolve, 50));
                 execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
 
                 // Method 2: Just Enter (if it's a yes/no with default yes)
                 await new Promise(resolve => setTimeout(resolve, 100));
-                console.error('[TRUST DEBUG] Sending additional Enter');
                 execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
               }
               
@@ -477,7 +469,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
               const promptGone = !trustPromptPatterns.some(p => p.test(updatedContent));
               
               if (promptGone) {
-                console.error('[TRUST DEBUG] Trust prompt appears to be gone');
                 // Check if Claude is running or if we need to restart it
                 const claudeRunning =
                   updatedContent.includes('Claude') ||
@@ -485,16 +476,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
                   updatedContent.includes('Assistant') ||
                   (prompt && updatedContent.includes(prompt.substring(0, Math.min(20, prompt.length))));
 
-                console.error(`[TRUST DEBUG] Claude running check: ${claudeRunning}, has $: ${updatedContent.includes('$')}`);
 
                 if (!claudeRunning && !updatedContent.includes('$')) {
-                  console.error('[TRUST DEBUG] Claude not running after trust approval, restarting...');
                   await new Promise(resolve => setTimeout(resolve, 300));
                   execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
                   execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
                 }
 
-                console.error('[TRUST DEBUG] Successfully handled the trust prompt');
                 break;
               }
             }
@@ -507,14 +495,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           }
         } catch (error) {
           // Continue checking, errors are non-fatal
-          console.error(`[TRUST DEBUG] Error checking for trust prompt: ${error instanceof Error ? error.message : error}`);
         }
       }
     };
     
     // Start monitoring for trust prompt in background
     autoApproveTrust().catch(err => {
-      console.error(`[TRUST DEBUG] Error in autoApproveTrust: ${err instanceof Error ? err.message : err}`);
     });
     }
     
