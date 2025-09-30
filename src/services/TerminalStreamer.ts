@@ -262,7 +262,7 @@ export class TerminalStreamer extends EventEmitter {
         });
 
         stream.lastContent = content;
-      }, 2000); // Full refresh every 2 seconds
+      }, 10000); // Full refresh every 10 seconds
 
       stream.isActive = true;
     } catch (error) {
@@ -319,6 +319,7 @@ export class TerminalStreamer extends EventEmitter {
     const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
 
     // Send raw output with ANSI codes - frontend will parse
+    // Keep \r\n sequences - frontend handles them properly
     const patchMessage: PatchMessage = {
       type: 'patch',
       changes: [{

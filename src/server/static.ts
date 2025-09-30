@@ -557,9 +557,15 @@ footer {
   font-size: 13px;
   line-height: 1.4;
   color: #f0f0f0;
-  white-space: pre;
   margin: 0;
   min-height: 100%;
+}
+
+.terminal-row {
+  white-space: pre;
+  margin: 0;
+  padding: 0;
+  line-height: 1.4;
 }`;
 }
 
@@ -730,7 +736,7 @@ function handleInitMessage(data) {
   const dimensionsElement = document.getElementById('terminal-dimensions');
 
   terminalDimensions = { width: data.width, height: data.height };
-  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
+  dimensionsElement.textContent = data.width + 'x' + data.height;
 
   // Content is already parsed by backend TerminalDiffer
   outputElement.textContent = data.content || '';
@@ -771,7 +777,7 @@ function handleResizeMessage(data) {
   const dimensionsElement = document.getElementById('terminal-dimensions');
 
   terminalDimensions = { width: data.width, height: data.height };
-  dimensionsElement.textContent = \`\${data.width}x\${data.height}\`;
+  dimensionsElement.textContent = data.width + 'x' + data.height;
 
   // Content is already parsed by backend TerminalDiffer
   outputElement.textContent = data.content || '';
@@ -1135,6 +1141,10 @@ function handleCSI(params, command) {
       cursorCol = Math.max(cursorCol - (args[0] || 1), 0);
       break;
 
+    case 'G': // Cursor Horizontal Absolute
+      cursorCol = Math.min(Math.max((args[0] || 1) - 1, 0), terminalDimensions.width - 1);
+      break;
+
     case 'J': // Erase display
       handleEraseDisplay(args[0] || 0);
       break;
@@ -1350,74 +1360,124 @@ const colorPalette = [
   '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee'
 ];
 
-// Render buffer to HTML
+// HTML entity encoding
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Check if two cells have the same styling
+function hasSameStyle(cell1, cell2) {
+  return cell1.fg === cell2.fg &&
+         cell1.bg === cell2.bg &&
+         cell1.bold === cell2.bold &&
+         cell1.dim === cell2.dim &&
+         cell1.italic === cell2.italic &&
+         cell1.underline === cell2.underline;
+}
+
+// Build style attributes for a cell
+function buildStyleAttrs(cell) {
+  const classes = [];
+  const styles = [];
+
+  // Handle foreground color
+  if (cell.fg) {
+    if (cell.fg.startsWith('rgb(')) {
+      styles.push(\`color: \${cell.fg}\`);
+    } else if (cell.fg.startsWith('c')) {
+      const colorIndex = parseInt(cell.fg.substring(1));
+      if (colorIndex >= 0 && colorIndex < colorPalette.length) {
+        styles.push(\`color: \${colorPalette[colorIndex]}\`);
+      }
+    } else {
+      classes.push('term-fg-' + cell.fg);
+    }
+  }
+
+  // Handle background color
+  if (cell.bg) {
+    if (cell.bg.startsWith('rgb(')) {
+      styles.push(\`background-color: \${cell.bg}\`);
+    } else if (cell.bg.startsWith('c')) {
+      const colorIndex = parseInt(cell.bg.substring(1));
+      if (colorIndex >= 0 && colorIndex < colorPalette.length) {
+        styles.push(\`background-color: \${colorPalette[colorIndex]}\`);
+      }
+    } else {
+      classes.push('term-bg-' + cell.bg);
+    }
+  }
+
+  // Add attribute classes
+  if (cell.bold) classes.push('term-bold');
+  if (cell.dim) classes.push('term-dim');
+  if (cell.italic) classes.push('term-italic');
+  if (cell.underline) classes.push('term-underline');
+
+  return { classes, styles };
+}
+
+// Render buffer to HTML with one div per row
 function renderToHtml() {
   const outputElement = document.getElementById('terminal-output');
   let html = '';
 
   for (let row = 0; row < terminalBuffer.length; row++) {
-    for (let col = 0; col < terminalBuffer[row].length; col++) {
+    // Start row div
+    html += '<div class="terminal-row" data-row="' + row + '">';
+
+    let col = 0;
+    while (col < terminalBuffer[row].length) {
       const cell = terminalBuffer[row][col];
-      const char = cell.char === ' ' ? ' ' : cell.char;
       const isCursor = (row === cursorRow && col === cursorCol);
 
-      if (cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || isCursor) {
-        const classes = [];
-        const styles = [];
+      // Check if this cell needs styling
+      const hasStyle = cell.fg || cell.bg || cell.bold || cell.dim || cell.italic || cell.underline || isCursor;
 
-        // Add cursor class if this is the cursor position
-        if (isCursor) {
-          classes.push('term-cursor');
+      if (!hasStyle) {
+        // No styling - collect consecutive unstyled characters
+        let text = '';
+        while (col < terminalBuffer[row].length) {
+          const c = terminalBuffer[row][col];
+          const isCur = (row === cursorRow && col === cursorCol);
+          if (c.fg || c.bg || c.bold || c.dim || c.italic || c.underline || isCur) break;
+          text += c.char === ' ' ? ' ' : c.char;
+          col++;
         }
-
-        // Handle foreground color
-        if (cell.fg) {
-          if (cell.fg.startsWith('rgb(')) {
-            // RGB color
-            styles.push(\`color: \${cell.fg}\`);
-          } else if (cell.fg.startsWith('c')) {
-            // 256-color palette
-            const colorIndex = parseInt(cell.fg.substring(1));
-            if (colorIndex >= 0 && colorIndex < colorPalette.length) {
-              styles.push(\`color: \${colorPalette[colorIndex]}\`);
-            }
-          } else {
-            // Named color
-            classes.push('term-fg-' + cell.fg);
-          }
-        }
-
-        // Handle background color
-        if (cell.bg) {
-          if (cell.bg.startsWith('rgb(')) {
-            // RGB color
-            styles.push(\`background-color: \${cell.bg}\`);
-          } else if (cell.bg.startsWith('c')) {
-            // 256-color palette
-            const colorIndex = parseInt(cell.bg.substring(1));
-            if (colorIndex >= 0 && colorIndex < colorPalette.length) {
-              styles.push(\`background-color: \${colorPalette[colorIndex]}\`);
-            }
-          } else {
-            // Named color
-            classes.push('term-bg-' + cell.bg);
-          }
-        }
-
-        // Add attribute classes
-        if (cell.bold) classes.push('term-bold');
-        if (cell.dim) classes.push('term-dim');
-        if (cell.italic) classes.push('term-italic');
-        if (cell.underline) classes.push('term-underline');
-
-        const classAttr = classes.length ? \` class="\${classes.join(' ')}"\` : '';
-        const styleAttr = styles.length ? \` style="\${styles.join('; ')}"\` : '';
-        html += \`<span\${classAttr}\${styleAttr}>\${char}</span>\`;
+        html += escapeHtml(text);
       } else {
-        html += char;
+        // Has styling - collect consecutive cells with same style
+        const { classes, styles } = buildStyleAttrs(cell);
+        if (isCursor) classes.push('term-cursor');
+
+        let text = cell.char === ' ' ? ' ' : cell.char;
+        col++;
+
+        // Collect more characters with same styling
+        while (col < terminalBuffer[row].length) {
+          const nextCell = terminalBuffer[row][col];
+          const nextIsCursor = (row === cursorRow && col === cursorCol);
+
+          // Stop if cursor position or style changes
+          if (nextIsCursor || !hasSameStyle(cell, nextCell)) break;
+
+          text += nextCell.char === ' ' ? ' ' : nextCell.char;
+          col++;
+        }
+
+        const classAttr = classes.length ? ' class="' + classes.join(' ') + '"' : '';
+        const styleAttr = styles.length ? ' style="' + styles.join('; ') + '"' : '';
+        html += '<span' + classAttr + styleAttr + '>' + escapeHtml(text) + '</span>';
       }
     }
-    html += '\\n';
+
+    // Close row div
+    html += '</div>';
   }
 
   outputElement.innerHTML = html;
@@ -1483,7 +1543,7 @@ function processMessage(message) {
     switch (type) {
       case 'INIT':
         terminalDimensions = { width: data.width, height: data.height };
-        document.getElementById('terminal-dimensions').textContent = \`\${data.width}x\${data.height}\`;
+        document.getElementById('terminal-dimensions').textContent = data.width + 'x' + data.height;
         initTerminal();
         parseAnsiAndUpdate(data.content || '');
         // Set cursor to actual tmux cursor position if provided
@@ -1495,45 +1555,69 @@ function processMessage(message) {
         break;
 
       case 'PATCH':
-        const startCursorRow = cursorRow;
+        const patchText = data.changes[0].text;
+
+        console.log('[PATCH] Length:', patchText.length, 'First 10 bytes:',
+          Array.from(patchText.substring(0, 10)).map(c => c.charCodeAt(0)).join(','),
+          'Text:', JSON.stringify(patchText.substring(0, 100)));
+        console.log('[PATCH] Cursor before:', cursorRow, cursorCol, 'Target:', data.cursorRow, data.cursorCol);
+
+        // Log full buffer state before patch
+        console.log('[PATCH] Full buffer BEFORE:');
+        for (let r = 0; r < terminalBuffer.length; r++) {
+          const rowText = terminalBuffer[r].map(cell => cell.char).join('');
+          if (rowText.trim()) { // Only log non-empty rows
+            console.log('  Row', r + ':', JSON.stringify(rowText));
+          }
+        }
+
+        // Save the actual cursor position before parsing
+        const actualCursorRow = data.cursorRow;
+        const actualCursorCol = data.cursorCol;
 
         data.changes.forEach(change => {
           parseAnsiAndUpdate(change.text);
         });
 
-        const endCursorRow = cursorRow;
+        console.log('[PATCH] Cursor after parsing:', cursorRow, cursorCol);
 
-        // Override cursor position with actual tmux position if provided
-        if (data.cursorRow !== undefined && data.cursorCol !== undefined) {
-          // If patch wrote to rows above the final cursor position, clear those rows
-          // This handles Ink's redraws that write to wrong locations
-          if (endCursorRow < data.cursorRow) {
-            for (let row = endCursorRow; row < data.cursorRow; row++) {
-              if (row >= 0 && row < terminalBuffer.length) {
-                for (let col = 0; col < terminalDimensions.width; col++) {
-                  terminalBuffer[row][col] = {
-                    char: ' ',
-                    fg: null,
-                    bg: null,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false
-                  };
-                }
-              }
+        // Log full buffer state after patch
+        console.log('[PATCH] Full buffer AFTER:');
+        for (let r = 0; r < terminalBuffer.length; r++) {
+          const rowText = terminalBuffer[r].map(cell => cell.char).join('');
+          if (rowText.trim()) { // Only log non-empty rows
+            console.log('  Row', r + ':', JSON.stringify(rowText));
+          }
+        }
+
+        // Restore actual cursor position from tmux
+        if (actualCursorRow !== undefined && actualCursorCol !== undefined) {
+          // Always clear the row immediately after where the cursor should be
+          // This handles Ink's CR+LF patterns that temporarily write past the cursor
+          const clearRow = actualCursorRow + 1;
+          if (clearRow >= 0 && clearRow < terminalBuffer.length) {
+            for (let col = 0; col < terminalDimensions.width; col++) {
+              terminalBuffer[clearRow][col] = {
+                char: ' ',
+                fg: null,
+                bg: null,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false
+              };
             }
           }
 
-          cursorRow = data.cursorRow;
-          cursorCol = data.cursorCol;
+          cursorRow = actualCursorRow;
+          cursorCol = actualCursorCol;
         }
         renderToHtml();
         break;
 
       case 'RESIZE':
         terminalDimensions = { width: data.width, height: data.height };
-        document.getElementById('terminal-dimensions').textContent = \`\${data.width}x\${data.height}\`;
+        document.getElementById('terminal-dimensions').textContent = data.width + 'x' + data.height;
         initTerminal();
         parseAnsiAndUpdate(data.content || '');
         renderToHtml();
