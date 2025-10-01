@@ -81,45 +81,44 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 30px 0;
-  margin-bottom: 40px;
+  padding: 16px 24px;
+  margin-bottom: 0;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 2px solid rgba(255, 140, 0, 0.3);
   animation: slideInFromTop 0.6s ease-out;
+  gap: 16px;
+}
+
+.logo {
+  height: 32px;
+  width: auto;
+  flex-shrink: 0;
 }
 
 h1 {
-  font-size: 42px;
-  font-weight: 700;
-  letter-spacing: -1px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  position: relative;
-}
-
-h1::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: 0;
-  width: 60px;
-  height: 4px;
-  background: linear-gradient(90deg, #667eea, #764ba2);
-  border-radius: 2px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: #e0e0e0;
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 500px;
+  margin: 0 auto;
 }
 
 .session-info {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
-  font-size: 14px;
+  font-size: 13px;
   color: #a0a0a0;
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 12px 20px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .session-info span {
@@ -136,6 +135,7 @@ h1::after {
 
 main {
   flex: 1;
+  padding-top: 40px;
 }
 
 .panes-grid {
@@ -398,29 +398,39 @@ footer {
 
 @media (max-width: 768px) {
   .container {
-    padding: 24px 16px;
+    padding: 0 16px 24px;
+  }
+
+  header {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .logo {
+    height: 24px;
   }
 
   h1 {
-    font-size: 32px;
+    font-size: 14px;
+    max-width: none;
+  }
+
+  .session-info {
+    font-size: 11px;
+    gap: 8px;
+  }
+
+  .session-info span:not(.status-indicator) {
+    display: none;
+  }
+
+  main {
+    padding-top: 24px;
   }
 
   .panes-grid {
     grid-template-columns: 1fr;
     gap: 16px;
-  }
-
-  header {
-    flex-direction: column;
-    gap: 20px;
-    align-items: start;
-    padding: 20px 0;
-  }
-
-  .session-info {
-    flex-wrap: wrap;
-    width: 100%;
-    justify-content: space-between;
   }
 
   .footer-info {
@@ -645,9 +655,9 @@ const app = createApp({
   template: \`
     <div class="container">
       <header>
-        <h1>dmux Dashboard</h1>
+        <img src="https://cdn.formk.it/dmux/dmux.png" alt="dmux" class="logo" />
+        <h1>{{ projectName }}</h1>
         <div class="session-info">
-          <span>{{ projectName }}</span>
           <span v-if="sessionName">{{ sessionName }}</span>
           <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
         </div>
