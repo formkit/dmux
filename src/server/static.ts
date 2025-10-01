@@ -39,6 +39,74 @@ export function getDashboardCss(): string {
   box-sizing: border-box;
 }
 
+:root {
+  /* Dark theme (default) */
+  --bg-gradient-start: #0f0f23;
+  --bg-gradient-mid: #1a1a2e;
+  --bg-gradient-end: #16213e;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #808080;
+  --text-dim: #606060;
+  --text-dimmer: #666;
+  --text-bright: #fff;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-accent: rgba(255, 140, 0, 0.3);
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --card-border: rgba(255, 255, 255, 0.1);
+  --header-bg: rgba(255, 255, 255, 0.05);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.12);
+  --input-focus-border: rgba(255, 140, 0, 0.5);
+  --input-focus-bg: rgba(255, 255, 255, 0.08);
+  --input-focus-shadow: rgba(255, 140, 0, 0.1);
+  --button-bg: rgba(200, 210, 230, 0.15);
+  --button-border: rgba(255, 255, 255, 0.08);
+  --button-hover-bg: rgba(200, 210, 230, 0.25);
+  --button-hover-border: rgba(255, 255, 255, 0.15);
+  --tooltip-bg: rgba(20, 20, 30, 0.98);
+  --tooltip-border: rgba(255, 255, 255, 0.15);
+  --hint-bg: rgba(255, 255, 255, 0.05);
+  --agent-bg: rgba(255, 255, 255, 0.08);
+  --agent-border: rgba(255, 255, 255, 0.15);
+  --idle-badge-bg: rgba(255, 255, 255, 0.08);
+  --idle-badge-border: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] {
+  /* Light theme */
+  --bg-gradient-start: #f0f4f8;
+  --bg-gradient-mid: #e6eef5;
+  --bg-gradient-end: #dce7f0;
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-tertiary: #718096;
+  --text-dim: #a0aec0;
+  --text-dimmer: #cbd5e0;
+  --text-bright: #000;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --border-accent: rgba(255, 140, 0, 0.4);
+  --card-bg: rgba(255, 255, 255, 0.8);
+  --card-border: rgba(0, 0, 0, 0.08);
+  --header-bg: rgba(255, 255, 255, 0.9);
+  --input-bg: rgba(255, 255, 255, 0.6);
+  --input-border: rgba(0, 0, 0, 0.15);
+  --input-focus-border: rgba(255, 140, 0, 0.6);
+  --input-focus-bg: rgba(255, 255, 255, 0.9);
+  --input-focus-shadow: rgba(255, 140, 0, 0.15);
+  --button-bg: rgba(0, 0, 0, 0.05);
+  --button-border: rgba(0, 0, 0, 0.1);
+  --button-hover-bg: rgba(0, 0, 0, 0.1);
+  --button-hover-border: rgba(0, 0, 0, 0.2);
+  --tooltip-bg: rgba(255, 255, 255, 0.98);
+  --tooltip-border: rgba(0, 0, 0, 0.15);
+  --hint-bg: rgba(0, 0, 0, 0.03);
+  --agent-bg: rgba(0, 0, 0, 0.05);
+  --agent-border: rgba(0, 0, 0, 0.12);
+  --idle-badge-bg: rgba(0, 0, 0, 0.05);
+  --idle-badge-border: rgba(0, 0, 0, 0.1);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -56,14 +124,15 @@ export function getDashboardCss(): string {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
   background-attachment: fixed;
-  color: #e0e0e0;
+  color: var(--text-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 .container {
@@ -83,10 +152,10 @@ header {
   align-items: center;
   padding: 16px 24px;
   margin-bottom: 0;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--header-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border-bottom: 2px solid rgba(255, 140, 0, 0.3);
+  border-bottom: 2px solid var(--border-accent);
   animation: slideInFromTop 0.6s ease-out;
   gap: 16px;
 }
@@ -101,7 +170,7 @@ h1 {
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.5px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   flex: 1;
   text-align: center;
   white-space: nowrap;
@@ -117,8 +186,29 @@ h1 {
   gap: 12px;
   align-items: center;
   font-size: 13px;
-  color: #a0a0a0;
+  color: var(--text-secondary);
   flex-shrink: 0;
+}
+
+.theme-toggle {
+  background: var(--button-bg);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+  transform: scale(1.05);
 }
 
 .session-info span {
@@ -147,10 +237,10 @@ main {
 }
 
 .pane-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--card-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 12px;
   position: relative;
@@ -194,19 +284,21 @@ main {
 .pane-title {
   font-size: 20px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-bright);
   letter-spacing: -0.3px;
 }
 
 .pane-arrow {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-secondary);
   transition: all 0.2s ease;
+  opacity: 0.6;
 }
 
 .pane-title-link:hover .pane-arrow {
-  color: rgba(255, 140, 0, 0.8);
+  color: #ff8c00;
   transform: translateX(2px);
+  opacity: 1;
 }
 
 .pane-meta {
@@ -222,9 +314,9 @@ main {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #999;
+  background: var(--agent-bg);
+  border: 1px solid var(--agent-border);
+  color: var(--text-tertiary);
   white-space: nowrap;
 }
 
@@ -241,7 +333,7 @@ main {
 }
 
 .pane-prompt {
-  color: #b0b0b0;
+  color: var(--text-secondary);
   font-size: 14px;
   margin-bottom: 20px;
   line-height: 1.6;
@@ -257,10 +349,10 @@ main {
 
 .tooltip {
   position: absolute;
-  background: rgba(20, 20, 30, 0.98);
+  background: var(--tooltip-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--tooltip-border);
   padding: 16px;
   border-radius: 12px;
   z-index: 1000;
@@ -269,10 +361,10 @@ main {
   max-height: 200px;
   overflow-y: auto;
   box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
+    0 20px 60px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--border-color);
   font-size: 13px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   pointer-events: none;
   animation: fadeIn 0.2s ease-out;
 }
@@ -292,7 +384,7 @@ main {
 }
 
 .status-label {
-  color: #808080;
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 
@@ -325,9 +417,9 @@ main {
 }
 
 .status-badge.idle {
-  background: rgba(255, 255, 255, 0.08);
-  color: #999;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--idle-badge-bg);
+  color: var(--text-tertiary);
+  border: 1px solid var(--idle-badge-border);
 }
 
 .status-badge.running {
@@ -358,7 +450,7 @@ main {
 .pane-id {
   font-family: 'SF Mono', Monaco, monospace;
   font-size: 10px;
-  color: #666;
+  color: var(--text-dimmer);
   font-weight: 500;
   letter-spacing: 0.2px;
 }
@@ -377,7 +469,7 @@ main {
 .options-question {
   font-size: 14px;
   font-weight: 500;
-  color: #e0e0e0;
+  color: var(--text-primary);
   line-height: 1.4;
 }
 
@@ -458,16 +550,16 @@ main {
   align-items: flex-start;
   gap: 8px;
   padding: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   transition: all 0.2s ease;
 }
 
 .prompt-input-wrapper:focus-within {
-  border-color: rgba(255, 140, 0, 0.5);
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.1);
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: 0 0 0 3px var(--input-focus-shadow);
 }
 
 .queued-message {
@@ -488,7 +580,7 @@ main {
   padding: 0;
   background: transparent;
   border: none;
-  color: #e0e0e0;
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
   line-height: 1.4;
@@ -506,7 +598,7 @@ main {
 }
 
 .prompt-textarea::placeholder {
-  color: #666;
+  color: var(--text-dimmer);
 }
 
 .send-button {
@@ -514,9 +606,9 @@ main {
   width: 28px;
   height: 28px;
   padding: 6px;
-  background: rgba(200, 210, 230, 0.15);
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--button-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--button-border);
   border-radius: 50%;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -526,8 +618,8 @@ main {
 }
 
 .send-button:hover:not(:disabled) {
-  background: rgba(200, 210, 230, 0.25);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
 }
 
 .send-button:active:not(:disabled) {
@@ -578,7 +670,7 @@ main {
 .no-panes {
   text-align: center;
   padding: 100px 20px;
-  color: #808080;
+  color: var(--text-tertiary);
   animation: fadeIn 0.6s ease-out;
 }
 
@@ -590,8 +682,8 @@ main {
 
 .hint {
   font-size: 14px;
-  color: #606060;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  background: var(--hint-bg);
   padding: 12px 24px;
   border-radius: 12px;
   display: inline-block;
@@ -608,7 +700,7 @@ footer {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  color: #606060;
+  color: var(--text-dim);
   padding: 0;
 }
 
@@ -825,7 +917,8 @@ const app = createApp({
       timeSinceUpdate: 'Never',
       promptInputs: {}, // Map of pane ID to prompt text
       sendingPrompts: new Set(), // Set of pane IDs currently sending
-      queuedMessages: {} // Map of pane ID to temporary "queued" message
+      queuedMessages: {}, // Map of pane ID to temporary "queued" message
+      theme: localStorage.getItem('dmux-theme') || 'dark' // Theme state
     };
   },
   template: \`
@@ -833,6 +926,9 @@ const app = createApp({
       <img src="https://cdn.formk.it/dmux/dmux.png" alt="dmux" class="logo" />
       <h1>{{ projectName }}</h1>
       <div class="session-info">
+        <button @click="toggleTheme" class="theme-toggle" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+          {{ theme === 'dark' ? '☀️' : '🌙' }}
+        </button>
         <span v-if="sessionName">{{ sessionName }}</span>
         <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
       </div>
@@ -941,6 +1037,11 @@ const app = createApp({
     </div>
   \`,
   methods: {
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('dmux-theme', this.theme);
+      document.documentElement.setAttribute('data-theme', this.theme);
+    },
     async fetchPanes() {
       try {
         const response = await fetch('/api/panes');
@@ -1049,6 +1150,9 @@ const app = createApp({
     }
   },
   mounted() {
+    // Apply theme on mount
+    document.documentElement.setAttribute('data-theme', this.theme);
+
     this.startAutoRefresh();
 
     // Handle page visibility to pause/resume updates
