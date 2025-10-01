@@ -92,7 +92,7 @@ header {
 }
 
 .logo {
-  height: 32px;
+  height: 24px;
   width: auto;
   flex-shrink: 0;
 }
@@ -151,7 +151,7 @@ main {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 12px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
@@ -409,7 +409,7 @@ footer {
   }
 
   .logo {
-    height: 24px;
+    height: 20px;
   }
 
   h1 {

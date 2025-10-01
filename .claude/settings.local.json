@@ -84,7 +84,8 @@
       "Bash(tee:*)",
       "Bash(awk:*)",
       "Bash(xargs -I{} sh -c 'echo {} && cat {}')",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": [],
