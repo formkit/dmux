@@ -989,12 +989,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1} width="100%" paddingX={1} borderStyle="round" borderColor="cyan">
-        <Text bold color="cyan">
-          dmux - {projectName}
-        </Text>
-      </Box>
-
       <PanesGrid panes={panes} selectedIndex={selectedIndex} isLoading={isLoading} showNewPaneDialog={showNewPaneDialog} agentStatuses={agentStatuses} />
 
       {/* Loading dialog */}
