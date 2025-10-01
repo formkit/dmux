@@ -980,7 +980,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1}>
+      <Box marginBottom={1} width="100%" paddingX={1} borderStyle="round" borderColor="cyan">
         <Text bold color="cyan">
           dmux - {projectName}
         </Text>
@@ -1077,14 +1077,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         })()}
       />
 
-      <Box marginTop={1}>
-        <Text dimColor>
-          dmux v{packageJson.version}
-          {updateAvailable && updateInfo && (
-            <Text color="yellow"> • New version {updateInfo.latestVersion} available! Run: npm i -g dmux@latest</Text>
-          )}
-        </Text>
-      </Box>
+      <Text dimColor>
+        v{packageJson.version}
+        {updateAvailable && updateInfo && (
+          <Text color="yellow"> • Update available: {updateInfo.latestVersion}</Text>
+        )}
+      </Text>
     </Box>
   );
 };

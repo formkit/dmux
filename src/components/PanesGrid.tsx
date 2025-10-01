@@ -28,15 +28,18 @@ const PanesGrid: React.FC<PanesGridProps> = ({ panes, selectedIndex, isLoading, 
 
       {!isLoading && !showNewPaneDialog && (
         <Box
-          paddingX={1}
+          paddingX={0}
+          paddingY={0}
           borderStyle="single"
           borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
           width={35}
           flexShrink={0}
         >
-          <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
-            + New dmux pane
-          </Text>
+          <Box paddingX={1}>
+            <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
+              + New dmux pane
+            </Text>
+          </Box>
         </Box>
       )}
     </Box>

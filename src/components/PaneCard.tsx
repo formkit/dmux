@@ -16,23 +16,26 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected }) => {
 
   return (
     <Box
-      paddingX={1}
+      paddingX={0}
+      paddingY={0}
       borderStyle="single"
       borderColor={borderColor}
       width={35}
       flexShrink={0}
     >
-      <Box flexDirection="column">
-        <Box>
-          <Text color={selected ? 'cyan' : 'white'} bold wrap="truncate">
-            {pane.slug}
+      <Box flexDirection="column" paddingX={1}>
+        <Box justifyContent="space-between" width="100%">
+          <Text color={selected ? 'cyan' : 'white'} bold wrap="truncate-end">
+            {pane.slug.substring(0, 22)}
           </Text>
-          {pane.worktreePath && (
-            <Text color="gray"> (wt)</Text>
-          )}
-          {pane.agent && (
-            <Text color="gray"> ({pane.agent === 'claude' ? 'cc' : 'oc'})</Text>
-          )}
+          <Box>
+            {pane.worktreePath && (
+              <Text color="gray">(wt)</Text>
+            )}
+            {pane.agent && (
+              <Text color="gray"> ({pane.agent === 'claude' ? 'cc' : 'oc'})</Text>
+            )}
+          </Box>
         </Box>
         <Text color="gray" dimColor wrap="truncate">
           {pane.prompt.substring(0, 30)}
