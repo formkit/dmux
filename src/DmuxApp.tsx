@@ -67,6 +67,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
   const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
+  const [quitConfirmMode, setQuitConfirmMode] = useState(false);
   // Update state handled by hook
   const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
@@ -157,32 +158,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
-    // Add cleanup handlers for process termination
+    // SIGTERM should quit immediately (for process management)
     const handleTermination = () => {
-      // Clear screen multiple times to ensure no artifacts
-      process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
-      process.stdout.write('\x1b[3J'); // Clear scrollback buffer
-      process.stdout.write('\n'.repeat(100)); // Push any remaining content off screen
-
-      // Clear tmux pane
-      try {
-        execSync('tmux clear-history', { stdio: 'pipe' });
-        execSync('tmux send-keys C-l', { stdio: 'pipe' });
-      } catch {}
-
-      // Wait a moment for clearing to settle, then show goodbye message
-      setTimeout(() => {
-        process.stdout.write('\x1b[2J\x1b[H');
-        process.stdout.write('\n\n  dmux session ended.\n\n');
-        process.exit(0);
-      }, 100);
+      cleanExit();
     };
-
-    process.on('SIGINT', handleTermination);
     process.on('SIGTERM', handleTermination);
 
     return () => {
-      process.removeListener('SIGINT', handleTermination);
       process.removeListener('SIGTERM', handleTermination);
     };
   }, []);
@@ -700,32 +682,65 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Cleanup function for exit
   const cleanExit = () => {
-    // Clear screen multiple times to ensure no artifacts
-    process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
-    process.stdout.write('\x1b[3J'); // Clear scrollback buffer
-    process.stdout.write('\n'.repeat(100)); // Push any remaining content off screen
+    // Clear screen before exiting Ink
+    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
 
-    // Clear tmux pane
-    try {
-      execSync('tmux clear-history', { stdio: 'pipe' });
-      execSync('tmux send-keys C-l', { stdio: 'pipe' });
-    } catch {}
+    // Exit the Ink app (this cleans up the React tree)
+    exit();
 
-    // Wait a moment for clearing to settle
+    // Give Ink a moment to clean up its rendering, then do final cleanup
     setTimeout(() => {
-      // Final clear and show goodbye message
-      process.stdout.write('\x1b[2J\x1b[H');
-      process.stdout.write('\n\n  dmux session ended.\n\n');
+      // Multiple aggressive clearing strategies
+      process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move cursor to home
+      process.stdout.write('\x1b[3J'); // Clear scrollback buffer
+      process.stdout.write('\x1b[0m'); // Reset all attributes
 
-      // Exit the app
-      exit();
+      // Clear tmux history and pane
+      try {
+        execSync('tmux clear-history', { stdio: 'pipe' });
+        execSync('tmux send-keys C-l', { stdio: 'pipe' });
+      } catch {}
+
+      // One more final clear
+      process.stdout.write('\x1b[2J\x1b[H');
+
+      // Show clean goodbye message
+      process.stdout.write('\n  Run dmux again to resume. Goodbye 👋\n\n');
+
+      // Exit process
+      process.exit(0);
     }, 100);
   };
 
   useInput(async (input: string, key: any) => {
+    // Handle Ctrl+C for quit confirmation (must be first, before any other checks)
+    if (key.ctrl && input === 'c') {
+      if (quitConfirmMode) {
+        // Second Ctrl+C - actually quit
+        cleanExit();
+      } else {
+        // First Ctrl+C - show confirmation
+        setQuitConfirmMode(true);
+        // Reset after 3 seconds if user doesn't press Ctrl+C again
+        setTimeout(() => {
+          setQuitConfirmMode(false);
+        }, 3000);
+      }
+      return;
+    }
+
     if (isCreatingPane || runningCommand || isUpdating || isLoading || isCreatingTunnel) {
       // Disable input while performing operations or loading
       return;
+    }
+
+    // Handle quit confirm mode - ESC cancels it
+    if (quitConfirmMode) {
+      if (key.escape) {
+        setQuitConfirmMode(false);
+        return;
+      }
+      // Allow other inputs to continue (don't return early)
     }
 
     // Handle QR code view
@@ -1018,12 +1033,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1} width="100%" paddingX={1} borderStyle="round" borderColor="cyan">
-        <Text bold color="cyan">
-          dmux - {projectName}
-        </Text>
-      </Box>
-
       <PanesGrid panes={panes} selectedIndex={selectedIndex} isLoading={isLoading} showNewPaneDialog={showNewPaneDialog} agentStatuses={agentStatuses} />
 
       {/* Loading dialog */}
@@ -1106,6 +1115,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       <FooterHelp
         show={!showNewPaneDialog && !showCommandPrompt}
         showRemoteKey={!!server}
+        quitConfirmMode={quitConfirmMode}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined;
           const cols = Math.max(1, Math.floor(terminalWidth / 37));

@@ -134,6 +134,18 @@ class Dmux {
       // Continue without server - not critical for main functionality
     }
 
+    // Clear screen before launching Ink to prevent artifacts
+    process.stdout.write('\x1b[2J\x1b[H');  // Clear screen and move cursor to home
+    process.stdout.write('\x1b[3J');  // Clear scrollback buffer
+
+    // Clear tmux history
+    try {
+      execSync('tmux clear-history', { stdio: 'pipe' });
+    } catch {}
+
+    // Small delay to let the clear take effect before Ink renders
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // Launch the Ink app
     const app = render(React.createElement(DmuxApp, {
       panesFile: this.panesFile,
@@ -144,7 +156,9 @@ class Dmux {
       autoUpdater: this.autoUpdater,
       serverPort: serverInfo.port,
       server: this.server
-    }));
+    }), {
+      exitOnCtrlC: false  // Disable automatic exit on Ctrl+C
+    });
 
     // Clean shutdown on app exit
     app.waitUntilExit().then(async () => {
