@@ -946,6 +946,285 @@ footer {
   height: 1px;
   opacity: 0.01;
   pointer-events: none;
+}
+
+/* Actions bar */
+.actions-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+  padding: 0 4px;
+}
+
+.create-pane-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--button-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.create-pane-button:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+}
+
+.create-pane-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.create-pane-button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-dialog {
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: var(--button-hover-bg);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.modal-textarea {
+  width: 100%;
+  padding: 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  resize: vertical;
+  min-height: 100px;
+  transition: all 0.2s ease;
+}
+
+.modal-textarea:focus {
+  outline: none;
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: 0 0 0 3px var(--input-focus-shadow);
+}
+
+.modal-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 6px;
+}
+
+.agent-selector {
+  display: flex;
+  gap: 12px;
+}
+
+.agent-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--button-bg);
+  border: 2px solid var(--button-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.agent-logo {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.agent-option:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+}
+
+.agent-option.selected {
+  background: var(--input-focus-bg);
+  border-color: var(--input-focus-border);
+  color: var(--text-bright);
+}
+
+.agent-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
+}
+
+.modal-button {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-button-secondary {
+  background: var(--button-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--button-border);
+}
+
+.modal-button-secondary:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+}
+
+.modal-button-primary {
+  background: var(--input-focus-bg);
+  color: var(--text-bright);
+  border: 1px solid var(--input-focus-border);
+}
+
+.modal-button-primary:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+}
+
+.modal-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-loader {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }`;
 }
 
@@ -968,7 +1247,14 @@ const app = createApp({
       sendingPrompts: new Set(), // Set of pane IDs currently sending
       queuedMessages: {}, // Map of pane ID to temporary "queued" message
       theme: localStorage.getItem('dmux-theme') || 'dark', // Theme state
-      expandedPrompts: new Set() // Set of pane IDs with expanded initial prompts
+      expandedPrompts: new Set(), // Set of pane IDs with expanded initial prompts
+      showCreateDialog: false,
+      newPanePrompt: '',
+      newPaneAgent: null,
+      creatingPane: false,
+      availableAgents: [],
+      needsAgentChoice: false,
+      createStep: 'prompt' // 'prompt' or 'agent'
     };
   },
   template: \`
@@ -991,9 +1277,18 @@ const app = createApp({
 
     <div class="container">
       <main>
+        <div class="actions-bar">
+          <button @click="openCreateDialog" class="create-pane-button" :disabled="creatingPane">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 4.5v15m7.5-7.5h-15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Create New Pane
+          </button>
+        </div>
+
         <div v-if="panes.length === 0" class="no-panes">
           <p>No dmux panes active</p>
-          <p class="hint">Press 'n' in dmux to create a new pane</p>
+          <p class="hint">Click "Create New Pane" above or press 'n' in dmux</p>
         </div>
 
         <div v-else class="panes-grid">
@@ -1105,6 +1400,86 @@ const app = createApp({
         </div>
       </footer>
     </div>
+
+    <!-- Create Pane Dialog -->
+    <div v-if="showCreateDialog" class="modal-overlay" @click.self="closeCreateDialog">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h2>{{ createStep === 'prompt' ? 'Create New Pane' : 'Select Agent' }}</h2>
+          <button @click="closeCreateDialog" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Step 1: Prompt -->
+          <div v-if="createStep === 'prompt'" class="form-group">
+            <label for="pane-prompt">Prompt</label>
+            <textarea
+              id="pane-prompt"
+              v-model="newPanePrompt"
+              placeholder="Enter task description (e.g., 'Add tests for the authentication module')"
+              rows="4"
+              class="modal-textarea"
+              :disabled="creatingPane"
+              @keydown.meta.enter="submitPrompt"
+              @keydown.ctrl.enter="submitPrompt"
+            ></textarea>
+            <div class="input-hint">Cmd/Ctrl + Enter to continue</div>
+          </div>
+
+          <!-- Step 2: Agent Selection -->
+          <div v-if="createStep === 'agent'" class="form-group">
+            <label>Select Agent</label>
+            <div class="agent-selector">
+              <button
+                v-for="agent in availableAgents"
+                :key="agent"
+                @click="newPaneAgent = agent"
+                class="agent-option"
+                :class="{ 'selected': newPaneAgent === agent }"
+                :disabled="creatingPane"
+              >
+                <img
+                  :src="'https://cdn.formk.it/dmux/' + agent + '.svg'"
+                  :alt="agent"
+                  class="agent-logo"
+                />
+                <span>{{ agent }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            v-if="createStep === 'agent'"
+            @click="createStep = 'prompt'"
+            class="modal-button modal-button-secondary"
+            :disabled="creatingPane"
+          >
+            Back
+          </button>
+          <button @click="closeCreateDialog" class="modal-button modal-button-secondary" :disabled="creatingPane">
+            Cancel
+          </button>
+          <button
+            v-if="createStep === 'prompt'"
+            @click="submitPrompt"
+            class="modal-button modal-button-primary"
+            :disabled="!newPanePrompt.trim() || creatingPane"
+          >
+            <span v-if="creatingPane" class="button-loader"></span>
+            <span v-else>Continue</span>
+          </button>
+          <button
+            v-if="createStep === 'agent'"
+            @click="createPane"
+            class="modal-button modal-button-primary"
+            :disabled="!newPaneAgent || creatingPane"
+          >
+            <span v-if="creatingPane" class="button-loader"></span>
+            <span v-else>Create Pane</span>
+          </button>
+        </div>
+      </div>
+    </div>
   \`,
   methods: {
     toggleTheme() {
@@ -1120,6 +1495,107 @@ const app = createApp({
       }
       // Force reactivity
       this.expandedPrompts = new Set(this.expandedPrompts);
+    },
+    openCreateDialog() {
+      this.showCreateDialog = true;
+      this.newPanePrompt = '';
+      this.newPaneAgent = null;
+      this.availableAgents = [];
+      this.needsAgentChoice = false;
+      this.createStep = 'prompt';
+      // Focus the textarea after dialog opens
+      setTimeout(() => {
+        const textarea = document.getElementById('pane-prompt');
+        if (textarea) textarea.focus();
+      }, 100);
+    },
+    closeCreateDialog() {
+      this.showCreateDialog = false;
+      this.newPanePrompt = '';
+      this.newPaneAgent = null;
+      this.creatingPane = false;
+      this.createStep = 'prompt';
+      this.availableAgents = [];
+      this.needsAgentChoice = false;
+    },
+    async submitPrompt() {
+      if (!this.newPanePrompt.trim() || this.creatingPane) return;
+
+      this.creatingPane = true;
+
+      try {
+        // First API call: Send prompt without agent
+        const response = await fetch('/api/panes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: this.newPanePrompt.trim()
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Pane created without agent selection (only one agent available)
+          this.closeCreateDialog();
+          await this.fetchPanes();
+          console.log('Pane created:', data.pane);
+        } else if (data.needsAgentChoice) {
+          // Agent selection required
+          this.availableAgents = data.availableAgents || [];
+          this.needsAgentChoice = true;
+          this.createStep = 'agent';
+          this.creatingPane = false;
+          // Auto-select first agent
+          if (this.availableAgents.length > 0) {
+            this.newPaneAgent = this.availableAgents[0];
+          }
+        } else {
+          // Error occurred
+          console.error('Failed to create pane:', data.error);
+          alert('Failed to create pane: ' + (data.error || 'Unknown error'));
+          this.creatingPane = false;
+        }
+      } catch (err) {
+        console.error('Failed to create pane:', err);
+        alert('Failed to create pane: ' + err.message);
+        this.creatingPane = false;
+      }
+    },
+    async createPane() {
+      if (!this.newPaneAgent || this.creatingPane) return;
+
+      this.creatingPane = true;
+
+      try {
+        // Second API call: Send prompt with selected agent
+        const response = await fetch('/api/panes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: this.newPanePrompt.trim(),
+            agent: this.newPaneAgent
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Pane created successfully
+          this.closeCreateDialog();
+          await this.fetchPanes();
+          console.log('Pane created:', data.pane);
+        } else {
+          // Error occurred
+          console.error('Failed to create pane:', data.error);
+          alert('Failed to create pane: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error('Failed to create pane:', err);
+        alert('Failed to create pane: ' + err.message);
+      } finally {
+        this.creatingPane = false;
+      }
     },
     async fetchPanes() {
       try {

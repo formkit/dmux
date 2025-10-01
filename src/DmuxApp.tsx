@@ -114,6 +114,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     setNewPanePrompt,
     loadPanes,
     panesFile,
+    availableAgents,
   });
   
   // Sync panes with StateManager

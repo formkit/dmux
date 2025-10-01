@@ -50,16 +50,195 @@ export function setupRoutes(app: App) {
   }));
 
   // GET /api/panes - List all panes
+  // POST /api/panes - Create a new pane
   app.use('/api/panes', eventHandler(async (event) => {
-    if (event.node.req.method !== 'GET') return;
+    if (event.node.req.method === 'GET') {
+      const state = stateManager.getState();
+      return {
+        panes: state.panes.map(formatPaneResponse),
+        projectName: state.projectName,
+        sessionName: state.sessionName,
+        timestamp: Date.now()
+      };
+    }
 
-    const state = stateManager.getState();
-    return {
-      panes: state.panes.map(formatPaneResponse),
-      projectName: state.projectName,
-      sessionName: state.sessionName,
-      timestamp: Date.now()
-    };
+    if (event.node.req.method === 'POST') {
+      try {
+        const body = await readBody(event);
+        let { prompt, agent } = body;
+
+        console.error('[API] POST /api/panes called with:', { prompt, agent, body });
+
+        if (!prompt || typeof prompt !== 'string') {
+          event.node.res.statusCode = 400;
+          return { error: 'Missing or invalid prompt' };
+        }
+
+        // Normalize agent to undefined if not provided or empty
+        if (!agent || agent === '') {
+          agent = undefined;
+        }
+
+        console.error('[API] After normalization, agent =', agent);
+
+        if (agent && agent !== 'claude' && agent !== 'opencode') {
+          event.node.res.statusCode = 400;
+          return { error: 'Invalid agent. Must be "claude" or "opencode"' };
+        }
+
+        // Get available agents using robust detection (same as TUI)
+        const { execSync } = await import('child_process');
+        const fsPromises = await import('fs/promises');
+        const availableAgents: Array<'claude' | 'opencode'> = [];
+
+        // Check for Claude
+        const hasClaude = await (async () => {
+          try {
+            const userShell = process.env.SHELL || '/bin/bash';
+            const result = execSync(
+              `${userShell} -i -c "command -v claude 2>/dev/null || which claude 2>/dev/null"`,
+              { encoding: 'utf-8', stdio: 'pipe' }
+            ).trim();
+            if (result) return true;
+          } catch {}
+
+          const claudePaths = [
+            `${process.env.HOME}/.claude/local/claude`,
+            `${process.env.HOME}/.local/bin/claude`,
+            '/usr/local/bin/claude',
+            '/opt/homebrew/bin/claude',
+            '/usr/bin/claude',
+            `${process.env.HOME}/bin/claude`,
+          ];
+
+          for (const p of claudePaths) {
+            try {
+              await fsPromises.access(p);
+              return true;
+            } catch {}
+          }
+          return false;
+        })();
+
+        if (hasClaude) availableAgents.push('claude');
+
+        // Check for opencode
+        const hasOpencode = await (async () => {
+          try {
+            const userShell = process.env.SHELL || '/bin/bash';
+            const result = execSync(
+              `${userShell} -i -c "command -v opencode 2>/dev/null || which opencode 2>/dev/null"`,
+              { encoding: 'utf-8', stdio: 'pipe' }
+            ).trim();
+            if (result) return true;
+          } catch {}
+
+          const opencodePaths = [
+            '/opt/homebrew/bin/opencode',
+            '/usr/local/bin/opencode',
+            `${process.env.HOME}/.local/bin/opencode`,
+            `${process.env.HOME}/bin/opencode`,
+          ];
+
+          for (const p of opencodePaths) {
+            try {
+              await fsPromises.access(p);
+              return true;
+            } catch {}
+          }
+          return false;
+        })();
+
+        if (hasOpencode) availableAgents.push('opencode');
+
+        console.error('[API] Available agents:', availableAgents);
+
+        if (availableAgents.length === 0) {
+          event.node.res.statusCode = 500;
+          return { error: 'No agents available. Install claude or opencode.' };
+        }
+
+        // If no agent specified and multiple available, return agent choice needed
+        if (!agent && availableAgents.length > 1) {
+          console.error('[API] Returning needsAgentChoice');
+          return {
+            needsAgentChoice: true,
+            availableAgents,
+            message: 'Please specify an agent (claude or opencode) in the request body',
+          };
+        }
+
+        console.error('[API] Proceeding to create pane with agent:', agent);
+
+        // Import pane creation utility
+        const { createPane } = await import('../utils/paneCreation.js');
+        const state = stateManager.getState();
+
+        // Create the pane
+        const result = await createPane(
+          {
+            prompt,
+            agent: agent || (availableAgents.length === 1 ? availableAgents[0] : undefined),
+            projectName: state.projectName || 'unknown',
+            existingPanes: state.panes,
+          },
+          availableAgents
+        );
+
+        // Check if agent choice is needed
+        if (result.needsAgentChoice) {
+          return {
+            needsAgentChoice: true,
+            availableAgents,
+            message: 'Please specify an agent (claude or opencode) in the request body',
+          };
+        }
+
+        // Save the new pane to the panes file
+        const fs = await import('fs/promises');
+        const path = await import('path');
+
+        // Get panes file path from state
+        const projectRoot = state.projectRoot || process.cwd();
+        const panesFile = path.join(
+          projectRoot,
+          '.dmux',
+          `dmux.config.json`
+        );
+
+        // Read existing panes
+        let existingPanes: DmuxPane[] = [];
+        try {
+          const configContent = await fs.readFile(panesFile, 'utf-8');
+          const config = JSON.parse(configContent);
+          existingPanes = Array.isArray(config) ? config : config.panes || [];
+        } catch {
+          // File doesn't exist yet, start with empty array
+        }
+
+        // Add new pane
+        const updatedPanes = [...existingPanes, result.pane];
+
+        // Write back to file
+        await fs.writeFile(
+          panesFile,
+          JSON.stringify({ panes: updatedPanes }, null, 2)
+        );
+
+        // Update state manager
+        stateManager.updatePanes(updatedPanes);
+
+        return {
+          success: true,
+          pane: formatPaneResponse(result.pane),
+          message: 'Pane created successfully',
+        };
+      } catch (err: any) {
+        console.error('Failed to create pane:', err);
+        event.node.res.statusCode = 500;
+        return { error: 'Failed to create pane', details: err.message };
+      }
+    }
   }));
 
   // GET /api/panes/:id - Get specific pane

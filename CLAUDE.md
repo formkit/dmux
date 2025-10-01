@@ -456,8 +456,15 @@ The system uses a worker-based architecture for non-blocking pane status monitor
 #### API Endpoints
 - `GET /` - Dashboard HTML interface
 - `GET /api/panes` - JSON list of panes with statuses
+- `POST /api/panes` - Create a new pane with worktree and agent
+- `GET /api/panes/:id` - Get specific pane information
+- `GET /api/panes/:id/snapshot` - Get current terminal state of pane
 - `GET /api/session` - Session information
 - `GET /api/health` - Server health check
+- `GET /api/stream/:paneId` - Stream terminal output (SSE)
+- `POST /api/keys/:paneId` - Send keystrokes to pane
+
+For detailed API documentation, see [API.md](API.md)
 
 #### Key Features
 - **Activity-based detection**: Motion = working, static = analyze
@@ -466,7 +473,47 @@ The system uses a worker-based architecture for non-blocking pane status monitor
 - **Real-time updates**: Dashboard refreshes every 2 seconds
 - **Portable**: All assets embedded in binary, no external dependencies
 
-### 8. Tmux Command Execution
+### 8. Pane Creation Utility (`src/utils/paneCreation.ts`)
+
+Universal pane creation utility shared by both TUI and API:
+
+**Purpose**: Centralized logic for creating new panes with worktrees and agents
+
+**Key Function**: `createPane(options, availableAgents)`
+- Generates slug from prompt using OpenRouter AI
+- Creates git worktree in `.dmux/worktrees/{slug}`
+- Splits tmux pane horizontally
+- Launches specified agent (Claude or opencode)
+- Auto-approves trust prompts for Claude
+- Returns new pane object or indicates agent choice needed
+
+**Features**:
+- Agent detection and auto-selection
+- Proper error handling and recovery
+- Screen clearing and layout management
+- Async/await for clean control flow
+- Reusable across different interfaces (TUI, API, CLI)
+
+**Usage**:
+```typescript
+const result = await createPane(
+  {
+    prompt: 'Add TypeScript types',
+    agent: 'claude',
+    projectName: 'my-project',
+    existingPanes: []
+  },
+  ['claude', 'opencode']
+);
+
+if (result.needsAgentChoice) {
+  // Handle agent selection
+} else {
+  // Use result.pane
+}
+```
+
+### 9. Tmux Command Execution
 
 All tmux operations use `child_process.execSync`:
 ```typescript
@@ -536,12 +583,56 @@ dmux
 cd ~/projects/project-a
 dmux  # Creates/attaches dmux-project-a
 
-# Project B  
+# Project B
 cd ~/projects/project-b
 dmux  # Creates/attaches dmux-project-b
 
 # Sessions remain independent
 ```
+
+#### Programmatic Pane Creation (API)
+
+Create panes from external tools, scripts, or web interfaces:
+
+```bash
+# Create pane via API
+curl -X POST http://127.0.0.1:3000/api/panes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Add error handling to the API endpoints",
+    "agent": "claude"
+  }'
+```
+
+**Use Cases**:
+- Automate pane creation from CI/CD pipelines
+- Integrate with project management tools
+- Create panes from web dashboards
+- Batch pane creation for multiple tasks
+- Integration with IDEs and editors
+
+**Example: Create Multiple Panes**
+```bash
+#!/bin/bash
+# Create panes for a set of tasks
+
+TASKS=(
+  "Add unit tests for user service"
+  "Update API documentation"
+  "Implement rate limiting"
+  "Add logging to critical paths"
+)
+
+for task in "${TASKS[@]}"; do
+  curl -s -X POST http://127.0.0.1:3000/api/panes \
+    -H "Content-Type: application/json" \
+    -d "{\"prompt\": \"$task\", \"agent\": \"claude\"}"
+  echo "Created pane for: $task"
+  sleep 2  # Brief pause between creations
+done
+```
+
+See [API.md](API.md) for complete API documentation.
 
 ## Development Guide
 
@@ -830,6 +921,8 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 - **HTTP Dashboard**: Real-time web interface showing pane statuses at auto-selected port
 - **Worker-based Monitoring**: Non-blocking status detection via worker threads (1s polling)
 - **Smart Activity Detection**: Distinguishes user typing from agent working states
+- **REST API for Pane Creation**: POST /api/panes endpoint enables programmatic pane creation
+- **Shared Pane Creation Utility**: Unified pane creation logic used by both TUI and API
 
 ### Known Issues
 1. **Error handling**: Claude command availability not verified
