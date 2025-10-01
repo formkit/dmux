@@ -157,6 +157,11 @@ export class StatusDetector extends EventEmitter {
       const finalStatus: AgentStatus =
         analysis.state === 'option_dialog' ? 'waiting' : 'idle';
 
+      // If we detected an option dialog, add a 2-second delay before allowing
+      // the next state detection. This prevents detecting an incomplete state
+      // after the user selects an option.
+      const delayBeforeNextCheck = analysis.state === 'option_dialog' ? 2000 : 0;
+
       // Update status
       this.paneStatuses.set(paneId, finalStatus);
 
@@ -166,7 +171,8 @@ export class StatusDetector extends EventEmitter {
         timestamp: Date.now(),
         payload: {
           status: finalStatus,
-          analysis
+          analysis,
+          delayBeforeNextCheck
         }
       });
 
