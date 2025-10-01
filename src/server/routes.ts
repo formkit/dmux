@@ -445,6 +445,7 @@ function formatPaneResponse(pane: DmuxPane) {
     lastAgentCheck: pane.lastAgentCheck,
     optionsQuestion: pane.optionsQuestion,
     options: pane.options,
-    potentialHarm: pane.potentialHarm
+    potentialHarm: pane.potentialHarm,
+    agentSummary: pane.agentSummary
   };
 }

@@ -135,7 +135,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
               agentStatus: event.status,
               optionsQuestion: event.optionsQuestion,
               options: event.options,
-              potentialHarm: event.potentialHarm
+              potentialHarm: event.potentialHarm,
+              agentSummary: event.summary
             };
           }
           return pane;

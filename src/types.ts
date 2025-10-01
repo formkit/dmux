@@ -33,6 +33,8 @@ export interface DmuxPane {
   optionsQuestion?: string;
   options?: OptionChoice[];
   potentialHarm?: PotentialHarm;
+  // Summary of what agent said (when agentStatus is 'idle')
+  agentSummary?: string;
 }
 
 export interface PanePosition {

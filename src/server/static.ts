@@ -332,19 +332,63 @@ main {
   color: #667eea;
 }
 
+.pane-prompt-section {
+  margin-bottom: 12px;
+}
+
+.pane-prompt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pane-prompt-header:hover {
+  background: var(--input-focus-bg);
+  border-color: var(--input-border);
+}
+
+.prompt-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+}
+
+.expand-icon {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
+}
+
 .pane-prompt {
   color: var(--text-secondary);
-  font-size: 14px;
-  margin-bottom: 20px;
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 8px 12px;
   line-height: 1.6;
-  max-height: 66px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: help;
-  position: relative;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.agent-summary {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 6px;
+  font-style: italic;
 }
 
 .tooltip {
@@ -581,7 +625,7 @@ main {
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.4;
   resize: none;
@@ -918,7 +962,8 @@ const app = createApp({
       promptInputs: {}, // Map of pane ID to prompt text
       sendingPrompts: new Set(), // Set of pane IDs currently sending
       queuedMessages: {}, // Map of pane ID to temporary "queued" message
-      theme: localStorage.getItem('dmux-theme') || 'dark' // Theme state
+      theme: localStorage.getItem('dmux-theme') || 'dark', // Theme state
+      expandedPrompts: new Set() // Set of pane IDs with expanded initial prompts
     };
   },
   template: \`
@@ -960,8 +1005,23 @@ const app = createApp({
               </div>
             </div>
 
-            <div class="pane-prompt" :title="pane.prompt || 'No prompt'">
-              {{ pane.prompt || 'No prompt' }}
+            <div class="pane-prompt-section">
+              <div
+                class="pane-prompt-header"
+                @click="togglePrompt(pane.id)"
+                :class="{ 'expanded': expandedPrompts.has(pane.id) }"
+              >
+                <span class="prompt-label">Initial Prompt</span>
+                <span class="expand-icon">{{ expandedPrompts.has(pane.id) ? '▼' : '▶' }}</span>
+              </div>
+              <div v-if="expandedPrompts.has(pane.id)" class="pane-prompt">
+                {{ pane.prompt || 'No prompt' }}
+              </div>
+            </div>
+
+            <!-- Show agent summary when idle -->
+            <div v-if="pane.agentStatus === 'idle' && pane.agentSummary" class="agent-summary">
+              {{ pane.agentSummary }}
             </div>
 
             <div class="pane-interactive" @click.prevent>
@@ -1041,6 +1101,15 @@ const app = createApp({
       this.theme = this.theme === 'dark' ? 'light' : 'dark';
       localStorage.setItem('dmux-theme', this.theme);
       document.documentElement.setAttribute('data-theme', this.theme);
+    },
+    togglePrompt(paneId) {
+      if (this.expandedPrompts.has(paneId)) {
+        this.expandedPrompts.delete(paneId);
+      } else {
+        this.expandedPrompts.add(paneId);
+      }
+      // Force reactivity
+      this.expandedPrompts = new Set(this.expandedPrompts);
     },
     async fetchPanes() {
       try {

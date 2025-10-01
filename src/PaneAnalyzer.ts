@@ -16,6 +16,7 @@ export interface PaneAnalysis {
     hasRisk: boolean;
     description?: string;
   };
+  summary?: string; // Brief summary when state is 'open_prompt' (idle)
 }
 
 export class PaneAnalyzer {
@@ -232,6 +233,69 @@ Output: {
   }
 
   /**
+   * Stage 3: Extract summary when state is open_prompt (idle)
+   */
+  async extractSummary(content: string): Promise<string | undefined> {
+    if (!this.apiKey) {
+      return undefined;
+    }
+
+    const systemPrompt = `You are analyzing terminal output from an AI coding agent (Claude Code or opencode).
+The agent is now idle and waiting for the next prompt.
+
+Your task: Provide a 1 paragraph or shorter summary of what the agent communicated to the user before going idle.
+
+Focus on:
+- What the agent just finished doing or said
+- Any results, conclusions, or feedback provided
+- Keep it concise (1-2 sentences max)
+- Use past tense ("completed", "fixed", "created", etc.)
+
+Return a JSON object with a "summary" field.
+
+Examples:
+- "Completed refactoring the authentication module and fixed TypeScript errors."
+- "Created the new user dashboard component with responsive design."
+- "Build succeeded with no errors. All tests passed."
+- "Unable to find the specified file. Waiting for clarification."
+
+If there's no meaningful content or the output is unclear, return an empty summary.`;
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/dmux/dmux',
+          'X-Title': 'dmux',
+        },
+        body: JSON.stringify({
+          model: 'x-ai/grok-4-fast:free',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Extract the summary from this terminal output:\n\n${content}` }
+          ],
+          temperature: 0.1,
+          max_tokens: 100,
+          response_format: { type: 'json_object' },
+        })
+      });
+
+      if (!response.ok) {
+        return undefined;
+      }
+
+      const data: any = await response.json();
+      const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+
+      return result.summary || undefined;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  /**
    * Main analysis function that captures and analyzes a pane
    */
   async analyzePane(paneId: string): Promise<PaneAnalysis> {
@@ -245,19 +309,25 @@ Output: {
     // Stage 1: Determine the state
     const state = await this.determineState(content);
 
-    // If it's not an option dialog, we're done
-    if (state !== 'option_dialog') {
-      return { state };
+    // If it's an option dialog, extract option details
+    if (state === 'option_dialog') {
+      const optionDetails = await this.extractOptions(content);
+      return {
+        state,
+        ...optionDetails
+      };
     }
 
-    // Stage 2: Extract option details
-    const optionDetails = await this.extractOptions(content);
+    // If it's open_prompt (idle), extract summary
+    if (state === 'open_prompt') {
+      const summary = await this.extractSummary(content);
+      return {
+        state,
+        summary
+      };
+    }
 
-    const result: PaneAnalysis = {
-      state,
-      ...optionDetails
-    };
-
-    return result;
+    // Otherwise just return the state (in_progress)
+    return { state };
   }
 }

@@ -13,6 +13,7 @@ export interface StatusUpdateEvent {
   optionsQuestion?: string;
   options?: OptionChoice[];
   potentialHarm?: PotentialHarm;
+  summary?: string;
 }
 
 /**
@@ -176,7 +177,8 @@ export class StatusDetector extends EventEmitter {
         previousStatus: 'analyzing',
         optionsQuestion: analysis.question,
         options: analysis.options,
-        potentialHarm: analysis.potentialHarm
+        potentialHarm: analysis.potentialHarm,
+        summary: analysis.summary
       } as StatusUpdateEvent);
 
     } catch (error: any) {
