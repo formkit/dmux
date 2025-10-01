@@ -968,7 +968,8 @@ const app = createApp({
       sendingPrompts: new Set(), // Set of pane IDs currently sending
       queuedMessages: {}, // Map of pane ID to temporary "queued" message
       theme: localStorage.getItem('dmux-theme') || 'dark', // Theme state
-      expandedPrompts: new Set() // Set of pane IDs with expanded initial prompts
+      expandedPrompts: new Set(), // Set of pane IDs with expanded initial prompts
+      loadingOptions: new Set() // Set of pane IDs with loading option dialogs
     };
   },
   template: \`
@@ -1041,13 +1042,18 @@ const app = createApp({
                 <div v-if="pane.potentialHarm && pane.potentialHarm.hasRisk" class="options-warning">
                   ⚠️ {{ pane.potentialHarm.description }}
                 </div>
-                <div class="options-buttons">
+                <div v-if="loadingOptions.has(pane.id)" class="analyzing-state">
+                  <div class="loader-spinner"></div>
+                  <span>Processing selection...</span>
+                </div>
+                <div v-else class="options-buttons">
                   <button
                     v-for="option in pane.options"
                     :key="option.action"
                     @click="selectOption(pane, option)"
                     class="option-button"
                     :class="{ 'option-button-danger': pane.potentialHarm && pane.potentialHarm.hasRisk }"
+                    :disabled="loadingOptions.has(pane.id)"
                   >
                     {{ option.action }}
                   </button>
@@ -1131,6 +1137,16 @@ const app = createApp({
         this.lastUpdate = new Date();
         this.connected = true;
         this.updateTimeSinceUpdate();
+
+        // Clear loading state for panes that are no longer waiting
+        this.loadingOptions.forEach(paneId => {
+          const pane = this.panes.find(p => p.id === paneId);
+          if (!pane || pane.agentStatus !== 'waiting') {
+            this.loadingOptions.delete(paneId);
+          }
+        });
+        // Force reactivity
+        this.loadingOptions = new Set(this.loadingOptions);
       } catch (err) {
         this.connected = false;
       }
@@ -1183,12 +1199,27 @@ const app = createApp({
     async selectOption(pane, option) {
       if (!option.keys || option.keys.length === 0) return;
 
+      // Set loading state immediately
+      this.loadingOptions.add(pane.id);
+      // Force reactivity
+      this.loadingOptions = new Set(this.loadingOptions);
+
       try {
         // Send the first key in the array (usually the main option key)
         const key = option.keys[0];
         await this.sendKeys(pane.id, key);
+
+        // Clear loading state after a short delay to ensure the state has transitioned
+        // The 2-second delay in the worker will prevent premature state detection
+        setTimeout(() => {
+          this.loadingOptions.delete(pane.id);
+          this.loadingOptions = new Set(this.loadingOptions);
+        }, 500);
       } catch (err) {
         console.error('Failed to select option:', err);
+        // Clear loading state on error
+        this.loadingOptions.delete(pane.id);
+        this.loadingOptions = new Set(this.loadingOptions);
       }
     },
     autoExpand(event) {

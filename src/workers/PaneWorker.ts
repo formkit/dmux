@@ -232,7 +232,27 @@ class PaneWorker {
       if (payload.status === 'idle') {
         this.idleConfirmed = true;
       }
+
+      // If a delay was requested (e.g., after option dialog), pause polling temporarily
+      if (payload.delayBeforeNextCheck && payload.delayBeforeNextCheck > 0) {
+        this.pausePolling(payload.delayBeforeNextCheck);
+      }
     }
+  }
+
+  private pausePolling(delayMs: number): void {
+    // Stop the current interval
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+
+    // Restart polling after the delay
+    setTimeout(() => {
+      if (!this.isShuttingDown) {
+        this.startPolling();
+      }
+    }, delayMs);
   }
 
   private async sendKeys(keys: string): Promise<void> {
