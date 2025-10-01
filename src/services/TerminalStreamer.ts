@@ -395,12 +395,12 @@ export class TerminalStreamer extends EventEmitter {
     // Get current cursor position for accurate rendering
     const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
 
-    // DEBUG: Log patch details
-    const first100 = output.substring(0, 100).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
-    const last100 = output.substring(Math.max(0, output.length - 100)).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
-    console.error(`[PATCH OUT] pane=${stream.paneId} cursor=(${cursorPos.row},${cursorPos.col}) len=${output.length}`);
-    console.error(`[PATCH OUT] first100: ${first100}`);
-    console.error(`[PATCH OUT] last100: ${last100}`);
+    // DEBUG: Log patch details (disabled)
+    // const first100 = output.substring(0, 100).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    // const last100 = output.substring(Math.max(0, output.length - 100)).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    // console.error(`[PATCH OUT] pane=${stream.paneId} cursor=(${cursorPos.row},${cursorPos.col}) len=${output.length}`);
+    // console.error(`[PATCH OUT] first100: ${first100}`);
+    // console.error(`[PATCH OUT] last100: ${last100}`);
 
     // Send raw output with ANSI codes - frontend will parse
     // Keep \r\n sequences - frontend handles them properly
