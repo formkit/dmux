@@ -39,6 +39,74 @@ export function getDashboardCss(): string {
   box-sizing: border-box;
 }
 
+:root {
+  /* Dark theme (default) */
+  --bg-gradient-start: #0f0f23;
+  --bg-gradient-mid: #1a1a2e;
+  --bg-gradient-end: #16213e;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #808080;
+  --text-dim: #606060;
+  --text-dimmer: #666;
+  --text-bright: #fff;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-accent: rgba(255, 140, 0, 0.3);
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --card-border: rgba(255, 255, 255, 0.1);
+  --header-bg: rgba(255, 255, 255, 0.05);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.12);
+  --input-focus-border: rgba(255, 140, 0, 0.5);
+  --input-focus-bg: rgba(255, 255, 255, 0.08);
+  --input-focus-shadow: rgba(255, 140, 0, 0.1);
+  --button-bg: rgba(200, 210, 230, 0.15);
+  --button-border: rgba(255, 255, 255, 0.08);
+  --button-hover-bg: rgba(200, 210, 230, 0.25);
+  --button-hover-border: rgba(255, 255, 255, 0.15);
+  --tooltip-bg: rgba(20, 20, 30, 0.98);
+  --tooltip-border: rgba(255, 255, 255, 0.15);
+  --hint-bg: rgba(255, 255, 255, 0.05);
+  --agent-bg: rgba(255, 255, 255, 0.08);
+  --agent-border: rgba(255, 255, 255, 0.15);
+  --idle-badge-bg: rgba(255, 255, 255, 0.08);
+  --idle-badge-border: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] {
+  /* Light theme */
+  --bg-gradient-start: #f0f4f8;
+  --bg-gradient-mid: #e6eef5;
+  --bg-gradient-end: #dce7f0;
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-tertiary: #718096;
+  --text-dim: #a0aec0;
+  --text-dimmer: #cbd5e0;
+  --text-bright: #000;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --border-accent: rgba(255, 140, 0, 0.4);
+  --card-bg: rgba(255, 255, 255, 0.8);
+  --card-border: rgba(0, 0, 0, 0.08);
+  --header-bg: rgba(255, 255, 255, 0.9);
+  --input-bg: rgba(255, 255, 255, 0.6);
+  --input-border: rgba(0, 0, 0, 0.15);
+  --input-focus-border: rgba(255, 140, 0, 0.6);
+  --input-focus-bg: rgba(255, 255, 255, 0.9);
+  --input-focus-shadow: rgba(255, 140, 0, 0.15);
+  --button-bg: rgba(0, 0, 0, 0.05);
+  --button-border: rgba(0, 0, 0, 0.1);
+  --button-hover-bg: rgba(0, 0, 0, 0.1);
+  --button-hover-border: rgba(0, 0, 0, 0.2);
+  --tooltip-bg: rgba(255, 255, 255, 0.98);
+  --tooltip-border: rgba(0, 0, 0, 0.15);
+  --hint-bg: rgba(0, 0, 0, 0.03);
+  --agent-bg: rgba(0, 0, 0, 0.05);
+  --agent-border: rgba(0, 0, 0, 0.12);
+  --idle-badge-bg: rgba(0, 0, 0, 0.05);
+  --idle-badge-border: rgba(0, 0, 0, 0.1);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -56,14 +124,15 @@ export function getDashboardCss(): string {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-mid) 50%, var(--bg-gradient-end) 100%);
   background-attachment: fixed;
-  color: #e0e0e0;
+  color: var(--text-primary);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 .container {
@@ -83,10 +152,10 @@ header {
   align-items: center;
   padding: 16px 24px;
   margin-bottom: 0;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--header-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border-bottom: 2px solid rgba(255, 140, 0, 0.3);
+  border-bottom: 2px solid var(--border-accent);
   animation: slideInFromTop 0.6s ease-out;
   gap: 16px;
 }
@@ -101,7 +170,7 @@ h1 {
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.5px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   flex: 1;
   text-align: center;
   white-space: nowrap;
@@ -117,8 +186,29 @@ h1 {
   gap: 12px;
   align-items: center;
   font-size: 13px;
-  color: #a0a0a0;
+  color: var(--text-secondary);
   flex-shrink: 0;
+}
+
+.theme-toggle {
+  background: var(--button-bg);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+  transform: scale(1.05);
 }
 
 .session-info span {
@@ -147,44 +237,17 @@ main {
 }
 
 .pane-card {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--card-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 12px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
   animation: fadeIn 0.5s ease-out backwards;
-  text-decoration: none;
   color: inherit;
   display: block;
-}
-
-.pane-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #667eea, transparent);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.pane-card:hover::before {
-  opacity: 1;
-}
-
-.pane-card:hover {
-  transform: translateY(-4px) scale(1.02);
-  border-color: rgba(102, 126, 234, 0.3);
-  box-shadow:
-    0 12px 40px rgba(102, 126, 234, 0.2),
-    0 0 0 1px rgba(102, 126, 234, 0.1);
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .pane-card:nth-child(1) { animation-delay: 0.1s; }
@@ -195,71 +258,145 @@ main {
 .pane-card:nth-child(6) { animation-delay: 0.35s; }
 
 .pane-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
   margin-bottom: 16px;
+}
+
+.pane-header-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pane-title-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+  width: fit-content;
+}
+
+.pane-title-link:hover .pane-title {
+  text-decoration: underline;
 }
 
 .pane-title {
   font-size: 20px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-bright);
   letter-spacing: -0.3px;
-  margin-bottom: 4px;
-  padding-right: 1em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.pane-arrow {
+  font-size: 16px;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+  opacity: 0.6;
+}
+
+.pane-title-link:hover .pane-arrow {
+  color: #ff8c00;
+  transform: translateX(2px);
+  opacity: 1;
+}
+
+.pane-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .pane-agent {
-  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--agent-bg);
+  border: 1px solid var(--agent-border);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.pane-agent.claude {
+  background: rgba(217, 119, 87, 0.15);
+  border-color: rgba(217, 119, 87, 0.3);
+  color: #D97757;
+}
+
+.pane-agent.opencode {
+  background: rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.3);
+  color: #667eea;
+}
+
+.pane-prompt-section {
+  margin-bottom: 12px;
+}
+
+.pane-prompt-header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pane-prompt-header:hover {
+  background: var(--input-focus-bg);
+  border-color: var(--input-border);
+}
+
+.prompt-label {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-tertiary);
 }
 
-.pane-agent.claude {
-  background: linear-gradient(135deg, #D97757 0%, #c56542 100%);
-  border-color: rgba(217, 119, 87, 0.4);
-  box-shadow: 0 4px 12px rgba(217, 119, 87, 0.3);
-}
-
-.pane-agent.opencode {
-  background: linear-gradient(135deg, #667eea 0%, #5568d3 100%);
-  border-color: rgba(102, 126, 234, 0.4);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+.expand-icon {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
 }
 
 .pane-prompt {
-  color: #b0b0b0;
-  font-size: 14px;
-  margin-bottom: 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 8px 12px;
   line-height: 1.6;
-  max-height: 66px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: help;
-  position: relative;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.agent-summary {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 6px;
+  font-style: italic;
 }
 
 .tooltip {
   position: absolute;
-  background: rgba(20, 20, 30, 0.98);
+  background: var(--tooltip-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--tooltip-border);
   padding: 16px;
   border-radius: 12px;
   z-index: 1000;
@@ -268,10 +405,10 @@ main {
   max-height: 200px;
   overflow-y: auto;
   box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
+    0 20px 60px rgba(0, 0, 0, 0.3),
+    0 0 0 1px var(--border-color);
   font-size: 13px;
-  color: #e0e0e0;
+  color: var(--text-primary);
   pointer-events: none;
   animation: fadeIn 0.2s ease-out;
 }
@@ -291,7 +428,7 @@ main {
 }
 
 .status-label {
-  color: #808080;
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 
@@ -324,9 +461,9 @@ main {
 }
 
 .status-badge.idle {
-  background: rgba(255, 255, 255, 0.08);
-  color: #999;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--idle-badge-bg);
+  color: var(--text-tertiary);
+  border: 1px solid var(--idle-badge-border);
 }
 
 .status-badge.running {
@@ -347,18 +484,237 @@ main {
   box-shadow: 0 2px 8px rgba(248, 113, 113, 0.4);
 }
 
+.status-badge.analyzing {
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  color: #000;
+  box-shadow: 0 2px 8px rgba(167, 139, 250, 0.4);
+  animation: pulse 2s ease-in-out infinite;
+}
+
 .pane-id {
   font-family: 'SF Mono', Monaco, monospace;
   font-size: 10px;
-  color: #666;
+  color: var(--text-dimmer);
   font-weight: 500;
   letter-spacing: 0.2px;
+}
+
+/* Interactive Area Styles */
+.pane-interactive {
+  margin-top: 12px;
+}
+
+.options-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.options-question {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.options-warning {
+  padding: 8px 12px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.options-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-button {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
+}
+
+.option-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+}
+
+.option-button:active {
+  transform: translateY(0);
+}
+
+.option-button-danger {
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+  box-shadow: 0 2px 8px rgba(248, 113, 113, 0.3);
+}
+
+.option-button-danger:hover {
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.4);
+}
+
+.analyzing-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  color: #a78bfa;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.loader-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(167, 139, 250, 0.2);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.prompt-input-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.prompt-input-wrapper:focus-within {
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: 0 0 0 3px var(--input-focus-shadow);
+}
+
+.queued-message {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 6px;
+  color: #4ade80;
+  font-size: 12px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.prompt-textarea {
+  flex: 1;
+  min-height: 20px;
+  max-height: 150px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+}
+
+.prompt-textarea:focus {
+  outline: none;
+}
+
+.prompt-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prompt-textarea::placeholder {
+  color: var(--text-dimmer);
+}
+
+.send-button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  background: var(--button-bg);
+  color: var(--text-secondary);
+  border: 1px solid var(--button-border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+}
+
+.send-button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.send-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.send-button svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.button-loader {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.dev-server-status {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.dev-link {
+  color: #ff8c00;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.dev-link:hover {
+  color: #ffa500;
 }
 
 .no-panes {
   text-align: center;
   padding: 100px 20px;
-  color: #808080;
+  color: var(--text-tertiary);
   animation: fadeIn 0.6s ease-out;
 }
 
@@ -370,8 +726,8 @@ main {
 
 .hint {
   font-size: 14px;
-  color: #606060;
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  background: var(--hint-bg);
   padding: 12px 24px;
   border-radius: 12px;
   display: inline-block;
@@ -388,7 +744,7 @@ footer {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  color: #606060;
+  color: var(--text-dim);
   padding: 0;
 }
 
@@ -602,7 +958,12 @@ const app = createApp({
       connected: false,
       panes: [],
       lastUpdate: null,
-      timeSinceUpdate: 'Never'
+      timeSinceUpdate: 'Never',
+      promptInputs: {}, // Map of pane ID to prompt text
+      sendingPrompts: new Set(), // Set of pane IDs currently sending
+      queuedMessages: {}, // Map of pane ID to temporary "queued" message
+      theme: localStorage.getItem('dmux-theme') || 'dark', // Theme state
+      expandedPrompts: new Set() // Set of pane IDs with expanded initial prompts
     };
   },
   template: \`
@@ -610,6 +971,9 @@ const app = createApp({
       <img src="https://cdn.formk.it/dmux/dmux.png" alt="dmux" class="logo" />
       <h1>{{ projectName }}</h1>
       <div class="session-info">
+        <button @click="toggleTheme" class="theme-toggle" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+          {{ theme === 'dark' ? '☀️' : '🌙' }}
+        </button>
         <span v-if="sessionName">{{ sessionName }}</span>
         <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
       </div>
@@ -623,43 +987,104 @@ const app = createApp({
         </div>
 
         <div v-else class="panes-grid">
-          <a
+          <div
             v-for="pane in panes"
             :key="pane.id"
-            :href="'/panes/' + pane.id"
             class="pane-card"
           >
             <div class="pane-header">
-              <div>
-                <div class="pane-title">{{ pane.slug }}</div>
-                <div class="pane-id">Pane: {{ pane.paneId }}</div>
-              </div>
-              <span class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
-            </div>
-
-            <div class="pane-prompt" :title="pane.prompt || 'No prompt'">
-              {{ pane.prompt || 'No prompt' }}
-            </div>
-
-            <div class="pane-status">
-              <div class="status-item">
-                <span class="status-label">Agent:</span>
-                <span class="status-value">
-                  <span class="status-badge" :class="pane.agentStatus || 'idle'">
-                    {{ pane.agentStatus || 'idle' }}
-                  </span>
-                </span>
-              </div>
-
-              <div v-if="pane.devStatus && pane.devStatus !== 'stopped'" class="status-item">
-                <span class="status-label">Dev Server:</span>
-                <span class="status-value">
-                  <span class="status-badge" :class="pane.devStatus">{{ pane.devStatus }}</span>
-                  <a v-if="pane.devUrl" :href="pane.devUrl" target="_blank">↗</a>
-                </span>
+              <div class="pane-header-content">
+                <a :href="'/panes/' + pane.id" class="pane-title-link">
+                  <span class="pane-title">{{ pane.slug }}</span>
+                  <span class="pane-arrow">→</span>
+                </a>
+                <div class="pane-meta">
+                  <span class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
+                  <span class="pane-id">{{ pane.paneId }}</span>
+                </div>
               </div>
             </div>
-          </a>
+
+            <div class="pane-prompt-section">
+              <div
+                class="pane-prompt-header"
+                @click="togglePrompt(pane.id)"
+                :class="{ 'expanded': expandedPrompts.has(pane.id) }"
+              >
+                <span class="prompt-label">Initial Prompt</span>
+                <span class="expand-icon">{{ expandedPrompts.has(pane.id) ? '▼' : '▶' }}</span>
+              </div>
+              <div v-if="expandedPrompts.has(pane.id)" class="pane-prompt">
+                {{ pane.prompt || 'No prompt' }}
+              </div>
+            </div>
+
+            <!-- Show agent summary when idle -->
+            <div v-if="pane.agentStatus === 'idle' && pane.agentSummary" class="agent-summary">
+              {{ pane.agentSummary }}
+            </div>
+
+            <div class="pane-interactive" @click.prevent>
+              <!-- Options Dialog (when waiting with options) -->
+              <div v-if="pane.agentStatus === 'waiting' && pane.options && pane.options.length > 0" class="options-dialog">
+                <div class="options-question">{{ pane.optionsQuestion || 'Choose an option:' }}</div>
+                <div v-if="pane.potentialHarm && pane.potentialHarm.hasRisk" class="options-warning">
+                  ⚠️ {{ pane.potentialHarm.description }}
+                </div>
+                <div class="options-buttons">
+                  <button
+                    v-for="option in pane.options"
+                    :key="option.action"
+                    @click="selectOption(pane, option)"
+                    class="option-button"
+                    :class="{ 'option-button-danger': pane.potentialHarm && pane.potentialHarm.hasRisk }"
+                  >
+                    {{ option.action }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Analyzing (show loader) -->
+              <div v-else-if="pane.agentStatus === 'analyzing'" class="analyzing-state">
+                <div class="loader-spinner"></div>
+                <span>Analyzing...</span>
+              </div>
+
+              <!-- Working/Idle (show prompt input) -->
+              <div v-else>
+                <div class="prompt-input-wrapper">
+                  <textarea
+                    v-model="promptInputs[pane.id]"
+                    @input="autoExpand"
+                    :placeholder="pane.agentStatus === 'working' ? 'Queue a prompt...' : 'Send a prompt...'"
+                    :disabled="sendingPrompts.has(pane.id)"
+                    class="prompt-textarea"
+                    rows="1"
+                  ></textarea>
+                  <button
+                    @click="sendPrompt(pane)"
+                    :disabled="!promptInputs[pane.id] || sendingPrompts.has(pane.id)"
+                    class="send-button"
+                    :title="pane.agentStatus === 'working' ? 'Queue prompt' : 'Send prompt'"
+                  >
+                    <span v-if="sendingPrompts.has(pane.id)" class="button-loader"></span>
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 988.44 1200.05">
+                      <path d="M425.13,28.37L30.09,423.41C11.19,441.37.34,466.2,0,492.27c-.34,26.07,9.86,51.17,28.29,69.61,18.43,18.45,43.52,28.67,69.59,28.35,26.07-.31,50.91-11.14,68.88-30.02l233.16-233.52v776.64c0,34.56,18.43,66.48,48.36,83.76,29.93,17.28,66.8,17.28,96.72,0,29.93-17.28,48.36-49.21,48.36-83.76V328.85l231.72,231.36c24.63,23.41,59.74,32.18,92.48,23.09,32.74-9.08,58.32-34.68,67.38-67.43,9.05-32.75.25-67.85-23.18-92.46L566.73,28.37C548.63,10.16,524-.04,498.33.05c-.8-.06-1.6-.06-2.4,0-.8-.06-1.6-.06-2.4,0-25.65,0-50.25,10.19-68.4,28.32h0Z"/>
+                    </svg>
+                  </button>
+                </div>
+                <div v-if="queuedMessages[pane.id]" class="queued-message">
+                  ✓ {{ queuedMessages[pane.id] }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="pane.devStatus && pane.devStatus !== 'stopped'" class="dev-server-status">
+              <span class="status-label">Dev Server:</span>
+              <span class="status-badge" :class="pane.devStatus">{{ pane.devStatus }}</span>
+              <a v-if="pane.devUrl" :href="pane.devUrl" target="_blank" class="dev-link">↗</a>
+            </div>
+          </div>
         </div>
       </main>
 
@@ -672,6 +1097,20 @@ const app = createApp({
     </div>
   \`,
   methods: {
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('dmux-theme', this.theme);
+      document.documentElement.setAttribute('data-theme', this.theme);
+    },
+    togglePrompt(paneId) {
+      if (this.expandedPrompts.has(paneId)) {
+        this.expandedPrompts.delete(paneId);
+      } else {
+        this.expandedPrompts.add(paneId);
+      }
+      // Force reactivity
+      this.expandedPrompts = new Set(this.expandedPrompts);
+    },
     async fetchPanes() {
       try {
         const response = await fetch('/api/panes');
@@ -685,6 +1124,67 @@ const app = createApp({
       } catch (err) {
         this.connected = false;
       }
+    },
+    async sendKeys(paneId, keys) {
+      try {
+        const response = await fetch(\`/api/keys/\${paneId}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: keys })
+        });
+        return response.ok;
+      } catch (err) {
+        console.error('Failed to send keys:', err);
+        return false;
+      }
+    },
+    async sendPrompt(pane) {
+      const prompt = this.promptInputs[pane.id];
+      if (!prompt || this.sendingPrompts.has(pane.id)) return;
+
+      this.sendingPrompts.add(pane.id);
+
+      try {
+        // Send each character of the prompt
+        for (const char of prompt) {
+          await this.sendKeys(pane.id, char);
+          await new Promise(resolve => setTimeout(resolve, 5)); // Small delay between chars
+        }
+
+        // Send Enter to submit
+        await this.sendKeys(pane.id, 'Enter');
+
+        // Show queued message for working status
+        if (pane.agentStatus === 'working') {
+          this.queuedMessages[pane.id] = 'Sent to queue';
+          setTimeout(() => {
+            delete this.queuedMessages[pane.id];
+          }, 3000);
+        }
+
+        // Clear input
+        this.promptInputs[pane.id] = '';
+      } catch (err) {
+        console.error('Failed to send prompt:', err);
+      } finally {
+        this.sendingPrompts.delete(pane.id);
+      }
+    },
+    async selectOption(pane, option) {
+      if (!option.keys || option.keys.length === 0) return;
+
+      try {
+        // Send the first key in the array (usually the main option key)
+        const key = option.keys[0];
+        await this.sendKeys(pane.id, key);
+      } catch (err) {
+        console.error('Failed to select option:', err);
+      }
+    },
+    autoExpand(event) {
+      const textarea = event.target;
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
     },
     updateTimeSinceUpdate() {
       if (!this.lastUpdate) return;
@@ -719,6 +1219,9 @@ const app = createApp({
     }
   },
   mounted() {
+    // Apply theme on mount
+    document.documentElement.setAttribute('data-theme', this.theme);
+
     this.startAutoRefresh();
 
     // Handle page visibility to pause/resume updates

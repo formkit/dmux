@@ -442,6 +442,10 @@ function formatPaneResponse(pane: DmuxPane) {
     devStatus: pane.devStatus,
     devUrl: pane.devUrl,
     devWindowId: pane.devWindowId,
-    lastAgentCheck: pane.lastAgentCheck
+    lastAgentCheck: pane.lastAgentCheck,
+    optionsQuestion: pane.optionsQuestion,
+    options: pane.options,
+    potentialHarm: pane.potentialHarm,
+    agentSummary: pane.agentSummary
   };
 }
