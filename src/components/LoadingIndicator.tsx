@@ -1,14 +1,21 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Text } from 'ink';
 
 const LoadingIndicator: React.FC = () => {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length >= 3 ? '' : prev + '.'));
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <Box borderStyle="round" borderColor="cyan" paddingX={2} marginTop={1}>
-      <Box flexDirection="row" gap={1}>
-        <Text color="cyan">⏳</Text>
-        <Text>Loading dmux sessions...</Text>
-      </Box>
-    </Box>
+    <Text color="gray">
+      Loading panes{dots}
+    </Text>
   );
 };
 
