@@ -1,14 +1,18 @@
 import { EventEmitter } from 'events';
-import type { DmuxPane, AgentStatus } from '../types.js';
+import type { DmuxPane, AgentStatus, OptionChoice, PotentialHarm } from '../types.js';
 import { WorkerMessageBus } from './WorkerMessageBus.js';
 import { PaneWorkerManager } from './PaneWorkerManager.js';
 import { PaneAnalyzer } from '../PaneAnalyzer.js';
+import type { PaneAnalysis } from '../PaneAnalyzer.js';
 import type { OutboundMessage } from '../workers/WorkerMessages.js';
 
 export interface StatusUpdateEvent {
   paneId: string;
   status: AgentStatus;
   previousStatus?: AgentStatus;
+  optionsQuestion?: string;
+  options?: OptionChoice[];
+  potentialHarm?: PotentialHarm;
 }
 
 /**
@@ -165,11 +169,14 @@ export class StatusDetector extends EventEmitter {
         }
       });
 
-      // Emit event for UI
+      // Emit event for UI with analysis data
       this.emit('status-updated', {
         paneId,
         status: finalStatus,
-        previousStatus: 'analyzing'
+        previousStatus: 'analyzing',
+        optionsQuestion: analysis.question,
+        options: analysis.options,
+        potentialHarm: analysis.potentialHarm
       } as StatusUpdateEvent);
 
     } catch (error: any) {

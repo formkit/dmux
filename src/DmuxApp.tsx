@@ -23,6 +23,7 @@ import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
 import { StateManager } from './shared/StateManager.js';
+import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -119,6 +120,34 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     const stateManager = StateManager.getInstance();
     stateManager.updatePanes(panes);
   }, [panes]);
+
+  // Listen for status updates with analysis data and merge into panes
+  useEffect(() => {
+    const statusDetector = getStatusDetector();
+
+    const handleStatusUpdate = (event: StatusUpdateEvent) => {
+      setPanes(prevPanes => {
+        return prevPanes.map(pane => {
+          if (pane.id === event.paneId) {
+            return {
+              ...pane,
+              agentStatus: event.status,
+              optionsQuestion: event.optionsQuestion,
+              options: event.options,
+              potentialHarm: event.potentialHarm
+            };
+          }
+          return pane;
+        });
+      });
+    };
+
+    statusDetector.on('status-updated', handleStatusUpdate);
+
+    return () => {
+      statusDetector.off('status-updated', handleStatusUpdate);
+    };
+  }, [setPanes]);
 
   // Sync settings with StateManager
   useEffect(() => {
