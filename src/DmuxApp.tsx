@@ -114,6 +114,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     setNewPanePrompt,
     loadPanes,
     panesFile,
+    availableAgents,
   });
   
   // Listen for status updates with analysis data and merge into panes
