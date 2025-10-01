@@ -4,3 +4,4 @@ dist/
 *.log
 CLAUDE.local.md
 .dmux/test-output/
+.dmux/

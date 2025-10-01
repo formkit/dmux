@@ -136,6 +136,7 @@ h1 {
 main {
   flex: 1;
   padding-top: 40px;
+  min-height: 0;
 }
 
 .panes-grid {
@@ -151,7 +152,7 @@ main {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
-  padding: 24px;
+  padding: 12px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -206,6 +207,10 @@ main {
   color: #fff;
   letter-spacing: -0.3px;
   margin-bottom: 4px;
+  padding-right: 1em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pane-agent {
@@ -374,7 +379,7 @@ main {
 }
 
 footer {
-  padding: 30px 0;
+  padding: 12px 0;
   margin-top: auto;
   animation: fadeIn 0.8s ease-out;
 }
@@ -382,12 +387,9 @@ footer {
 .footer-info {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
-  color: #707070;
-  background: rgba(255, 255, 255, 0.03);
-  padding: 16px 24px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  color: #606060;
+  padding: 0;
 }
 
 .footer-info span {
@@ -402,7 +404,7 @@ footer {
   }
 
   header {
-    padding: 12px 16px;
+    padding: 12px 18px;
     gap: 8px;
   }
 
@@ -435,7 +437,8 @@ footer {
 
   .footer-info {
     flex-direction: column;
-    gap: 12px;
+    gap: 6px;
+    font-size: 10px;
   }
 }
 
@@ -501,68 +504,18 @@ footer {
   background: #000;
 }
 
-.terminal-page .terminal-header {
-  background: #2d2d2d;
-  padding: 8px 12px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid #444;
-}
-
 .back-button {
-  color: #667eea;
+  color: #e0e0e0;
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
   transition: color 0.2s;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .back-button:hover {
-  color: #5568d3;
-}
-
-.terminal-page .terminal-title {
   color: #fff;
-  font-weight: 500;
-  font-size: 13px;
-  flex: 1 1 auto;
-  text-align: center;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.terminal-page .terminal-status {
-  display: flex;
-  gap: 10px;
-  font-size: 11px;
-  color: #999;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-@media (max-width: 600px) {
-  .terminal-page .terminal-header {
-    padding: 6px 8px;
-  }
-
-  .back-button {
-    font-size: 12px;
-  }
-
-  .terminal-page .terminal-title {
-    font-size: 12px;
-  }
-
-  .terminal-page .terminal-status {
-    font-size: 10px;
-    gap: 8px;
-  }
 }
 
 .terminal-content {
@@ -653,16 +606,16 @@ const app = createApp({
     };
   },
   template: \`
-    <div class="container">
-      <header>
-        <img src="https://cdn.formk.it/dmux/dmux.png" alt="dmux" class="logo" />
-        <h1>{{ projectName }}</h1>
-        <div class="session-info">
-          <span v-if="sessionName">{{ sessionName }}</span>
-          <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
-        </div>
-      </header>
+    <header>
+      <img src="https://cdn.formk.it/dmux/dmux.png" alt="dmux" class="logo" />
+      <h1>{{ projectName }}</h1>
+      <div class="session-info">
+        <span v-if="sessionName">{{ sessionName }}</span>
+        <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
+      </div>
+    </header>
 
+    <div class="container">
       <main>
         <div v-if="panes.length === 0" class="no-panes">
           <p>No dmux panes active</p>
@@ -1418,32 +1371,33 @@ const app = createApp({
       connected: false,
       cursorRow: 0,
       cursorCol: 0,
-      paneTitle: 'Terminal',
+      paneTitle: 'Loading...',
       isMobile: false,
       ctrlActive: false,
       altActive: false,
+      shiftActive: false,
       mobileInputValue: ''
     };
   },
   template: \`
     <div class="terminal-page">
-      <div class="terminal-header">
-        <a href="/" class="back-button">← Back</a>
-        <span class="terminal-title">{{ paneTitle }}</span>
-        <div class="terminal-status">
-          <span>{{ dimensions.width }}x{{ dimensions.height }}</span>
-          <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">
-            ● {{ connected ? 'Connected' : 'Connecting' }}
-          </span>
+      <header>
+        <a href="/" class="back-button">← dmux</a>
+        <h1>{{ paneTitle }}</h1>
+        <div class="session-info">
+          <span>{{ dimensions.width }}×{{ dimensions.height }}</span>
+          <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
         </div>
-      </div>
+      </header>
 
       <!-- Mobile keyboard toolbar -->
       <div v-if="isMobile" class="mobile-toolbar">
         <button @click="toggleCtrl" :class="{ active: ctrlActive }" class="toolbar-key">Ctrl</button>
         <button @click="toggleAlt" :class="{ active: altActive }" class="toolbar-key">Alt</button>
+        <button @click="toggleShift" :class="{ active: shiftActive }" class="toolbar-key">Shift</button>
         <button @click="sendKey('Escape')" class="toolbar-key">Esc</button>
         <button @click="sendKey('Tab')" class="toolbar-key">Tab</button>
+        <button @click="sendKey('Enter')" class="toolbar-key">Enter</button>
         <button @click="sendKey('ArrowUp')" class="toolbar-key">↑</button>
         <button @click="sendKey('ArrowDown')" class="toolbar-key">↓</button>
         <button @click="sendKey('ArrowLeft')" class="toolbar-key">←</button>
@@ -1543,18 +1497,22 @@ const app = createApp({
         this.ctrlActive = false;
       }
     },
+    toggleShift() {
+      this.shiftActive = !this.shiftActive;
+    },
     async sendKey(key) {
       const keystrokeData = {
         key: key,
         ctrlKey: this.ctrlActive,
         altKey: this.altActive,
-        shiftKey: false,
+        shiftKey: this.shiftActive,
         metaKey: false
       };
 
       // Reset modifiers after sending
       this.ctrlActive = false;
       this.altActive = false;
+      this.shiftActive = false;
 
       try {
         await fetch(\`/api/keys/\${window.actualPaneId}\`, {
@@ -1655,7 +1613,7 @@ const app = createApp({
           pane = data.panes.find(p => p.slug === paneId);
         }
         if (pane) {
-          this.paneTitle = 'Terminal: ' + pane.slug;
+          this.paneTitle = pane.slug;
           // Use the actual pane ID for streaming
           window.actualPaneId = pane.id;
         }

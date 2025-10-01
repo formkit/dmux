@@ -187,11 +187,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
       }
     }
 
-    // Step 5: Clean up worktree and branch
-    setStatus('completing');
-    runCommand(`git worktree remove ${pane.worktreePath} --force`, mainRepoPath);
-    runCommand(`git branch -d ${pane.slug}`, mainRepoPath);
-
+    // Step 5: Success - worktree cleanup will happen if user confirms pane closure
     setStatus('success');
   };
 

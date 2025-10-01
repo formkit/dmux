@@ -314,6 +314,15 @@ export function setupRoutes(app: App) {
       else if (body.shiftKey && key === 'Tab') {
         tmuxKey = 'BTab';
       }
+      // Handle Shift+Enter - send the escape sequence using printf to handle escape character
+      else if (body.shiftKey && key === 'Enter') {
+        // Send ESC[13;2~ which is the standard Shift+Enter sequence
+        execSync(`printf '\\033[13;2~' | tmux load-buffer - && tmux paste-buffer -t ${pane.paneId}`, {
+          stdio: 'pipe',
+          shell: '/bin/bash'
+        });
+        return { success: true, key: 'Shift+Enter (CSI sequence)' };
+      }
       // Handle Ctrl+ with special keys
       else if (body.ctrlKey && specialKeys[key]) {
         tmuxKey = `C-${specialKeys[key]}`;

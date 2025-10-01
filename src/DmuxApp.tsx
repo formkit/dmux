@@ -948,7 +948,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         pane={mergingPane}
         mainBranch={getMainBranch()}
         onComplete={() => {
-          // Close the pane after successful merge
+          // Clean up worktree and branch after successful merge, then close the pane
+          if (mergingPane.worktreePath) {
+            try {
+              const mainRepoPath = mergingPane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+              execSync(`git worktree remove "${mergingPane.worktreePath}" --force`, { stdio: 'pipe', cwd: mainRepoPath });
+              execSync(`git branch -d ${mergingPane.slug}`, { stdio: 'pipe', cwd: mainRepoPath });
+            } catch {
+              // Ignore errors, might already be removed
+            }
+          }
           closePane(mergingPane);
           setShowMergePane(false);
           setMergingPane(null);
