@@ -128,6 +128,8 @@ class Dmux {
     let serverInfo: { port: number; url: string; tunnelUrl?: string } = { port: 0, url: '' };
     try {
       serverInfo = await this.server.start();
+      // Update StateManager with server info
+      this.stateManager.updateServerInfo(serverInfo.port, serverInfo.url);
       // Don't log the local URL - tunnel will be created on demand when "r" is pressed
     } catch (err) {
       console.error('Failed to start HTTP server:', err);

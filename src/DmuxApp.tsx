@@ -116,31 +116,61 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     panesFile,
   });
   
-  // Sync panes with StateManager
-  useEffect(() => {
-    const stateManager = StateManager.getInstance();
-    stateManager.updatePanes(panes);
-  }, [panes]);
-
   // Listen for status updates with analysis data and merge into panes
   useEffect(() => {
     const statusDetector = getStatusDetector();
 
     const handleStatusUpdate = (event: StatusUpdateEvent) => {
       setPanes(prevPanes => {
-        return prevPanes.map(pane => {
+        const updatedPanes = prevPanes.map(pane => {
           if (pane.id === event.paneId) {
-            return {
+            const updated: DmuxPane = {
               ...pane,
               agentStatus: event.status,
-              optionsQuestion: event.optionsQuestion,
-              options: event.options,
-              potentialHarm: event.potentialHarm,
-              agentSummary: event.summary
             };
+
+            // Only update analysis fields if they're present in the event (not undefined)
+            // This prevents simple status changes from overwriting PaneAnalyzer results
+            if (event.optionsQuestion !== undefined) {
+              updated.optionsQuestion = event.optionsQuestion;
+            }
+            if (event.options !== undefined) {
+              updated.options = event.options;
+            }
+            if (event.potentialHarm !== undefined) {
+              updated.potentialHarm = event.potentialHarm;
+            }
+            if (event.summary !== undefined) {
+              updated.agentSummary = event.summary;
+            }
+
+            // Clear option dialog data when transitioning away from 'waiting' state
+            if (event.status !== 'waiting' && pane.agentStatus === 'waiting') {
+              updated.optionsQuestion = undefined;
+              updated.options = undefined;
+              updated.potentialHarm = undefined;
+            }
+
+            // Clear summary when transitioning away from 'idle' state
+            if (event.status !== 'idle' && pane.agentStatus === 'idle') {
+              updated.agentSummary = undefined;
+            }
+
+            return updated;
           }
           return pane;
         });
+
+        // Immediately sync to StateManager so API has latest data
+        const stateManager = StateManager.getInstance();
+        stateManager.updatePanes(updatedPanes);
+
+        // Also persist to disk so changes survive restarts
+        savePanes(updatedPanes).catch(err => {
+          console.error('Failed to save panes after status update:', err);
+        });
+
+        return updatedPanes;
       });
     };
 
@@ -149,7 +179,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     return () => {
       statusDetector.off('status-updated', handleStatusUpdate);
     };
-  }, [setPanes]);
+  }, [setPanes, savePanes]);
+
+  // Sync panes with StateManager (for non-status updates)
+  useEffect(() => {
+    const stateManager = StateManager.getInstance();
+    stateManager.updatePanes(panes);
+  }, [panes]);
 
   // Sync settings with StateManager
   useEffect(() => {
