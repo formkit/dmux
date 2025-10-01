@@ -144,7 +144,9 @@ class Dmux {
       autoUpdater: this.autoUpdater,
       serverPort: serverInfo.port,
       server: this.server
-    }));
+    }), {
+      exitOnCtrlC: false  // Disable automatic exit on Ctrl+C
+    });
 
     // Clean shutdown on app exit
     app.waitUntilExit().then(async () => {
