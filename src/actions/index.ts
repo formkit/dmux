@@ -43,6 +43,9 @@ export async function executeAction(
     case 'open_in_editor':
       return actions.openInEditor(pane, context, params);
 
+    case 'toggle_autopilot':
+      return actions.toggleAutopilot(pane, context);
+
     case 'run_test':
     case 'run_dev':
     case 'open_output':

@@ -632,6 +632,7 @@ onBeforeUnmount(() => {
                 <span class="pane-arrow">→</span>
               </a>
               <div class="pane-meta">
+                <span v-if="pane.autopilot" class="pane-autopilot" title="Autopilot enabled">🤖</span>
                 <span class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
                 <span class="pane-id">{{ pane.paneId }}</span>
               </div>

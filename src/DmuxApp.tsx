@@ -24,7 +24,7 @@ import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
 import { StateManager } from './shared/StateManager.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
-import { PaneAction } from './actions/index.js';
+import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -65,6 +65,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showKebabMenu, setShowKebabMenu] = useState(false);
   const [kebabMenuPaneIndex, setKebabMenuPaneIndex] = useState<number | null>(null);
   const [kebabMenuOption, setKebabMenuOption] = useState(0);
+  const [kebabMenuActions, setKebabMenuActions] = useState<ActionMetadata[]>([]);
   // Update state handled by hook
   const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
@@ -767,56 +768,33 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     // Handle kebab menu navigation
     if (showKebabMenu && kebabMenuPaneIndex !== null) {
       const currentPane = panes[kebabMenuPaneIndex];
-      const hasWorktree = !!currentPane?.worktreePath;
-      const menuOptions = hasWorktree ? 6 : 2; // view, test, dev, open, merge, close (if worktree) OR view, close
+      const availableActions = kebabMenuActions;
 
       if (key.escape) {
         setShowKebabMenu(false);
         setKebabMenuPaneIndex(null);
         setKebabMenuOption(0);
+        setKebabMenuActions([]);
         return;
       } else if (key.upArrow) {
         setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
         return;
       } else if (key.downArrow) {
-        setKebabMenuOption(Math.min(menuOptions - 1, kebabMenuOption + 1));
+        setKebabMenuOption(Math.min(availableActions.length - 1, kebabMenuOption + 1));
         return;
       } else if (key.return) {
         // Execute the selected menu action
         setShowKebabMenu(false);
 
-        if (kebabMenuOption === 0) {
-          // View - jump to pane (NEW: using action system)
-          actionSystem.executeAction(PaneAction.VIEW, currentPane);
-        } else if (hasWorktree && kebabMenuOption === 1) {
-          // Test
-          await runCommand('test', currentPane);
-        } else if (hasWorktree && kebabMenuOption === 2) {
-          // Dev
-          await runCommand('dev', currentPane);
-        } else if (hasWorktree && kebabMenuOption === 3) {
-          // Open
-          if (currentPane.testWindowId || currentPane.devWindowId) {
-            // If both exist, prefer dev (since it's usually more interactive)
-            if (currentPane.devWindowId && currentPane.devStatus === 'running') {
-              await attachBackgroundWindow(currentPane, 'dev');
-            } else if (currentPane.testWindowId) {
-              await attachBackgroundWindow(currentPane, 'test');
-            }
-          } else {
-            setStatusMessage('No test or dev window to open');
-            setTimeout(() => setStatusMessage(''), 2000);
-          }
-        } else if (hasWorktree && kebabMenuOption === 4) {
-          // Merge (NEW: using action system)
-          actionSystem.executeAction(PaneAction.MERGE, currentPane, { mainBranch: getMainBranch() });
-        } else if ((hasWorktree && kebabMenuOption === 5) || (!hasWorktree && kebabMenuOption === 1)) {
-          // Close (NEW: using action system)
-          actionSystem.executeAction(PaneAction.CLOSE, currentPane);
+        const selectedAction = availableActions[kebabMenuOption];
+        if (selectedAction) {
+          // Use the action system to execute
+          actionSystem.executeAction(selectedAction.id, currentPane, { mainBranch: getMainBranch() });
         }
 
         setKebabMenuPaneIndex(null);
         setKebabMenuOption(0);
+        setKebabMenuActions([]);
         return;
       }
       // Don't process other inputs while menu is open
@@ -1020,6 +998,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     
     if (input === 'm' && selectedIndex < panes.length) {
       // Open kebab menu for selected pane
+      const selectedPane = panes[selectedIndex];
+      const actions = getAvailableActions(selectedPane, projectSettings);
+      setKebabMenuActions(actions);
       setShowKebabMenu(true);
       setKebabMenuPaneIndex(selectedIndex);
       setKebabMenuOption(0);
@@ -1138,7 +1119,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {showKebabMenu && kebabMenuPaneIndex !== null && panes[kebabMenuPaneIndex] && (
         <KebabMenu
           selectedOption={kebabMenuOption}
-          hasWorktree={!!panes[kebabMenuPaneIndex].worktreePath}
+          actions={kebabMenuActions}
           paneName={panes[kebabMenuPaneIndex].slug}
         />
       )}

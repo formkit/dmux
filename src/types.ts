@@ -35,6 +35,8 @@ export interface DmuxPane {
   potentialHarm?: PotentialHarm;
   // Summary of what agent said (when agentStatus is 'idle')
   agentSummary?: string;
+  // Autopilot mode - automatically accept options when no risk detected
+  autopilot?: boolean;
 }
 
 export interface PanePosition {
