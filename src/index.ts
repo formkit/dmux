@@ -122,7 +122,7 @@ class Dmux {
     }
 
     // Update state manager with project info
-    this.stateManager.updateProjectInfo(this.projectName, this.sessionName, this.projectRoot);
+    this.stateManager.updateProjectInfo(this.projectName, this.sessionName, this.projectRoot, this.panesFile);
 
     // Start the HTTP server
     let serverInfo: { port: number; url: string; tunnelUrl?: string } = { port: 0, url: '' };

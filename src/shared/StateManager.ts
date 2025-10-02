@@ -9,6 +9,7 @@ export interface DmuxState {
   settings: ProjectSettings;
   serverPort?: number;
   serverUrl?: string;
+  panesFile?: string;
 }
 
 export class StateManager extends EventEmitter {
@@ -43,10 +44,13 @@ export class StateManager extends EventEmitter {
     this.notifyListeners();
   }
 
-  updateProjectInfo(projectName: string, sessionName: string, projectRoot: string): void {
+  updateProjectInfo(projectName: string, sessionName: string, projectRoot: string, panesFile?: string): void {
     this.state.projectName = projectName;
     this.state.sessionName = sessionName;
     this.state.projectRoot = projectRoot;
+    if (panesFile) {
+      this.state.panesFile = panesFile;
+    }
     this.notifyListeners();
   }
 

@@ -106,18 +106,46 @@ export async function handleExecuteAction(
     projectName: state.projectName || 'project',
     savePanes: async (updatedPanes) => {
       stateManager.updatePanes(updatedPanes);
-      // Also persist to disk if needed
-      // This would need access to the panesFile path
+      // Persist to disk
+      const panesFile = state.panesFile;
+      if (panesFile) {
+        try {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+
+          // Read current config
+          let config: any = { panes: [] };
+          try {
+            const content = await fs.readFile(panesFile, 'utf-8');
+            const parsed = JSON.parse(content);
+            if (!Array.isArray(parsed)) {
+              config = parsed;
+            }
+          } catch {}
+
+          // Update panes in config
+          config.panes = updatedPanes;
+
+          // Write back
+          await fs.writeFile(panesFile, JSON.stringify(config, null, 2), 'utf-8');
+        } catch (error) {
+          console.error('Failed to persist panes to disk:', error);
+        }
+      }
     },
     onPaneUpdate: (updatedPane) => {
       const currentPanes = stateManager.getPanes();
       const newPanes = currentPanes.map(p => p.id === updatedPane.id ? updatedPane : p);
       stateManager.updatePanes(newPanes);
+      // Persist via savePanes
+      context.savePanes(newPanes);
     },
     onPaneRemove: (removedPaneId) => {
       const currentPanes = stateManager.getPanes();
       const newPanes = currentPanes.filter(p => p.id !== removedPaneId);
       stateManager.updatePanes(newPanes);
+      // Persist via savePanes
+      context.savePanes(newPanes);
     },
   };
 

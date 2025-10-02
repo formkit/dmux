@@ -918,18 +918,19 @@ footer {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  padding: 24px;
-  max-width: 500px;
+  padding: 32px;
+  max-width: 540px;
   width: 90%;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   animation: slideInFromTop 0.3s ease-out;
 }
 
 .action-dialog h3 {
-  margin: 0 0 12px 0;
-  font-size: 20px;
+  margin: 0 0 20px 0;
+  font-size: 24px;
   font-weight: 600;
   color: var(--text-bright);
+  letter-spacing: -0.5px;
 }
 
 .action-dialog p {
@@ -939,6 +940,113 @@ footer {
   line-height: 1.5;
 }
 
+.action-dialog label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  letter-spacing: -0.2px;
+}
+
+.action-dialog textarea {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--input-bg);
+  border: 2px solid var(--input-border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.action-dialog textarea:focus {
+  outline: none;
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: 0 0 0 4px var(--input-focus-shadow);
+}
+
+.action-dialog textarea::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.dialog-hint {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dialog-hint kbd {
+  background: var(--button-bg);
+  border: 1px solid var(--button-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.dialog-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.dialog-loading .loader-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(96, 165, 250, 0.2);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--input-bg);
+  border: 2px solid var(--input-border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.dialog-input:focus {
+  outline: none;
+  border-color: var(--input-focus-border);
+  background: var(--input-focus-bg);
+  box-shadow: 0 0 0 4px var(--input-focus-shadow);
+}
+
+.dialog-input::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .dialog-buttons {
   display: flex;
   gap: 12px;
@@ -946,13 +1054,13 @@ footer {
 }
 
 .dialog-btn {
-  padding: 10px 20px;
-  border: 1px solid var(--button-border);
-  border-radius: 8px;
+  padding: 12px 24px;
+  border: 2px solid var(--button-border);
+  border-radius: 10px;
   background: var(--button-bg);
   color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -960,6 +1068,17 @@ footer {
 .dialog-btn:hover {
   background: var(--button-hover-bg);
   border-color: var(--button-hover-border);
+  transform: translateY(-1px);
+}
+
+.dialog-btn:active {
+  transform: translateY(0);
+}
+
+.dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .dialog-btn-primary {
@@ -970,8 +1089,19 @@ footer {
 }
 
 .dialog-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(96, 165, 250, 0.5);
+}
+
+.dialog-btn-primary:active {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+}
+
+.dialog-btn-primary:disabled {
+  opacity: 0.6;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.2);
 }
 
 .choice-options {
@@ -1010,6 +1140,62 @@ footer {
 .choice-option-btn.danger:hover {
   border-color: rgba(248, 113, 113, 0.5);
   background: rgba(248, 113, 113, 0.2);
+}
+
+.agent-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.agent-choice-button {
+  padding: 16px 20px;
+  background: var(--button-bg);
+  border: 2px solid var(--button-border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  text-transform: capitalize;
+  position: relative;
+  overflow: hidden;
+}
+
+.agent-choice-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.agent-choice-button:hover {
+  background: var(--button-hover-bg);
+  border-color: var(--input-focus-border);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+}
+
+.agent-choice-button:hover::before {
+  opacity: 1;
+}
+
+.agent-choice-button:active {
+  transform: translateY(0);
+}
+
+.agent-choice-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .option-description {

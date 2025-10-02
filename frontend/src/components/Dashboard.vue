@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 
 // State
 const projectName = ref('Loading...');
@@ -28,6 +28,7 @@ const paneActions = ref<Record<string, any[]>>({});
 const showActionMenu = ref<string | null>(null);
 const actionDialog = ref<any | null>(null);
 const executingAction = ref(false);
+const actionDialogLoading = ref(false);
 
 let refreshInterval: any = null;
 
@@ -54,6 +55,23 @@ const openCreateDialog = () => {
   availableAgents.value = [];
   needsAgentChoice.value = false;
   createStep.value = 'prompt';
+
+  // Focus the textarea after the dialog opens
+  nextTick(() => {
+    const textarea = document.getElementById('pane-prompt') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.focus();
+    }
+  });
+
+  // Add escape key listener
+  const handleEscape = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      closeCreateDialog();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
 };
 
 const closeCreateDialog = () => {
@@ -186,8 +204,18 @@ const executeAction = async (pane: any, action: any) => {
           type: 'input',
           title: result.title || 'Input',
           message: result.message,
-          ...result.inputData
+          ...result.inputData,
+          inputValue: result.inputData?.defaultValue || ''
         };
+
+        // Focus the input after dialog opens
+        nextTick(() => {
+          const input = document.querySelector('.dialog-input') as HTMLInputElement;
+          if (input) {
+            input.focus();
+            input.select(); // Select all text for easy replacement
+          }
+        });
       }
 
       dialogData.paneId = pane.id;
@@ -211,17 +239,62 @@ const confirmAction = async (confirmed: boolean) => {
   if (!actionDialog.value) return;
 
   try {
+    actionDialogLoading.value = true;
     const response = await fetch(`/api/callbacks/confirm/${actionDialog.value.callbackId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmed })
     });
 
-    await fetchPanes();
-    closeActionDialog();
+    const result = await response.json();
+
+    // Check if the response requires another interaction
+    if (result.requiresInteraction) {
+      let dialogData: any = {};
+
+      if (result.interactionType === 'confirm') {
+        dialogData = {
+          type: 'confirm',
+          title: result.title || 'Confirm',
+          message: result.message,
+          ...result.confirmData
+        };
+      } else if (result.interactionType === 'choice') {
+        dialogData = {
+          type: 'choice',
+          title: result.title || 'Choose',
+          message: result.message,
+          ...result.choiceData
+        };
+      } else if (result.interactionType === 'input') {
+        dialogData = {
+          type: 'input',
+          title: result.title || 'Input',
+          message: result.message,
+          ...result.inputData,
+          inputValue: result.inputData?.defaultValue || ''
+        };
+
+        // Focus the input after dialog opens
+        nextTick(() => {
+          const input = document.querySelector('.dialog-input') as HTMLInputElement;
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        });
+      }
+
+      actionDialog.value = dialogData;
+    } else {
+      await fetchPanes();
+      closeActionDialog();
+    }
   } catch (error) {
     console.error('Failed to confirm action:', error);
     alert('Failed to complete action');
+  } finally {
+    actionDialogLoading.value = false;
   }
 };
 
@@ -229,17 +302,125 @@ const selectChoice = async (optionId: string) => {
   if (!actionDialog.value) return;
 
   try {
+    actionDialogLoading.value = true;
     const response = await fetch(`/api/callbacks/choice/${actionDialog.value.callbackId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ optionId })
     });
 
-    await fetchPanes();
-    closeActionDialog();
+    const result = await response.json();
+
+    // Check if the response requires another interaction
+    if (result.requiresInteraction) {
+      let dialogData: any = {};
+
+      if (result.interactionType === 'confirm') {
+        dialogData = {
+          type: 'confirm',
+          title: result.title || 'Confirm',
+          message: result.message,
+          ...result.confirmData
+        };
+      } else if (result.interactionType === 'choice') {
+        dialogData = {
+          type: 'choice',
+          title: result.title || 'Choose',
+          message: result.message,
+          ...result.choiceData
+        };
+      } else if (result.interactionType === 'input') {
+        dialogData = {
+          type: 'input',
+          title: result.title || 'Input',
+          message: result.message,
+          ...result.inputData,
+          inputValue: result.inputData?.defaultValue || ''
+        };
+
+        // Focus the input after dialog opens
+        nextTick(() => {
+          const input = document.querySelector('.dialog-input') as HTMLInputElement;
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        });
+      }
+
+      actionDialog.value = dialogData;
+    } else {
+      await fetchPanes();
+      closeActionDialog();
+    }
   } catch (error) {
     console.error('Failed to select choice:', error);
     alert('Failed to complete action');
+  } finally {
+    actionDialogLoading.value = false;
+  }
+};
+
+const submitInput = async () => {
+  if (!actionDialog.value) return;
+
+  try {
+    actionDialogLoading.value = true;
+    const response = await fetch(`/api/callbacks/input/${actionDialog.value.callbackId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: actionDialog.value.inputValue })
+    });
+
+    const result = await response.json();
+
+    // Check if the response requires another interaction
+    if (result.requiresInteraction) {
+      let dialogData: any = {};
+
+      if (result.interactionType === 'confirm') {
+        dialogData = {
+          type: 'confirm',
+          title: result.title || 'Confirm',
+          message: result.message,
+          ...result.confirmData
+        };
+      } else if (result.interactionType === 'choice') {
+        dialogData = {
+          type: 'choice',
+          title: result.title || 'Choose',
+          message: result.message,
+          ...result.choiceData
+        };
+      } else if (result.interactionType === 'input') {
+        dialogData = {
+          type: 'input',
+          title: result.title || 'Input',
+          message: result.message,
+          ...result.inputData,
+          inputValue: result.inputData?.defaultValue || ''
+        };
+
+        // Focus the input after dialog opens
+        nextTick(() => {
+          const input = document.querySelector('.dialog-input') as HTMLInputElement;
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        });
+      }
+
+      actionDialog.value = dialogData;
+    } else {
+      await fetchPanes();
+      closeActionDialog();
+    }
+  } catch (error) {
+    console.error('Failed to submit input:', error);
+    alert('Failed to complete action');
+  } finally {
+    actionDialogLoading.value = false;
   }
 };
 
@@ -524,7 +705,7 @@ onBeforeUnmount(() => {
         <h3>Create New Pane</h3>
 
         <div v-if="createStep === 'prompt'">
-          <label for="pane-prompt">What would you like to work on?</label>
+          <label for="pane-prompt">Provide an initial prompt for your agent</label>
           <textarea
             id="pane-prompt"
             v-model="newPanePrompt"
@@ -533,6 +714,9 @@ onBeforeUnmount(() => {
             @keydown.enter.meta="createPane"
             @keydown.enter.ctrl="createPane"
           ></textarea>
+          <div class="dialog-hint">
+            💡 Press <kbd>⌘ Enter</kbd> or <kbd>Ctrl Enter</kbd> to create
+          </div>
           <div class="dialog-buttons">
             <button @click="closeCreateDialog" class="dialog-btn">Cancel</button>
             <button @click="createPane" :disabled="!newPanePrompt.trim() || creatingPane" class="dialog-btn dialog-btn-primary">
@@ -567,9 +751,13 @@ onBeforeUnmount(() => {
       <div v-if="actionDialog.type === 'confirm'" class="action-dialog">
         <h3>{{ actionDialog.title }}</h3>
         <p>{{ actionDialog.message }}</p>
-        <div class="dialog-buttons">
-          <button @click="confirmAction(false)" class="dialog-btn">Cancel</button>
-          <button @click="confirmAction(true)" class="dialog-btn dialog-btn-primary">Confirm</button>
+        <div v-if="actionDialogLoading" class="dialog-loading">
+          <div class="loader-spinner"></div>
+          <span>Processing...</span>
+        </div>
+        <div v-else class="dialog-buttons">
+          <button @click="confirmAction(false)" class="dialog-btn" :disabled="actionDialogLoading">Cancel</button>
+          <button @click="confirmAction(true)" class="dialog-btn dialog-btn-primary" :disabled="actionDialogLoading">Confirm</button>
         </div>
       </div>
 
@@ -577,20 +765,50 @@ onBeforeUnmount(() => {
       <div v-else-if="actionDialog.type === 'choice'" class="action-dialog">
         <h3>{{ actionDialog.title }}</h3>
         <p v-if="actionDialog.message">{{ actionDialog.message }}</p>
-        <div class="choice-options">
-          <button
-            v-for="option in actionDialog.options"
-            :key="option.id"
-            @click="selectChoice(option.id)"
-            class="choice-option-btn"
-            :class="{ 'danger': option.danger }"
-          >
-            <div class="choice-label">{{ option.label }}</div>
-            <div v-if="option.description" class="choice-description">{{ option.description }}</div>
-          </button>
+        <div v-if="actionDialogLoading" class="dialog-loading">
+          <div class="loader-spinner"></div>
+          <span>Processing...</span>
         </div>
-        <div class="dialog-buttons">
-          <button @click="closeActionDialog" class="dialog-btn">Cancel</button>
+        <div v-else>
+          <div class="choice-options">
+            <button
+              v-for="option in actionDialog.options"
+              :key="option.id"
+              @click="selectChoice(option.id)"
+              class="choice-option-btn"
+              :class="{ 'danger': option.danger }"
+              :disabled="actionDialogLoading"
+            >
+              <div class="choice-label">{{ option.label }}</div>
+              <div v-if="option.description" class="choice-description">{{ option.description }}</div>
+            </button>
+          </div>
+          <div class="dialog-buttons">
+            <button @click="closeActionDialog" class="dialog-btn" :disabled="actionDialogLoading">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Dialog -->
+      <div v-else-if="actionDialog.type === 'input'" class="action-dialog">
+        <h3>{{ actionDialog.title }}</h3>
+        <p v-if="actionDialog.message">{{ actionDialog.message }}</p>
+        <div v-if="actionDialogLoading" class="dialog-loading">
+          <div class="loader-spinner"></div>
+          <span>Processing...</span>
+        </div>
+        <div v-else>
+          <input
+            type="text"
+            v-model="actionDialog.inputValue"
+            :placeholder="actionDialog.placeholder"
+            class="dialog-input"
+            @keydown.enter="submitInput"
+          />
+          <div class="dialog-buttons">
+            <button @click="closeActionDialog" class="dialog-btn" :disabled="actionDialogLoading">Cancel</button>
+            <button @click="submitInput" class="dialog-btn dialog-btn-primary" :disabled="actionDialogLoading">Submit</button>
+          </div>
         </div>
       </div>
     </div>
