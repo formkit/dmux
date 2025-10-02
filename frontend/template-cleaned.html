@@ -1,0 +1,277 @@
+      <h1>{{ projectName }}</h1>
+      <div class="session-info">
+        <button @click="toggleTheme" class="theme-toggle" :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+          <svg v-if="theme === 'dark'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"/>
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6.5a9 9 0 009 9 8.97 8.97 0 003.963-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z"/>
+          </svg>
+        </button>
+        <span v-if="sessionName">{{ sessionName }}</span>
+        <span class="status-indicator" :style="{ color: connected ? '#4ade80' : '#f87171' }">●</span>
+      </div>
+    </header>
+
+    <div class="container">
+      <main>
+        <div class="actions-bar">
+          <button @click="openCreateDialog" class="create-pane-button" :disabled="creatingPane">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 4.5v15m7.5-7.5h-15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Create New Pane
+          </button>
+        </div>
+
+        <div v-if="panes.length === 0" class="no-panes">
+          <p>No dmux panes active</p>
+          <p class="hint">Click "Create New Pane" above or press 'n' in dmux</p>
+        </div>
+
+        <div v-else class="panes-grid">
+          <div
+            v-for="pane in panes"
+            :key="pane.id"
+            class="pane-card"
+          >
+            <div class="pane-header">
+              <div class="pane-header-content">
+                <a :href="'/panes/' + pane.id" class="pane-title-link">
+                  <span class="pane-title">{{ pane.slug }}</span>
+                  <span class="pane-arrow">→</span>
+                </a>
+                <div class="pane-meta">
+                  <span class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
+                  <span class="pane-id">{{ pane.paneId }}</span>
+                </div>
+              </div>
+              <button @click="toggleActionMenu(pane.id)" class="action-menu-btn" title="Actions">
+                <span>⋮</span>
+              </button>
+            </div>
+
+            <!-- Action Menu Dropdown -->
+            <div v-if="showActionMenu === pane.id && paneActions[pane.id]" class="action-menu-dropdown">
+              <button
+                v-for="action in paneActions[pane.id]"
+                :key="action.id"
+                @click="executeAction(pane, action)"
+                class="action-menu-item"
+                :disabled="executingAction"
+              >
+                <span class="action-icon">{{ action.icon || '•' }}</span>
+                <span class="action-label">{{ action.label }}</span>
+              </button>
+            </div>
+
+            <div class="pane-prompt-section">
+              <div
+                class="pane-prompt-header"
+                @click="togglePrompt(pane.id)"
+                :class="{ 'expanded': expandedPrompts.has(pane.id) }"
+              >
+                <span class="prompt-label">Initial Prompt</span>
+                <span class="expand-icon">{{ expandedPrompts.has(pane.id) ? '▼' : '▶' }}</span>
+              </div>
+              <div v-if="expandedPrompts.has(pane.id)" class="pane-prompt">
+                {{ pane.prompt || 'No prompt' }}
+              </div>
+            </div>
+
+            <!-- Show agent summary when idle -->
+            <div v-if="pane.agentStatus === 'idle' && pane.agentSummary" class="agent-summary">
+              {{ pane.agentSummary }}
+            </div>
+
+            <div class="pane-interactive" @click.prevent>
+              <!-- Options Dialog (when waiting with options) -->
+              <div v-if="pane.agentStatus === 'waiting' && pane.options && pane.options.length > 0" class="options-dialog">
+                <div class="options-question">{{ pane.optionsQuestion || 'Choose an option:' }}</div>
+                <div v-if="pane.potentialHarm && pane.potentialHarm.hasRisk" class="options-warning">
+                  ⚠️ {{ pane.potentialHarm.description }}
+                </div>
+                <div v-if="loadingOptions.has(pane.id)" class="analyzing-state">
+                  <div class="loader-spinner"></div>
+                  <span>Processing selection...</span>
+                </div>
+                <div v-else class="options-buttons">
+                  <button
+                    v-for="option in pane.options"
+                    :key="option.action"
+                    @click="selectOption(pane, option)"
+                    class="option-button"
+                    :class="{ 'option-button-danger': pane.potentialHarm && pane.potentialHarm.hasRisk }"
+                    :disabled="loadingOptions.has(pane.id)"
+                  >
+                    {{ option.action }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Analyzing (show loader) -->
+              <div v-else-if="pane.agentStatus === 'analyzing'" class="analyzing-state">
+                <div class="loader-spinner"></div>
+                <span>Analyzing...</span>
+              </div>
+
+              <!-- Working/Idle (show prompt input) -->
+              <div v-else>
+                <div class="prompt-input-wrapper">
+                  <textarea
+                    v-model="promptInputs[pane.id]"
+                    @input="autoExpand"
+                    :placeholder="pane.agentStatus === 'working' ? 'Queue a prompt...' : 'Send a prompt...'"
+                    :disabled="sendingPrompts.has(pane.id)"
+                    class="prompt-textarea"
+                    rows="1"
+                  ></textarea>
+                  <button
+                    @click="sendPrompt(pane)"
+                    :disabled="!promptInputs[pane.id] || sendingPrompts.has(pane.id)"
+                    class="send-button"
+                    :title="pane.agentStatus === 'working' ? 'Queue prompt' : 'Send prompt'"
+                  >
+                    <span v-if="sendingPrompts.has(pane.id)" class="button-loader"></span>
+                    <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 988.44 1200.05">
+                      <path d="M425.13,28.37L30.09,423.41C11.19,441.37.34,466.2,0,492.27c-.34,26.07,9.86,51.17,28.29,69.61,18.43,18.45,43.52,28.67,69.59,28.35,26.07-.31,50.91-11.14,68.88-30.02l233.16-233.52v776.64c0,34.56,18.43,66.48,48.36,83.76,29.93,17.28,66.8,17.28,96.72,0,29.93-17.28,48.36-49.21,48.36-83.76V328.85l231.72,231.36c24.63,23.41,59.74,32.18,92.48,23.09,32.74-9.08,58.32-34.68,67.38-67.43,9.05-32.75.25-67.85-23.18-92.46L566.73,28.37C548.63,10.16,524-.04,498.33.05c-.8-.06-1.6-.06-2.4,0-.8-.06-1.6-.06-2.4,0-25.65,0-50.25,10.19-68.4,28.32h0Z"/>
+                    </svg>
+                  </button>
+                </div>
+                <div v-if="queuedMessages[pane.id]" class="queued-message">
+                  ✓ {{ queuedMessages[pane.id] }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="pane.devStatus && pane.devStatus !== 'stopped'" class="dev-server-status">
+              <span class="status-label">Dev Server:</span>
+              <span class="status-badge" :class="pane.devStatus">{{ pane.devStatus }}</span>
+              <a v-if="pane.devUrl" :href="pane.devUrl" target="_blank" class="dev-link">↗</a>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Action Dialogs -->
+      <div v-if="actionDialog" class="action-dialog-overlay" @click.self="closeActionDialog">
+        <!-- Confirm Dialog -->
+        <div v-if="actionDialog.type === 'confirm'" class="action-dialog">
+          <h3>{{ actionDialog.title }}</h3>
+          <p>{{ actionDialog.message }}</p>
+          <div class="dialog-buttons">
+            <button @click="handleConfirm(true)" class="dialog-btn dialog-btn-primary">
+              {{ actionDialog.yesLabel || 'Yes' }}
+            </button>
+            <button @click="handleConfirm(false)" class="dialog-btn">
+              {{ actionDialog.noLabel || 'No' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Choice Dialog -->
+        <div v-if="actionDialog.type === 'choice'" class="action-dialog">
+          <h3>{{ actionDialog.title }}</h3>
+          <p v-if="actionDialog.message">{{ actionDialog.message }}</p>
+          <div class="choice-options">
+            <button
+              v-for="option in actionDialog.options"
+              :key="option.id"
+              @click="handleChoice(option.id)"
+              class="choice-option-btn"
+              :class="{ 'danger': option.danger }"
+            >
+              {{ option.label }}
+              <span v-if="option.description" class="option-description">{{ option.description }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        <div class="footer-info">
+          <span>Auto-refresh: <span>ON</span></span>
+          <span>Last update: <span>{{ timeSinceUpdate }}</span></span>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Create Pane Dialog -->
+    <div v-if="showCreateDialog" class="modal-overlay" @click.self="closeCreateDialog">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h2>{{ createStep === 'prompt' ? 'Create New Pane' : 'Select Agent' }}</h2>
+          <button @click="closeCreateDialog" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Step 1: Prompt -->
+          <div v-if="createStep === 'prompt'" class="form-group">
+            <label for="pane-prompt">Prompt</label>
+            <textarea
+              id="pane-prompt"
+              v-model="newPanePrompt"
+              placeholder="Enter task description (e.g., 'Add tests for the authentication module')"
+              rows="4"
+              class="modal-textarea"
+              :disabled="creatingPane"
+              @keydown.meta.enter="submitPrompt"
+              @keydown.ctrl.enter="submitPrompt"
+            ></textarea>
+            <div class="input-hint">Cmd/Ctrl + Enter to continue</div>
+          </div>
+
+          <!-- Step 2: Agent Selection -->
+          <div v-if="createStep === 'agent'" class="form-group">
+            <label>Select Agent</label>
+            <div class="agent-selector">
+              <button
+                v-for="agent in availableAgents"
+                :key="agent"
+                @click="newPaneAgent = agent"
+                class="agent-option"
+                :class="{ 'selected': newPaneAgent === agent }"
+                :disabled="creatingPane"
+              >
+                <img
+                  :src="'https://cdn.formk.it/dmux/' + agent + '.svg'"
+                  :alt="agent"
+                  class="agent-logo"
+                />
+                <span>{{ agent }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            v-if="createStep === 'agent'"
+            @click="createStep = 'prompt'"
+            class="modal-button modal-button-secondary"
+            :disabled="creatingPane"
+          >
+            Back
+          </button>
+          <button @click="closeCreateDialog" class="modal-button modal-button-secondary" :disabled="creatingPane">
+            Cancel
+          </button>
+          <button
+            v-if="createStep === 'prompt'"
+            @click="submitPrompt"
+            class="modal-button modal-button-primary"
+            :disabled="!newPanePrompt.trim() || creatingPane"
+          >
+            <span v-if="creatingPane" class="button-loader"></span>
+            <span v-else>Continue</span>
+          </button>
+          <button
+            v-if="createStep === 'agent'"
+            @click="createPane"
+            class="modal-button modal-button-primary"
+            :disabled="!newPaneAgent || creatingPane"
+          >
+            <span v-if="creatingPane" class="button-loader"></span>
+            <span v-else>Create Pane</span>
+          </button>
+        </div>
+      </div>
+    </div>

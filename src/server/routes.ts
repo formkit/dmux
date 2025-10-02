@@ -11,7 +11,15 @@ import {
 } from 'h3';
 import { StateManager } from '../shared/StateManager.js';
 import type { DmuxPane } from '../types.js';
-import { getDashboardHtml, getDashboardCss, getDashboardJs, getTerminalViewerHtml, getTerminalJs } from './static.js';
+import { getEmbeddedAsset } from './embedded-assets.js';
+
+function serveEmbeddedAsset(filename: string): string {
+  const asset = getEmbeddedAsset(filename);
+  if (!asset) {
+    throw new Error(`Embedded asset not found: ${filename}`);
+  }
+  return asset.content;
+}
 import { getTerminalStreamer } from '../services/TerminalStreamer.js';
 import { formatStreamMessage, type HeartbeatMessage } from '../shared/StreamProtocol.js';
 import {
@@ -59,9 +67,11 @@ export function setupRoutes(app: App) {
 
   // ===== Action System Routes =====
 
+  // Create a router for exact route matching
+  const apiRouter = createRouter();
+
   // GET /api/actions - List all actions
-  app.use('/api/actions', eventHandler(async (event) => {
-    if (event.node.req.method !== 'GET') return;
+  apiRouter.get('/api/actions', eventHandler(async (event) => {
     return new Promise((resolve, reject) => {
       handleListActions(event.node.req, {
         writeHead: (code: number, headers: any) => {
@@ -74,9 +84,7 @@ export function setupRoutes(app: App) {
   }));
 
   // GET /api/panes/:id/actions - Get available actions for pane
-  app.use('/api/panes/:id/actions', eventHandler(async (event) => {
-    if (event.node.req.method !== 'GET') return;
-
+  apiRouter.get('/api/panes/:id/actions', eventHandler(async (event) => {
     const params = getRouterParams(event);
     const paneId = params?.id;
 
@@ -97,9 +105,7 @@ export function setupRoutes(app: App) {
   }));
 
   // POST /api/panes/:id/actions/:actionId - Execute action
-  app.use('/api/panes/:paneId/actions/:actionId', eventHandler(async (event) => {
-    if (event.node.req.method !== 'POST') return;
-
+  apiRouter.post('/api/panes/:paneId/actions/:actionId', eventHandler(async (event) => {
     const params = getRouterParams(event);
     const paneId = params?.paneId;
     const actionId = params?.actionId;
@@ -121,9 +127,7 @@ export function setupRoutes(app: App) {
   }));
 
   // POST /api/callbacks/confirm/:callbackId - Respond to confirm dialog
-  app.use('/api/callbacks/confirm/:callbackId', eventHandler(async (event) => {
-    if (event.node.req.method !== 'POST') return;
-
+  apiRouter.post('/api/callbacks/confirm/:callbackId', eventHandler(async (event) => {
     const params = getRouterParams(event);
     const callbackId = params?.callbackId;
 
@@ -144,9 +148,7 @@ export function setupRoutes(app: App) {
   }));
 
   // POST /api/callbacks/choice/:callbackId - Respond to choice dialog
-  app.use('/api/callbacks/choice/:callbackId', eventHandler(async (event) => {
-    if (event.node.req.method !== 'POST') return;
-
+  apiRouter.post('/api/callbacks/choice/:callbackId', eventHandler(async (event) => {
     const params = getRouterParams(event);
     const callbackId = params?.callbackId;
 
@@ -167,9 +169,7 @@ export function setupRoutes(app: App) {
   }));
 
   // POST /api/callbacks/input/:callbackId - Respond to input dialog
-  app.use('/api/callbacks/input/:callbackId', eventHandler(async (event) => {
-    if (event.node.req.method !== 'POST') return;
-
+  apiRouter.post('/api/callbacks/input/:callbackId', eventHandler(async (event) => {
     const params = getRouterParams(event);
     const callbackId = params?.callbackId;
 
@@ -189,20 +189,127 @@ export function setupRoutes(app: App) {
     });
   }));
 
-  // GET /api/panes - List all panes
-  // POST /api/panes - Create a new pane
-  app.use('/api/panes', eventHandler(async (event) => {
-    if (event.node.req.method === 'GET') {
-      const state = stateManager.getState();
-      return {
-        panes: state.panes.map(formatPaneResponse),
-        projectName: state.projectName,
-        sessionName: state.sessionName,
-        timestamp: Date.now()
-      };
+  // GET /api/panes/:id/snapshot - Get current pane snapshot
+  apiRouter.get('/api/panes/:id/snapshot', eventHandler(async (event) => {
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
     }
 
-    if (event.node.req.method === 'POST') {
+    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
+
+    if (!pane) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    // Capture current pane state from tmux
+    const { execSync } = await import('child_process');
+
+    try {
+      // Get dimensions
+      const dimensionsOutput = execSync(
+        `tmux display-message -p -t ${pane.paneId} -F "#{pane_width},#{pane_height}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      const [width, height] = dimensionsOutput.split(',').map(Number);
+
+      // Get content
+      const content = execSync(
+        `tmux capture-pane -epJ -t ${pane.paneId}`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      );
+
+      // Get cursor position
+      const cursorOutput = execSync(
+        `tmux display-message -p -t ${pane.paneId} -F "#{cursor_y},#{cursor_x}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      const [cursorRow, cursorCol] = cursorOutput.split(',').map(Number);
+
+      return {
+        width: width || 80,
+        height: height || 24,
+        content,
+        cursorRow: cursorRow || 0,
+        cursorCol: cursorCol || 0
+      };
+    } catch (error) {
+      event.node.res.statusCode = 500;
+      return { error: 'Failed to capture pane state' };
+    }
+  }));
+
+  // POST /api/panes/:id/actions - Execute action on pane
+  apiRouter.post('/api/panes/:id/actions', eventHandler(async (event) => {
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
+    }
+
+    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
+
+    if (!pane) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    try {
+      const action = await readBody(event);
+
+      // For now, just acknowledge the action
+      // Future: Implement actual pane actions (sendKeys, resize, etc.)
+      return {
+        status: 'acknowledged',
+        paneId,
+        action,
+        message: 'Action endpoints will be implemented in future versions'
+      };
+    } catch (err) {
+      event.node.res.statusCode = 400;
+      return { error: 'Invalid request body' };
+    }
+  }));
+
+  // GET /api/panes/:id - Get specific pane
+  apiRouter.get('/api/panes/:id', eventHandler(async (event) => {
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
+    }
+
+    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
+
+    if (!pane) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    return formatPaneResponse(pane);
+  }));
+
+  // GET /api/panes - List all panes
+  apiRouter.get('/api/panes', eventHandler(async (event) => {
+    const state = stateManager.getState();
+    return {
+      panes: state.panes.map(formatPaneResponse),
+      projectName: state.projectName,
+      sessionName: state.sessionName,
+      timestamp: Date.now()
+    };
+  }));
+
+  // POST /api/panes - Create a new pane
+  apiRouter.post('/api/panes', eventHandler(async (event) => {
       try {
         const body = await readBody(event);
         let { prompt, agent } = body;
@@ -368,132 +475,20 @@ export function setupRoutes(app: App) {
         // Update state manager
         stateManager.updatePanes(updatedPanes);
 
-        return {
-          success: true,
-          pane: formatPaneResponse(result.pane),
-          message: 'Pane created successfully',
-        };
-      } catch (err: any) {
-        console.error('Failed to create pane:', err);
-        event.node.res.statusCode = 500;
-        return { error: 'Failed to create pane', details: err.message };
-      }
-    }
-  }));
-
-  // GET /api/panes/:id - Get specific pane
-  app.use('/api/panes/:id', eventHandler(async (event) => {
-    if (event.node.req.method !== 'GET') return;
-
-    const params = getRouterParams(event);
-    const paneId = params?.id;
-
-    if (!paneId) {
-      event.node.res.statusCode = 400;
-      return { error: 'Missing pane ID' };
-    }
-
-    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
-
-    if (!pane) {
-      event.node.res.statusCode = 404;
-      return { error: 'Pane not found' };
-    }
-
-    return formatPaneResponse(pane);
-  }));
-
-  // GET /api/panes/:id/snapshot - Get current pane snapshot
-  app.use('/api/panes/:id/snapshot', eventHandler(async (event) => {
-    if (event.node.req.method !== 'GET') return;
-
-    const params = getRouterParams(event);
-    const paneId = params?.id;
-
-    if (!paneId) {
-      event.node.res.statusCode = 400;
-      return { error: 'Missing pane ID' };
-    }
-
-    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
-
-    if (!pane) {
-      event.node.res.statusCode = 404;
-      return { error: 'Pane not found' };
-    }
-
-    // Capture current pane state from tmux
-    const { execSync } = await import('child_process');
-
-    try {
-      // Get dimensions
-      const dimensionsOutput = execSync(
-        `tmux display-message -p -t ${pane.paneId} -F "#{pane_width},#{pane_height}"`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      const [width, height] = dimensionsOutput.split(',').map(Number);
-
-      // Get content
-      const content = execSync(
-        `tmux capture-pane -epJ -t ${pane.paneId}`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      );
-
-      // Get cursor position
-      const cursorOutput = execSync(
-        `tmux display-message -p -t ${pane.paneId} -F "#{cursor_y},#{cursor_x}"`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      const [cursorRow, cursorCol] = cursorOutput.split(',').map(Number);
-
       return {
-        width: width || 80,
-        height: height || 24,
-        content,
-        cursorRow: cursorRow || 0,
-        cursorCol: cursorCol || 0
+        success: true,
+        pane: formatPaneResponse(result.pane),
+        message: 'Pane created successfully',
       };
-    } catch (error) {
+    } catch (err: any) {
+      console.error('Failed to create pane:', err);
       event.node.res.statusCode = 500;
-      return { error: 'Failed to capture pane state' };
+      return { error: 'Failed to create pane', details: err.message };
     }
   }));
 
-  // POST /api/panes/:id/actions - Execute action on pane
-  app.use('/api/panes/:id/actions', eventHandler(async (event) => {
-    if (event.node.req.method !== 'POST') return;
-
-    const params = getRouterParams(event);
-    const paneId = params?.id;
-
-    if (!paneId) {
-      event.node.res.statusCode = 400;
-      return { error: 'Missing pane ID' };
-    }
-
-    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
-
-    if (!pane) {
-      event.node.res.statusCode = 404;
-      return { error: 'Pane not found' };
-    }
-
-    try {
-      const action = await readBody(event);
-
-      // For now, just acknowledge the action
-      // Future: Implement actual pane actions (sendKeys, resize, etc.)
-      return {
-        status: 'acknowledged',
-        paneId,
-        action,
-        message: 'Action endpoints will be implemented in future versions'
-      };
-    } catch (err) {
-      event.node.res.statusCode = 400;
-      return { error: 'Invalid request body' };
-    }
-  }));
+  // Mount the API router
+  app.use(apiRouter);
 
   // GET /api/stream/:paneId - Stream terminal output
   // MUST be before the catch-all route
@@ -710,35 +705,40 @@ export function setupRoutes(app: App) {
 
     if (path === '/' || path === '/index.html') {
       setHeader(event, 'Content-Type', 'text/html');
-      return getDashboardHtml();
+      return serveEmbeddedAsset('dashboard.html');
     }
 
     // Terminal viewer page
     if (path.startsWith('/panes/')) {
       setHeader(event, 'Content-Type', 'text/html');
-      return getTerminalViewerHtml();
+      return serveEmbeddedAsset('terminal.html');
     }
 
-    if (path === '/styles.css') {
-      setHeader(event, 'Content-Type', 'text/css');
-      return getDashboardCss();
+    // Serve any CSS file from root of dist/
+    if (path.endsWith('.css')) {
+      const filename = path.substring(1); // Remove leading /
+      const asset = getEmbeddedAsset(filename);
+      if (asset) {
+        setHeader(event, 'Content-Type', 'text/css');
+        return asset.content;
+      }
     }
 
-    if (path === '/dashboard.js') {
+    // Serve any JS file from root of dist/ (not in subdirectories)
+    if (path.endsWith('.js') && path.lastIndexOf('/') === 0) {
+      const filename = path.substring(1); // Remove leading /
+      const asset = getEmbeddedAsset(filename);
+      if (asset) {
+        setHeader(event, 'Content-Type', 'application/javascript');
+        return asset.content;
+      }
+    }
+
+    // Serve chunk files
+    if (path.startsWith('/chunks/')) {
       setHeader(event, 'Content-Type', 'application/javascript');
-      return getDashboardJs();
-    }
-
-    if (path === '/terminal.js') {
-      setHeader(event, 'Content-Type', 'application/javascript');
-      return getTerminalJs();
-    }
-
-    if (path === '/vue.esm-browser.js') {
-      setHeader(event, 'Content-Type', 'application/javascript');
-      const fs = await import('fs');
-      const vuePath = new URL('../../node_modules/vue/dist/vue.esm-browser.js', import.meta.url);
-      return fs.readFileSync(vuePath, 'utf-8');
+      const filename = path.substring(1); // Remove leading /
+      return serveEmbeddedAsset(filename);
     }
 
     // 404 for unknown routes

@@ -1,14 +1,30 @@
 # CLAUDE.md - Complete Documentation for dmux
 
 ## Table of Contents
-1. [Project Overview](#project-overview)
-2. [Architecture](#architecture)
-3. [Installation & Setup](#installation--setup)
-4. [Core Features](#core-features)
-5. [Technical Implementation](#technical-implementation)
-6. [User Guide](#user-guide)
-7. [Development Guide](#development-guide)
-8. [Troubleshooting](#troubleshooting)
+1. [Documentation Files](#documentation-files)
+2. [Project Overview](#project-overview)
+3. [Architecture](#architecture)
+4. [Installation & Setup](#installation--setup)
+5. [Core Features](#core-features)
+6. [Technical Implementation](#technical-implementation)
+7. [User Guide](#user-guide)
+8. [Development Guide](#development-guide)
+9. [Troubleshooting](#troubleshooting)
+
+## Documentation Files
+
+This project maintains several documentation files for different aspects of the system:
+
+- **[CLAUDE.md](CLAUDE.md)** (this file) - Complete technical documentation covering architecture, implementation, and development workflows
+- **[API.md](API.md)** - REST API reference for the HTTP server, including all endpoints, request/response formats, and examples
+- **[BUNDLED_ASSETS.md](BUNDLED_ASSETS.md)** - Frontend build system documentation explaining the Vue 3 migration, asset embedding, and single dist/ directory architecture
+- **[README.md](README.md)** - User-facing documentation with quick start guide and feature overview
+
+**When to use each:**
+- Working on backend/TUI → Read CLAUDE.md
+- Working on API endpoints → Read API.md
+- Working on frontend/build system → Read BUNDLED_ASSETS.md
+- Writing user documentation → Update README.md
 
 ## Project Overview
 
@@ -52,21 +68,43 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 ### File Structure
 ```
 /Users/justinschroeder/Projects/dmux/main/
-├── src/
+├── src/                  # TypeScript source code
 │   ├── index.ts          # Main entry point, session management
-│   └── DmuxApp.tsx       # React TUI component, core logic
-├── dist/                 # Compiled JavaScript (gitignored)
-│   ├── index.js
-│   └── DmuxApp.js
+│   ├── DmuxApp.tsx       # React TUI component, core logic
+│   └── server/           # HTTP server and API
+│       ├── routes.ts     # API endpoints
+│       └── embedded-assets.ts  # Generated frontend assets
+├── frontend/             # Vue 3 frontend application
+│   ├── src/
+│   │   ├── components/   # Vue components
+│   │   │   ├── Dashboard.vue   # Main dashboard UI
+│   │   │   └── Terminal.vue    # Terminal viewer with ANSI parsing
+│   │   ├── styles.css    # Shared styles for all pages
+│   │   ├── dashboard.html
+│   │   ├── dashboard.ts
+│   │   ├── terminal.html
+│   │   └── terminal.ts
+│   ├── package.json      # Frontend dependencies
+│   └── vite.config.ts    # Vite build configuration
+├── scripts/
+│   └── embed-assets.js   # Embeds frontend assets into TypeScript
+├── dist/                 # All build output (gitignored)
+│   ├── *.js              # Compiled TypeScript
+│   ├── *.d.ts            # Type definitions
+│   ├── dashboard.*       # Frontend dashboard bundle
+│   └── terminal.*        # Frontend terminal bundle
 ├── dmux                  # Executable wrapper script
 ├── package.json          # Node dependencies and scripts
 ├── tsconfig.json         # TypeScript configuration
-├── .gitignore           # Git ignore rules
-├── CLAUDE.md            # This documentation file
-└── .dmux/               # Project-specific dmux data (gitignored)
-    ├── dmux.config.json # Configuration and pane tracking
-    └── worktrees/       # Git worktrees for each pane
-        └── {slug}/      # Individual worktree directories
+├── .gitignore            # Git ignore rules
+├── CLAUDE.md             # Technical documentation (this file)
+├── API.md                # REST API reference
+├── BUNDLED_ASSETS.md     # Frontend build system documentation
+├── README.md             # User-facing documentation
+└── .dmux/                # Project-specific dmux data (gitignored)
+    ├── dmux.config.json  # Configuration and pane tracking
+    └── worktrees/        # Git worktrees for each pane
+        └── {slug}/       # Individual worktree directories
 ```
 
 ## Installation & Setup
@@ -1239,6 +1277,11 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 - **Shared Pane Creation Utility**: Unified pane creation logic used by both TUI and API
 - **Standardized Action System**: Universal action library with pure functions, interface adapters, and consistent behavior across TUI/Web/API
 - **Kebab Menus**: Visual context menus on pane cards showing available actions
+- **Vue 3 Migration**: Complete migration from string-based Vue code to proper filesystem-based Vue 3 SFCs with TypeScript and Composition API (see [BUNDLED_ASSETS.md](BUNDLED_ASSETS.md))
+  - Dashboard.vue: Full dashboard with dialogs and kebab menus
+  - Terminal.vue: Complete ANSI terminal emulator (935 lines)
+  - Single dist/ directory for all build artifacts
+  - Assets embedded into compiled JavaScript for self-contained binary
 
 ### Known Issues
 1. **Error handling**: Claude command availability not verified
@@ -1282,7 +1325,11 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 
 ### Contributing
 1. Follow existing code patterns
-2. Update CLAUDE.md with new features
+2. Update documentation:
+   - CLAUDE.md: For backend/TUI changes
+   - API.md: For new/changed API endpoints
+   - BUNDLED_ASSETS.md: For frontend/build system changes
+   - README.md: For user-facing feature documentation
 3. Test all workflows before submitting
 4. Include error handling
 5. Maintain backward compatibility

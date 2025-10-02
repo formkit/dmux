@@ -86,7 +86,9 @@
       "Bash(xargs -I{} sh -c 'echo {} && cat {}')",
       "Bash(git log:*)",
       "Bash(git push:*)",
-      "Bash(ps:*)"
+      "Bash(ps:*)",
+      "Bash(npm run clean:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": [],
