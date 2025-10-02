@@ -48,7 +48,7 @@ export class PaneAnalyzer {
   /**
    * Stage 1: Determines the state of the pane
    */
-  async determineState(content: string): Promise<PaneState> {
+  async determineState(content: string, signal?: AbortSignal): Promise<PaneState> {
     if (!this.apiKey) {
       // API key not set
       return 'in_progress';
@@ -108,7 +108,8 @@ CRITICAL:
           temperature: 0.1,
           max_tokens: 20,
           response_format: { type: 'json_object' },
-        })
+        }),
+        signal
       });
 
       if (!response.ok) {
@@ -136,7 +137,7 @@ CRITICAL:
   /**
    * Stage 2: Extract option details if state is option_dialog
    */
-  async extractOptions(content: string): Promise<Omit<PaneAnalysis, 'state'>> {
+  async extractOptions(content: string, signal?: AbortSignal): Promise<Omit<PaneAnalysis, 'state'>> {
     if (!this.apiKey) {
       return {};
     }
@@ -203,7 +204,8 @@ Output: {
           temperature: 0.1,
           max_tokens: 300,
           response_format: { type: 'json_object' },
-        })
+        }),
+        signal
       });
 
       if (!response.ok) {
@@ -235,7 +237,7 @@ Output: {
   /**
    * Stage 3: Extract summary when state is open_prompt (idle)
    */
-  async extractSummary(content: string): Promise<string | undefined> {
+  async extractSummary(content: string, signal?: AbortSignal): Promise<string | undefined> {
     if (!this.apiKey) {
       return undefined;
     }
@@ -279,7 +281,8 @@ If there's no meaningful content or the output is unclear, return an empty summa
           temperature: 0.1,
           max_tokens: 100,
           response_format: { type: 'json_object' },
-        })
+        }),
+        signal
       });
 
       if (!response.ok) {
@@ -298,7 +301,7 @@ If there's no meaningful content or the output is unclear, return an empty summa
   /**
    * Main analysis function that captures and analyzes a pane
    */
-  async analyzePane(paneId: string): Promise<PaneAnalysis> {
+  async analyzePane(paneId: string, signal?: AbortSignal): Promise<PaneAnalysis> {
     // Capture the pane content (50 lines for state detection)
     const content = this.capturePaneContent(paneId, 50);
 
@@ -307,11 +310,11 @@ If there's no meaningful content or the output is unclear, return an empty summa
     }
 
     // Stage 1: Determine the state
-    const state = await this.determineState(content);
+    const state = await this.determineState(content, signal);
 
     // If it's an option dialog, extract option details
     if (state === 'option_dialog') {
-      const optionDetails = await this.extractOptions(content);
+      const optionDetails = await this.extractOptions(content, signal);
       return {
         state,
         ...optionDetails
@@ -320,7 +323,7 @@ If there's no meaningful content or the output is unclear, return an empty summa
 
     // If it's open_prompt (idle), extract summary
     if (state === 'open_prompt') {
-      const summary = await this.extractSummary(content);
+      const summary = await this.extractSummary(content, signal);
       return {
         state,
         summary
