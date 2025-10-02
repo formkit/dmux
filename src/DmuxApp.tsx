@@ -842,16 +842,51 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
     // Handle action system confirm dialog
     if (actionSystem.actionState.showConfirmDialog) {
-      if (key.escape || input === 'n' || input === 'N') {
+      if (key.escape) {
         if (actionSystem.actionState.onConfirmNo) {
           actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
         } else {
           actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
         }
         return;
+      } else if (key.upArrow) {
+        actionSystem.setActionState(prev => ({
+          ...prev,
+          confirmSelectedIndex: Math.max(0, prev.confirmSelectedIndex - 1)
+        }));
+        return;
+      } else if (key.downArrow) {
+        actionSystem.setActionState(prev => ({
+          ...prev,
+          confirmSelectedIndex: Math.min(1, prev.confirmSelectedIndex + 1)
+        }));
+        return;
+      } else if (key.return) {
+        // Execute based on selected index
+        if (actionSystem.actionState.confirmSelectedIndex === 0) {
+          if (actionSystem.actionState.onConfirmYes) {
+            actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
+          }
+        } else {
+          if (actionSystem.actionState.onConfirmNo) {
+            actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
+          } else {
+            actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
+          }
+        }
+        return;
       } else if (input === 'y' || input === 'Y') {
+        // Shortcut: yes
         if (actionSystem.actionState.onConfirmYes) {
           actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
+        }
+        return;
+      } else if (input === 'n' || input === 'N') {
+        // Shortcut: no
+        if (actionSystem.actionState.onConfirmNo) {
+          actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
+        } else {
+          actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
         }
         return;
       }
@@ -1150,6 +1185,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           message={actionSystem.actionState.confirmMessage}
           yesLabel={actionSystem.actionState.confirmYesLabel}
           noLabel={actionSystem.actionState.confirmNoLabel}
+          selectedIndex={actionSystem.actionState.confirmSelectedIndex}
         />
       )}
 

@@ -144,7 +144,7 @@ async function executeCloseOption(
 }
 
 /**
- * Merge a worktree into the main branch
+ * Merge a worktree into the main branch with comprehensive pre-checks
  */
 export async function mergePane(
   pane: DmuxPane,
@@ -159,16 +159,27 @@ export async function mergePane(
     };
   }
 
-  const mainBranch = params?.mainBranch || 'main';
+  // Import merge utilities dynamically
+  const { validateMerge } = await import('../utils/mergeValidation.js');
+  const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
 
+  // Run pre-merge validation
+  const validation = validateMerge(mainRepoPath, pane.worktreePath, pane.slug);
+
+  // If there are issues, present them to the user
+  if (!validation.canMerge) {
+    return handleMergeIssues(pane, context, validation, mainRepoPath);
+  }
+
+  // No issues detected, proceed with merge confirmation
   return {
     type: 'confirm',
     title: 'Merge Worktree',
-    message: `Merge "${pane.slug}" into ${mainBranch}?`,
+    message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
     confirmLabel: 'Merge',
     cancelLabel: 'Cancel',
     onConfirm: async () => {
-      return executeMerge(pane, context, mainBranch);
+      return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
     },
     onCancel: async () => {
       return {
@@ -181,105 +192,305 @@ export async function mergePane(
 }
 
 /**
- * Execute the merge operation
+ * Handle detected merge issues
+ */
+async function handleMergeIssues(
+  pane: DmuxPane,
+  context: ActionContext,
+  validation: any,
+  mainRepoPath: string
+): Promise<ActionResult> {
+  const { issues, mainBranch } = validation;
+  const { commitChanges, stashChanges } = await import('../utils/mergeValidation.js');
+  const { generateCommitMessage } = await import('../utils/aiMerge.js');
+
+  // Group issues by type for clearer handling
+  const mainDirty = issues.find((i: any) => i.type === 'main_dirty');
+  const worktreeUncommitted = issues.find((i: any) => i.type === 'worktree_uncommitted');
+  const mergeConflict = issues.find((i: any) => i.type === 'merge_conflict');
+  const nothingToMerge = issues.find((i: any) => i.type === 'nothing_to_merge');
+
+  // Handle "nothing to merge" case
+  if (nothingToMerge) {
+    return {
+      type: 'info',
+      message: 'No new commits to merge',
+      dismissable: true,
+    };
+  }
+
+  // Handle main branch dirty
+  if (mainDirty) {
+    return {
+      type: 'choice',
+      title: 'Main Branch Has Uncommitted Changes',
+      message: `${mainBranch} has uncommitted changes in:\n${mainDirty.files.slice(0, 5).join('\n')}${mainDirty.files.length > 5 ? '\n...' : ''}`,
+      options: [
+        {
+          id: 'commit_main',
+          label: 'Commit changes in main',
+          description: 'Generate commit message and commit',
+          default: true,
+        },
+        {
+          id: 'stash_main',
+          label: 'Stash changes in main',
+          description: 'Temporarily stash uncommitted changes',
+        },
+        {
+          id: 'cancel',
+          label: 'Cancel merge',
+          description: 'Resolve manually later',
+        },
+      ],
+      onSelect: async (optionId: string) => {
+        if (optionId === 'cancel') {
+          return { type: 'info', message: 'Merge cancelled', dismissable: true };
+        }
+
+        if (optionId === 'stash_main') {
+          const result = stashChanges(mainRepoPath);
+          if (!result.success) {
+            return { type: 'error', message: `Stash failed: ${result.error}`, dismissable: true };
+          }
+          // Retry merge after stashing
+          return mergePane(pane, context, { mainBranch });
+        }
+
+        if (optionId === 'commit_main') {
+          // Generate commit message
+          const message = await generateCommitMessage(mainRepoPath);
+          const result = commitChanges(mainRepoPath, message);
+          if (!result.success) {
+            return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+          }
+          // Retry merge after committing
+          return mergePane(pane, context, { mainBranch });
+        }
+
+        return { type: 'info', message: 'Unknown option', dismissable: true };
+      },
+      dismissable: true,
+    };
+  }
+
+  // Handle worktree uncommitted changes
+  if (worktreeUncommitted) {
+    return {
+      type: 'choice',
+      title: 'Worktree Has Uncommitted Changes',
+      message: `Changes in:\n${worktreeUncommitted.files.slice(0, 5).join('\n')}${worktreeUncommitted.files.length > 5 ? '\n...' : ''}`,
+      options: [
+        {
+          id: 'commit_worktree',
+          label: 'Commit changes',
+          description: 'Generate commit message and commit',
+          default: true,
+        },
+        {
+          id: 'cancel',
+          label: 'Cancel merge',
+          description: 'Resolve manually later',
+        },
+      ],
+      onSelect: async (optionId: string) => {
+        if (optionId === 'cancel') {
+          return { type: 'info', message: 'Merge cancelled', dismissable: true };
+        }
+
+        if (optionId === 'commit_worktree') {
+          const message = await generateCommitMessage(pane.worktreePath!);
+          const result = commitChanges(pane.worktreePath!, message);
+          if (!result.success) {
+            return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+          }
+          // Retry merge after committing
+          return mergePane(pane, context, { mainBranch });
+        }
+
+        return { type: 'info', message: 'Unknown option', dismissable: true };
+      },
+      dismissable: true,
+    };
+  }
+
+  // Handle merge conflicts
+  if (mergeConflict) {
+    return {
+      type: 'choice',
+      title: 'Merge Conflicts Detected',
+      message: `Conflicts will occur in:\n${mergeConflict.files.slice(0, 5).join('\n')}${mergeConflict.files.length > 5 ? '\n...' : ''}`,
+      options: [
+        {
+          id: 'ai_merge',
+          label: 'Try AI-assisted merge',
+          description: 'Let AI intelligently combine both versions',
+          default: true,
+        },
+        {
+          id: 'manual_merge',
+          label: 'Manual resolution',
+          description: 'Jump to pane to resolve conflicts',
+        },
+        {
+          id: 'cancel',
+          label: 'Cancel merge',
+          description: 'Do nothing',
+        },
+      ],
+      onSelect: async (optionId: string) => {
+        if (optionId === 'cancel') {
+          return { type: 'info', message: 'Merge cancelled', dismissable: true };
+        }
+
+        if (optionId === 'manual_merge') {
+          // Start the merge process and let user resolve manually
+          return executeMergeWithConflictHandling(pane, context, mainBranch, mainRepoPath, 'manual');
+        }
+
+        if (optionId === 'ai_merge') {
+          // Attempt AI-assisted merge
+          return executeMergeWithConflictHandling(pane, context, mainBranch, mainRepoPath, 'ai');
+        }
+
+        return { type: 'info', message: 'Unknown option', dismissable: true };
+      },
+      dismissable: true,
+    };
+  }
+
+  // Generic issue display
+  return {
+    type: 'error',
+    title: 'Merge Issues Detected',
+    message: issues.map((i: any) => i.message).join('\n'),
+    dismissable: true,
+  };
+}
+
+/**
+ * Execute merge with conflict handling
+ */
+async function executeMergeWithConflictHandling(
+  pane: DmuxPane,
+  context: ActionContext,
+  mainBranch: string,
+  mainRepoPath: string,
+  strategy: 'manual' | 'ai'
+): Promise<ActionResult> {
+  const { mergeMainIntoWorktree, getConflictingFiles, completeMerge } = await import(
+    '../utils/mergeExecution.js'
+  );
+
+  // Step 1: Merge main into worktree
+  const result = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
+
+  if (!result.success && result.needsManualResolution) {
+    if (strategy === 'ai') {
+      // Try AI resolution
+      const { aiResolveAllConflicts } = await import('../utils/aiMerge.js');
+      const aiResult = await aiResolveAllConflicts(pane.worktreePath!, result.conflictFiles || []);
+
+      if (aiResult.success) {
+        // AI resolved all conflicts, complete the merge
+        const completeResult = completeMerge(pane.worktreePath!, 'Merge with AI-resolved conflicts');
+
+        if (completeResult.success) {
+          // Continue with the second phase of merge
+          return executeMerge(pane, context, mainBranch, mainRepoPath);
+        } else {
+          return {
+            type: 'error',
+            message: `Failed to complete merge: ${completeResult.error}`,
+            dismissable: true,
+          };
+        }
+      } else {
+        // AI couldn't resolve, fall back to manual
+        return {
+          type: 'error',
+          title: 'AI Merge Failed',
+          message: `AI couldn't resolve conflicts in: ${aiResult.failedFiles.join(', ')}.\nPlease resolve manually.`,
+          dismissable: true,
+        };
+      }
+    } else {
+      // Manual resolution - jump to pane
+      return {
+        type: 'navigation',
+        title: 'Manual Conflict Resolution',
+        message: `Conflicts in: ${result.conflictFiles?.join(', ')}.\nResolve in the pane, then try merge again.`,
+        targetPaneId: pane.id,
+        dismissable: true,
+      };
+    }
+  }
+
+  if (!result.success) {
+    return {
+      type: 'error',
+      message: `Merge failed: ${result.error}`,
+      dismissable: true,
+    };
+  }
+
+  // No conflicts, proceed with the main merge
+  return executeMerge(pane, context, mainBranch, mainRepoPath);
+}
+
+/**
+ * Execute the actual merge operation (called after all pre-checks pass)
  */
 async function executeMerge(
   pane: DmuxPane,
   context: ActionContext,
-  mainBranch: string
+  mainBranch: string,
+  mainRepoPath: string
 ): Promise<ActionResult> {
-  if (!pane.worktreePath) {
+  const { mergeWorktreeIntoMain, cleanupAfterMerge } = await import('../utils/mergeExecution.js');
+
+  // Step 2: Merge worktree into main
+  const result = mergeWorktreeIntoMain(mainRepoPath, pane.slug);
+
+  if (!result.success) {
     return {
       type: 'error',
-      message: 'No worktree to merge',
+      title: 'Merge Failed',
+      message: `Failed to merge into ${mainBranch}: ${result.error}`,
       dismissable: true,
     };
   }
 
-  try {
-    const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+  // Merge successful! Ask about cleanup
+  return {
+    type: 'confirm',
+    title: 'Merge Complete',
+    message: `Successfully merged "${pane.slug}" into ${mainBranch}. Close the pane and cleanup worktree?`,
+    confirmLabel: 'Yes, close it',
+    cancelLabel: 'No, keep it',
+    onConfirm: async () => {
+      // Cleanup worktree and branch
+      const cleanup = cleanupAfterMerge(mainRepoPath, pane.worktreePath!, pane.slug);
 
-    // Check for uncommitted changes
-    let hasChanges = false;
-    try {
-      const status = execSync('git status --porcelain', {
-        cwd: pane.worktreePath,
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      });
-      hasChanges = status.trim().length > 0;
-    } catch {
-      // Ignore errors
-    }
-
-    // If there are changes, commit them first
-    if (hasChanges) {
-      // Generate a simple commit message based on branch name
-      const commitMessage = `feat: changes from ${pane.slug}`;
-
-      try {
-        execSync('git add -A', {
-          cwd: pane.worktreePath,
-          stdio: 'pipe',
-        });
-
-        execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
-          cwd: pane.worktreePath,
-          stdio: 'pipe',
-        });
-      } catch (error) {
+      if (!cleanup.success) {
         return {
           type: 'error',
-          message: `Failed to commit changes: ${error}`,
+          message: `Merge succeeded but cleanup failed: ${cleanup.error}`,
           dismissable: true,
         };
       }
-    }
 
-    // Switch to main branch and merge
-    try {
-      execSync(`git checkout ${mainBranch}`, {
-        cwd: mainRepoPath,
-        stdio: 'pipe',
-      });
-
-      execSync(`git merge ${pane.slug} --no-edit`, {
-        cwd: mainRepoPath,
-        stdio: 'pipe',
-      });
-    } catch (error) {
+      // Close the pane
+      return executeCloseOption(pane, context, 'kill_only');
+    },
+    onCancel: async () => {
       return {
-        type: 'error',
-        message: `Merge failed: ${error}. You may need to resolve conflicts manually.`,
+        type: 'success',
+        message: 'Merge complete. Pane kept open.',
         dismissable: true,
       };
-    }
-
-    // Ask if user wants to close the pane
-    return {
-      type: 'confirm',
-      title: 'Merge Complete',
-      message: `Successfully merged "${pane.slug}" into ${mainBranch}. Close the pane?`,
-      confirmLabel: 'Yes, close it',
-      cancelLabel: 'No, keep it',
-      onConfirm: async () => {
-        return executeCloseOption(pane, context, 'kill_clean_branch');
-      },
-      onCancel: async () => {
-        return {
-          type: 'success',
-          message: 'Merge complete. Pane kept open.',
-          dismissable: true,
-        };
-      },
-    };
-  } catch (error) {
-    return {
-      type: 'error',
-      message: `Merge operation failed: ${error}`,
-      dismissable: true,
-    };
-  }
+    },
+  };
 }
 
 /**

@@ -17,6 +17,7 @@ export interface TUIActionState {
   confirmMessage: string;
   confirmYesLabel: string;
   confirmNoLabel: string;
+  confirmSelectedIndex: number;
   onConfirmYes: (() => Promise<ActionResult>) | null;
   onConfirmNo: (() => Promise<ActionResult>) | null;
 
@@ -57,6 +58,7 @@ export function createInitialTUIState(): TUIActionState {
     confirmMessage: '',
     confirmYesLabel: 'Yes',
     confirmNoLabel: 'No',
+    confirmSelectedIndex: 0,
     onConfirmYes: null,
     onConfirmNo: null,
 
@@ -122,6 +124,7 @@ export function handleActionResult(
         confirmMessage: result.message,
         confirmYesLabel: result.confirmLabel || 'Yes',
         confirmNoLabel: result.cancelLabel || 'No',
+        confirmSelectedIndex: 0,
         onConfirmYes: result.onConfirm || null,
         onConfirmNo: result.onCancel || null,
       });
