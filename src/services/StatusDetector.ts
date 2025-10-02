@@ -100,8 +100,10 @@ export class StatusDetector extends EventEmitter {
     const oldStatus = this.paneStatuses.get(paneId);
     this.paneStatuses.set(paneId, status);
 
-    // If changing away from analyzing, cancel any pending LLM request
-    if (oldStatus === 'analyzing' && status !== 'analyzing') {
+    // ONLY cancel LLM request if transitioning from analyzing to working
+    // This is the specific case where the agent started working again
+    // before the LLM analysis completed
+    if (oldStatus === 'analyzing' && status === 'working') {
       this.cancelLLMRequest(paneId);
     }
 
