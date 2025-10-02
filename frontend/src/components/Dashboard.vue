@@ -164,8 +164,34 @@ const executeAction = async (pane: any, action: any) => {
     const result = await response.json();
 
     if (result.requiresInteraction) {
-      actionDialog.value = result.interactionData;
-      actionDialog.value.paneId = pane.id;
+      // Map the specific data type to a common structure
+      let dialogData: any = {};
+
+      if (result.interactionType === 'confirm') {
+        dialogData = {
+          type: 'confirm',
+          title: result.title || 'Confirm',
+          message: result.message,
+          ...result.confirmData
+        };
+      } else if (result.interactionType === 'choice') {
+        dialogData = {
+          type: 'choice',
+          title: result.title || 'Choose',
+          message: result.message,
+          ...result.choiceData
+        };
+      } else if (result.interactionType === 'input') {
+        dialogData = {
+          type: 'input',
+          title: result.title || 'Input',
+          message: result.message,
+          ...result.inputData
+        };
+      }
+
+      dialogData.paneId = pane.id;
+      actionDialog.value = dialogData;
     } else {
       await fetchPanes();
     }
@@ -222,11 +248,15 @@ const selectOption = async (pane: any, option: any) => {
     loadingOptions.value.add(pane.id);
     loadingOptions.value = new Set(loadingOptions.value);
 
-    await fetch(`/api/keys/${pane.paneId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: option.action })
-    });
+    // Send each key in the keys array
+    const keys = option.keys || [option.action];
+    for (const key of keys) {
+      await fetch(`/api/keys/${pane.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key })
+      });
+    }
 
     setTimeout(() => {
       loadingOptions.value.delete(pane.id);
@@ -248,10 +278,20 @@ const sendPrompt = async (pane: any) => {
     sendingPrompts.value.add(pane.id);
     sendingPrompts.value = new Set(sendingPrompts.value);
 
-    await fetch(`/api/keys/${pane.paneId}`, {
+    // Send each character individually
+    for (const char of prompt) {
+      await fetch(`/api/keys/${pane.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: char })
+      });
+    }
+
+    // Send Enter key to submit
+    await fetch(`/api/keys/${pane.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: prompt })
+      body: JSON.stringify({ key: 'Enter' })
     });
 
     queuedMessages.value[pane.id] = prompt.substring(0, 50) + (prompt.length > 50 ? '...' : '');

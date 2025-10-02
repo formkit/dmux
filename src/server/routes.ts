@@ -496,21 +496,15 @@ export function setupRoutes(app: App) {
     const url = event.node.req.url || '';
     // When using app.use('/api/stream'), the URL is already stripped
     // So we just need to remove the leading slash
-    const paneId = url.startsWith('/') ? url.substring(1) : url;
+    const dmuxId = url.startsWith('/') ? url.substring(1) : url;
 
-    if (!paneId || paneId.includes('/')) {
+    if (!dmuxId || dmuxId.includes('/')) {
       event.node.res.statusCode = 404;
       return { error: 'Invalid pane ID' };
     }
 
-    if (!paneId) {
-      event.node.res.statusCode = 400;
-      return { error: 'Pane ID required' };
-    }
-
-    // Find the pane
-    const panes = stateManager.getPanes();
-    const pane = panes.find((p: DmuxPane) => p.id === paneId);
+    // Find the pane by dmux ID
+    const pane = stateManager.getPaneById(decodeURIComponent(dmuxId));
 
     if (!pane || !pane.paneId) {
       event.node.res.statusCode = 404;
@@ -566,16 +560,15 @@ export function setupRoutes(app: App) {
     }
 
     const url = event.node.req.url || '';
-    const paneId = url.startsWith('/') ? url.substring(1) : url;
+    const dmuxId = url.startsWith('/') ? url.substring(1) : url;
 
-    if (!paneId || paneId.includes('/')) {
+    if (!dmuxId || dmuxId.includes('/')) {
       event.node.res.statusCode = 404;
       return { error: 'Invalid pane ID' };
     }
 
-    // Find the pane
-    const panes = stateManager.getPanes();
-    const pane = panes.find((p: DmuxPane) => p.id === paneId);
+    // Find the pane by dmux ID
+    const pane = stateManager.getPaneById(decodeURIComponent(dmuxId));
 
     if (!pane || !pane.paneId) {
       event.node.res.statusCode = 404;
