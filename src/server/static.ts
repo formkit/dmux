@@ -264,6 +264,11 @@ main {
 
 .pane-header {
   margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
 }
 
 .pane-header-content {
@@ -271,6 +276,75 @@ main {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.action-menu-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 20px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.action-menu-btn:hover {
+  color: var(--text-primary);
+  background: var(--button-hover-bg);
+  border-radius: 4px;
+}
+
+.action-menu-dropdown {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  background: var(--tooltip-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--tooltip-border);
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 100;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.action-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.action-menu-item:hover:not(:disabled) {
+  background: var(--button-hover-bg);
+}
+
+.action-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-icon {
+  font-size: 14px;
+  width: 16px;
+  text-align: center;
+}
+
+.action-label {
+  flex: 1;
 }
 
 .pane-title-link {
@@ -857,6 +931,129 @@ footer {
 }
 */
 
+/* Action Dialog Styles */
+.action-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.action-dialog {
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: slideInFromTop 0.3s ease-out;
+}
+
+.action-dialog h3 {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.action-dialog p {
+  margin: 0 0 20px 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.dialog-btn {
+  padding: 10px 20px;
+  border: 1px solid var(--button-border);
+  border-radius: 8px;
+  background: var(--button-bg);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dialog-btn:hover {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+}
+
+.dialog-btn-primary {
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  color: #000;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
+}
+
+.dialog-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+}
+
+.choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-option-btn {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--button-bg);
+  border: 1px solid var(--button-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.choice-option-btn:hover {
+  background: var(--button-hover-bg);
+  border-color: var(--button-hover-border);
+  transform: translateX(4px);
+}
+
+.choice-option-btn.danger {
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.choice-option-btn.danger:hover {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.2);
+}
+
+.option-description {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: normal;
+}
+
 /* Terminal Page Layout */
 .terminal-page {
   display: flex;
@@ -1255,7 +1452,13 @@ const app = createApp({
       creatingPane: false,
       availableAgents: [],
       needsAgentChoice: false,
-      createStep: 'prompt' // 'prompt' or 'agent'
+      createStep: 'prompt', // 'prompt' or 'agent'
+      // Action system
+      actions: [], // Available actions from API
+      paneActions: {}, // Map of pane ID to available actions
+      showActionMenu: null, // Pane ID with open action menu
+      actionDialog: null, // Current action dialog { type: 'confirm'|'choice', ... }
+      executingAction: false // Whether an action is currently executing
     };
   },
   template: \`
@@ -1309,6 +1512,23 @@ const app = createApp({
                   <span class="pane-id">{{ pane.paneId }}</span>
                 </div>
               </div>
+              <button @click="toggleActionMenu(pane.id)" class="action-menu-btn" title="Actions">
+                <span>⋮</span>
+              </button>
+            </div>
+
+            <!-- Action Menu Dropdown -->
+            <div v-if="showActionMenu === pane.id && paneActions[pane.id]" class="action-menu-dropdown">
+              <button
+                v-for="action in paneActions[pane.id]"
+                :key="action.id"
+                @click="executeAction(pane, action)"
+                class="action-menu-item"
+                :disabled="executingAction"
+              >
+                <span class="action-icon">{{ action.icon || '•' }}</span>
+                <span class="action-label">{{ action.label }}</span>
+              </button>
             </div>
 
             <div class="pane-prompt-section">
@@ -1398,6 +1618,41 @@ const app = createApp({
           </div>
         </div>
       </main>
+
+      <!-- Action Dialogs -->
+      <div v-if="actionDialog" class="action-dialog-overlay" @click.self="closeActionDialog">
+        <!-- Confirm Dialog -->
+        <div v-if="actionDialog.type === 'confirm'" class="action-dialog">
+          <h3>{{ actionDialog.title }}</h3>
+          <p>{{ actionDialog.message }}</p>
+          <div class="dialog-buttons">
+            <button @click="handleConfirm(true)" class="dialog-btn dialog-btn-primary">
+              {{ actionDialog.yesLabel || 'Yes' }}
+            </button>
+            <button @click="handleConfirm(false)" class="dialog-btn">
+              {{ actionDialog.noLabel || 'No' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Choice Dialog -->
+        <div v-if="actionDialog.type === 'choice'" class="action-dialog">
+          <h3>{{ actionDialog.title }}</h3>
+          <p v-if="actionDialog.message">{{ actionDialog.message }}</p>
+          <div class="choice-options">
+            <button
+              v-for="option in actionDialog.options"
+              :key="option.id"
+              @click="handleChoice(option.id)"
+              class="choice-option-btn"
+              :class="{ 'danger': option.danger }"
+            >
+              {{ option.label }}
+              <span v-if="option.description" class="option-description">{{ option.description }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       <footer>
         <div class="footer-info">
@@ -1702,6 +1957,101 @@ const app = createApp({
       const textarea = event.target;
       textarea.style.height = 'auto';
       textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+    },
+    async toggleActionMenu(paneId) {
+      if (this.showActionMenu === paneId) {
+        this.showActionMenu = null;
+      } else {
+        // Load actions for this pane if not already loaded
+        if (!this.paneActions[paneId]) {
+          try {
+            const response = await fetch(\`/api/panes/\${paneId}/actions\`);
+            const data = await response.json();
+            this.paneActions[paneId] = data.actions || [];
+          } catch (err) {
+            console.error('Failed to load actions:', err);
+            this.paneActions[paneId] = [];
+          }
+        }
+        this.showActionMenu = paneId;
+      }
+    },
+    async executeAction(pane, action) {
+      this.executingAction = true;
+      this.showActionMenu = null;
+
+      try {
+        const response = await fetch(\`/api/panes/\${pane.id}/actions/\${action.id}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+
+        const result = await response.json();
+
+        // Handle different response types
+        if (result.requiresInteraction) {
+          if (result.interactionType === 'confirm') {
+            this.actionDialog = {
+              type: 'confirm',
+              title: result.confirmData.title,
+              message: result.confirmData.message,
+              yesLabel: result.confirmData.yesLabel,
+              noLabel: result.confirmData.noLabel,
+              callbackId: result.confirmData.callbackId
+            };
+          } else if (result.interactionType === 'choice') {
+            this.actionDialog = {
+              type: 'choice',
+              title: result.choiceData.title,
+              message: result.choiceData.message,
+              options: result.choiceData.options,
+              callbackId: result.choiceData.callbackId
+            };
+          }
+        }
+      } catch (err) {
+        console.error('Failed to execute action:', err);
+      } finally {
+        this.executingAction = false;
+      }
+    },
+    async handleConfirm(confirmed) {
+      if (!this.actionDialog || !this.actionDialog.callbackId) return;
+
+      try {
+        const response = await fetch(\`/api/callbacks/confirm/\${this.actionDialog.callbackId}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirmed })
+        });
+
+        await response.json();
+      } catch (err) {
+        console.error('Failed to handle confirm:', err);
+      } finally {
+        this.actionDialog = null;
+      }
+    },
+    async handleChoice(optionId) {
+      if (!this.actionDialog || !this.actionDialog.callbackId) return;
+
+      try {
+        const response = await fetch(\`/api/callbacks/choice/\${this.actionDialog.callbackId}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ optionId })
+        });
+
+        await response.json();
+      } catch (err) {
+        console.error('Failed to handle choice:', err);
+      } finally {
+        this.actionDialog = null;
+      }
+    },
+    closeActionDialog() {
+      this.actionDialog = null;
     },
     updateTimeSinceUpdate() {
       if (!this.lastUpdate) return;

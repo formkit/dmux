@@ -85,7 +85,8 @@
       "Bash(awk:*)",
       "Bash(xargs -I{} sh -c 'echo {} && cat {}')",
       "Bash(git log:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(ps:*)"
     ],
     "deny": [],
     "ask": [],
