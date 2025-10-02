@@ -85,9 +85,11 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
           try { execSync('tmux clear-history', { stdio: 'pipe' }); } catch {}
           process.exit(1);
         }
+        // Don't remove worktree on merge failure
         throw mergeError;
       }
 
+      // Only remove worktree if merge succeeded
       execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
       execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
 
@@ -139,9 +141,11 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
           try { execSync('tmux clear-history', { stdio: 'pipe' }); } catch {}
           process.exit(1);
         }
+        // Don't remove worktree on merge failure
         throw mergeError;
       }
 
+      // Only remove worktree if merge succeeded
       execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
       execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
       await closePane(pane);
