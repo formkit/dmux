@@ -30,7 +30,7 @@ const actionDialog = ref<any | null>(null);
 const executingAction = ref(false);
 const actionDialogLoading = ref(false);
 
-let refreshInterval: any = null;
+let eventSource: EventSource | null = null;
 
 // Methods
 const toggleTheme = () => {
@@ -112,7 +112,7 @@ const createPane = async () => {
       createStep.value = 'agent';
     } else {
       closeCreateDialog();
-      await fetchPanes();
+      // No need to manually refresh - SSE will push the update
     }
   } catch (error) {
     console.error('Failed to create pane:', error);
@@ -127,24 +127,74 @@ const selectAgent = (agent: string) => {
   createPane();
 };
 
+const updatePanesFromData = (data: any) => {
+  projectName.value = data.projectName || 'dmux';
+  sessionName.value = data.sessionName || '';
+  connected.value = true;
+  panes.value = data.panes || [];
+  lastUpdate.value = new Date();
+  timeSinceUpdate.value = 'Just now';
+
+  // Load actions for each pane
+  for (const pane of panes.value) {
+    if (!paneActions.value[pane.id]) {
+      fetchPaneActions(pane.id);
+    }
+  }
+};
+
+const connectToStream = () => {
+  // Close existing connection
+  if (eventSource) {
+    eventSource.close();
+  }
+
+  try {
+    eventSource = new EventSource('/api/panes-stream');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'init' || message.type === 'update') {
+          updatePanesFromData(message.data);
+        } else if (message.type === 'heartbeat') {
+          // Keep connection alive
+          console.debug('SSE heartbeat received');
+        }
+      } catch (error) {
+        console.error('Failed to parse SSE message:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      connected.value = false;
+
+      // Reconnect after 5 seconds
+      setTimeout(() => {
+        if (eventSource?.readyState === EventSource.CLOSED) {
+          console.log('Reconnecting to SSE stream...');
+          connectToStream();
+        }
+      }, 5000);
+    };
+
+    eventSource.onopen = () => {
+      console.log('SSE connection established');
+      connected.value = true;
+    };
+  } catch (error) {
+    console.error('Failed to connect to SSE stream:', error);
+    connected.value = false;
+  }
+};
+
 const fetchPanes = async () => {
   try {
     const response = await fetch('/api/panes');
     const data = await response.json();
-
-    projectName.value = data.projectName || 'dmux';
-    sessionName.value = data.sessionName || '';
-    connected.value = true;
-    panes.value = data.panes || [];
-    lastUpdate.value = new Date();
-    timeSinceUpdate.value = 'Just now';
-
-    // Load actions for each pane
-    for (const pane of panes.value) {
-      if (!paneActions.value[pane.id]) {
-        fetchPaneActions(pane.id);
-      }
-    }
+    updatePanesFromData(data);
   } catch (error) {
     console.error('Failed to fetch panes:', error);
     connected.value = false;
@@ -220,9 +270,8 @@ const executeAction = async (pane: any, action: any) => {
 
       dialogData.paneId = pane.id;
       actionDialog.value = dialogData;
-    } else {
-      await fetchPanes();
     }
+    // No need to manually refresh - SSE will push the update
   } catch (error) {
     console.error('Failed to execute action:', error);
     alert('Failed to execute action');
@@ -287,7 +336,7 @@ const confirmAction = async (confirmed: boolean) => {
 
       actionDialog.value = dialogData;
     } else {
-      await fetchPanes();
+      // No need to manually refresh - SSE will push the update
       closeActionDialog();
     }
   } catch (error) {
@@ -350,7 +399,7 @@ const selectChoice = async (optionId: string) => {
 
       actionDialog.value = dialogData;
     } else {
-      await fetchPanes();
+      // No need to manually refresh - SSE will push the update
       closeActionDialog();
     }
   } catch (error) {
@@ -413,7 +462,7 @@ const submitInput = async () => {
 
       actionDialog.value = dialogData;
     } else {
-      await fetchPanes();
+      // No need to manually refresh - SSE will push the update
       closeActionDialog();
     }
   } catch (error) {
@@ -442,7 +491,7 @@ const selectOption = async (pane: any, option: any) => {
     setTimeout(() => {
       loadingOptions.value.delete(pane.id);
       loadingOptions.value = new Set(loadingOptions.value);
-      fetchPanes();
+      // No need to manually refresh - SSE will push the update
     }, 1500);
   } catch (error) {
     console.error('Failed to select option:', error);
@@ -496,15 +545,10 @@ const autoExpand = (event: Event) => {
   textarea.style.height = textarea.scrollHeight + 'px';
 };
 
-const startAutoRefresh = () => {
-  fetchPanes();
-  refreshInterval = setInterval(fetchPanes, 2000);
-};
-
-const stopAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
+const disconnectStream = () => {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
   }
 };
 
@@ -520,22 +564,22 @@ const handleClickOutside = (event: MouseEvent) => {
 // Lifecycle
 onMounted(() => {
   document.documentElement.setAttribute('data-theme', theme.value);
-  startAutoRefresh();
+  connectToStream();
 
   // Add click-away handler for action menu
   document.addEventListener('click', handleClickOutside);
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      stopAutoRefresh();
+      disconnectStream();
     } else {
-      startAutoRefresh();
+      connectToStream();
     }
   });
 });
 
 onBeforeUnmount(() => {
-  stopAutoRefresh();
+  disconnectStream();
   // Remove click-away handler
   document.removeEventListener('click', handleClickOutside);
 });

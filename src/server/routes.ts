@@ -308,6 +308,61 @@ export function setupRoutes(app: App) {
     };
   }));
 
+  // GET /api/panes-stream - Stream pane updates via SSE
+  apiRouter.get('/api/panes-stream', eventHandler(async (event) => {
+    const eventStream = createEventStream(event);
+
+    // Send initial state
+    const initialState = stateManager.getState();
+    eventStream.push(JSON.stringify({
+      type: 'init',
+      data: {
+        panes: initialState.panes.map(formatPaneResponse),
+        projectName: initialState.projectName,
+        sessionName: initialState.sessionName,
+        timestamp: Date.now()
+      }
+    }));
+
+    // Subscribe to state changes
+    const unsubscribe = stateManager.subscribe((state) => {
+      try {
+        eventStream.push(JSON.stringify({
+          type: 'update',
+          data: {
+            panes: state.panes.map(formatPaneResponse),
+            projectName: state.projectName,
+            sessionName: state.sessionName,
+            timestamp: Date.now()
+          }
+        }));
+      } catch (err) {
+        console.error('Failed to send SSE update:', err);
+      }
+    });
+
+    // Send heartbeat every 30 seconds
+    const heartbeat = setInterval(() => {
+      try {
+        eventStream.push(JSON.stringify({
+          type: 'heartbeat',
+          timestamp: Date.now()
+        }));
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 30000);
+
+    // Cleanup on disconnect
+    event.node.req.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      eventStream.close();
+    });
+
+    return eventStream.send();
+  }));
+
   // POST /api/panes - Create a new pane
   apiRouter.post('/api/panes', eventHandler(async (event) => {
       try {
@@ -466,14 +521,11 @@ export function setupRoutes(app: App) {
         // Add new pane
         const updatedPanes = [...existingPanes, result.pane];
 
-        // Write back to file
+        // Write back to file - ConfigWatcher will update StateManager
         await fs.writeFile(
           panesFile,
           JSON.stringify({ panes: updatedPanes }, null, 2)
         );
-
-        // Update state manager
-        stateManager.updatePanes(updatedPanes);
 
       return {
         success: true,

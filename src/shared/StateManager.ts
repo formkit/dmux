@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import type { DmuxPane, ProjectSettings } from '../types.js';
+import { ConfigWatcher } from '../services/ConfigWatcher.js';
 
 export interface DmuxState {
   panes: DmuxPane[];
@@ -16,6 +17,7 @@ export class StateManager extends EventEmitter {
   private static instance: StateManager;
   private state: DmuxState;
   private updateCallbacks: Set<(state: DmuxState) => void> = new Set();
+  private configWatcher: ConfigWatcher | null = null;
 
   private constructor() {
     super();
@@ -50,8 +52,28 @@ export class StateManager extends EventEmitter {
     this.state.projectRoot = projectRoot;
     if (panesFile) {
       this.state.panesFile = panesFile;
+      this.startWatchingConfig(panesFile);
     }
     this.notifyListeners();
+  }
+
+  private startWatchingConfig(panesFile: string): void {
+    // Stop existing watcher if any
+    if (this.configWatcher) {
+      this.configWatcher.stop();
+    }
+
+    // Start new watcher
+    this.configWatcher = new ConfigWatcher(panesFile);
+    this.configWatcher.on('change', (config) => {
+      // Update state with new panes from file
+      this.state.panes = [...config.panes];
+      this.notifyListeners();
+    });
+
+    this.configWatcher.start().catch(err => {
+      console.error('Failed to start config watcher:', err);
+    });
   }
 
   updateSettings(settings: ProjectSettings): void {
@@ -93,6 +115,12 @@ export class StateManager extends EventEmitter {
   }
 
   reset(): void {
+    // Stop file watcher
+    if (this.configWatcher) {
+      this.configWatcher.stop();
+      this.configWatcher = null;
+    }
+
     this.state = {
       panes: [],
       projectName: '',

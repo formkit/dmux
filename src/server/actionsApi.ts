@@ -105,8 +105,7 @@ export async function handleExecuteAction(
     sessionName: state.sessionName || 'dmux',
     projectName: state.projectName || 'project',
     savePanes: async (updatedPanes) => {
-      stateManager.updatePanes(updatedPanes);
-      // Persist to disk
+      // Persist to disk - ConfigWatcher will update StateManager when file changes
       const panesFile = state.panesFile;
       if (panesFile) {
         try {
@@ -136,15 +135,13 @@ export async function handleExecuteAction(
     onPaneUpdate: (updatedPane) => {
       const currentPanes = stateManager.getPanes();
       const newPanes = currentPanes.map(p => p.id === updatedPane.id ? updatedPane : p);
-      stateManager.updatePanes(newPanes);
-      // Persist via savePanes
+      // Persist via savePanes - ConfigWatcher will update StateManager
       context.savePanes(newPanes);
     },
     onPaneRemove: (removedPaneId) => {
       const currentPanes = stateManager.getPanes();
       const newPanes = currentPanes.filter(p => p.id !== removedPaneId);
-      stateManager.updatePanes(newPanes);
-      // Persist via savePanes
+      // Persist via savePanes - ConfigWatcher will update StateManager
       context.savePanes(newPanes);
     },
   };

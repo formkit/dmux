@@ -93,6 +93,70 @@ Get a list of all panes in the current session.
 
 ---
 
+### Stream Pane Updates (SSE)
+
+Get real-time updates for all panes via Server-Sent Events (SSE). This endpoint provides a streaming connection that pushes updates whenever pane state changes, eliminating the need for polling.
+
+**Endpoint:** `GET /api/panes-stream`
+
+**Response:** Server-Sent Events stream
+
+**Event Types:**
+
+1. **init** - Initial state sent on connection
+2. **update** - Sent whenever pane state changes (new panes, deletions, status changes, etc.)
+3. **heartbeat** - Keep-alive message sent every 30 seconds
+
+**Event Format:**
+```json
+{
+  "type": "init" | "update" | "heartbeat",
+  "data": {
+    "panes": [...],
+    "projectName": "dmux",
+    "sessionName": "dmux-dmux",
+    "timestamp": 1234567890
+  },
+  "timestamp": 1234567890
+}
+```
+
+**Usage Example (JavaScript):**
+```javascript
+const eventSource = new EventSource('/api/panes-stream');
+
+eventSource.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+
+  if (message.type === 'init' || message.type === 'update') {
+    // Update UI with new pane data
+    updatePanes(message.data.panes);
+  } else if (message.type === 'heartbeat') {
+    // Connection is still alive
+    console.log('Heartbeat received');
+  }
+};
+
+eventSource.onerror = (error) => {
+  console.error('SSE connection error:', error);
+  // Reconnect logic here
+};
+```
+
+**Features:**
+- Real-time updates without polling
+- Automatic reconnection on connection loss
+- Includes all pane state changes (status, new panes, deletions)
+- Heartbeat messages to prevent timeout
+- Clean disconnection on client close
+
+**Notes:**
+- Connection stays open until client disconnects
+- Server automatically cleans up resources on disconnect
+- Reconnection recommended with exponential backoff on error
+
+---
+
 ### Create New Pane
 
 Create a new dmux pane with a worktree and optional agent.

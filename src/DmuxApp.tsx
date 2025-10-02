@@ -160,11 +160,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           return pane;
         });
 
-        // Immediately sync to StateManager so API has latest data
-        const stateManager = StateManager.getInstance();
-        stateManager.updatePanes(updatedPanes);
-
-        // Also persist to disk so changes survive restarts
+        // Persist to disk - ConfigWatcher will handle syncing to StateManager
         savePanes(updatedPanes).catch(err => {
           console.error('Failed to save panes after status update:', err);
         });
@@ -180,11 +176,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     };
   }, [setPanes, savePanes]);
 
-  // Sync panes with StateManager (for non-status updates)
-  useEffect(() => {
-    const stateManager = StateManager.getInstance();
-    stateManager.updatePanes(panes);
-  }, [panes]);
+  // Note: No need to sync panes with StateManager here.
+  // The ConfigWatcher automatically updates StateManager when the config file changes.
+  // This prevents unnecessary SSE broadcasts on every local state update.
 
   // Sync settings with StateManager
   useEffect(() => {

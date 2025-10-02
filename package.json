@@ -61,6 +61,7 @@
   },
   "dependencies": {
     "chalk": "^5.3.0",
+    "chokidar": "^4.0.3",
     "h3": "^1.15.4",
     "ink": "^5.0.1",
     "ink-text-input": "^6.0.0",
