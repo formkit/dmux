@@ -8,3 +8,4 @@ CLAUDE.local.md
 frontend/dist
 frontend/node_modules
 .archive/
+scripts/embedded-assets.ts

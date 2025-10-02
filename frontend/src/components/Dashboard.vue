@@ -656,14 +656,16 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="pane-prompt-section">
-            <div class="prompt-label">Initial Prompt</div>
             <div
               class="pane-prompt-preview"
               @click="togglePrompt(pane.id)"
               :class="{ 'expanded': expandedPrompts.has(pane.id) }"
             >
+              <div class="prompt-header">
+                <span class="prompt-label">Initial Prompt</span>
+                <span class="expand-icon">{{ expandedPrompts.has(pane.id) ? '▼' : '▶' }}</span>
+              </div>
               <span class="prompt-text">{{ pane.prompt || 'No prompt' }}</span>
-              <span class="expand-icon">{{ expandedPrompts.has(pane.id) ? '▼' : '▶' }}</span>
             </div>
             <div v-if="expandedPrompts.has(pane.id)" class="pane-prompt-full">
               {{ pane.prompt || 'No prompt' }}

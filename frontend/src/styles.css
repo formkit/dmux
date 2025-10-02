@@ -217,6 +217,8 @@ main {
   animation: fadeIn 0.5s ease-out backwards;
   color: inherit;
   display: block;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .pane-card:nth-child(1) { animation-delay: 0.1s; }
@@ -385,14 +387,13 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  transition: color 0.2s ease;
 }
 
 .pane-prompt-preview {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -401,8 +402,17 @@ main {
   color: var(--text-primary);
 }
 
+.pane-prompt-preview:hover .prompt-label {
+  color: var(--text-secondary);
+}
+
+.prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .prompt-text {
-  flex: 1;
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.4;
@@ -430,6 +440,10 @@ main {
   margin-top: 4px;
   line-height: 1.6;
   font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .agent-summary {
