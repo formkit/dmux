@@ -379,46 +379,56 @@ main {
   margin-bottom: 12px;
 }
 
-.pane-prompt-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.pane-prompt-header:hover {
-  background: var(--input-focus-bg);
-  border-color: var(--input-border);
-}
-
 .prompt-label {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.pane-prompt-preview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pane-prompt-preview:hover .prompt-text {
+  color: var(--text-primary);
+}
+
+.prompt-text {
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.pane-prompt-preview.expanded .prompt-text {
+  white-space: normal;
+  display: none;
 }
 
 .expand-icon {
   font-size: 10px;
   color: var(--text-tertiary);
   transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
-.pane-prompt {
+.pane-prompt-full {
   color: var(--text-secondary);
   font-size: 13px;
-  margin-top: 8px;
-  padding: 8px 12px;
+  margin-top: 4px;
   line-height: 1.6;
-  background: var(--input-bg);
-  border: 1px solid var(--input-border);
-  border-radius: 6px;
   font-family: 'SF Mono', Monaco, 'Courier New', monospace;
 }
 
