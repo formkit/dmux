@@ -137,63 +137,97 @@ export class StatusDetector extends EventEmitter {
     } as StatusUpdateEvent);
 
     try {
-      // Create abort controller for this request
+      // Create abort controller for this request with 10 second timeout
       const controller = new AbortController();
       this.llmRequests.set(paneId, controller);
 
-      // Get the tmux pane ID (we need to track this better)
-      const tmuxPaneId = await this.getTmuxPaneId(paneId);
-      if (!tmuxPaneId) {
-        throw new Error(`No tmux pane ID found for ${paneId}`);
-      }
+      // Set a timeout to abort if LLM takes too long
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 10000); // 10 second timeout
 
-      // Run LLM analysis
-      const analysis = await this.paneAnalyzer.analyzePane(tmuxPaneId);
-
-      // Check if request was cancelled
-      if (controller.signal.aborted) {
-        return;
-      }
-
-      // Determine final status based on analysis
-      const finalStatus: AgentStatus =
-        analysis.state === 'option_dialog' ? 'waiting' : 'idle';
-
-      // If we detected an option dialog, add a 2-second delay before allowing
-      // the next state detection. This prevents detecting an incomplete state
-      // after the user selects an option.
-      const delayBeforeNextCheck = analysis.state === 'option_dialog' ? 2000 : 0;
-
-      // Update status
-      this.paneStatuses.set(paneId, finalStatus);
-
-      // Notify worker of analysis result (fire and forget)
-      this.workerManager.notifyWorker(paneId, {
-        type: 'analyze-complete',
-        timestamp: Date.now(),
-        payload: {
-          status: finalStatus,
-          analysis,
-          delayBeforeNextCheck
+      try {
+        // Get the tmux pane ID (we need to track this better)
+        const tmuxPaneId = await this.getTmuxPaneId(paneId);
+        if (!tmuxPaneId) {
+          throw new Error(`No tmux pane ID found for ${paneId}`);
         }
-      });
 
-      // Emit event for UI with analysis data
-      this.emit('status-updated', {
-        paneId,
-        status: finalStatus,
-        previousStatus: 'analyzing',
-        optionsQuestion: analysis.question,
-        options: analysis.options,
-        potentialHarm: analysis.potentialHarm,
-        summary: analysis.summary
-      } as StatusUpdateEvent);
+        // Run LLM analysis with abort signal
+        const analysis = await this.paneAnalyzer.analyzePane(tmuxPaneId, controller.signal);
 
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        // Request was cancelled
-        return;
+        // Clear the timeout since analysis completed
+        clearTimeout(timeoutId);
+
+        // Check if request was cancelled
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        // Determine final status based on analysis
+        const finalStatus: AgentStatus =
+          analysis.state === 'option_dialog' ? 'waiting' : 'idle';
+
+        // If we detected an option dialog, add a 2-second delay before allowing
+        // the next state detection. This prevents detecting an incomplete state
+        // after the user selects an option.
+        const delayBeforeNextCheck = analysis.state === 'option_dialog' ? 2000 : 0;
+
+        // Update status
+        this.paneStatuses.set(paneId, finalStatus);
+
+        // Notify worker of analysis result (fire and forget)
+        this.workerManager.notifyWorker(paneId, {
+          type: 'analyze-complete',
+          timestamp: Date.now(),
+          payload: {
+            status: finalStatus,
+            analysis,
+            delayBeforeNextCheck
+          }
+        });
+
+        // Emit event for UI with analysis data
+        this.emit('status-updated', {
+          paneId,
+          status: finalStatus,
+          previousStatus: 'analyzing',
+          optionsQuestion: analysis.question,
+          options: analysis.options,
+          potentialHarm: analysis.potentialHarm,
+          summary: analysis.summary
+        } as StatusUpdateEvent);
+      } catch (error: any) {
+        // Clear the timeout on error
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+          // Request was aborted (either manually or by timeout)
+          // Default to idle when timing out
+          this.paneStatuses.set(paneId, 'idle');
+
+          // Notify worker that analysis is complete (defaulting to idle)
+          this.workerManager.notifyWorker(paneId, {
+            type: 'analyze-complete',
+            timestamp: Date.now(),
+            payload: {
+              status: 'idle',
+              analysis: { state: 'open_prompt' },
+              delayBeforeNextCheck: 0
+            }
+          });
+
+          this.emit('status-updated', {
+            paneId,
+            status: 'idle',
+            previousStatus: 'analyzing'
+          } as StatusUpdateEvent);
+          return;
+        }
+
+        throw error; // Re-throw other errors to outer catch
       }
+    } catch (error: any) {
 
       console.error(`LLM analysis error for pane ${paneId}:`, error);
 
