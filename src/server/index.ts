@@ -40,7 +40,7 @@ export class DmuxServer {
           reject(err);
         });
 
-        this.server.listen(this.port, '127.0.0.1', async () => {
+        this.server.listen(this.port, '0.0.0.0', async () => {
           const serverUrl = `http://127.0.0.1:${this.port}`;
           this.stateManager.updateServerInfo(this.port, serverUrl);
 
