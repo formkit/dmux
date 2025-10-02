@@ -774,7 +774,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     if (showKebabMenu && kebabMenuPaneIndex !== null) {
       const currentPane = panes[kebabMenuPaneIndex];
       const hasWorktree = !!currentPane?.worktreePath;
-      const menuOptions = hasWorktree ? 3 : 2; // view, merge (if worktree), close
+      const menuOptions = hasWorktree ? 6 : 2; // view, test, dev, open, merge, close (if worktree) OR view, close
 
       if (key.escape) {
         setShowKebabMenu(false);
@@ -795,9 +795,28 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           // View - jump to pane (NEW: using action system)
           actionSystem.executeAction(PaneAction.VIEW, currentPane);
         } else if (hasWorktree && kebabMenuOption === 1) {
+          // Test
+          await runCommand('test', currentPane);
+        } else if (hasWorktree && kebabMenuOption === 2) {
+          // Dev
+          await runCommand('dev', currentPane);
+        } else if (hasWorktree && kebabMenuOption === 3) {
+          // Open
+          if (currentPane.testWindowId || currentPane.devWindowId) {
+            // If both exist, prefer dev (since it's usually more interactive)
+            if (currentPane.devWindowId && currentPane.devStatus === 'running') {
+              await attachBackgroundWindow(currentPane, 'dev');
+            } else if (currentPane.testWindowId) {
+              await attachBackgroundWindow(currentPane, 'test');
+            }
+          } else {
+            setStatusMessage('No test or dev window to open');
+            setTimeout(() => setStatusMessage(''), 2000);
+          }
+        } else if (hasWorktree && kebabMenuOption === 4) {
           // Merge (NEW: using action system)
           actionSystem.executeAction(PaneAction.MERGE, currentPane, { mainBranch: getMainBranch() });
-        } else if ((hasWorktree && kebabMenuOption === 2) || (!hasWorktree && kebabMenuOption === 1)) {
+        } else if ((hasWorktree && kebabMenuOption === 5) || (!hasWorktree && kebabMenuOption === 1)) {
           // Close (NEW: using action system)
           actionSystem.executeAction(PaneAction.CLOSE, currentPane);
         }
@@ -1005,7 +1024,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
     
-    if (input === 'k' && selectedIndex < panes.length) {
+    if (input === 'm' && selectedIndex < panes.length) {
       // Open kebab menu for selected pane
       setShowKebabMenu(true);
       setKebabMenuPaneIndex(selectedIndex);
@@ -1043,26 +1062,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     } else if (input === 'x' && selectedIndex < panes.length) {
       // Close pane (NEW: using action system)
       actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex]);
-    } else if (input === 'm' && selectedIndex < panes.length) {
-      // Merge pane (NEW: using action system)
-      actionSystem.executeAction(PaneAction.MERGE, panes[selectedIndex], { mainBranch: getMainBranch() });
-    } else if (input === 't' && selectedIndex < panes.length) {
-      await runCommand('test', panes[selectedIndex]);
-    } else if (input === 'd' && selectedIndex < panes.length) {
-      await runCommand('dev', panes[selectedIndex]);
-    } else if (input === 'o' && selectedIndex < panes.length) {
-      const pane = panes[selectedIndex];
-      if (pane.testWindowId || pane.devWindowId) {
-        // If both exist, prefer dev (since it's usually more interactive)
-        if (pane.devWindowId && pane.devStatus === 'running') {
-          await attachBackgroundWindow(pane, 'dev');
-        } else if (pane.testWindowId) {
-          await attachBackgroundWindow(pane, 'test');
-        }
-      } else {
-        setStatusMessage('No test or dev window to open');
-        setTimeout(() => setStatusMessage(''), 2000);
-      }
     } else if (key.return && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
       actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);

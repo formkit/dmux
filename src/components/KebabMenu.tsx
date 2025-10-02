@@ -10,7 +10,12 @@ interface KebabMenuProps {
 const KebabMenu: React.FC<KebabMenuProps> = ({ selectedOption, hasWorktree, paneName }) => {
   const options = [
     { key: 'v', label: 'View', description: 'Jump to pane' },
-    ...(hasWorktree ? [{ key: 'm', label: 'Merge', description: 'Merge worktree' }] : []),
+    ...(hasWorktree ? [
+      { key: 't', label: 'Test', description: 'Run test command' },
+      { key: 'd', label: 'Dev', description: 'Run dev server' },
+      { key: 'o', label: 'Open', description: 'Open test/dev output' },
+      { key: 'm', label: 'Merge', description: 'Merge worktree' },
+    ] : []),
     { key: 'x', label: 'Close', description: 'Close pane' },
   ];
 

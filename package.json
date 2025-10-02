@@ -41,9 +41,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
-    "clean": "rm -rf dist",
+    "build": "npm run build:frontend && npm run embed:assets && tsc",
+    "build:frontend": "cd frontend && npm run build",
+    "embed:assets": "node scripts/embed-assets.js",
+    "clean": "rm -rf dist src/server/embedded-assets.ts",
     "dev": "tsx src/index.ts",
+    "dev:frontend": "cd frontend && npm run dev",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",

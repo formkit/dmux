@@ -5,3 +5,5 @@ dist/
 CLAUDE.local.md
 .dmux/test-output/
 .dmux/
+frontend/dist
+frontend/node_modules
