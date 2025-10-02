@@ -1,23 +1,15 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import type { ActionMetadata } from '../actions/types.js';
 
 interface KebabMenuProps {
   selectedOption: number;
-  hasWorktree: boolean;
+  actions: ActionMetadata[];
   paneName: string;
 }
 
-const KebabMenu: React.FC<KebabMenuProps> = ({ selectedOption, hasWorktree, paneName }) => {
-  const options = [
-    { key: 'v', label: 'View', description: 'Jump to pane' },
-    ...(hasWorktree ? [
-      { key: 't', label: 'Test', description: 'Run test command' },
-      { key: 'd', label: 'Dev', description: 'Run dev server' },
-      { key: 'o', label: 'Open', description: 'Open test/dev output' },
-      { key: 'm', label: 'Merge', description: 'Merge worktree' },
-    ] : []),
-    { key: 'x', label: 'Close', description: 'Close pane' },
-  ];
+const KebabMenu: React.FC<KebabMenuProps> = ({ selectedOption, actions, paneName }) => {
+  const options = actions;
 
   return (
     <Box
@@ -31,7 +23,7 @@ const KebabMenu: React.FC<KebabMenuProps> = ({ selectedOption, hasWorktree, pane
         <Text bold color="cyan">Menu: {paneName}</Text>
       </Box>
       {options.map((option, index) => (
-        <Box key={option.key}>
+        <Box key={option.id}>
           <Text color={selectedOption === index ? 'cyan' : 'white'} bold={selectedOption === index}>
             {selectedOption === index ? '▶ ' : '  '}
             {option.label}

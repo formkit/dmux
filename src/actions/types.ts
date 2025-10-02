@@ -104,6 +104,7 @@ export enum PaneAction {
   OPEN_OUTPUT = 'open_output',
   COPY_PATH = 'copy_path',
   OPEN_IN_EDITOR = 'open_in_editor',
+  TOGGLE_AUTOPILOT = 'toggle_autopilot',
 }
 
 /**
@@ -200,6 +201,13 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     description: 'Open worktree in external editor',
     icon: '✎',
     requires: { worktree: true },
+  },
+  [PaneAction.TOGGLE_AUTOPILOT]: {
+    id: PaneAction.TOGGLE_AUTOPILOT,
+    label: 'Toggle Autopilot',
+    description: 'Enable/disable automatic option acceptance',
+    icon: '🤖',
+    shortcut: 'a',
   },
 };
 

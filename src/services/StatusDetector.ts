@@ -5,6 +5,7 @@ import { PaneWorkerManager } from './PaneWorkerManager.js';
 import { PaneAnalyzer } from '../PaneAnalyzer.js';
 import type { PaneAnalysis } from '../PaneAnalyzer.js';
 import type { OutboundMessage } from '../workers/WorkerMessages.js';
+import { StateManager } from '../shared/StateManager.js';
 
 export interface StatusUpdateEvent {
   paneId: string;
@@ -176,6 +177,9 @@ export class StatusDetector extends EventEmitter {
         // Update status
         this.paneStatuses.set(paneId, finalStatus);
 
+        // Check if autopilot should handle this automatically
+        await this.handleAutopilot(paneId, analysis, finalStatus);
+
         // Notify worker of analysis result (fire and forget)
         this.workerManager.notifyWorker(paneId, {
           type: 'analyze-complete',
@@ -251,6 +255,54 @@ export class StatusDetector extends EventEmitter {
     if (controller) {
       controller.abort();
       this.llmRequests.delete(paneId);
+    }
+  }
+
+  /**
+   * Handle autopilot: automatically accept options when enabled and no risk
+   */
+  private async handleAutopilot(
+    paneId: string,
+    analysis: PaneAnalysis,
+    finalStatus: AgentStatus
+  ): Promise<void> {
+    // Only proceed if status is 'waiting' (option dialog detected)
+    if (finalStatus !== 'waiting') return;
+
+    // Get pane data to check autopilot setting
+    const stateManager = StateManager.getInstance();
+    const pane = stateManager.getPaneById(paneId);
+
+    if (!pane || !pane.autopilot) return;
+
+    // Check if there's a risk - don't auto-accept risky options
+    if (analysis.potentialHarm?.hasRisk) {
+      console.error(`[Autopilot] Skipping auto-accept for pane ${paneId}: potential harm detected`);
+      return;
+    }
+
+    // Check if we have options
+    if (!analysis.options || analysis.options.length === 0) {
+      console.error(`[Autopilot] Skipping auto-accept for pane ${paneId}: no options found`);
+      return;
+    }
+
+    // Get the first option (typically the "accept" or "continue" option)
+    const firstOption = analysis.options[0];
+    if (!firstOption.keys || firstOption.keys.length === 0) {
+      console.error(`[Autopilot] Skipping auto-accept for pane ${paneId}: no keys for first option`);
+      return;
+    }
+
+    // Send the first key of the first option
+    const keyToSend = firstOption.keys[0];
+    console.error(`[Autopilot] Auto-accepting option for pane ${paneId}: ${firstOption.action} (key: ${keyToSend})`);
+
+    try {
+      // Send the key through the worker manager
+      await this.sendKeysToPane(paneId, keyToSend);
+    } catch (error) {
+      console.error(`[Autopilot] Failed to send keys for pane ${paneId}:`, error);
     }
   }
 

@@ -34,8 +34,8 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected, isKebabMenuTarget =
             </Text>
           </Box>
           <Box>
-            {pane.worktreePath && (
-              <Text color="gray">(wt)</Text>
+            {pane.autopilot && (
+              <Text color="green">(ap)</Text>
             )}
             {pane.agent && (
               <Text color="gray"> ({pane.agent === 'claude' ? 'cc' : 'oc'})</Text>
