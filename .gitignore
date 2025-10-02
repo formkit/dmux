@@ -7,3 +7,4 @@ CLAUDE.local.md
 .dmux/
 frontend/dist
 frontend/node_modules
+.archive/

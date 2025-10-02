@@ -1,3 +1,0 @@
-Hello, this is a test file with a small update.
-This file was created to test file creation.
-It contains some simple text content.
