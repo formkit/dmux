@@ -1,7 +1,7 @@
 /**
  * Action Confirm Dialog
  *
- * Renders a confirmation dialog from the action system
+ * Renders a confirmation dialog from the action system with selectable options
  */
 
 import React from 'react';
@@ -12,13 +12,15 @@ interface ActionConfirmDialogProps {
   message: string;
   yesLabel: string;
   noLabel: string;
+  selectedIndex?: number;
 }
 
 const ActionConfirmDialog: React.FC<ActionConfirmDialogProps> = ({
   title,
   message,
   yesLabel,
-  noLabel
+  noLabel,
+  selectedIndex = 0
 }) => {
   return (
     <Box
@@ -36,16 +38,36 @@ const ActionConfirmDialog: React.FC<ActionConfirmDialogProps> = ({
         <Text>{message}</Text>
       </Box>
 
-      <Box marginTop={1}>
-        <Text>
-          <Text color="green" bold>[{yesLabel}]</Text>
-          <Text> / </Text>
-          <Text color="red">[{noLabel}]</Text>
-        </Text>
+      <Box flexDirection="column" marginTop={1} gap={1}>
+        {/* Yes option */}
+        <Box>
+          {selectedIndex === 0 ? (
+            <Text color="green" bold inverse>
+              {'► '}{yesLabel}{' '}
+            </Text>
+          ) : (
+            <Text>
+              {'  '}{yesLabel}
+            </Text>
+          )}
+        </Box>
+
+        {/* No option */}
+        <Box>
+          {selectedIndex === 1 ? (
+            <Text color="red" bold inverse>
+              {'► '}{noLabel}{' '}
+            </Text>
+          ) : (
+            <Text>
+              {'  '}{noLabel}
+            </Text>
+          )}
+        </Box>
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>y = yes • n = no • ESC to cancel</Text>
+        <Text dimColor>↑/↓ to navigate • Enter to select • y/n shortcuts • ESC to cancel</Text>
       </Box>
     </Box>
   );
