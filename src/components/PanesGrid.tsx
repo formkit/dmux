@@ -10,9 +10,17 @@ interface PanesGridProps {
   isLoading: boolean;
   showNewPaneDialog: boolean;
   agentStatuses?: AgentStatusMap;
+  kebabMenuPaneIndex?: number;
 }
 
-const PanesGrid: React.FC<PanesGridProps> = ({ panes, selectedIndex, isLoading, showNewPaneDialog, agentStatuses }) => {
+const PanesGrid: React.FC<PanesGridProps> = ({
+  panes,
+  selectedIndex,
+  isLoading,
+  showNewPaneDialog,
+  agentStatuses,
+  kebabMenuPaneIndex
+}) => {
   return (
     <Box flexDirection="row" flexWrap="wrap" gap={1}>
       {panes.map((pane, index) => {
@@ -22,7 +30,12 @@ const PanesGrid: React.FC<PanesGridProps> = ({ panes, selectedIndex, isLoading, 
           agentStatus: agentStatuses?.get(pane.id) || pane.agentStatus
         };
         return (
-          <PaneCard key={pane.id} pane={paneWithStatus} selected={selectedIndex === index} />
+          <PaneCard
+            key={pane.id}
+            pane={paneWithStatus}
+            selected={selectedIndex === index}
+            isKebabMenuTarget={kebabMenuPaneIndex === index}
+          />
         );
       })}
 

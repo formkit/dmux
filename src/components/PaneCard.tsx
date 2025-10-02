@@ -5,9 +5,10 @@ import type { DmuxPane } from '../types.js';
 interface PaneCardProps {
   pane: DmuxPane;
   selected: boolean;
+  isKebabMenuTarget?: boolean;
 }
 
-const PaneCard: React.FC<PaneCardProps> = ({ pane, selected }) => {
+const PaneCard: React.FC<PaneCardProps> = ({ pane, selected, isKebabMenuTarget = false }) => {
   let borderColor: any = 'gray';
   if (selected) borderColor = 'cyan';
   else if (pane.devStatus === 'running') borderColor = 'green';
@@ -25,9 +26,13 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected }) => {
     >
       <Box flexDirection="column" paddingX={1}>
         <Box justifyContent="space-between" width="100%">
-          <Text color={selected ? 'cyan' : 'white'} bold wrap="truncate-end">
-            {pane.slug.substring(0, 22)}
-          </Text>
+          <Box>
+            <Text color={isKebabMenuTarget ? 'cyan' : 'gray'} bold={isKebabMenuTarget}>⋮</Text>
+            <Text> </Text>
+            <Text color={selected ? 'cyan' : 'white'} bold wrap="truncate-end">
+              {pane.slug.substring(0, 18)}
+            </Text>
+          </Box>
           <Box>
             {pane.worktreePath && (
               <Text color="gray">(wt)</Text>

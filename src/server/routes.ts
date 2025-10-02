@@ -14,6 +14,14 @@ import type { DmuxPane } from '../types.js';
 import { getDashboardHtml, getDashboardCss, getDashboardJs, getTerminalViewerHtml, getTerminalJs } from './static.js';
 import { getTerminalStreamer } from '../services/TerminalStreamer.js';
 import { formatStreamMessage, type HeartbeatMessage } from '../shared/StreamProtocol.js';
+import {
+  handleListActions,
+  handleGetPaneActions,
+  handleExecuteAction,
+  handleConfirmCallback,
+  handleChoiceCallback,
+  handleInputCallback
+} from './actionsApi.js';
 
 const stateManager = StateManager.getInstance();
 
@@ -47,6 +55,138 @@ export function setupRoutes(app: App) {
       paneCount: state.panes.length,
       timestamp: Date.now()
     };
+  }));
+
+  // ===== Action System Routes =====
+
+  // GET /api/actions - List all actions
+  app.use('/api/actions', eventHandler(async (event) => {
+    if (event.node.req.method !== 'GET') return;
+    return new Promise((resolve, reject) => {
+      handleListActions(event.node.req, {
+        writeHead: (code: number, headers: any) => {
+          event.node.res.statusCode = code;
+          Object.entries(headers).forEach(([k, v]) => setHeader(event, k, v as string));
+        },
+        end: (data: string) => resolve(JSON.parse(data))
+      } as any);
+    });
+  }));
+
+  // GET /api/panes/:id/actions - Get available actions for pane
+  app.use('/api/panes/:id/actions', eventHandler(async (event) => {
+    if (event.node.req.method !== 'GET') return;
+
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
+    }
+
+    return new Promise((resolve, reject) => {
+      handleGetPaneActions(event.node.req, {
+        writeHead: (code: number, headers: any) => {
+          event.node.res.statusCode = code;
+          Object.entries(headers).forEach(([k, v]) => setHeader(event, k, v as string));
+        },
+        end: (data: string) => resolve(JSON.parse(data))
+      } as any, decodeURIComponent(paneId));
+    });
+  }));
+
+  // POST /api/panes/:id/actions/:actionId - Execute action
+  app.use('/api/panes/:paneId/actions/:actionId', eventHandler(async (event) => {
+    if (event.node.req.method !== 'POST') return;
+
+    const params = getRouterParams(event);
+    const paneId = params?.paneId;
+    const actionId = params?.actionId;
+
+    if (!paneId || !actionId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID or action ID' };
+    }
+
+    return new Promise((resolve, reject) => {
+      handleExecuteAction(event.node.req, {
+        writeHead: (code: number, headers: any) => {
+          event.node.res.statusCode = code;
+          Object.entries(headers).forEach(([k, v]) => setHeader(event, k, v as string));
+        },
+        end: (data: string) => resolve(JSON.parse(data))
+      } as any, decodeURIComponent(paneId), decodeURIComponent(actionId));
+    });
+  }));
+
+  // POST /api/callbacks/confirm/:callbackId - Respond to confirm dialog
+  app.use('/api/callbacks/confirm/:callbackId', eventHandler(async (event) => {
+    if (event.node.req.method !== 'POST') return;
+
+    const params = getRouterParams(event);
+    const callbackId = params?.callbackId;
+
+    if (!callbackId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing callback ID' };
+    }
+
+    return new Promise((resolve, reject) => {
+      handleConfirmCallback(event.node.req, {
+        writeHead: (code: number, headers: any) => {
+          event.node.res.statusCode = code;
+          Object.entries(headers).forEach(([k, v]) => setHeader(event, k, v as string));
+        },
+        end: (data: string) => resolve(JSON.parse(data))
+      } as any, decodeURIComponent(callbackId));
+    });
+  }));
+
+  // POST /api/callbacks/choice/:callbackId - Respond to choice dialog
+  app.use('/api/callbacks/choice/:callbackId', eventHandler(async (event) => {
+    if (event.node.req.method !== 'POST') return;
+
+    const params = getRouterParams(event);
+    const callbackId = params?.callbackId;
+
+    if (!callbackId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing callback ID' };
+    }
+
+    return new Promise((resolve, reject) => {
+      handleChoiceCallback(event.node.req, {
+        writeHead: (code: number, headers: any) => {
+          event.node.res.statusCode = code;
+          Object.entries(headers).forEach(([k, v]) => setHeader(event, k, v as string));
+        },
+        end: (data: string) => resolve(JSON.parse(data))
+      } as any, decodeURIComponent(callbackId));
+    });
+  }));
+
+  // POST /api/callbacks/input/:callbackId - Respond to input dialog
+  app.use('/api/callbacks/input/:callbackId', eventHandler(async (event) => {
+    if (event.node.req.method !== 'POST') return;
+
+    const params = getRouterParams(event);
+    const callbackId = params?.callbackId;
+
+    if (!callbackId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing callback ID' };
+    }
+
+    return new Promise((resolve, reject) => {
+      handleInputCallback(event.node.req, {
+        writeHead: (code: number, headers: any) => {
+          event.node.res.statusCode = code;
+          Object.entries(headers).forEach(([k, v]) => setHeader(event, k, v as string));
+        },
+        end: (data: string) => resolve(JSON.parse(data))
+      } as any, decodeURIComponent(callbackId));
+    });
   }));
 
   // GET /api/panes - List all panes

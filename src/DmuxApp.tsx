@@ -13,9 +13,9 @@ import useNavigation from './hooks/useNavigation.js';
 import useAutoUpdater from './hooks/useAutoUpdater.js';
 import useAgentDetection from './hooks/useAgentDetection.js';
 import useAgentStatus from './hooks/useAgentStatus.js';
-import useWorktreeActions from './hooks/useWorktreeActions.js';
 import usePaneRunner from './hooks/usePaneRunner.js';
 import usePaneCreation from './hooks/usePaneCreation.js';
+import useActionSystem from './hooks/useActionSystem.js';
 
 // Utils
 import { getPanePositions, applySmartLayout } from './utils/tmux.js';
@@ -24,6 +24,7 @@ import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
 import { StateManager } from './shared/StateManager.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
+import { PaneAction } from './actions/index.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -31,8 +32,6 @@ import type { DmuxPane, PanePosition, ProjectSettings, DmuxAppProps } from './ty
 import PanesGrid from './components/PanesGrid.js';
 import NewPaneDialog from './components/NewPaneDialog.js';
 import AgentChoiceDialog from './components/AgentChoiceDialog.js';
-import CloseOptionsDialog from './components/CloseOptionsDialog.js';
-import MergeConfirmationDialog from './components/MergeConfirmationDialog.js';
 import CommandPromptDialog from './components/CommandPromptDialog.js';
 import FileCopyPrompt from './components/FileCopyPrompt.js';
 import LoadingIndicator from './components/LoadingIndicator.js';
@@ -40,8 +39,10 @@ import RunningIndicator from './components/RunningIndicator.js';
 import UpdatingIndicator from './components/UpdatingIndicator.js';
 import CreatingIndicator from './components/CreatingIndicator.js';
 import FooterHelp from './components/FooterHelp.js';
-import MergePane from './MergePane.js';
 import QRCode from './components/QRCode.js';
+import KebabMenu from './components/KebabMenu.js';
+import ActionChoiceDialog from './components/ActionChoiceDialog.js';
+import ActionConfirmDialog from './components/ActionConfirmDialog.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
@@ -50,13 +51,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
   const [newPanePrompt, setNewPanePrompt] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
-  const [showMergeConfirmation, setShowMergeConfirmation] = useState(false);
-  const [mergedPane, setMergedPane] = useState<DmuxPane | null>(null);
-  const [showMergePane, setShowMergePane] = useState(false);
-  const [mergingPane, setMergingPane] = useState<DmuxPane | null>(null);
-  const [showCloseOptions, setShowCloseOptions] = useState(false);
-  const [selectedCloseOption, setSelectedCloseOption] = useState(0);
-  const [closingPane, setClosingPane] = useState<DmuxPane | null>(null);
   const [isCreatingPane, setIsCreatingPane] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
@@ -68,6 +62,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
   const [quitConfirmMode, setQuitConfirmMode] = useState(false);
+  const [showKebabMenu, setShowKebabMenu] = useState(false);
+  const [kebabMenuPaneIndex, setKebabMenuPaneIndex] = useState<number | null>(null);
+  const [kebabMenuOption, setKebabMenuOption] = useState(0);
   // Update state handled by hook
   const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
@@ -81,18 +78,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Track terminal dimensions for responsive layout
   const terminalWidth = useTerminalWidth();
 
-  // Panes state and persistence
-  const skipLoading = showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
-    !!showCommandPrompt || showFileCopyPrompt || showMergePane;
-  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, skipLoading);
+  // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
+  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, false);
 
-  // Worktree actions
-  const { closePane, mergeWorktree, mergeAndPrune, deleteUnsavedChanges, handleCloseOption } = useWorktreeActions({
+  // Action system
+  const actionSystem = useActionSystem({
     panes,
     savePanes,
-    setStatusMessage,
-    setShowMergeConfirmation,
-    setMergedPane,
+    sessionName,
+    projectName,
+    onPaneRemove: (paneId) => {
+      const updated = panes.filter(p => p.id !== paneId);
+      setPanes(updated);
+    },
   });
 
   // Pane runner
@@ -178,19 +176,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     // 3. We're not already showing the dialog
     // 4. We're not showing any other dialogs or prompts
     if (!isLoading &&
-        panes.length === 0 && 
-        !showNewPaneDialog && 
-        !showMergeConfirmation && 
-        !showCloseOptions && 
-        !showCommandPrompt && 
-        !showFileCopyPrompt && 
+        panes.length === 0 &&
+        !showNewPaneDialog &&
+        !actionSystem.actionState.showConfirmDialog &&
+        !actionSystem.actionState.showChoiceDialog &&
+        !showCommandPrompt &&
+        !showFileCopyPrompt &&
         !showAgentChoiceDialog &&
         !isCreatingPane &&
         !runningCommand &&
         !isUpdating) {
       setShowNewPaneDialog(true);
     }
-  }, [isLoading, panes.length, showNewPaneDialog, showMergeConfirmation, showCloseOptions, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
   // Update checking moved to useAutoUpdater
 
@@ -204,7 +202,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
     panes,
-    suspend: showNewPaneDialog || showMergeConfirmation || showCloseOptions || !!showCommandPrompt || showFileCopyPrompt || showMergePane,
+    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || !!showCommandPrompt || showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
       // Remove pane from list when it no longer exists in tmux
       const updatedPanes = panes.filter(p => p.id !== paneId);
@@ -735,6 +733,46 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
+    // Handle kebab menu navigation
+    if (showKebabMenu && kebabMenuPaneIndex !== null) {
+      const currentPane = panes[kebabMenuPaneIndex];
+      const hasWorktree = !!currentPane?.worktreePath;
+      const menuOptions = hasWorktree ? 3 : 2; // view, merge (if worktree), close
+
+      if (key.escape) {
+        setShowKebabMenu(false);
+        setKebabMenuPaneIndex(null);
+        setKebabMenuOption(0);
+        return;
+      } else if (key.upArrow) {
+        setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
+        return;
+      } else if (key.downArrow) {
+        setKebabMenuOption(Math.min(menuOptions - 1, kebabMenuOption + 1));
+        return;
+      } else if (key.return) {
+        // Execute the selected menu action
+        setShowKebabMenu(false);
+
+        if (kebabMenuOption === 0) {
+          // View - jump to pane (NEW: using action system)
+          actionSystem.executeAction(PaneAction.VIEW, currentPane);
+        } else if (hasWorktree && kebabMenuOption === 1) {
+          // Merge (NEW: using action system)
+          actionSystem.executeAction(PaneAction.MERGE, currentPane, { mainBranch: getMainBranch() });
+        } else if ((hasWorktree && kebabMenuOption === 2) || (!hasWorktree && kebabMenuOption === 1)) {
+          // Close (NEW: using action system)
+          actionSystem.executeAction(PaneAction.CLOSE, currentPane);
+        }
+
+        setKebabMenuPaneIndex(null);
+        setKebabMenuOption(0);
+        return;
+      }
+      // Don't process other inputs while menu is open
+      return;
+    }
+
     // Handle quit confirm mode - ESC cancels it
     if (quitConfirmMode) {
       if (key.escape) {
@@ -748,6 +786,54 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     if (showQRCode) {
       if (key.escape) {
         setShowQRCode(false);
+      }
+      return;
+    }
+
+    // Handle action system confirm dialog
+    if (actionSystem.actionState.showConfirmDialog) {
+      if (key.escape || input === 'n' || input === 'N') {
+        if (actionSystem.actionState.onConfirmNo) {
+          actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
+        } else {
+          actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
+        }
+        return;
+      } else if (input === 'y' || input === 'Y') {
+        if (actionSystem.actionState.onConfirmYes) {
+          actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
+        }
+        return;
+      }
+      return;
+    }
+
+    // Handle action system choice dialog
+    if (actionSystem.actionState.showChoiceDialog) {
+      if (key.escape) {
+        actionSystem.setActionState(prev => ({ ...prev, showChoiceDialog: false }));
+        return;
+      } else if (key.upArrow) {
+        actionSystem.setActionState(prev => ({
+          ...prev,
+          choiceSelectedIndex: Math.max(0, prev.choiceSelectedIndex - 1)
+        }));
+        return;
+      } else if (key.downArrow) {
+        const maxIndex = actionSystem.actionState.choiceOptions.length - 1;
+        actionSystem.setActionState(prev => ({
+          ...prev,
+          choiceSelectedIndex: Math.min(maxIndex, prev.choiceSelectedIndex + 1)
+        }));
+        return;
+      } else if (key.return) {
+        const selectedOption = actionSystem.actionState.choiceOptions[actionSystem.actionState.choiceSelectedIndex];
+        if (selectedOption && actionSystem.actionState.onChoiceSelect) {
+          actionSystem.executeCallback(async () =>
+            actionSystem.actionState.onChoiceSelect!(selectedOption.id)
+          );
+        }
+        return;
       }
       return;
     }
@@ -850,11 +936,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
     
-    if (showMergePane) {
-      // MergePane handles its own input
-      return;
-    }
-
     if (showNewPaneDialog) {
       if (key.escape) {
         setShowNewPaneDialog(false);
@@ -864,47 +945,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         openEditor2(newPanePrompt, setNewPanePrompt);
       }
       // TextInput handles other input events
-      return;
-    }
-
-    if (showMergeConfirmation) {
-      if (input === 'y' || input === 'Y') {
-        if (mergedPane) {
-          closePane(mergedPane);
-        }
-        setShowMergeConfirmation(false);
-        setMergedPane(null);
-      } else if (input === 'n' || input === 'N' || key.escape) {
-        setShowMergeConfirmation(false);
-        setMergedPane(null);
-      }
-      return;
-    }
-
-    if (showCloseOptions) {
-      if (key.escape) {
-        setShowCloseOptions(false);
-        setClosingPane(null);
-        setSelectedCloseOption(0);
-      } else if (key.upArrow) {
-        setSelectedCloseOption(Math.max(0, selectedCloseOption - 1));
-      } else if (key.downArrow) {
-        setSelectedCloseOption(Math.min(3, selectedCloseOption + 1));
-      } else if (key.return && closingPane) {
-        handleCloseOption(selectedCloseOption, closingPane).then(() => {
-          // Close the dialog after the action is performed
-          setShowCloseOptions(false);
-          setClosingPane(null);
-          setSelectedCloseOption(0);
-        }).catch(error => {
-          setStatusMessage('Failed to close pane');
-          setTimeout(() => setStatusMessage(''), 2000);
-          // Also close the dialog on error
-          setShowCloseOptions(false);
-          setClosingPane(null);
-          setSelectedCloseOption(0);
-        });
-      }
       return;
     }
 
@@ -928,7 +968,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
     
-    if (input === 'q') {
+    if (input === 'k' && selectedIndex < panes.length) {
+      // Open kebab menu for selected pane
+      setShowKebabMenu(true);
+      setKebabMenuPaneIndex(selectedIndex);
+      setKebabMenuOption(0);
+    } else if (input === 'q') {
       cleanExit();
     } else if (input === 'r' && server) {
       // Create tunnel if not already created, then show QR code
@@ -956,14 +1001,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       setShowNewPaneDialog(true);
       return; // Consume the 'n' keystroke so it doesn't propagate
     } else if (input === 'j' && selectedIndex < panes.length) {
-      jumpToPane(panes[selectedIndex].paneId);
+      // Jump to pane (NEW: using action system)
+      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
     } else if (input === 'x' && selectedIndex < panes.length) {
-      setClosingPane(panes[selectedIndex]);
-      setShowCloseOptions(true);
-      setSelectedCloseOption(0);
+      // Close pane (NEW: using action system)
+      actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex]);
     } else if (input === 'm' && selectedIndex < panes.length) {
-      setMergingPane(panes[selectedIndex]);
-      setShowMergePane(true);
+      // Merge pane (NEW: using action system)
+      actionSystem.executeAction(PaneAction.MERGE, panes[selectedIndex], { mainBranch: getMainBranch() });
     } else if (input === 't' && selectedIndex < panes.length) {
       await runCommand('test', panes[selectedIndex]);
     } else if (input === 'd' && selectedIndex < panes.length) {
@@ -982,38 +1027,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         setTimeout(() => setStatusMessage(''), 2000);
       }
     } else if (key.return && selectedIndex < panes.length) {
-      jumpToPane(panes[selectedIndex].paneId);
+      // Jump to pane (NEW: using action system)
+      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
     }
   });
-
-  // If showing merge pane, render only that
-  if (showMergePane && mergingPane) {
-    return (
-      <MergePane
-        pane={mergingPane}
-        mainBranch={getMainBranch()}
-        onComplete={() => {
-          // Clean up worktree and branch after successful merge, then close the pane
-          if (mergingPane.worktreePath) {
-            try {
-              const mainRepoPath = mergingPane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
-              execSync(`git worktree remove "${mergingPane.worktreePath}" --force`, { stdio: 'pipe', cwd: mainRepoPath });
-              execSync(`git branch -d ${mergingPane.slug}`, { stdio: 'pipe', cwd: mainRepoPath });
-            } catch {
-              // Ignore errors, might already be removed
-            }
-          }
-          closePane(mergingPane);
-          setShowMergePane(false);
-          setMergingPane(null);
-        }}
-        onCancel={() => {
-          setShowMergePane(false);
-          setMergingPane(null);
-        }}
-      />
-    );
-  }
 
   // If showing QR code, render only that
   if (showQRCode && tunnelUrl) {
@@ -1034,7 +1051,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   return (
     <Box flexDirection="column">
-      <PanesGrid panes={panes} selectedIndex={selectedIndex} isLoading={isLoading} showNewPaneDialog={showNewPaneDialog} agentStatuses={agentStatuses} />
+      <PanesGrid
+        panes={panes}
+        selectedIndex={selectedIndex}
+        isLoading={isLoading}
+        showNewPaneDialog={showNewPaneDialog}
+        agentStatuses={agentStatuses}
+        kebabMenuPaneIndex={kebabMenuPaneIndex ?? undefined}
+      />
 
       {/* Loading dialog */}
       {isLoading && (<LoadingIndicator />)}
@@ -1073,14 +1097,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         <CreatingIndicator message={statusMessage} />
       )}
 
-      {showMergeConfirmation && mergedPane && (
-        <MergeConfirmationDialog pane={mergedPane} />
-      )}
-
-      {showCloseOptions && closingPane && (
-        <CloseOptionsDialog pane={closingPane} selectedIndex={selectedCloseOption} />
-      )}
-
       {showCommandPrompt && (
         <CommandPromptDialog type={showCommandPrompt} value={commandInput} onChange={setCommandInput} />
       )}
@@ -1089,6 +1105,33 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         <FileCopyPrompt />
       )}
 
+      {showKebabMenu && kebabMenuPaneIndex !== null && panes[kebabMenuPaneIndex] && (
+        <KebabMenu
+          selectedOption={kebabMenuOption}
+          hasWorktree={!!panes[kebabMenuPaneIndex].worktreePath}
+          paneName={panes[kebabMenuPaneIndex].slug}
+        />
+      )}
+
+      {/* Action system confirm dialog */}
+      {actionSystem.actionState.showConfirmDialog && (
+        <ActionConfirmDialog
+          title={actionSystem.actionState.confirmTitle}
+          message={actionSystem.actionState.confirmMessage}
+          yesLabel={actionSystem.actionState.confirmYesLabel}
+          noLabel={actionSystem.actionState.confirmNoLabel}
+        />
+      )}
+
+      {/* Action system choice dialog */}
+      {actionSystem.actionState.showChoiceDialog && (
+        <ActionChoiceDialog
+          title={actionSystem.actionState.choiceTitle}
+          message={actionSystem.actionState.choiceMessage}
+          options={actionSystem.actionState.choiceOptions}
+          selectedIndex={actionSystem.actionState.choiceSelectedIndex}
+        />
+      )}
 
       {runningCommand && (
         <RunningIndicator />
@@ -1110,6 +1153,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {statusMessage && (
         <Box marginTop={1}>
           <Text color="green">{statusMessage}</Text>
+        </Box>
+      )}
+
+      {/* Action system status messages */}
+      {actionSystem.actionState.statusMessage && (
+        <Box marginTop={1}>
+          <Text color={
+            actionSystem.actionState.statusType === 'error' ? 'red' :
+            actionSystem.actionState.statusType === 'success' ? 'green' :
+            'cyan'
+          }>
+            {actionSystem.actionState.statusMessage}
+          </Text>
         </Box>
       )}
 

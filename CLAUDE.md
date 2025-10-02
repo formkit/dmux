@@ -543,6 +543,321 @@ dmux  # Creates/attaches dmux-project-b
 # Sessions remain independent
 ```
 
+## Standardized Action System
+
+### Overview
+
+dmux implements a standardized action system that decouples business logic from UI implementation. This allows pane actions (view, close, merge, etc.) to work identically across all interfaces: Terminal UI, Web Dashboard, REST API, and future interfaces like native apps.
+
+### Core Concepts
+
+**Action Functions**: Pure functions that perform operations and return standardized results
+**Action Results**: Structured responses that describe what UI interaction is needed
+**Adapters**: Interface-specific handlers that convert ActionResults into UI components
+**Handlers**: Implementation-specific logic for rendering dialogs, confirmations, etc.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│           User Interfaces                   │
+│  (TUI, Web UI, Mobile App, CLI, etc.)       │
+└──────────────┬──────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────┐
+│           Interface Adapters                │
+│  (tuiActionHandler, apiActionHandler, ...)  │
+│  Convert ActionResults → UI Components       │
+└──────────────┬──────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────┐
+│         Standardized Actions                │
+│  (viewPane, closePane, mergePane, ...)      │
+│  Pure business logic, returns ActionResult  │
+└──────────────┬──────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────┐
+│         System Operations                   │
+│  (tmux, git, file system, etc.)             │
+└─────────────────────────────────────────────┘
+```
+
+### Action Result Types
+
+Every action function returns an `ActionResult` with one of these types:
+
+| Type | Description | UI Behavior |
+|------|-------------|-------------|
+| `success` | Operation completed successfully | Show brief success message |
+| `error` | Operation failed | Show error message |
+| `confirm` | Need yes/no confirmation | Show confirmation dialog |
+| `choice` | Need user to select from options | Show choice menu |
+| `input` | Need text input from user | Show input dialog |
+| `info` | Informational message | Show info message |
+| `progress` | Long-running operation | Show progress indicator |
+| `navigation` | Navigate to different pane/view | Switch focus/route |
+
+### Available Actions
+
+```typescript
+enum PaneAction {
+  VIEW = 'view',                    // Jump to pane
+  CLOSE = 'close',                  // Close pane with options
+  MERGE = 'merge',                  // Merge worktree to main
+  RENAME = 'rename',                // Rename pane
+  DUPLICATE = 'duplicate',          // Create copy of pane
+  RUN_TEST = 'run_test',           // Run test command
+  RUN_DEV = 'run_dev',             // Start dev server
+  OPEN_OUTPUT = 'open_output',      // View command output
+  COPY_PATH = 'copy_path',          // Copy worktree path
+  OPEN_IN_EDITOR = 'open_in_editor' // Open in external editor
+}
+```
+
+### Example: Close Pane Action
+
+**Action Function** (`src/actions/paneActions.ts`):
+```typescript
+export async function closePane(
+  pane: DmuxPane,
+  context: ActionContext
+): Promise<ActionResult> {
+  return {
+    type: 'choice',
+    title: 'Close Pane',
+    message: `How do you want to close "${pane.slug}"?`,
+    options: [
+      {
+        id: 'kill_only',
+        label: 'Just close pane',
+        description: 'Keep worktree and branch',
+      },
+      {
+        id: 'kill_and_clean',
+        label: 'Close and remove worktree',
+        danger: true,
+      },
+      {
+        id: 'kill_clean_branch',
+        label: 'Close and delete everything',
+        danger: true,
+      }
+    ],
+    onSelect: async (optionId: string) => {
+      // Execute the selected close operation
+      return executeCloseOption(pane, context, optionId);
+    },
+  };
+}
+```
+
+**TUI Adapter** (`src/adapters/tuiActionHandler.ts`):
+```typescript
+// Converts ActionResult to TUI dialog state
+handleActionResult(result, currentState, setState) {
+  if (result.type === 'choice') {
+    setState({
+      showChoiceDialog: true,
+      choiceTitle: result.title,
+      choiceOptions: result.options,
+      onChoiceSelect: result.onSelect,
+    });
+  }
+}
+```
+
+**API Adapter** (`src/adapters/apiActionHandler.ts`):
+```typescript
+// Converts ActionResult to HTTP JSON response
+actionResultToAPIResponse(result) {
+  return {
+    success: true,
+    requiresInteraction: true,
+    interactionType: 'choice',
+    choiceData: {
+      options: result.options,
+      callbackId: generateCallbackId(),
+    },
+  };
+}
+```
+
+### Using Actions in Different Interfaces
+
+#### Terminal UI (TUI)
+
+```typescript
+import { executeAction } from '../actions/index.js';
+import { handleActionResult } from '../adapters/tuiActionHandler.js';
+
+// Execute action
+const result = await executeAction('close', selectedPane, context);
+
+// Convert to TUI dialogs
+handleActionResult(result, tuiState, setTuiState);
+```
+
+#### Web API
+
+```bash
+# Execute action via HTTP
+POST /api/panes/:paneId/actions/close
+
+# Response with interaction needed
+{
+  "success": true,
+  "requiresInteraction": true,
+  "interactionType": "choice",
+  "choiceData": {
+    "options": [...],
+    "callbackId": "callback_123"
+  }
+}
+
+# User responds with choice
+POST /api/callbacks/choice/callback_123
+{
+  "optionId": "kill_and_clean"
+}
+```
+
+#### REST API Endpoints
+
+```
+# Action Discovery
+GET  /api/actions                          # List all actions with metadata
+GET  /api/panes/:paneId/actions           # Get available actions for pane
+
+# Action Execution
+POST /api/panes/:paneId/actions/:actionId # Execute action on pane
+
+# Interaction Callbacks
+POST /api/callbacks/confirm/:callbackId   # Respond to confirmation
+POST /api/callbacks/choice/:callbackId    # Respond to choice
+POST /api/callbacks/input/:callbackId     # Respond to input prompt
+```
+
+### Quick Start: Adding Actions to Your Feature
+
+When adding a new feature that needs user interaction:
+
+**1. Use the action system instead of direct tmux/git commands**
+**2. Action functions return what should happen, not how to render it**
+**3. TUI/Web/API automatically handle the UI**
+
+```typescript
+// ❌ OLD WAY: Direct implementation in TUI
+const myFeature = () => {
+  execSync('tmux do-thing');
+  setShowDialog(true);
+  setDialogMessage('Done!');
+};
+
+// ✅ NEW WAY: Use action system
+import { executeAction, PaneAction } from './actions/index.js';
+
+const myFeature = () => {
+  actionSystem.executeAction(PaneAction.MY_ACTION, pane);
+  // That's it! Dialogs appear automatically
+};
+```
+
+**Current Migration Status:**
+- ✅ VIEW action (jump to pane) - migrated
+- ✅ CLOSE action - migrated
+- ⏳ MERGE action - in progress
+- ⏳ Other actions - pending
+
+### Adding New Actions
+
+1. **Define Action Function** (`src/actions/paneActions.ts`):
+```typescript
+export async function myNewAction(
+  pane: DmuxPane,
+  context: ActionContext,
+  params?: any
+): Promise<ActionResult> {
+  // Perform operation
+  try {
+    // ... do work ...
+
+    return {
+      type: 'success',
+      message: 'Operation completed!',
+    };
+  } catch (error) {
+    return {
+      type: 'error',
+      message: `Failed: ${error}`,
+    };
+  }
+}
+```
+
+2. **Register in Action Enum** (`src/actions/types.ts`):
+```typescript
+export enum PaneAction {
+  // ... existing actions ...
+  MY_NEW_ACTION = 'my_new_action',
+}
+```
+
+3. **Add Metadata** (`src/actions/types.ts`):
+```typescript
+export const ACTION_REGISTRY = {
+  // ... existing actions ...
+  [PaneAction.MY_NEW_ACTION]: {
+    id: PaneAction.MY_NEW_ACTION,
+    label: 'My Action',
+    description: 'Does something awesome',
+    icon: '⭐',
+    shortcut: 'a',
+  },
+};
+```
+
+4. **Wire Up Dispatcher** (`src/actions/index.ts`):
+```typescript
+export async function executeAction(actionId, pane, context, params) {
+  switch (actionId) {
+    // ... existing cases ...
+    case 'my_new_action':
+      return actions.myNewAction(pane, context, params);
+  }
+}
+```
+
+**That's it!** The action automatically works in:
+- Terminal UI (via TUI adapter)
+- Web Dashboard (via API adapter)
+- REST API (via actions endpoints)
+- Future interfaces (just implement adapter)
+
+### Benefits
+
+✅ **Single Source of Truth**: One implementation for all interfaces
+✅ **Consistent UX**: Same behavior everywhere
+✅ **Easy Testing**: Test pure functions, not UI components
+✅ **Future Proof**: Add new interfaces without changing actions
+✅ **Type Safe**: Full TypeScript support across the stack
+✅ **Composable**: Actions can call other actions
+✅ **Interactive**: Multi-step workflows with callbacks
+
+### File Organization
+
+```
+src/
+├── actions/
+│   ├── types.ts           # ActionResult types, PaneAction enum
+│   ├── paneActions.ts     # Core action implementations
+│   └── index.ts           # Action dispatcher and exports
+├── adapters/
+│   ├── tuiActionHandler.ts    # Terminal UI adapter
+│   └── apiActionHandler.ts    # HTTP API adapter
+└── server/
+    └── actionsApi.ts      # REST API endpoints for actions
+```
+
 ## Development Guide
 
 ### Adding New Features
@@ -830,17 +1145,18 @@ if (showNewPaneDialog || showMergeConfirmation || showCloseOptions ||
 - **HTTP Dashboard**: Real-time web interface showing pane statuses at auto-selected port
 - **Worker-based Monitoring**: Non-blocking status detection via worker threads (1s polling)
 - **Smart Activity Detection**: Distinguishes user typing from agent working states
+- **Standardized Action System**: Universal action library with pure functions, interface adapters, and consistent behavior across TUI/Web/API
+- **Kebab Menus**: Visual context menus on pane cards showing available actions
 
 ### Known Issues
 1. **Error handling**: Claude command availability not verified
 2. **Long prompts**: May overflow in menu display
-3. **Pane naming**: No rename functionality yet
-4. **Deletion safety**: No undo for closed panes
-5. **Network timeouts**: API calls can hang without timeout
+3. **Deletion safety**: No undo for closed panes
+4. **Network timeouts**: API calls can hang without timeout
 
 ### Planned Enhancements
-- [ ] Pane renaming capability
-- [ ] Undo close pane
+- [ ] Migrate all actions to standardized action system
+- [ ] Pane duplication
 - [ ] Batch operations
 - [ ] Custom keyboard shortcuts
 - [ ] Pane status indicators
