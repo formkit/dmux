@@ -88,7 +88,8 @@
       "Bash(git push:*)",
       "Bash(ps:*)",
       "Bash(npm run clean:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": [],
