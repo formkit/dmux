@@ -227,10 +227,15 @@ async function handleMergeIssues(
       message: `${mainBranch} has uncommitted changes in:\n${mainDirty.files.slice(0, 5).join('\n')}${mainDirty.files.length > 5 ? '\n...' : ''}`,
       options: [
         {
-          id: 'commit_main',
-          label: 'Commit changes in main',
-          description: 'Generate commit message and commit',
+          id: 'commit_automatic',
+          label: 'Automatic commit message',
+          description: 'AI generates conventional commit message',
           default: true,
+        },
+        {
+          id: 'commit_manual',
+          label: 'Manual commit message',
+          description: 'Write your own commit message',
         },
         {
           id: 'stash_main',
@@ -257,7 +262,7 @@ async function handleMergeIssues(
           return mergePane(pane, context, { mainBranch });
         }
 
-        if (optionId === 'commit_main') {
+        if (optionId === 'commit_automatic') {
           // Generate commit message
           const message = await generateCommitMessage(mainRepoPath);
           const result = commitChanges(mainRepoPath, message);
@@ -266,6 +271,27 @@ async function handleMergeIssues(
           }
           // Retry merge after committing
           return mergePane(pane, context, { mainBranch });
+        }
+
+        if (optionId === 'commit_manual') {
+          return {
+            type: 'input',
+            title: 'Enter Commit Message',
+            message: 'Write a commit message for the changes in main:',
+            placeholder: 'feat: add new feature',
+            onSubmit: async (message: string) => {
+              if (!message || !message.trim()) {
+                return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+              }
+              const result = commitChanges(mainRepoPath, message.trim());
+              if (!result.success) {
+                return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+              }
+              // Retry merge after committing
+              return mergePane(pane, context, { mainBranch });
+            },
+            dismissable: true,
+          };
         }
 
         return { type: 'info', message: 'Unknown option', dismissable: true };
@@ -282,10 +308,15 @@ async function handleMergeIssues(
       message: `Changes in:\n${worktreeUncommitted.files.slice(0, 5).join('\n')}${worktreeUncommitted.files.length > 5 ? '\n...' : ''}`,
       options: [
         {
-          id: 'commit_worktree',
-          label: 'Commit changes',
-          description: 'Generate commit message and commit',
+          id: 'commit_automatic',
+          label: 'Automatic commit message',
+          description: 'AI generates conventional commit message',
           default: true,
+        },
+        {
+          id: 'commit_manual',
+          label: 'Manual commit message',
+          description: 'Write your own commit message',
         },
         {
           id: 'cancel',
@@ -298,7 +329,7 @@ async function handleMergeIssues(
           return { type: 'info', message: 'Merge cancelled', dismissable: true };
         }
 
-        if (optionId === 'commit_worktree') {
+        if (optionId === 'commit_automatic') {
           const message = await generateCommitMessage(pane.worktreePath!);
           const result = commitChanges(pane.worktreePath!, message);
           if (!result.success) {
@@ -306,6 +337,27 @@ async function handleMergeIssues(
           }
           // Retry merge after committing
           return mergePane(pane, context, { mainBranch });
+        }
+
+        if (optionId === 'commit_manual') {
+          return {
+            type: 'input',
+            title: 'Enter Commit Message',
+            message: 'Write a commit message for the changes:',
+            placeholder: 'feat: add new feature',
+            onSubmit: async (message: string) => {
+              if (!message || !message.trim()) {
+                return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+              }
+              const result = commitChanges(pane.worktreePath!, message.trim());
+              if (!result.success) {
+                return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+              }
+              // Retry merge after committing
+              return mergePane(pane, context, { mainBranch });
+            },
+            dismissable: true,
+          };
         }
 
         return { type: 'info', message: 'Unknown option', dismissable: true };
