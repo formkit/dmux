@@ -48,6 +48,7 @@ async function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
 export default function usePanes(panesFile: string, skipLoading: boolean) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const loadPanes = async () => {
     if (skipLoading) return;
@@ -102,9 +103,9 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         return p;
       });
 
-      // Only attempt to recreate missing panes on initial load
-      // This prevents disruptive recreation during regular polling
-      const missingPanes = (allPaneIds.length > 0 && panes.length === 0)
+      // Only attempt to recreate missing panes on initial load AND only if not already completed
+      // This prevents disruptive recreation during regular polling and race conditions with pane closing
+      const missingPanes = (allPaneIds.length > 0 && panes.length === 0 && !initialLoadComplete)
         ? reboundPanes.filter(pane => !allPaneIds.includes(pane.paneId))
         : [];
 
@@ -191,6 +192,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           } catch {}
         });
         setPanes(activePanes);
+        setInitialLoadComplete(true);
         return; // Exit early for initial load
       }
 
