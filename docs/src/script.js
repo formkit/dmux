@@ -6,22 +6,23 @@ import { initHolographicCards } from './holographic-cards.js';
 
 // Initialize everything when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  // Start in intro mode
-  document.body.classList.add('intro-mode');
-
   // Always start the static breathing logo
   animateStaticLogo();
 
-  // Only run intro animation on desktop
-  if (window.innerWidth > 768) {
-    animateLogo();
-  } else {
-    // On mobile, hide intro canvas immediately and exit intro mode
+  // Check if mobile
+  const isMobile = window.innerWidth <= 768;
+
+  if (isMobile) {
+    // On mobile, hide intro canvas and don't use intro mode
     const introCanvas = document.getElementById('logo-canvas');
     if (introCanvas) {
       introCanvas.classList.add('hidden');
     }
-    document.body.classList.remove('intro-mode');
+    // Don't add intro-mode class on mobile
+  } else {
+    // On desktop, start in intro mode and run animation
+    document.body.classList.add('intro-mode');
+    animateLogo();
   }
 
   // Start terminal simulation
@@ -131,17 +132,6 @@ shortcutElements.forEach((element, index) => {
 });
 
 // Terminal simulation replaces the static demo
-
-// Add subtle parallax effect to hero section
-window.addEventListener('scroll', () => {
-  const scrolled = window.pageYOffset;
-  const hero = document.querySelector('.terminal-header');
-
-  if (hero && scrolled < window.innerHeight) {
-    hero.style.transform = `translateY(${scrolled * 0.3}px)`;
-    hero.style.opacity = 1 - (scrolled / 600);
-  }
-});
 
 // Animate feature cards on hover
 document.querySelectorAll('.feature-card, .use-case').forEach(card => {
