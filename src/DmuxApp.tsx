@@ -160,7 +160,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             }
 
             // Clear analyzer error when successfully getting a new analysis
-            if (event.status === 'waiting' || event.status === 'idle') {
+            // or when transitioning to 'working' status
+            if (event.status === 'working') {
+              updated.analyzerError = undefined;
+            } else if (event.status === 'waiting' || event.status === 'idle') {
               if (event.analyzerError === undefined && (event.optionsQuestion || event.summary)) {
                 updated.analyzerError = undefined;
               }
