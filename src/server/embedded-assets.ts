@@ -10,6 +10,4443 @@ export interface EmbeddedAsset {
 }
 
 export const embeddedAssets: Record<string, EmbeddedAsset> = {
+  'AutoUpdater.js': {
+    content: `import { execSync } from 'child_process';
+import fs from 'fs/promises';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json');
+export class AutoUpdater {
+    configFile;
+    checkIntervalMs = 24 * 60 * 60 * 1000; // 24 hours
+    constructor(configFile) {
+        this.configFile = configFile;
+    }
+    async loadSettings() {
+        try {
+            const content = await fs.readFile(this.configFile, 'utf-8');
+            const config = JSON.parse(content);
+            return config.updateSettings || {
+                checkIntervalHours: 24,
+                autoUpdateEnabled: true
+            };
+        }
+        catch {
+            return {
+                checkIntervalHours: 24,
+                autoUpdateEnabled: true
+            };
+        }
+    }
+    async saveSettings(settings) {
+        let config = {};
+        try {
+            const content = await fs.readFile(this.configFile, 'utf-8');
+            config = JSON.parse(content);
+        }
+        catch { }
+        config.updateSettings = settings;
+        config.lastUpdated = new Date().toISOString();
+        await fs.writeFile(this.configFile, JSON.stringify(config, null, 2));
+    }
+    async shouldCheckForUpdates() {
+        const settings = await this.loadSettings();
+        const now = Date.now();
+        if (!settings.lastCheckTime) {
+            return true;
+        }
+        const intervalMs = (settings.checkIntervalHours || 24) * 60 * 60 * 1000;
+        return now - settings.lastCheckTime > intervalMs;
+    }
+    async getLatestVersion() {
+        try {
+            // First try using npm view which is usually faster
+            const result = execSync(\`npm view \${packageJson.name} version\`, {
+                encoding: 'utf-8',
+                stdio: 'pipe',
+                timeout: 10000
+            }).trim();
+            if (result && this.isValidVersion(result)) {
+                return result;
+            }
+        }
+        catch {
+            // Fallback to npm registry API
+            try {
+                const response = await fetch(\`https://registry.npmjs.org/\${packageJson.name}/latest\`, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': \`\${packageJson.name}/\${packageJson.version}\`
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.version && this.isValidVersion(data.version)) {
+                        return data.version;
+                    }
+                }
+            }
+            catch {
+                // Network error or API unavailable
+            }
+        }
+        return null;
+    }
+    isValidVersion(version) {
+        return /^\\d+\\.\\d+\\.\\d+/.test(version);
+    }
+    compareVersions(current, latest) {
+        const currentParts = current.split('.').map(n => parseInt(n));
+        const latestParts = latest.split('.').map(n => parseInt(n));
+        for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+            const currentPart = currentParts[i] || 0;
+            const latestPart = latestParts[i] || 0;
+            if (latestPart > currentPart)
+                return true;
+            if (latestPart < currentPart)
+                return false;
+        }
+        return false;
+    }
+    async detectInstallMethod() {
+        try {
+            // Check if dmux is globally installed and how
+            // Method 1: Check npm global packages
+            try {
+                const npmGlobals = execSync('npm list -g --depth=0', {
+                    encoding: 'utf-8',
+                    stdio: 'pipe'
+                });
+                if (npmGlobals.includes(\`\${packageJson.name}@\`)) {
+                    return { packageManager: 'npm', installMethod: 'global' };
+                }
+            }
+            catch { }
+            // Method 2: Check pnpm global packages
+            try {
+                const pnpmGlobals = execSync('pnpm list -g --depth=0', {
+                    encoding: 'utf-8',
+                    stdio: 'pipe'
+                });
+                if (pnpmGlobals.includes(\`\${packageJson.name}@\`)) {
+                    return { packageManager: 'pnpm', installMethod: 'global' };
+                }
+            }
+            catch { }
+            // Method 3: Check yarn global packages
+            try {
+                const yarnGlobals = execSync('yarn global list --depth=0', {
+                    encoding: 'utf-8',
+                    stdio: 'pipe'
+                });
+                if (yarnGlobals.includes(\`\${packageJson.name}@\`)) {
+                    return { packageManager: 'yarn', installMethod: 'global' };
+                }
+            }
+            catch { }
+            // Method 4: Check where dmux is installed by looking at the executable path
+            try {
+                const dmuxPath = execSync('which dmux', {
+                    encoding: 'utf-8',
+                    stdio: 'pipe'
+                }).trim();
+                if (dmuxPath.includes('/.npm/') || dmuxPath.includes('/npm/')) {
+                    return { packageManager: 'npm', installMethod: 'global' };
+                }
+                else if (dmuxPath.includes('/.pnpm/')) {
+                    return { packageManager: 'pnpm', installMethod: 'global' };
+                }
+                else if (dmuxPath.includes('/.yarn/')) {
+                    return { packageManager: 'yarn', installMethod: 'global' };
+                }
+                else if (dmuxPath.includes('/node_modules/.bin/')) {
+                    // Local installation
+                    return { packageManager: null, installMethod: 'local' };
+                }
+            }
+            catch { }
+            return { packageManager: null, installMethod: 'unknown' };
+        }
+        catch {
+            return { packageManager: null, installMethod: 'unknown' };
+        }
+    }
+    async checkForUpdates() {
+        const latestVersion = await this.getLatestVersion();
+        const currentVersion = packageJson.version;
+        const { packageManager, installMethod } = await this.detectInstallMethod();
+        const hasUpdate = latestVersion ? this.compareVersions(currentVersion, latestVersion) : false;
+        // Update last check time
+        const settings = await this.loadSettings();
+        settings.lastCheckTime = Date.now();
+        await this.saveSettings(settings);
+        return {
+            currentVersion,
+            latestVersion: latestVersion || 'unknown',
+            hasUpdate,
+            packageManager,
+            installMethod
+        };
+    }
+    async performUpdate(updateInfo) {
+        if (!updateInfo.hasUpdate || !updateInfo.packageManager || updateInfo.installMethod !== 'global') {
+            return false;
+        }
+        try {
+            let updateCommand;
+            switch (updateInfo.packageManager) {
+                case 'npm':
+                    updateCommand = \`npm update -g \${packageJson.name}\`;
+                    break;
+                case 'pnpm':
+                    updateCommand = \`pnpm update -g \${packageJson.name}\`;
+                    break;
+                case 'yarn':
+                    updateCommand = \`yarn global upgrade \${packageJson.name}\`;
+                    break;
+                default:
+                    return false;
+            }
+            // Run the update command with a timeout
+            execSync(updateCommand, {
+                stdio: 'pipe',
+                timeout: 60000 // 1 minute timeout
+            });
+            // Verify the update was successful
+            const newUpdateInfo = await this.checkForUpdates();
+            return newUpdateInfo.currentVersion === updateInfo.latestVersion;
+        }
+        catch {
+            return false;
+        }
+    }
+    async skipVersion(version) {
+        const settings = await this.loadSettings();
+        settings.skipVersion = version;
+        await this.saveSettings(settings);
+    }
+    async shouldShowUpdateNotification(updateInfo) {
+        if (!updateInfo.hasUpdate) {
+            return false;
+        }
+        const settings = await this.loadSettings();
+        // Don't show if user has disabled auto-updates
+        if (settings.autoUpdateEnabled === false) {
+            return false;
+        }
+        // Don't show if user has skipped this version
+        if (settings.skipVersion === updateInfo.latestVersion) {
+            return false;
+        }
+        return true;
+    }
+    async setAutoUpdateEnabled(enabled) {
+        const settings = await this.loadSettings();
+        settings.autoUpdateEnabled = enabled;
+        await this.saveSettings(settings);
+    }
+}
+//# sourceMappingURL=AutoUpdater.js.map`,
+    mimeType: 'application/javascript',
+    size: 8790
+  },
+  'BetterTextInput.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useFocus } from 'ink';
+import TextInput from 'ink-text-input';
+const BetterTextInput = ({ value, onChange, onSubmit, placeholder = 'Type your message...' }) => {
+    const { isFocused } = useFocus({ autoFocus: true });
+    const [isMultiline, setIsMultiline] = useState(false);
+    const [cursorPosition, setCursorPosition] = useState(value.length);
+    // Update multiline state based on content
+    useEffect(() => {
+        setIsMultiline(value.includes('\\n'));
+        if (cursorPosition > value.length) {
+            setCursorPosition(value.length);
+        }
+    }, [value, cursorPosition]);
+    useInput((input, key) => {
+        if (!isFocused)
+            return;
+        // Handle Enter in single-line mode to switch to multiline
+        if (!isMultiline && key.return && !key.shift) {
+            const before = value.slice(0, cursorPosition);
+            const after = value.slice(cursorPosition);
+            onChange(before + '\\n' + after);
+            setCursorPosition(cursorPosition + 1);
+            return;
+        }
+        // Rest of handlers only for multiline mode
+        if (!isMultiline)
+            return;
+        // Handle escape
+        if (key.escape) {
+            onChange('');
+            setCursorPosition(0);
+            return;
+        }
+        // Handle submit
+        if (key.return && key.shift) {
+            onSubmit?.();
+            return;
+        }
+        // Handle enter (new line)
+        if (key.return) {
+            const before = value.slice(0, cursorPosition);
+            const after = value.slice(cursorPosition);
+            onChange(before + '\\n' + after);
+            setCursorPosition(cursorPosition + 1);
+            return;
+        }
+        // Handle backspace - delete character BEFORE cursor
+        if (key.backspace) {
+            if (cursorPosition > 0) {
+                const before = value.slice(0, cursorPosition - 1);
+                const after = value.slice(cursorPosition);
+                const newValue = before + after;
+                onChange(newValue);
+                setCursorPosition(cursorPosition - 1);
+                // Debug logging
+                if (process.env.DEBUG_DMUX) {
+                    console.error('Backspace debug:', {
+                        oldValue: value,
+                        newValue,
+                        cursorPos: cursorPosition,
+                        newCursorPos: cursorPosition - 1,
+                        deletedChar: value[cursorPosition - 1]
+                    });
+                }
+            }
+            return;
+        }
+        // Handle delete - delete character AT cursor
+        if (key.delete) {
+            if (cursorPosition < value.length) {
+                const before = value.slice(0, cursorPosition);
+                const after = value.slice(cursorPosition + 1);
+                onChange(before + after);
+                // cursor stays same
+            }
+            return;
+        }
+        // Handle arrows
+        if (key.leftArrow) {
+            setCursorPosition(Math.max(0, cursorPosition - 1));
+            return;
+        }
+        if (key.rightArrow) {
+            setCursorPosition(Math.min(value.length, cursorPosition + 1));
+            return;
+        }
+        if (key.upArrow || key.downArrow) {
+            const lines = value.split('\\n');
+            let pos = 0;
+            let lineIdx = 0;
+            let col = 0;
+            // Find current line and column
+            for (let i = 0; i < lines.length; i++) {
+                if (pos + lines[i].length >= cursorPosition) {
+                    lineIdx = i;
+                    col = cursorPosition - pos;
+                    break;
+                }
+                pos += lines[i].length + 1;
+            }
+            if (key.upArrow && lineIdx > 0) {
+                // Move to previous line
+                const targetLine = lineIdx - 1;
+                const targetCol = Math.min(col, lines[targetLine].length);
+                let newPos = 0;
+                for (let i = 0; i < targetLine; i++) {
+                    newPos += lines[i].length + 1;
+                }
+                newPos += targetCol;
+                setCursorPosition(newPos);
+            }
+            else if (key.downArrow && lineIdx < lines.length - 1) {
+                // Move to next line
+                const targetLine = lineIdx + 1;
+                const targetCol = Math.min(col, lines[targetLine].length);
+                let newPos = 0;
+                for (let i = 0; i < targetLine; i++) {
+                    newPos += lines[i].length + 1;
+                }
+                newPos += targetCol;
+                setCursorPosition(newPos);
+            }
+            return;
+        }
+        // Handle text input
+        if (input && !key.ctrl && !key.meta) {
+            const before = value.slice(0, cursorPosition);
+            const after = value.slice(cursorPosition);
+            onChange(before + input + after);
+            setCursorPosition(cursorPosition + input.length);
+        }
+    });
+    // For single line, use standard TextInput but handle Enter ourselves
+    if (!isMultiline) {
+        return (React.createElement(Box, null,
+            React.createElement(Text, null, '> '),
+            React.createElement(TextInput, { value: value, onChange: (newValue) => {
+                    onChange(newValue);
+                    setCursorPosition(newValue.length);
+                }, onSubmit: onSubmit, placeholder: placeholder, showCursor: true })));
+    }
+    // For multiline, render custom display
+    const lines = value.split('\\n');
+    let pos = 0;
+    let cursorLine = 0;
+    let cursorCol = 0;
+    // Find cursor position in lines
+    for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length;
+        if (pos + lineLength >= cursorPosition) {
+            cursorLine = i;
+            cursorCol = cursorPosition - pos;
+            break;
+        }
+        pos += lineLength + 1; // +1 for newline
+    }
+    return (React.createElement(Box, { flexDirection: "column" }, lines.map((line, idx) => {
+        const isFirst = idx === 0;
+        const hasCursor = idx === cursorLine;
+        if (hasCursor) {
+            const before = line.slice(0, cursorCol);
+            const at = line[cursorCol] || ' ';
+            const after = line.slice(cursorCol + 1);
+            return (React.createElement(Box, { key: idx },
+                React.createElement(Text, null, isFirst ? '> ' : '  '),
+                React.createElement(Text, null, before),
+                React.createElement(Text, { inverse: true }, at),
+                React.createElement(Text, null, after)));
+        }
+        return (React.createElement(Box, { key: idx },
+            React.createElement(Text, null, isFirst ? '> ' : '  '),
+            React.createElement(Text, null, line || ' ')));
+    })));
+};
+export default BetterTextInput;
+//# sourceMappingURL=BetterTextInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 6992
+  },
+  'CleanTextInput.js': {
+    content: `import React, { useState, useEffect, useMemo } from 'react';
+import { Box, Text, useInput, useFocus, useStdout } from 'ink';
+const CleanTextInput = ({ value, onChange, onSubmit, placeholder = '' }) => {
+    const { isFocused } = useFocus({ autoFocus: true });
+    const [cursor, setCursor] = useState(value.length);
+    const { stdout } = useStdout();
+    const [pastedItems, setPastedItems] = useState(new Map());
+    const [nextPasteId, setNextPasteId] = useState(1);
+    const [isProcessingPaste, setIsProcessingPaste] = useState(false);
+    // Only ignore first input in production (not in tests)
+    // Check for common test environment indicators
+    const isTestEnvironment = process.env.NODE_ENV === 'test' ||
+        process.env.VITEST === 'true' ||
+        typeof process.env.VITEST !== 'undefined';
+    const [ignoreNextInput, setIgnoreNextInput] = useState(!isTestEnvironment);
+    // Paste buffering state
+    const [pasteBuffer, setPasteBuffer] = useState('');
+    const [isPasting, setIsPasting] = useState(false);
+    const [pasteTimeout, setPasteTimeout] = useState(null);
+    const [inBracketedPaste, setInBracketedPaste] = useState(false);
+    // Calculate available width for text (terminal width - borders - padding - prompt)
+    // Subtract 2 for borders, 2 for padding, 2 for "> " prompt = 6 total
+    // The prompt is always rendered separately, so we need to account for it
+    // Use process.stdout.columns as fallback since useStdout might not update
+    const terminalWidth = process.stdout.columns || (stdout ? stdout.columns : 80);
+    // Reduce by 1 more to prevent edge case where text exactly fills width
+    const maxWidth = Math.max(20, terminalWidth - 7);
+    // Keep cursor in bounds
+    useEffect(() => {
+        if (cursor > value.length) {
+            setCursor(value.length);
+        }
+        else if (cursor < 0) {
+            setCursor(0);
+        }
+    }, [value.length, cursor]);
+    // Enable bracketed paste mode with small delay to avoid blocking UI
+    useEffect(() => {
+        let bracketedPasteTimer = null;
+        if (isFocused) {
+            // Small delay to let UI settle before enabling bracketed paste
+            bracketedPasteTimer = setTimeout(() => {
+                process.stdout.write('\\x1b[?2004h');
+            }, 10);
+            // Clear the ignore flag after a short delay to allow normal input
+            // In tests, the flag is already false, so no need to clear it
+            if (!isTestEnvironment) {
+                setTimeout(() => {
+                    setIgnoreNextInput(false);
+                }, 50);
+            }
+        }
+        return () => {
+            if (bracketedPasteTimer) {
+                clearTimeout(bracketedPasteTimer);
+            }
+            process.stdout.write('\\x1b[?2004l');
+            // Clean up paste timeout if component unmounts
+            if (pasteTimeout) {
+                clearTimeout(pasteTimeout);
+            }
+        };
+    }, [isFocused, pasteTimeout]);
+    // Preprocess pasted content to remove formatting artifacts
+    const preprocessPastedContent = (input) => {
+        // Remove ANSI escape sequences (colors, cursor movements, etc)
+        let cleaned = input.replace(/\\x1b\\[[0-9;]*m/g, ''); // Remove color codes
+        cleaned = cleaned.replace(/\\x1b\\[[\\d;]*[A-Za-z]/g, ''); // Remove cursor movements
+        // Normalize line endings
+        cleaned = cleaned.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
+        // Check if this looks like code/JSON (has braces, brackets, or consistent indentation)
+        const looksLikeCode = cleaned.match(/[{}\\[\\]]/) ||
+            cleaned.split('\\n').some(line => line.startsWith('  ') || line.startsWith('\\t'));
+        if (looksLikeCode) {
+            // For code/JSON, preserve formatting exactly
+            return cleaned;
+        }
+        // For regular text, do more aggressive cleaning
+        // Remove box drawing characters
+        const boxChars = /[╭╮╰╯│─┌┐└┘├┤┬┴┼━┃┏┓┗┛┣┫┳┻╋]/g;
+        cleaned = cleaned.replace(boxChars, '');
+        // Split into lines for processing
+        let lines = cleaned.split('\\n');
+        // Remove common prompt patterns and clean each line
+        lines = lines.map(line => {
+            // Remove leading prompt indicators
+            line = line.replace(/^[>$#]\\s+/, '');
+            // Trim whitespace
+            return line.trim();
+        });
+        // Remove empty lines at start and end
+        while (lines.length > 0 && lines[0] === '')
+            lines.shift();
+        while (lines.length > 0 && lines[lines.length - 1] === '')
+            lines.pop();
+        // Handle wrapped lines (lines that were split by terminal width)
+        const unwrappedLines = [];
+        for (let i = 0; i < lines.length; i++) {
+            const currentLine = lines[i];
+            const nextLine = lines[i + 1];
+            // If current line doesn't end with punctuation and next line starts lowercase,
+            // it's likely a wrapped line
+            if (nextLine &&
+                currentLine.length > 0 &&
+                !currentLine.match(/[.!?;:,]$/) &&
+                nextLine[0] &&
+                nextLine[0] === nextLine[0].toLowerCase()) {
+                // Join wrapped lines
+                unwrappedLines.push(currentLine + ' ' + nextLine);
+                i++; // Skip next line since we merged it
+            }
+            else {
+                unwrappedLines.push(currentLine);
+            }
+        }
+        return unwrappedLines.join('\\n');
+    };
+    // Expand paste references to their actual content
+    const expandPasteReferences = (text) => {
+        let expanded = text;
+        const tagPattern = /\\[#(\\d+) Pasted, \\d+ lines?\\]/g;
+        let match;
+        while ((match = tagPattern.exec(text)) !== null) {
+            const pasteId = parseInt(match[1]);
+            const pastedContent = pastedItems.get(pasteId);
+            if (pastedContent) {
+                expanded = expanded.replace(match[0], pastedContent.content);
+            }
+        }
+        return expanded;
+    };
+    // Process complete pasted content once buffering is done
+    const processPastedContent = (fullContent) => {
+        // Always preprocess pasted content
+        const cleaned = preprocessPastedContent(fullContent);
+        const lines = cleaned.split('\\n');
+        if (lines.length > 15) {
+            // Large paste - create reference tag
+            const pasteId = nextPasteId;
+            const pasteRef = {
+                id: pasteId,
+                content: cleaned,
+                lineCount: lines.length,
+                timestamp: Date.now()
+            };
+            setPastedItems(prev => {
+                const newMap = new Map(prev);
+                newMap.set(pasteId, pasteRef);
+                return newMap;
+            });
+            setNextPasteId(pasteId + 1);
+            // Insert reference tag
+            const tag = \`[#\${pasteId} Pasted, \${lines.length} lines]\`;
+            const before = value.slice(0, cursor);
+            const after = value.slice(cursor);
+            onChange(before + tag + after);
+            setCursor(cursor + tag.length);
+        }
+        else {
+            // Small paste - insert cleaned content directly
+            const before = value.slice(0, cursor);
+            const after = value.slice(cursor);
+            onChange(before + cleaned + after);
+            setCursor(cursor + cleaned.length);
+        }
+        // Reset paste state
+        setPasteBuffer('');
+        setIsPasting(false);
+        setInBracketedPaste(false);
+    };
+    useInput((input, key) => {
+        if (!isFocused)
+            return;
+        // Escape clears
+        if (key.escape) {
+            onChange('');
+            setCursor(0);
+            return;
+        }
+        // Shift+Enter adds newline
+        if (key.return && key.shift) {
+            const before = value.slice(0, cursor);
+            const after = value.slice(cursor);
+            const newValue = before + '\\n' + after;
+            onChange(newValue);
+            setCursor(cursor + 1);
+            return;
+        }
+        // Enter submits with expanded content
+        if (key.return) {
+            const expandedValue = expandPasteReferences(value);
+            onSubmit?.(expandedValue);
+            return;
+        }
+        // Backspace deletes BEFORE cursor
+        // IMPORTANT: Some terminals send 'delete' key when backspace is pressed
+        // Handle both key.backspace and key.delete as backspace
+        if (key.backspace || key.delete || input === '\\x7f' || input === '\\x08') {
+            // Clear any paste state when delete is pressed
+            if (isPasting) {
+                setIsPasting(false);
+                setPasteBuffer('');
+                if (pasteTimeout) {
+                    clearTimeout(pasteTimeout);
+                    setPasteTimeout(null);
+                }
+            }
+            if (cursor > 0) {
+                const before = value.slice(0, cursor - 1);
+                const after = value.slice(cursor);
+                const newValue = before + after;
+                onChange(newValue);
+                setCursor(cursor - 1);
+            }
+            return;
+        }
+        // Forward delete (actual delete key behavior) - removed since we're treating delete as backspace
+        // If you need forward delete, use a different key combination
+        // Ctrl-A: Jump to beginning of current visual line
+        if (key.ctrl && input === 'a') {
+            const wrapped = wrapText(value, maxWidth);
+            const currentPos = findCursorInWrappedLines(wrapped, cursor);
+            // Find absolute position of start of current visual line
+            let absolutePos = 0;
+            for (let i = 0; i < currentPos.line; i++) {
+                absolutePos += wrapped[i].line.length;
+                if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+                    absolutePos++; // Space between wrapped segments
+                }
+                else if (wrapped[i].isHardBreak) {
+                    absolutePos++; // Newline character
+                }
+            }
+            setCursor(absolutePos);
+            return;
+        }
+        // Ctrl-E: Jump to end of current visual line
+        if (key.ctrl && input === 'e') {
+            const wrapped = wrapText(value, maxWidth);
+            const currentPos = findCursorInWrappedLines(wrapped, cursor);
+            // Find absolute position of end of current visual line
+            let absolutePos = 0;
+            for (let i = 0; i <= currentPos.line; i++) {
+                if (i === currentPos.line) {
+                    absolutePos += wrapped[i].line.length;
+                }
+                else {
+                    absolutePos += wrapped[i].line.length;
+                    if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+                        absolutePos++; // Space between wrapped segments
+                    }
+                    else if (wrapped[i].isHardBreak) {
+                        absolutePos++; // Newline character
+                    }
+                }
+            }
+            setCursor(Math.min(absolutePos, value.length));
+            return;
+        }
+        // Left arrow
+        if (key.leftArrow) {
+            setCursor(Math.max(0, cursor - 1));
+            return;
+        }
+        // Right arrow
+        if (key.rightArrow) {
+            setCursor(Math.min(value.length, cursor + 1));
+            return;
+        }
+        // Up/Down arrows for navigation (works with both hard and soft wrapped lines)
+        if (key.upArrow || key.downArrow) {
+            // Get wrapped lines to understand visual layout
+            const wrapped = wrapText(value, maxWidth);
+            const currentPos = findCursorInWrappedLines(wrapped, cursor);
+            if (key.upArrow && currentPos.line > 0) {
+                // Move up one visual line
+                const targetLine = currentPos.line - 1;
+                const targetCol = Math.min(currentPos.col, wrapped[targetLine].line.length);
+                // Convert back to absolute position
+                let absolutePos = 0;
+                for (let i = 0; i < targetLine; i++) {
+                    absolutePos += wrapped[i].line.length;
+                    // Add space if this was a soft wrap
+                    if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+                        const nextLineExists = i + 1 < wrapped.length;
+                        if (nextLineExists)
+                            absolutePos++; // Space between wrapped segments
+                    }
+                    else if (wrapped[i].isHardBreak) {
+                        absolutePos++; // Newline character
+                    }
+                }
+                absolutePos += targetCol;
+                setCursor(Math.min(absolutePos, value.length));
+            }
+            else if (key.downArrow && currentPos.line < wrapped.length - 1) {
+                // Move down one visual line
+                const targetLine = currentPos.line + 1;
+                const targetCol = Math.min(currentPos.col, wrapped[targetLine].line.length);
+                // Convert back to absolute position
+                let absolutePos = 0;
+                for (let i = 0; i < targetLine; i++) {
+                    absolutePos += wrapped[i].line.length;
+                    // Add space if this was a soft wrap
+                    if (!wrapped[i].isHardBreak && i < wrapped.length - 1) {
+                        const nextLineExists = i + 1 < wrapped.length;
+                        if (nextLineExists)
+                            absolutePos++; // Space between wrapped segments
+                    }
+                    else if (wrapped[i].isHardBreak) {
+                        absolutePos++; // Newline character
+                    }
+                }
+                absolutePos += targetCol;
+                setCursor(Math.min(absolutePos, value.length));
+            }
+            return;
+        }
+        // Regular text input with paste detection and buffering
+        if (input && !key.ctrl && !key.meta) {
+            // Ignore the first character input if flag is set (prevents 'n' from dmux menu)
+            if (ignoreNextInput && input.length === 1) {
+                setIgnoreNextInput(false);
+                return;
+            }
+            // First, check if this looks like a malformed paste sequence we should ignore
+            // Pattern: [200- or [201- followed by content (missing the ~)
+            if (input.startsWith('[200-') || input.startsWith('[201-')) {
+                // This is a malformed paste marker - strip it and process the rest as normal content
+                const cleanedInput = input.replace(/^\\[20[01]-/, '');
+                if (cleanedInput) {
+                    // Process as a regular paste if it has content
+                    const hasNewlines = cleanedInput.includes('\\n');
+                    const isVeryLong = cleanedInput.length > 10;
+                    if (hasNewlines || isVeryLong) {
+                        processPastedContent(cleanedInput);
+                        return;
+                    }
+                    // Otherwise treat as normal input
+                    const before = value.slice(0, cursor);
+                    const after = value.slice(cursor);
+                    onChange(before + cleanedInput + after);
+                    setCursor(cursor + cleanedInput.length);
+                }
+                return;
+            }
+            // Detect bracketed paste sequences - handle multiple formats
+            const PASTE_START = '\\x1b[200~';
+            const PASTE_END = '\\x1b[201~';
+            // Also check for the pattern without escape char (some terminals strip it)
+            const PASTE_START_ALT = '[200~';
+            const PASTE_END_ALT = '[201~';
+            // Check for bracketed paste markers (both formats)
+            const hasPasteStart = input.includes(PASTE_START) || input.includes(PASTE_START_ALT);
+            const hasPasteEnd = input.includes(PASTE_END) || input.includes(PASTE_END_ALT);
+            // Handle bracketed paste mode
+            if (hasPasteStart) {
+                setInBracketedPaste(true);
+                // Extract content after paste start marker (check both formats)
+                let startIdx = -1;
+                let markerLength = 0;
+                if (input.includes(PASTE_START)) {
+                    startIdx = input.indexOf(PASTE_START);
+                    markerLength = PASTE_START.length;
+                }
+                else if (input.includes(PASTE_START_ALT)) {
+                    startIdx = input.indexOf(PASTE_START_ALT);
+                    markerLength = PASTE_START_ALT.length;
+                }
+                let endIdx = -1;
+                if (hasPasteEnd) {
+                    if (input.includes(PASTE_END)) {
+                        endIdx = input.indexOf(PASTE_END);
+                    }
+                    else if (input.includes(PASTE_END_ALT)) {
+                        endIdx = input.indexOf(PASTE_END_ALT);
+                    }
+                }
+                const content = hasPasteEnd ?
+                    input.substring(startIdx + markerLength, endIdx) :
+                    input.substring(startIdx + markerLength);
+                setPasteBuffer(content);
+                if (hasPasteEnd) {
+                    // Complete paste in single chunk
+                    processPastedContent(pasteBuffer + content);
+                    setPasteBuffer('');
+                    setInBracketedPaste(false);
+                }
+                return;
+            }
+            if (hasPasteEnd && inBracketedPaste) {
+                // End of bracketed paste - check both formats
+                let endIdx = -1;
+                if (input.includes(PASTE_END)) {
+                    endIdx = input.indexOf(PASTE_END);
+                }
+                else if (input.includes(PASTE_END_ALT)) {
+                    endIdx = input.indexOf(PASTE_END_ALT);
+                }
+                if (endIdx >= 0) {
+                    const finalContent = input.substring(0, endIdx);
+                    processPastedContent(pasteBuffer + finalContent);
+                    setPasteBuffer('');
+                    setInBracketedPaste(false);
+                    return;
+                }
+            }
+            if (inBracketedPaste) {
+                // Continue buffering bracketed paste content
+                setPasteBuffer(prev => prev + input);
+                return;
+            }
+            // Detect non-bracketed paste (fallback for terminals without bracketed paste mode)
+            // Exclude delete/backspace key sequences from paste detection
+            const isDeleteSequence = input === '\\x7f' || input === '\\x08' ||
+                input.split('').every(c => c === '\\x7f' || c === '\\x08');
+            // Better heuristics for paste detection:
+            // - Must have newlines OR be quite long (>10 chars at once)
+            // - Single chars or small groups (2-3) are likely fast typing
+            // - Already in paste mode should continue
+            const hasNewlines = input.includes('\\n');
+            const isVeryLong = input.length > 10;
+            const isLikelyPaste = !isDeleteSequence && ((hasNewlines && input.length > 2) || // Multi-line content
+                isVeryLong || // Very long single chunk
+                (isPasting && input.length > 0)); // Continue existing paste
+            if (isLikelyPaste && !inBracketedPaste) {
+                // Clear any existing timeout
+                if (pasteTimeout) {
+                    clearTimeout(pasteTimeout);
+                }
+                // Add to paste buffer
+                setPasteBuffer(prev => prev + input);
+                setIsPasting(true);
+                // Set timeout to detect end of paste (when no more input arrives)
+                const timeout = setTimeout(() => {
+                    // Process the complete buffered paste
+                    if (pasteBuffer || input) {
+                        processPastedContent(pasteBuffer + input);
+                    }
+                    setPasteBuffer('');
+                    setIsPasting(false);
+                }, 100); // 100ms timeout to collect all chunks
+                setPasteTimeout(timeout);
+                return;
+            }
+            // Normal single character input (or fast typing)
+            if (!isPasting && !inBracketedPaste) {
+                const before = value.slice(0, cursor);
+                const after = value.slice(cursor);
+                onChange(before + input + after);
+                setCursor(cursor + input.length);
+            }
+            else if (isPasting && !isLikelyPaste && !inBracketedPaste) {
+                // If we're in paste mode but this doesn't look like a paste,
+                // it's probably just fast typing - cancel paste mode
+                if (pasteTimeout) {
+                    clearTimeout(pasteTimeout);
+                    setPasteTimeout(null);
+                }
+                setPasteBuffer('');
+                setIsPasting(false);
+                // Process as normal input
+                const before = value.slice(0, cursor);
+                const after = value.slice(cursor);
+                onChange(before + input + after);
+                setCursor(cursor + input.length);
+            }
+        }
+    });
+    // Function to wrap text at word boundaries
+    const wrapText = (text, width) => {
+        if (!text)
+            return [{ line: '', isHardBreak: false }];
+        const hardLines = text.split('\\n');
+        const wrappedLines = [];
+        for (let i = 0; i < hardLines.length; i++) {
+            const hardLine = hardLines[i];
+            const isLastHardLine = i === hardLines.length - 1;
+            if (hardLine.length <= width) {
+                // Line fits within width
+                wrappedLines.push({ line: hardLine, isHardBreak: !isLastHardLine });
+            }
+            else {
+                // Need to wrap this line at word boundaries
+                let remaining = hardLine;
+                while (remaining.length > 0) {
+                    if (remaining.length <= width) {
+                        // Last segment of this hard line
+                        wrappedLines.push({
+                            line: remaining,
+                            isHardBreak: !isLastHardLine
+                        });
+                        break;
+                    }
+                    // Find last space within width limit
+                    let breakPoint = width;
+                    // Look for the last space that fits within the width - 1 to wrap before overflow
+                    let lastSpace = remaining.lastIndexOf(' ', width - 1);
+                    if (lastSpace > 0) {
+                        // Found a space to break at
+                        breakPoint = lastSpace;
+                    }
+                    else {
+                        // No good space found, break at width or look for first space
+                        const firstSpace = remaining.indexOf(' ');
+                        if (firstSpace > 0 && firstSpace < width) {
+                            breakPoint = firstSpace;
+                        }
+                        else {
+                            // No spaces or space is beyond width, break at width
+                            breakPoint = Math.min(width, remaining.length);
+                        }
+                    }
+                    const segment = remaining.slice(0, breakPoint);
+                    wrappedLines.push({
+                        line: segment.trimEnd(),
+                        isHardBreak: false // soft wrap
+                    });
+                    // Skip the space if we broke at a space
+                    const nextChar = remaining[breakPoint];
+                    if (nextChar === ' ') {
+                        remaining = remaining.slice(breakPoint + 1);
+                    }
+                    else {
+                        remaining = remaining.slice(breakPoint);
+                    }
+                }
+            }
+        }
+        return wrappedLines;
+    };
+    // Function to find cursor position in wrapped lines
+    const findCursorInWrappedLines = (wrappedLines, absoluteCursor) => {
+        if (wrappedLines.length === 0) {
+            return { line: 0, col: 0 };
+        }
+        let currentPos = 0;
+        // Walk through each wrapped line and track character positions
+        for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
+            const wrappedLine = wrappedLines[lineIndex];
+            const lineLength = wrappedLine.line.length;
+            // Check if cursor is within this wrapped line
+            if (absoluteCursor <= currentPos + lineLength) {
+                const colInLine = absoluteCursor - currentPos;
+                return {
+                    line: lineIndex,
+                    col: Math.max(0, Math.min(colInLine, lineLength))
+                };
+            }
+            // Move past this line's characters
+            currentPos += lineLength;
+            // Add 1 for newline character if this is a hard break
+            if (wrappedLine.isHardBreak) {
+                currentPos++;
+                // Check if cursor is exactly at the newline position
+                if (absoluteCursor === currentPos - 1) {
+                    return {
+                        line: lineIndex,
+                        col: lineLength
+                    };
+                }
+            }
+            // For soft breaks (word wrapping), account for the space that was removed
+            else if (lineIndex < wrappedLines.length - 1) {
+                // Add 1 for the space that was trimmed during word wrapping
+                currentPos++;
+                // Check if cursor is at the space position
+                if (absoluteCursor === currentPos - 1) {
+                    return {
+                        line: lineIndex,
+                        col: lineLength
+                    };
+                }
+            }
+        }
+        // Cursor is at the very end
+        const lastLine = wrappedLines[wrappedLines.length - 1];
+        return {
+            line: wrappedLines.length - 1,
+            col: lastLine ? lastLine.line.length : 0
+        };
+    };
+    // Helper to render text with highlighted paste tags
+    const renderTextWithTags = (text, isInverse = false) => {
+        const tagPattern = /(\\[#\\d+ Pasted, \\d+ lines?\\])/g;
+        const parts = text.split(tagPattern);
+        return parts.map((part, i) => {
+            if (part.match(tagPattern)) {
+                // Render paste tag with special styling
+                return React.createElement(Text, { key: i, color: "cyan", dimColor: true }, part);
+            }
+            // Regular text
+            return isInverse ? React.createElement(Text, { key: i, inverse: true }, part) : React.createElement(Text, { key: i }, part);
+        });
+    };
+    // Memoize wrapped text to avoid recalculating on every render
+    const wrappedLines = useMemo(() => wrapText(value, maxWidth), [value, maxWidth]);
+    const hasMultipleLines = wrappedLines.length > 1;
+    if (value === '') {
+        // Show cursor for empty input (no placeholder)
+        return (React.createElement(Box, null,
+            React.createElement(Box, { width: 2 },
+                React.createElement(Text, null, '> ')),
+            React.createElement(Box, null,
+                React.createElement(Text, { inverse: true }, ' '))));
+    }
+    // Find cursor position in wrapped lines
+    const cursorPos = findCursorInWrappedLines(wrappedLines, cursor);
+    // Render wrapped lines
+    return (React.createElement(Box, { flexDirection: "column" }, wrappedLines.map((wrappedLine, idx) => {
+        const isFirst = idx === 0;
+        const hasCursor = idx === cursorPos.line;
+        const line = wrappedLine.line;
+        if (hasCursor) {
+            // Ensure cursor position is valid
+            const actualCol = Math.min(cursorPos.col, line.length);
+            const before = line.slice(0, actualCol);
+            const at = line[actualCol] || ' ';
+            const after = line.slice(actualCol + 1);
+            // Check if cursor is within a paste tag
+            const tagPattern = /\\[#\\d+ Pasted, \\d+ lines?\\]/g;
+            let match;
+            let cursorInTag = false;
+            while ((match = tagPattern.exec(line)) !== null) {
+                if (actualCol >= match.index && actualCol < match.index + match[0].length) {
+                    cursorInTag = true;
+                    break;
+                }
+            }
+            return (React.createElement(Box, { key: idx },
+                React.createElement(Box, { width: 2 },
+                    React.createElement(Text, null, isFirst ? '> ' : '  ')),
+                React.createElement(Box, null, cursorInTag ? (
+                // Cursor is within a paste tag - render specially
+                React.createElement(React.Fragment, null,
+                    renderTextWithTags(before),
+                    React.createElement(Text, { inverse: true, color: "cyan" }, at),
+                    renderTextWithTags(after))) : (
+                // Normal rendering with tag highlighting
+                React.createElement(React.Fragment, null,
+                    renderTextWithTags(before),
+                    React.createElement(Text, { inverse: true }, at),
+                    renderTextWithTags(after))))));
+        }
+        return (React.createElement(Box, { key: idx },
+            React.createElement(Box, { width: 2 },
+                React.createElement(Text, null, isFirst ? '> ' : '  ')),
+            React.createElement(Box, null, line ? renderTextWithTags(line) : React.createElement(Text, null, ' '))));
+    })));
+};
+export default CleanTextInput;
+//# sourceMappingURL=CleanTextInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 29918
+  },
+  'DmuxApp.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useApp } from 'ink';
+import { execSync } from 'child_process';
+import path from 'path';
+import { createRequire } from 'module';
+// Hooks
+import usePanes from './hooks/usePanes.js';
+import useProjectSettings from './hooks/useProjectSettings.js';
+import useTerminalWidth from './hooks/useTerminalWidth.js';
+import useNavigation from './hooks/useNavigation.js';
+import useAutoUpdater from './hooks/useAutoUpdater.js';
+import useAgentDetection from './hooks/useAgentDetection.js';
+import useAgentStatus from './hooks/useAgentStatus.js';
+import usePaneRunner from './hooks/usePaneRunner.js';
+import usePaneCreation from './hooks/usePaneCreation.js';
+import useActionSystem from './hooks/useActionSystem.js';
+// Utils
+import { applySmartLayout } from './utils/tmux.js';
+import { suggestCommand } from './utils/commands.js';
+import { generateSlug } from './utils/slug.js';
+import { getMainBranch } from './utils/git.js';
+import { StateManager } from './shared/StateManager.js';
+import { getStatusDetector } from './services/StatusDetector.js';
+import { PaneAction, getAvailableActions } from './actions/index.js';
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json');
+import PanesGrid from './components/PanesGrid.js';
+import NewPaneDialog from './components/NewPaneDialog.js';
+import AgentChoiceDialog from './components/AgentChoiceDialog.js';
+import CommandPromptDialog from './components/CommandPromptDialog.js';
+import FileCopyPrompt from './components/FileCopyPrompt.js';
+import LoadingIndicator from './components/LoadingIndicator.js';
+import RunningIndicator from './components/RunningIndicator.js';
+import UpdatingIndicator from './components/UpdatingIndicator.js';
+import CreatingIndicator from './components/CreatingIndicator.js';
+import FooterHelp from './components/FooterHelp.js';
+import QRCode from './components/QRCode.js';
+import KebabMenu from './components/KebabMenu.js';
+import ActionChoiceDialog from './components/ActionChoiceDialog.js';
+import ActionConfirmDialog from './components/ActionConfirmDialog.js';
+const DmuxApp = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
+    /* panes state moved to usePanes */
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
+    const [newPanePrompt, setNewPanePrompt] = useState('');
+    const [statusMessage, setStatusMessage] = useState('');
+    const [isCreatingPane, setIsCreatingPane] = useState(false);
+    const [showQRCode, setShowQRCode] = useState(false);
+    const [tunnelUrl, setTunnelUrl] = useState(null);
+    const [isCreatingTunnel, setIsCreatingTunnel] = useState(false);
+    const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
+    const [showCommandPrompt, setShowCommandPrompt] = useState(null);
+    const [commandInput, setCommandInput] = useState('');
+    const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
+    const [currentCommandType, setCurrentCommandType] = useState(null);
+    const [runningCommand, setRunningCommand] = useState(false);
+    const [quitConfirmMode, setQuitConfirmMode] = useState(false);
+    const [showKebabMenu, setShowKebabMenu] = useState(false);
+    const [kebabMenuPaneIndex, setKebabMenuPaneIndex] = useState(null);
+    const [kebabMenuOption, setKebabMenuOption] = useState(0);
+    const [kebabMenuActions, setKebabMenuActions] = useState([]);
+    // Update state handled by hook
+    const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
+    const { exit } = useApp();
+    // Agent selection state
+    const { availableAgents } = useAgentDetection();
+    const [showAgentChoiceDialog, setShowAgentChoiceDialog] = useState(false);
+    const [agentChoice, setAgentChoice] = useState(null);
+    const [pendingPrompt, setPendingPrompt] = useState('');
+    // Track terminal dimensions for responsive layout
+    const terminalWidth = useTerminalWidth();
+    // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
+    const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, false);
+    // Action system
+    const actionSystem = useActionSystem({
+        panes,
+        savePanes,
+        sessionName,
+        projectName,
+        onPaneRemove: (paneId) => {
+            const updated = panes.filter(p => p.id !== paneId);
+            setPanes(updated);
+        },
+    });
+    // Pane runner
+    const { copyNonGitFiles, runCommandInternal, monitorTestOutput, monitorDevOutput, attachBackgroundWindow } = usePaneRunner({
+        panes,
+        savePanes,
+        projectSettings,
+        setStatusMessage,
+        setRunningCommand,
+    });
+    // Pane creation
+    const { openInEditor: openEditor2, createNewPane: createNewPaneHook } = usePaneCreation({
+        panes,
+        savePanes,
+        projectName,
+        setIsCreatingPane,
+        setStatusMessage,
+        setNewPanePrompt,
+        loadPanes,
+        panesFile,
+        availableAgents,
+    });
+    // Listen for status updates with analysis data and merge into panes
+    useEffect(() => {
+        const statusDetector = getStatusDetector();
+        const handleStatusUpdate = (event) => {
+            setPanes(prevPanes => {
+                const updatedPanes = prevPanes.map(pane => {
+                    if (pane.id === event.paneId) {
+                        const updated = {
+                            ...pane,
+                            agentStatus: event.status,
+                        };
+                        // Only update analysis fields if they're present in the event (not undefined)
+                        // This prevents simple status changes from overwriting PaneAnalyzer results
+                        if (event.optionsQuestion !== undefined) {
+                            updated.optionsQuestion = event.optionsQuestion;
+                        }
+                        if (event.options !== undefined) {
+                            updated.options = event.options;
+                        }
+                        if (event.potentialHarm !== undefined) {
+                            updated.potentialHarm = event.potentialHarm;
+                        }
+                        if (event.summary !== undefined) {
+                            updated.agentSummary = event.summary;
+                        }
+                        // Clear option dialog data when transitioning away from 'waiting' state
+                        if (event.status !== 'waiting' && pane.agentStatus === 'waiting') {
+                            updated.optionsQuestion = undefined;
+                            updated.options = undefined;
+                            updated.potentialHarm = undefined;
+                        }
+                        // Clear summary when transitioning away from 'idle' state
+                        if (event.status !== 'idle' && pane.agentStatus === 'idle') {
+                            updated.agentSummary = undefined;
+                        }
+                        return updated;
+                    }
+                    return pane;
+                });
+                // Persist to disk - ConfigWatcher will handle syncing to StateManager
+                savePanes(updatedPanes).catch(err => {
+                    console.error('Failed to save panes after status update:', err);
+                });
+                return updatedPanes;
+            });
+        };
+        statusDetector.on('status-updated', handleStatusUpdate);
+        return () => {
+            statusDetector.off('status-updated', handleStatusUpdate);
+        };
+    }, [setPanes, savePanes]);
+    // Note: No need to sync panes with StateManager here.
+    // The ConfigWatcher automatically updates StateManager when the config file changes.
+    // This prevents unnecessary SSE broadcasts on every local state update.
+    // Sync settings with StateManager
+    useEffect(() => {
+        const stateManager = StateManager.getInstance();
+        stateManager.updateSettings(projectSettings);
+    }, [projectSettings]);
+    // Load panes and settings on mount and refresh periodically
+    useEffect(() => {
+        // SIGTERM should quit immediately (for process management)
+        const handleTermination = () => {
+            cleanExit();
+        };
+        process.on('SIGTERM', handleTermination);
+        return () => {
+            process.removeListener('SIGTERM', handleTermination);
+        };
+    }, []);
+    // Auto-show new pane dialog when starting with no panes
+    useEffect(() => {
+        // Only show the dialog if:
+        // 1. Initial load is complete (!isLoading)
+        // 2. We have no panes
+        // 3. We're not already showing the dialog
+        // 4. We're not showing any other dialogs or prompts
+        if (!isLoading &&
+            panes.length === 0 &&
+            !showNewPaneDialog &&
+            !actionSystem.actionState.showConfirmDialog &&
+            !actionSystem.actionState.showChoiceDialog &&
+            !showCommandPrompt &&
+            !showFileCopyPrompt &&
+            !showAgentChoiceDialog &&
+            !isCreatingPane &&
+            !runningCommand &&
+            !isUpdating) {
+            setShowNewPaneDialog(true);
+        }
+    }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+    // Update checking moved to useAutoUpdater
+    // Set default agent choice when detection completes
+    useEffect(() => {
+        if (agentChoice == null && availableAgents.length > 0) {
+            setAgentChoice(availableAgents[0] || 'claude');
+        }
+    }, [availableAgents]);
+    // Monitor agent status across panes (returns a map of pane ID to status)
+    const agentStatuses = useAgentStatus({
+        panes,
+        suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || !!showCommandPrompt || showFileCopyPrompt,
+        onPaneRemoved: (paneId) => {
+            // Remove pane from list when it no longer exists in tmux
+            const updatedPanes = panes.filter(p => p.id !== paneId);
+            savePanes(updatedPanes);
+        },
+    });
+    // loadPanes moved to usePanes
+    // getPanePositions moved to utils/tmux
+    // Navigation logic moved to hook
+    const { getCardGridPosition, findCardInDirection } = useNavigation(terminalWidth, panes.length, isLoading);
+    // findCardInDirection provided by useNavigation
+    // savePanes moved to usePanes
+    // applySmartLayout moved to utils/tmux
+    const createNewPane = async (prompt, agent) => {
+        setIsCreatingPane(true);
+        setStatusMessage('Generating slug...');
+        const slug = await generateSlug(prompt);
+        setStatusMessage(\`Creating worktree: \${slug}...\`);
+        // Get git root directory for consistent worktree placement
+        let projectRoot;
+        try {
+            projectRoot = execSync('git rev-parse --show-toplevel', {
+                encoding: 'utf-8',
+                stdio: 'pipe'
+            }).trim();
+        }
+        catch {
+            // Fallback to current directory if not in a git repo
+            projectRoot = process.cwd();
+        }
+        // Create worktree path inside .dmux/worktrees directory
+        const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
+        // Get the original pane ID (where dmux is running) before clearing
+        const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+        // Multiple clearing strategies to prevent artifacts
+        // 1. Clear screen with ANSI codes
+        process.stdout.write('\\x1b[2J\\x1b[H');
+        // 2. Fill with blank lines to push content off screen
+        process.stdout.write('\\n'.repeat(100));
+        // 3. Clear tmux history and send clear command
+        try {
+            execSync('tmux clear-history', { stdio: 'pipe' });
+            execSync('tmux send-keys C-l', { stdio: 'pipe' });
+        }
+        catch { }
+        // Wait a bit for clearing to settle
+        await new Promise(resolve => setTimeout(resolve, 100));
+        // 4. Force tmux to refresh the display
+        try {
+            execSync('tmux refresh-client', { stdio: 'pipe' });
+        }
+        catch { }
+        // Get current pane count to determine layout
+        const paneCount = parseInt(execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim());
+        // Enable pane borders to show titles
+        try {
+            execSync(\`tmux set-option -g pane-border-status top\`, { stdio: 'pipe' });
+        }
+        catch {
+            // Ignore if already set or fails
+        }
+        // Create new pane
+        const paneInfo = execSync(\`tmux split-window -h -P -F '#{pane_id}'\`, { encoding: 'utf-8' }).trim();
+        // Wait for pane creation to settle
+        await new Promise(resolve => setTimeout(resolve, 500));
+        // Set pane title to match the slug
+        try {
+            execSync(\`tmux select-pane -t '\${paneInfo}' -T "\${slug}"\`, { stdio: 'pipe' });
+        }
+        catch {
+            // Ignore if setting title fails
+        }
+        // Apply smart layout based on pane count
+        const newPaneCount = paneCount + 1;
+        applySmartLayout(newPaneCount);
+        // Create git worktree and cd into it
+        // This MUST happen before launching Claude to ensure we're in the right directory
+        try {
+            // First, create the worktree and cd into it as a single command
+            // Use ; instead of && to ensure cd runs even if worktree already exists
+            const worktreeCmd = \`git worktree add "\${worktreePath}" -b \${slug} 2>/dev/null ; cd "\${worktreePath}"\`;
+            execSync(\`tmux send-keys -t '\${paneInfo}' '\${worktreeCmd}' Enter\`, { stdio: 'pipe' });
+            // Wait longer for worktree creation and cd to complete
+            // This is critical - if we don't wait long enough, Claude will start in the wrong directory
+            await new Promise(resolve => setTimeout(resolve, 2500));
+            // Verify we're in the worktree directory by sending pwd command  
+            execSync(\`tmux send-keys -t '\${paneInfo}' 'echo "Worktree created at:" && pwd' Enter\`, { stdio: 'pipe' });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            setStatusMessage(agent ? \`Worktree created, launching \${agent === 'opencode' ? 'opencode' : 'Claude'}...\` : 'Worktree created.');
+        }
+        catch (error) {
+            // Log error but continue - worktree creation is essential
+            setStatusMessage(\`Warning: Worktree issue: \${error}\`);
+            // Even if worktree creation failed, try to cd to the directory in case it exists
+            execSync(\`tmux send-keys -t '\${paneInfo}' 'cd "\${worktreePath}" 2>/dev/null || (echo "ERROR: Failed to create/enter worktree \${slug}" && pwd)' Enter\`, { stdio: 'pipe' });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        // Prepare and send the agent command
+        let escapedCmd = '';
+        if (agent === 'claude') {
+            // Claude should always be launched AFTER we're in the worktree directory
+            let claudeCmd;
+            if (prompt && prompt.trim()) {
+                const escapedPrompt = prompt
+                    .replace(/\\\\/g, '\\\\\\\\')
+                    .replace(/"/g, '\\\\"')
+                    .replace(/\`/g, '\\\\\`')
+                    .replace(/\\$/g, '\\\\$');
+                claudeCmd = \`claude "\${escapedPrompt}" --permission-mode=acceptEdits\`;
+            }
+            else {
+                claudeCmd = \`claude --permission-mode=acceptEdits\`;
+            }
+            // Send Claude command to new pane
+            escapedCmd = claudeCmd.replace(/'/g, "'\\\\''");
+            execSync(\`tmux send-keys -t '\${paneInfo}' '\${escapedCmd}'\`, { stdio: 'pipe' });
+            execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+        }
+        else if (agent === 'opencode') {
+            // opencode: start the TUI, then paste the prompt and submit
+            const openCoderCmd = \`opencode\`;
+            const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\\\''");
+            execSync(\`tmux send-keys -t '\${paneInfo}' '\${escapedOpenCmd}'\`, { stdio: 'pipe' });
+            execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+            if (prompt && prompt.trim()) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                const bufName = \`dmux_prompt_\${Date.now()}\`;
+                const promptEsc = prompt.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "'\\\\''");
+                execSync(\`tmux set-buffer -b '\${bufName}' -- '\${promptEsc}'\`, { stdio: 'pipe' });
+                execSync(\`tmux paste-buffer -b '\${bufName}' -t '\${paneInfo}'\`, { stdio: 'pipe' });
+                await new Promise(resolve => setTimeout(resolve, 200));
+                execSync(\`tmux delete-buffer -b '\${bufName}'\`, { stdio: 'pipe' });
+                execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+            }
+        }
+        if (agent === 'claude') {
+            // Monitor for Claude Code trust prompt and auto-respond
+            const autoApproveTrust = async () => {
+                // Wait for Claude to start up before checking for prompts
+                await new Promise(resolve => setTimeout(resolve, 800));
+                const maxChecks = 100; // 100 checks * 100ms = 10 seconds total
+                const checkInterval = 100; // Check every 100ms
+                let lastContent = '';
+                let stableContentCount = 0;
+                let promptHandled = false;
+                // More comprehensive trust prompt patterns
+                const trustPromptPatterns = [
+                    /Do you trust the files in this folder\\?/i,
+                    /Trust the files in this workspace\\?/i,
+                    /Do you trust the authors of the files/i,
+                    /Do you want to trust this workspace\\?/i,
+                    /trust.*files.*folder/i,
+                    /trust.*workspace/i,
+                    /Do you trust/i,
+                    /Trust this folder/i,
+                    /trust.*directory/i,
+                    /permission.*grant/i,
+                    /allow.*access/i,
+                    /workspace.*trust/i,
+                    /accept.*edits/i, // Claude's accept edits prompt
+                    /permission.*mode/i, // Permission mode prompt
+                    /allow.*claude/i, // Allow Claude prompt
+                    /\\[y\\/n\\]/i, // Common yes/no prompt pattern
+                    /\\(y\\/n\\)/i,
+                    /Yes\\/No/i,
+                    /\\[Y\\/n\\]/i, // Default yes pattern
+                    /press.*enter.*accept/i, // Press enter to accept
+                    /press.*enter.*continue/i, // Press enter to continue
+                    /❯\\s*1\\.\\s*Yes,\\s*proceed/i, // New Claude numbered menu format
+                    /Enter to confirm.*Esc to exit/i, // New Claude confirmation format
+                    /1\\.\\s*Yes,\\s*proceed/i, // Yes proceed option
+                    /2\\.\\s*No,\\s*exit/i // No exit option
+                ];
+                for (let i = 0; i < maxChecks; i++) {
+                    await new Promise(resolve => setTimeout(resolve, checkInterval));
+                    try {
+                        // Capture the pane content
+                        const paneContent = execSync(\`tmux capture-pane -t '\${paneInfo}' -p -S -30\`, // Capture last 30 lines
+                        { encoding: 'utf-8', stdio: 'pipe' });
+                        if (i % 10 === 0) { // Log every 10 checks (every second)
+                        }
+                        // Check if content has stabilized (same for 3 checks = prompt is waiting)
+                        if (paneContent === lastContent) {
+                            stableContentCount++;
+                        }
+                        else {
+                            stableContentCount = 0;
+                            lastContent = paneContent;
+                        }
+                        // Look for trust prompt in the current content
+                        const hasTrustPrompt = trustPromptPatterns.some(pattern => pattern.test(paneContent));
+                        // Also check if we see specific Claude permission text
+                        const hasClaudePermissionPrompt = paneContent.includes('Do you trust') ||
+                            paneContent.includes('trust the files') ||
+                            paneContent.includes('permission') ||
+                            paneContent.includes('allow') ||
+                            (paneContent.includes('folder') && paneContent.includes('?'));
+                        if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
+                            // Content is stable and we found a prompt
+                            if (stableContentCount >= 2) {
+                                // Check if this is the new Claude numbered menu format
+                                const isNewClaudeFormat = /❯\\s*1\\.\\s*Yes,\\s*proceed/i.test(paneContent) ||
+                                    /Enter to confirm.*Esc to exit/i.test(paneContent);
+                                if (isNewClaudeFormat) {
+                                    // For new Claude format, just press Enter to confirm default "Yes, proceed"
+                                    execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+                                }
+                                else {
+                                    // Try multiple response methods for older formats
+                                    // Method 1: Send 'y' followed by Enter (most explicit)
+                                    execSync(\`tmux send-keys -t '\${paneInfo}' 'y'\`, { stdio: 'pipe' });
+                                    await new Promise(resolve => setTimeout(resolve, 50));
+                                    execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+                                    // Method 2: Just Enter (if it's a yes/no with default yes)
+                                    await new Promise(resolve => setTimeout(resolve, 100));
+                                    execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+                                }
+                                // Mark as handled to avoid duplicate responses
+                                promptHandled = true;
+                                // Wait and check if prompt is gone
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                // Verify the prompt is gone
+                                const updatedContent = execSync(\`tmux capture-pane -t '\${paneInfo}' -p -S -10\`, { encoding: 'utf-8', stdio: 'pipe' });
+                                // If trust prompt is gone, check if we need to resend the Claude command
+                                const promptGone = !trustPromptPatterns.some(p => p.test(updatedContent));
+                                if (promptGone) {
+                                    // Check if Claude is running or if we need to restart it
+                                    const claudeRunning = updatedContent.includes('Claude') ||
+                                        updatedContent.includes('claude') ||
+                                        updatedContent.includes('Assistant') ||
+                                        (prompt && updatedContent.includes(prompt.substring(0, Math.min(20, prompt.length))));
+                                    if (!claudeRunning && !updatedContent.includes('$')) {
+                                        await new Promise(resolve => setTimeout(resolve, 300));
+                                        execSync(\`tmux send-keys -t '\${paneInfo}' '\${escapedCmd}'\`, { stdio: 'pipe' });
+                                        execSync(\`tmux send-keys -t '\${paneInfo}' Enter\`, { stdio: 'pipe' });
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        // If we see Claude is already running without prompts, we're done
+                        if (!hasTrustPrompt && !hasClaudePermissionPrompt &&
+                            (paneContent.includes('Claude') || paneContent.includes('Assistant'))) {
+                            break;
+                        }
+                    }
+                    catch (error) {
+                        // Continue checking, errors are non-fatal
+                    }
+                }
+            };
+            // Start monitoring for trust prompt in background
+            autoApproveTrust().catch(err => {
+            });
+        }
+        // Keep focus on the new pane
+        execSync(\`tmux select-pane -t '\${paneInfo}'\`, { stdio: 'pipe' });
+        // Save pane info
+        const newPane = {
+            id: \`dmux-\${Date.now()}\`,
+            slug,
+            prompt: prompt || 'No initial prompt',
+            paneId: paneInfo,
+            worktreePath,
+            agent
+        };
+        const updatedPanes = [...panes, newPane];
+        await savePanes(updatedPanes);
+        // Switch back to the original pane (where dmux is running)
+        execSync(\`tmux select-pane -t '\${originalPaneId}'\`, { stdio: 'pipe' });
+        // Re-set the title for the dmux pane
+        try {
+            execSync(\`tmux select-pane -t '\${originalPaneId}' -T "dmux-\${projectName}"\`, { stdio: 'pipe' });
+        }
+        catch {
+            // Ignore if setting title fails
+        }
+        // Clear the screen and redraw the UI
+        process.stdout.write('\\x1b[2J\\x1b[H');
+        // Reset the creating pane flag and refresh
+        setIsCreatingPane(false);
+        setStatusMessage('');
+        setNewPanePrompt('');
+        // Force a reload of panes to ensure UI is up to date
+        await loadPanes();
+    };
+    const jumpToPane = (paneId) => {
+        try {
+            // Enable pane borders to show titles (if not already enabled)
+            try {
+                execSync(\`tmux set-option -g pane-border-status top\`, { stdio: 'pipe' });
+            }
+            catch {
+                // Ignore if already set or fails
+            }
+            execSync(\`tmux select-pane -t '\${paneId}'\`, { stdio: 'pipe' });
+            setStatusMessage('Jumped to pane');
+            setTimeout(() => setStatusMessage(''), 2000);
+        }
+        catch {
+            setStatusMessage('Failed to jump - pane may be closed');
+            setTimeout(() => setStatusMessage(''), 2000);
+        }
+    };
+    const runCommand = async (type, pane) => {
+        if (!pane.worktreePath) {
+            setStatusMessage('No worktree path for this pane');
+            setTimeout(() => setStatusMessage(''), 2000);
+            return;
+        }
+        const command = type === 'test' ? projectSettings.testCommand : projectSettings.devCommand;
+        const isFirstRun = type === 'test' ? !projectSettings.firstTestRun : !projectSettings.firstDevRun;
+        if (!command) {
+            // No command configured, prompt user
+            setShowCommandPrompt(type);
+            return;
+        }
+        // Check if this is the first run and offer to copy non-git files
+        if (isFirstRun) {
+            // Show file copy prompt and wait for response
+            setShowFileCopyPrompt(true);
+            setCurrentCommandType(type);
+            setStatusMessage(\`First time running \${type} command...\`);
+            // Return here - the actual command will be run after user responds to prompt
+            return;
+        }
+        try {
+            setRunningCommand(true);
+            setStatusMessage(\`Starting \${type} in background window...\`);
+            // Kill existing window if present
+            const existingWindowId = type === 'test' ? pane.testWindowId : pane.devWindowId;
+            if (existingWindowId) {
+                try {
+                    execSync(\`tmux kill-window -t '\${existingWindowId}'\`, { stdio: 'pipe' });
+                }
+                catch { }
+            }
+            // Create a new background window for the command
+            const windowName = \`\${pane.slug}-\${type}\`;
+            const windowId = execSync(\`tmux new-window -d -n '\${windowName}' -P -F '#{window_id}'\`, { encoding: 'utf-8', stdio: 'pipe' }).trim();
+            // Create a log file to capture output
+            const logFile = \`/tmp/dmux-\${pane.id}-\${type}.log\`;
+            // Build the command with output capture
+            const fullCommand = type === 'test'
+                ? \`cd "\${pane.worktreePath}" && \${command} 2>&1 | tee \${logFile}\`
+                : \`cd "\${pane.worktreePath}" && \${command} 2>&1 | tee \${logFile}\`;
+            // Send the command to the new window
+            execSync(\`tmux send-keys -t '\${windowId}' '\${fullCommand.replace(/'/g, "'\\\\''")}'\`, { stdio: 'pipe' });
+            execSync(\`tmux send-keys -t '\${windowId}' Enter\`, { stdio: 'pipe' });
+            // Update pane with window info
+            const updatedPane = {
+                ...pane,
+                [type === 'test' ? 'testWindowId' : 'devWindowId']: windowId,
+                [type === 'test' ? 'testStatus' : 'devStatus']: 'running'
+            };
+            const updatedPanes = panes.map(p => p.id === pane.id ? updatedPane : p);
+            await savePanes(updatedPanes);
+            // Start monitoring the output
+            if (type === 'test') {
+                // For tests, monitor for completion
+                setTimeout(() => monitorTestOutput(pane.id, logFile), 2000);
+            }
+            else {
+                // For dev, monitor for server URL
+                setTimeout(() => monitorDevOutput(pane.id, logFile), 2000);
+            }
+            setRunningCommand(false);
+            setStatusMessage(\`\${type === 'test' ? 'Test' : 'Dev server'} started in background\`);
+            setTimeout(() => setStatusMessage(''), 3000);
+        }
+        catch (error) {
+            setRunningCommand(false);
+            setStatusMessage(\`Failed to run \${type} command\`);
+            setTimeout(() => setStatusMessage(''), 3000);
+        }
+    };
+    // Update handling moved to useAutoUpdater
+    // Cleanup function for exit
+    const cleanExit = () => {
+        // Clear screen before exiting Ink
+        process.stdout.write('\\x1b[2J\\x1b[3J\\x1b[H');
+        // Exit the Ink app (this cleans up the React tree)
+        exit();
+        // Give Ink a moment to clean up its rendering, then do final cleanup
+        setTimeout(() => {
+            // Multiple aggressive clearing strategies
+            process.stdout.write('\\x1b[2J\\x1b[H'); // Clear screen and move cursor to home
+            process.stdout.write('\\x1b[3J'); // Clear scrollback buffer
+            process.stdout.write('\\x1b[0m'); // Reset all attributes
+            // Clear tmux history and pane
+            try {
+                execSync('tmux clear-history', { stdio: 'pipe' });
+                execSync('tmux send-keys C-l', { stdio: 'pipe' });
+            }
+            catch { }
+            // One more final clear
+            process.stdout.write('\\x1b[2J\\x1b[H');
+            // Show clean goodbye message
+            process.stdout.write('\\n  Run dmux again to resume. Goodbye 👋\\n\\n');
+            // Exit process
+            process.exit(0);
+        }, 100);
+    };
+    useInput(async (input, key) => {
+        // Handle Ctrl+C for quit confirmation (must be first, before any other checks)
+        if (key.ctrl && input === 'c') {
+            if (quitConfirmMode) {
+                // Second Ctrl+C - actually quit
+                cleanExit();
+            }
+            else {
+                // First Ctrl+C - show confirmation
+                setQuitConfirmMode(true);
+                // Reset after 3 seconds if user doesn't press Ctrl+C again
+                setTimeout(() => {
+                    setQuitConfirmMode(false);
+                }, 3000);
+            }
+            return;
+        }
+        if (isCreatingPane || runningCommand || isUpdating || isLoading || isCreatingTunnel) {
+            // Disable input while performing operations or loading
+            return;
+        }
+        // Handle kebab menu navigation
+        if (showKebabMenu && kebabMenuPaneIndex !== null) {
+            const currentPane = panes[kebabMenuPaneIndex];
+            const availableActions = kebabMenuActions;
+            if (key.escape) {
+                setShowKebabMenu(false);
+                setKebabMenuPaneIndex(null);
+                setKebabMenuOption(0);
+                setKebabMenuActions([]);
+                return;
+            }
+            else if (key.upArrow) {
+                setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
+                return;
+            }
+            else if (key.downArrow) {
+                setKebabMenuOption(Math.min(availableActions.length - 1, kebabMenuOption + 1));
+                return;
+            }
+            else if (key.return) {
+                // Execute the selected menu action
+                setShowKebabMenu(false);
+                const selectedAction = availableActions[kebabMenuOption];
+                if (selectedAction) {
+                    // Use the action system to execute
+                    actionSystem.executeAction(selectedAction.id, currentPane, { mainBranch: getMainBranch() });
+                }
+                setKebabMenuPaneIndex(null);
+                setKebabMenuOption(0);
+                setKebabMenuActions([]);
+                return;
+            }
+            // Don't process other inputs while menu is open
+            return;
+        }
+        // Handle quit confirm mode - ESC cancels it
+        if (quitConfirmMode) {
+            if (key.escape) {
+                setQuitConfirmMode(false);
+                return;
+            }
+            // Allow other inputs to continue (don't return early)
+        }
+        // Handle QR code view
+        if (showQRCode) {
+            if (key.escape) {
+                setShowQRCode(false);
+            }
+            return;
+        }
+        // Handle action system confirm dialog
+        if (actionSystem.actionState.showConfirmDialog) {
+            if (key.escape) {
+                if (actionSystem.actionState.onConfirmNo) {
+                    actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
+                }
+                else {
+                    actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
+                }
+                return;
+            }
+            else if (key.upArrow) {
+                actionSystem.setActionState(prev => ({
+                    ...prev,
+                    confirmSelectedIndex: Math.max(0, prev.confirmSelectedIndex - 1)
+                }));
+                return;
+            }
+            else if (key.downArrow) {
+                actionSystem.setActionState(prev => ({
+                    ...prev,
+                    confirmSelectedIndex: Math.min(1, prev.confirmSelectedIndex + 1)
+                }));
+                return;
+            }
+            else if (key.return) {
+                // Execute based on selected index
+                if (actionSystem.actionState.confirmSelectedIndex === 0) {
+                    if (actionSystem.actionState.onConfirmYes) {
+                        actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
+                    }
+                }
+                else {
+                    if (actionSystem.actionState.onConfirmNo) {
+                        actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
+                    }
+                    else {
+                        actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
+                    }
+                }
+                return;
+            }
+            else if (input === 'y' || input === 'Y') {
+                // Shortcut: yes
+                if (actionSystem.actionState.onConfirmYes) {
+                    actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
+                }
+                return;
+            }
+            else if (input === 'n' || input === 'N') {
+                // Shortcut: no
+                if (actionSystem.actionState.onConfirmNo) {
+                    actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
+                }
+                else {
+                    actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
+                }
+                return;
+            }
+            return;
+        }
+        // Handle action system choice dialog
+        if (actionSystem.actionState.showChoiceDialog) {
+            if (key.escape) {
+                actionSystem.setActionState(prev => ({ ...prev, showChoiceDialog: false }));
+                return;
+            }
+            else if (key.upArrow) {
+                actionSystem.setActionState(prev => ({
+                    ...prev,
+                    choiceSelectedIndex: Math.max(0, prev.choiceSelectedIndex - 1)
+                }));
+                return;
+            }
+            else if (key.downArrow) {
+                const maxIndex = actionSystem.actionState.choiceOptions.length - 1;
+                actionSystem.setActionState(prev => ({
+                    ...prev,
+                    choiceSelectedIndex: Math.min(maxIndex, prev.choiceSelectedIndex + 1)
+                }));
+                return;
+            }
+            else if (key.return) {
+                const selectedOption = actionSystem.actionState.choiceOptions[actionSystem.actionState.choiceSelectedIndex];
+                if (selectedOption && actionSystem.actionState.onChoiceSelect) {
+                    actionSystem.executeCallback(async () => actionSystem.actionState.onChoiceSelect(selectedOption.id));
+                }
+                return;
+            }
+            return;
+        }
+        if (showFileCopyPrompt) {
+            if (input === 'y' || input === 'Y') {
+                setShowFileCopyPrompt(false);
+                const selectedPane = panes[selectedIndex];
+                if (selectedPane && selectedPane.worktreePath && currentCommandType) {
+                    await copyNonGitFiles(selectedPane.worktreePath);
+                    // Mark as not first run and continue with command
+                    const newSettings = {
+                        ...projectSettings,
+                        [currentCommandType === 'test' ? 'firstTestRun' : 'firstDevRun']: true
+                    };
+                    await saveSettings(newSettings);
+                    // Now run the actual command
+                    await runCommandInternal(currentCommandType, selectedPane);
+                }
+                setCurrentCommandType(null);
+            }
+            else if (input === 'n' || input === 'N' || key.escape) {
+                setShowFileCopyPrompt(false);
+                const selectedPane = panes[selectedIndex];
+                if (selectedPane && currentCommandType) {
+                    // Mark as not first run and continue without copying
+                    const newSettings = {
+                        ...projectSettings,
+                        [currentCommandType === 'test' ? 'firstTestRun' : 'firstDevRun']: true
+                    };
+                    await saveSettings(newSettings);
+                    // Now run the actual command
+                    await runCommandInternal(currentCommandType, selectedPane);
+                }
+                setCurrentCommandType(null);
+            }
+            return;
+        }
+        if (showAgentChoiceDialog) {
+            if (key.escape) {
+                setShowAgentChoiceDialog(false);
+                setShowNewPaneDialog(true);
+                setNewPanePrompt(pendingPrompt);
+                setPendingPrompt('');
+            }
+            else if (key.leftArrow || input === '1' || (input && input.toLowerCase() === 'c')) {
+                setAgentChoice('claude');
+            }
+            else if (key.rightArrow || input === '2' || (input && input.toLowerCase() === 'o')) {
+                setAgentChoice('opencode');
+            }
+            else if (key.return) {
+                const chosen = agentChoice || (availableAgents[0] || 'claude');
+                const promptValue = pendingPrompt;
+                setShowAgentChoiceDialog(false);
+                setPendingPrompt('');
+                await createNewPane(promptValue, chosen);
+                setNewPanePrompt('');
+            }
+            return;
+        }
+        if (showCommandPrompt) {
+            if (key.escape) {
+                setShowCommandPrompt(null);
+                setCommandInput('');
+            }
+            else if (key.return) {
+                if (commandInput.trim() === '') {
+                    // If empty, suggest a default command based on package manager
+                    const suggested = await suggestCommand(showCommandPrompt);
+                    if (suggested) {
+                        setCommandInput(suggested);
+                    }
+                }
+                else {
+                    // User provided manual command
+                    const newSettings = {
+                        ...projectSettings,
+                        [showCommandPrompt === 'test' ? 'testCommand' : 'devCommand']: commandInput.trim()
+                    };
+                    await saveSettings(newSettings);
+                    const selectedPane = panes[selectedIndex];
+                    if (selectedPane) {
+                        // Check if first run
+                        const isFirstRun = showCommandPrompt === 'test' ? !projectSettings.firstTestRun : !projectSettings.firstDevRun;
+                        if (isFirstRun) {
+                            setCurrentCommandType(showCommandPrompt);
+                            setShowCommandPrompt(null);
+                            setShowFileCopyPrompt(true);
+                        }
+                        else {
+                            await runCommandInternal(showCommandPrompt, selectedPane);
+                            setShowCommandPrompt(null);
+                            setCommandInput('');
+                        }
+                    }
+                    else {
+                        setShowCommandPrompt(null);
+                        setCommandInput('');
+                    }
+                }
+            }
+            return;
+        }
+        if (showNewPaneDialog) {
+            if (key.escape) {
+                setShowNewPaneDialog(false);
+                setNewPanePrompt('');
+            }
+            else if (key.ctrl && input === 'o') {
+                // Open in external editor
+                openEditor2(newPanePrompt, setNewPanePrompt);
+            }
+            // TextInput handles other input events
+            return;
+        }
+        // Handle directional navigation with spatial awareness based on card grid layout
+        if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
+            let targetIndex = null;
+            if (key.upArrow) {
+                targetIndex = findCardInDirection(selectedIndex, 'up');
+            }
+            else if (key.downArrow) {
+                targetIndex = findCardInDirection(selectedIndex, 'down');
+            }
+            else if (key.leftArrow) {
+                targetIndex = findCardInDirection(selectedIndex, 'left');
+            }
+            else if (key.rightArrow) {
+                targetIndex = findCardInDirection(selectedIndex, 'right');
+            }
+            if (targetIndex !== null) {
+                setSelectedIndex(targetIndex);
+            }
+            return;
+        }
+        if (input === 'm' && selectedIndex < panes.length) {
+            // Open kebab menu for selected pane
+            const selectedPane = panes[selectedIndex];
+            const actions = getAvailableActions(selectedPane, projectSettings);
+            setKebabMenuActions(actions);
+            setShowKebabMenu(true);
+            setKebabMenuPaneIndex(selectedIndex);
+            setKebabMenuOption(0);
+        }
+        else if (input === 'q') {
+            cleanExit();
+        }
+        else if (input === 'r' && server) {
+            // Create tunnel if not already created, then show QR code
+            if (!tunnelUrl) {
+                setIsCreatingTunnel(true);
+                setStatusMessage('Creating tunnel...');
+                try {
+                    const url = await server.startTunnel();
+                    setTunnelUrl(url);
+                    setStatusMessage('');
+                    setShowQRCode(true);
+                }
+                catch (error) {
+                    setStatusMessage('Failed to create tunnel');
+                    setTimeout(() => setStatusMessage(''), 3000);
+                }
+                finally {
+                    setIsCreatingTunnel(false);
+                }
+            }
+            else {
+                // Tunnel already exists, just show the QR code
+                setShowQRCode(true);
+            }
+        }
+        else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
+            // Clear the prompt and show dialog in next tick to prevent 'n' bleeding through
+            setNewPanePrompt('');
+            setShowNewPaneDialog(true);
+            return; // Consume the 'n' keystroke so it doesn't propagate
+        }
+        else if (input === 'j' && selectedIndex < panes.length) {
+            // Jump to pane (NEW: using action system)
+            actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
+        }
+        else if (input === 'x' && selectedIndex < panes.length) {
+            // Close pane (NEW: using action system)
+            actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex]);
+        }
+        else if (key.return && selectedIndex < panes.length) {
+            // Jump to pane (NEW: using action system)
+            actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
+        }
+    });
+    // If showing QR code, render only that
+    if (showQRCode && tunnelUrl) {
+        return (React.createElement(Box, { flexDirection: "column" },
+            React.createElement(Box, { marginBottom: 1 },
+                React.createElement(Text, { bold: true, color: "cyan" }, "dmux - Remote Access")),
+            React.createElement(QRCode, { url: tunnelUrl }),
+            React.createElement(Box, { marginTop: 1 },
+                React.createElement(Text, { dimColor: true }, "Press ESC to return to pane list"))));
+    }
+    return (React.createElement(Box, { flexDirection: "column" },
+        React.createElement(PanesGrid, { panes: panes, selectedIndex: selectedIndex, isLoading: isLoading, showNewPaneDialog: showNewPaneDialog, agentStatuses: agentStatuses, kebabMenuPaneIndex: kebabMenuPaneIndex ?? undefined }),
+        isLoading && (React.createElement(LoadingIndicator, null)),
+        showNewPaneDialog && !showAgentChoiceDialog && (React.createElement(NewPaneDialog, { value: newPanePrompt, onChange: setNewPanePrompt, onSubmit: (value) => {
+                const promptValue = value;
+                const agents = availableAgents;
+                if (agents.length === 0) {
+                    setShowNewPaneDialog(false);
+                    setNewPanePrompt('');
+                    createNewPaneHook(promptValue);
+                }
+                else if (agents.length === 1) {
+                    setShowNewPaneDialog(false);
+                    setNewPanePrompt('');
+                    createNewPaneHook(promptValue, agents[0]);
+                }
+                else {
+                    setPendingPrompt(promptValue);
+                    setShowNewPaneDialog(false);
+                    setNewPanePrompt('');
+                    setShowAgentChoiceDialog(true);
+                    setAgentChoice(agentChoice || 'claude');
+                }
+            } })),
+        showAgentChoiceDialog && (React.createElement(AgentChoiceDialog, { agentChoice: agentChoice })),
+        isCreatingPane && (React.createElement(CreatingIndicator, { message: statusMessage })),
+        showCommandPrompt && (React.createElement(CommandPromptDialog, { type: showCommandPrompt, value: commandInput, onChange: setCommandInput })),
+        showFileCopyPrompt && (React.createElement(FileCopyPrompt, null)),
+        showKebabMenu && kebabMenuPaneIndex !== null && panes[kebabMenuPaneIndex] && (React.createElement(KebabMenu, { selectedOption: kebabMenuOption, actions: kebabMenuActions, paneName: panes[kebabMenuPaneIndex].slug })),
+        actionSystem.actionState.showConfirmDialog && (React.createElement(ActionConfirmDialog, { title: actionSystem.actionState.confirmTitle, message: actionSystem.actionState.confirmMessage, yesLabel: actionSystem.actionState.confirmYesLabel, noLabel: actionSystem.actionState.confirmNoLabel, selectedIndex: actionSystem.actionState.confirmSelectedIndex })),
+        actionSystem.actionState.showChoiceDialog && (React.createElement(ActionChoiceDialog, { title: actionSystem.actionState.choiceTitle, message: actionSystem.actionState.choiceMessage, options: actionSystem.actionState.choiceOptions, selectedIndex: actionSystem.actionState.choiceSelectedIndex })),
+        runningCommand && (React.createElement(RunningIndicator, null)),
+        isUpdating && (React.createElement(UpdatingIndicator, null)),
+        isCreatingTunnel && (React.createElement(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", padding: 1, marginTop: 1 },
+            React.createElement(Text, { bold: true, color: "cyan" }, "Creating tunnel..."),
+            React.createElement(Box, { marginTop: 1 },
+                React.createElement(Text, { dimColor: true }, "This may take a few moments...")))),
+        statusMessage && (React.createElement(Box, { marginTop: 1 },
+            React.createElement(Text, { color: "green" }, statusMessage))),
+        actionSystem.actionState.statusMessage && (React.createElement(Box, { marginTop: 1 },
+            React.createElement(Text, { color: actionSystem.actionState.statusType === 'error' ? 'red' :
+                    actionSystem.actionState.statusType === 'success' ? 'green' :
+                        'cyan' }, actionSystem.actionState.statusMessage))),
+        React.createElement(FooterHelp, { show: !showNewPaneDialog && !showCommandPrompt, showRemoteKey: !!server, quitConfirmMode: quitConfirmMode, gridInfo: (() => {
+                if (!process.env.DEBUG_DMUX)
+                    return undefined;
+                const cols = Math.max(1, Math.floor(terminalWidth / 37));
+                const rows = Math.ceil((panes.length + 1) / cols);
+                const pos = getCardGridPosition(selectedIndex);
+                return \`Grid: \${cols} cols × \${rows} rows | Selected: row \${pos.row}, col \${pos.col} | Terminal: \${terminalWidth}w\`;
+            })() }),
+        React.createElement(Text, { dimColor: true },
+            "v",
+            packageJson.version,
+            updateAvailable && updateInfo && (React.createElement(Text, { color: "yellow" },
+                " \\u2022 Update available: ",
+                updateInfo.latestVersion)))));
+};
+export default DmuxApp;
+//# sourceMappingURL=DmuxApp.js.map`,
+    mimeType: 'application/javascript',
+    size: 51769
+  },
+  'EnhancedTextInput.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useFocus } from 'ink';
+import { execSync } from 'child_process';
+import path from 'path';
+const EnhancedTextInput = ({ value, onChange, placeholder = '', onSubmit, onCancel, multiline = false, workingDirectory = process.cwd() }) => {
+    const { isFocused } = useFocus({ autoFocus: true });
+    const [cursorPosition, setCursorPosition] = useState(value.length);
+    const [lines, setLines] = useState([value]);
+    const [currentLine, setCurrentLine] = useState(0);
+    const [showAutocomplete, setShowAutocomplete] = useState(false);
+    const [autocompleteQuery, setAutocompleteQuery] = useState('');
+    const [autocompleteStartPos, setAutocompleteStartPos] = useState(0);
+    const [fileMatches, setFileMatches] = useState([]);
+    const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
+    const [displayValue, setDisplayValue] = useState(value);
+    // Update lines when value changes externally
+    useEffect(() => {
+        if (multiline) {
+            setLines(value.split('\\n'));
+        }
+        else {
+            setLines([value]);
+        }
+        setDisplayValue(value);
+        // Keep cursor position valid
+        if (cursorPosition > value.length) {
+            setCursorPosition(value.length);
+        }
+    }, [value, multiline]);
+    // Search for files when autocomplete query changes
+    useEffect(() => {
+        if (showAutocomplete && autocompleteQuery.length > 0) {
+            searchFiles(autocompleteQuery);
+        }
+        else {
+            setFileMatches([]);
+        }
+    }, [autocompleteQuery, showAutocomplete]);
+    const searchFiles = async (query) => {
+        try {
+            // Use find command to search for files
+            const searchCmd = \`find "\${workingDirectory}" -type f -name "*\${query}*" 2>/dev/null | head -20\`;
+            const dirSearchCmd = \`find "\${workingDirectory}" -type d -name "*\${query}*" 2>/dev/null | head -10\`;
+            const fileResults = await new Promise((resolve) => {
+                try {
+                    const result = execSync(searchCmd, { encoding: 'utf-8' }).trim().split('\\n').filter(Boolean);
+                    resolve(result);
+                }
+                catch {
+                    resolve([]);
+                }
+            });
+            const dirResults = await new Promise((resolve) => {
+                try {
+                    const result = execSync(dirSearchCmd, { encoding: 'utf-8' }).trim().split('\\n').filter(Boolean);
+                    resolve(result);
+                }
+                catch {
+                    resolve([]);
+                }
+            });
+            const matches = [];
+            // Process directory matches
+            for (const dirPath of dirResults) {
+                const relativePath = path.relative(workingDirectory, dirPath);
+                if (relativePath && !relativePath.startsWith('..')) {
+                    matches.push({
+                        path: dirPath,
+                        displayPath: relativePath + '/',
+                        type: 'directory'
+                    });
+                }
+            }
+            // Process file matches
+            for (const filePath of fileResults) {
+                const relativePath = path.relative(workingDirectory, filePath);
+                if (relativePath && !relativePath.startsWith('..')) {
+                    matches.push({
+                        path: filePath,
+                        displayPath: relativePath,
+                        type: 'file'
+                    });
+                }
+            }
+            // Sort by relevance (shorter paths first, then alphabetically)
+            matches.sort((a, b) => {
+                const aScore = a.displayPath.length + (a.displayPath.toLowerCase().indexOf(query.toLowerCase()) === 0 ? 0 : 100);
+                const bScore = b.displayPath.length + (b.displayPath.toLowerCase().indexOf(query.toLowerCase()) === 0 ? 0 : 100);
+                if (aScore !== bScore)
+                    return aScore - bScore;
+                return a.displayPath.localeCompare(b.displayPath);
+            });
+            setFileMatches(matches.slice(0, 10)); // Limit to 10 matches
+            setSelectedMatchIndex(0);
+        }
+        catch (error) {
+            setFileMatches([]);
+        }
+    };
+    const insertText = (text, position) => {
+        const before = displayValue.slice(0, position);
+        const after = displayValue.slice(position);
+        const newValue = before + text + after;
+        onChange(newValue);
+        setCursorPosition(position + text.length);
+    };
+    const deleteText = (start, end) => {
+        const before = displayValue.slice(0, start);
+        const after = displayValue.slice(end);
+        const newValue = before + after;
+        onChange(newValue);
+        setCursorPosition(start);
+    };
+    const moveCursor = (position) => {
+        const clampedPosition = Math.max(0, Math.min(displayValue.length, position));
+        setCursorPosition(clampedPosition);
+    };
+    const findWordBoundary = (text, position, direction) => {
+        const wordRegex = /\\w/;
+        let pos = position;
+        if (direction === 'left') {
+            // Skip any whitespace
+            while (pos > 0 && !wordRegex.test(text[pos - 1])) {
+                pos--;
+            }
+            // Skip the word
+            while (pos > 0 && wordRegex.test(text[pos - 1])) {
+                pos--;
+            }
+        }
+        else {
+            // Skip any whitespace
+            while (pos < text.length && !wordRegex.test(text[pos])) {
+                pos++;
+            }
+            // Skip the word
+            while (pos < text.length && wordRegex.test(text[pos])) {
+                pos++;
+            }
+        }
+        return pos;
+    };
+    const completeFileReference = (match) => {
+        // Replace the autocomplete query with the selected file path
+        const before = displayValue.slice(0, autocompleteStartPos);
+        const after = displayValue.slice(cursorPosition);
+        const newValue = before + match.displayPath + after;
+        onChange(newValue);
+        setCursorPosition(autocompleteStartPos + match.displayPath.length);
+        setShowAutocomplete(false);
+        setAutocompleteQuery('');
+    };
+    useInput((input, key) => {
+        // Only handle input when focused
+        if (!isFocused)
+            return;
+        // Debug logging for key detection
+        if (process.env.DEBUG_DMUX) {
+            console.error('Key pressed:', { input, key });
+        }
+        // Handle autocomplete navigation
+        if (showAutocomplete) {
+            if (key.escape) {
+                setShowAutocomplete(false);
+                setAutocompleteQuery('');
+                return;
+            }
+            else if (key.upArrow) {
+                setSelectedMatchIndex(Math.max(0, selectedMatchIndex - 1));
+                return;
+            }
+            else if (key.downArrow) {
+                setSelectedMatchIndex(Math.min(fileMatches.length - 1, selectedMatchIndex + 1));
+                return;
+            }
+            else if (key.return || key.tab) {
+                if (fileMatches.length > 0) {
+                    completeFileReference(fileMatches[selectedMatchIndex]);
+                }
+                return;
+            }
+        }
+        // Handle special keys
+        if (key.escape) {
+            onCancel?.();
+            return;
+        }
+        if (key.return && !multiline) {
+            onSubmit?.();
+            return;
+        }
+        if (key.return && multiline && !key.shift) {
+            // In multiline mode, Enter adds a new line
+            insertText('\\n', cursorPosition);
+            return;
+        }
+        if (key.return && multiline && key.shift) {
+            // Shift+Enter submits in multiline mode
+            onSubmit?.();
+            return;
+        }
+        // Cursor movement
+        if (key.leftArrow) {
+            if (key.meta || key.alt) {
+                // Move to previous word (Alt/Cmd + Left)
+                const newPos = findWordBoundary(displayValue, cursorPosition, 'left');
+                moveCursor(newPos);
+            }
+            else {
+                moveCursor(cursorPosition - 1);
+            }
+            return;
+        }
+        if (key.rightArrow) {
+            if (key.meta || key.alt) {
+                // Move to next word (Alt/Cmd + Right)
+                const newPos = findWordBoundary(displayValue, cursorPosition, 'right');
+                moveCursor(newPos);
+            }
+            else {
+                moveCursor(cursorPosition + 1);
+            }
+            return;
+        }
+        // Line navigation for multiline and single-line
+        if (key.upArrow) {
+            if (multiline) {
+                // Move to line above
+                const lines = displayValue.split('\\n');
+                let currentPos = 0;
+                let lineIndex = 0;
+                let columnIndex = 0;
+                // Find current line and column
+                for (let i = 0; i < lines.length; i++) {
+                    const lineLength = lines[i].length;
+                    if (currentPos + lineLength >= cursorPosition) {
+                        lineIndex = i;
+                        columnIndex = cursorPosition - currentPos;
+                        break;
+                    }
+                    currentPos += lineLength + 1; // +1 for newline
+                }
+                // Move to previous line if possible
+                if (lineIndex > 0) {
+                    const prevLineLength = lines[lineIndex - 1].length;
+                    const newColumn = Math.min(columnIndex, prevLineLength);
+                    // Calculate new cursor position
+                    let newPos = 0;
+                    for (let i = 0; i < lineIndex - 1; i++) {
+                        newPos += lines[i].length + 1;
+                    }
+                    newPos += newColumn;
+                    moveCursor(newPos);
+                }
+                else {
+                    // At first line, move to start of line
+                    moveCursor(0);
+                }
+            }
+            else {
+                // Single line: move to start
+                moveCursor(0);
+            }
+            return;
+        }
+        if (key.downArrow) {
+            if (multiline) {
+                // Move to line below
+                const lines = displayValue.split('\\n');
+                let currentPos = 0;
+                let lineIndex = 0;
+                let columnIndex = 0;
+                // Find current line and column
+                for (let i = 0; i < lines.length; i++) {
+                    const lineLength = lines[i].length;
+                    if (currentPos + lineLength >= cursorPosition) {
+                        lineIndex = i;
+                        columnIndex = cursorPosition - currentPos;
+                        break;
+                    }
+                    currentPos += lineLength + 1; // +1 for newline
+                }
+                // Move to next line if possible
+                if (lineIndex < lines.length - 1) {
+                    const nextLineLength = lines[lineIndex + 1].length;
+                    const newColumn = Math.min(columnIndex, nextLineLength);
+                    // Calculate new cursor position
+                    let newPos = 0;
+                    for (let i = 0; i <= lineIndex; i++) {
+                        newPos += lines[i].length + 1;
+                    }
+                    newPos += newColumn;
+                    moveCursor(newPos);
+                }
+                else {
+                    // At last line, move to end of line
+                    moveCursor(displayValue.length);
+                }
+            }
+            else {
+                // Single line: move to end
+                moveCursor(displayValue.length);
+            }
+            return;
+        }
+        // Home/End keys
+        if (key.ctrl && input === 'a') {
+            // Ctrl+A - Move to start of line
+            if (multiline) {
+                const lineStart = displayValue.lastIndexOf('\\n', cursorPosition - 1) + 1;
+                moveCursor(lineStart);
+            }
+            else {
+                moveCursor(0);
+            }
+            return;
+        }
+        if (key.ctrl && input === 'e') {
+            // Ctrl+E - Move to end of line
+            if (multiline) {
+                const lineEnd = displayValue.indexOf('\\n', cursorPosition);
+                moveCursor(lineEnd === -1 ? displayValue.length : lineEnd);
+            }
+            else {
+                moveCursor(displayValue.length);
+            }
+            return;
+        }
+        // Deletion - handle both backspace and delete properly
+        if (key.backspace || key.delete) {
+            if (key.backspace) {
+                // Backspace: delete character before cursor
+                if (key.meta || key.alt) {
+                    // Delete word (Alt/Cmd + Backspace)
+                    const wordStart = findWordBoundary(displayValue, cursorPosition, 'left');
+                    deleteText(wordStart, cursorPosition);
+                }
+                else if (cursorPosition > 0) {
+                    deleteText(cursorPosition - 1, cursorPosition);
+                }
+            }
+            else if (key.delete) {
+                // Delete: delete character after cursor
+                if (key.meta || key.alt) {
+                    // Delete word forward (Alt/Cmd + Delete)
+                    const wordEnd = findWordBoundary(displayValue, cursorPosition, 'right');
+                    deleteText(cursorPosition, wordEnd);
+                }
+                else if (cursorPosition < displayValue.length) {
+                    deleteText(cursorPosition, cursorPosition + 1);
+                }
+            }
+            return;
+        }
+        // Text input
+        if (input && !key.ctrl && !key.meta) {
+            // Check for @ symbol to trigger autocomplete
+            if (input === '@') {
+                setShowAutocomplete(true);
+                setAutocompleteStartPos(cursorPosition + 1);
+                setAutocompleteQuery('');
+                insertText(input, cursorPosition);
+            }
+            else if (showAutocomplete) {
+                // Update autocomplete query
+                insertText(input, cursorPosition);
+                const newQuery = displayValue.slice(autocompleteStartPos, cursorPosition + 1);
+                setAutocompleteQuery(newQuery);
+            }
+            else {
+                insertText(input, cursorPosition);
+            }
+        }
+    });
+    // Build display with cursor - handle multiline properly
+    const getDisplayWithCursor = () => {
+        if (!multiline) {
+            // Single line display
+            const before = displayValue.slice(0, cursorPosition);
+            const after = displayValue.slice(cursorPosition);
+            const cursorChar = after[0] || ' ';
+            const remaining = after.slice(1);
+            return (React.createElement(React.Fragment, null,
+                React.createElement(Text, null, before),
+                React.createElement(Text, { inverse: true }, cursorChar),
+                React.createElement(Text, null, remaining)));
+        }
+        else {
+            // Multiline display - render each line separately
+            const lines = displayValue.split('\\n');
+            let currentPos = 0;
+            let result = [];
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const lineStart = currentPos;
+                const lineEnd = currentPos + line.length;
+                if (cursorPosition >= lineStart && cursorPosition <= lineEnd) {
+                    // This line contains the cursor
+                    const beforeCursor = line.slice(0, cursorPosition - lineStart);
+                    const atCursor = line[cursorPosition - lineStart] || ' ';
+                    const afterCursor = line.slice(cursorPosition - lineStart + 1);
+                    result.push(React.createElement(Box, { key: i },
+                        React.createElement(Text, null, i > 0 ? '  ' : ''),
+                        React.createElement(Text, null, beforeCursor),
+                        React.createElement(Text, { inverse: true }, atCursor),
+                        React.createElement(Text, null, afterCursor)));
+                }
+                else {
+                    // Normal line without cursor
+                    result.push(React.createElement(Box, { key: i },
+                        React.createElement(Text, null, i > 0 ? '  ' : ''),
+                        React.createElement(Text, null, line)));
+                }
+                currentPos = lineEnd + 1; // +1 for newline
+            }
+            // If cursor is at the very end after a newline, show it
+            if (cursorPosition === displayValue.length && displayValue.endsWith('\\n')) {
+                result.push(React.createElement(Box, { key: lines.length },
+                    React.createElement(Text, null, "  "),
+                    React.createElement(Text, { inverse: true }, " ")));
+            }
+            return React.createElement(Box, { flexDirection: "column" }, result);
+        }
+    };
+    return (React.createElement(Box, { flexDirection: "column" },
+        multiline ? (React.createElement(Box, { flexDirection: "row" },
+            React.createElement(Text, null, '> '),
+            React.createElement(Box, { flexGrow: 1 }, getDisplayWithCursor()))) : (React.createElement(Box, null,
+            React.createElement(Text, null, '> '),
+            getDisplayWithCursor())),
+        showAutocomplete && fileMatches.length > 0 && (React.createElement(Box, { flexDirection: "column", marginTop: 1, borderStyle: "single", borderColor: "cyan", paddingX: 1 },
+            React.createElement(Text, { color: "cyan", dimColor: true },
+                "Files matching: @",
+                autocompleteQuery),
+            fileMatches.map((match, index) => (React.createElement(Box, { key: match.path },
+                React.createElement(Text, { color: index === selectedMatchIndex ? 'cyan' : 'gray' },
+                    index === selectedMatchIndex ? '▶ ' : '  ',
+                    match.type === 'directory' ? '📁 ' : '📄 ',
+                    match.displayPath)))),
+            React.createElement(Text, { dimColor: true, italic: true }, "\\u2191\\u2193 to select, Tab/Enter to complete, Esc to cancel")))));
+};
+export default EnhancedTextInput;
+//# sourceMappingURL=EnhancedTextInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 18658
+  },
+  'GeminiTextInput.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useFocus } from 'ink';
+const GeminiTextInput = ({ value, onChange, onSubmit, onCancel, multiline = false, placeholder = '' }) => {
+    const { isFocused } = useFocus({ autoFocus: true });
+    const [lines, setLines] = useState([]);
+    const [cursorRow, setCursorRow] = useState(0);
+    const [cursorCol, setCursorCol] = useState(0);
+    // Split text into lines and update cursor position
+    useEffect(() => {
+        const newLines = value ? value.split('\\n') : [''];
+        setLines(newLines);
+        // Calculate cursor position from value length
+        let remaining = value.length;
+        let row = 0;
+        let col = 0;
+        for (let i = 0; i < newLines.length; i++) {
+            const lineLength = newLines[i].length;
+            if (remaining <= lineLength) {
+                row = i;
+                col = remaining;
+                break;
+            }
+            remaining -= lineLength + 1; // +1 for newline
+        }
+        setCursorRow(row);
+        setCursorCol(col);
+    }, [value]);
+    // Convert row/col back to text
+    const updateText = (newLines, row, col) => {
+        const text = newLines.join('\\n');
+        onChange(text);
+        setCursorRow(row);
+        setCursorCol(col);
+    };
+    useInput((input, key) => {
+        if (!isFocused)
+            return;
+        // Handle special keys
+        if (key.escape) {
+            onCancel?.();
+            return;
+        }
+        if (key.return && !multiline) {
+            onSubmit?.();
+            return;
+        }
+        if (key.return && multiline && !key.shift) {
+            // Add newline in multiline mode
+            const currentLine = lines[cursorRow] || '';
+            const before = currentLine.slice(0, cursorCol);
+            const after = currentLine.slice(cursorCol);
+            const newLines = [...lines];
+            newLines[cursorRow] = before;
+            newLines.splice(cursorRow + 1, 0, after);
+            updateText(newLines, cursorRow + 1, 0);
+            return;
+        }
+        if (key.return && multiline && key.shift) {
+            // Shift+Enter submits in multiline mode
+            onSubmit?.();
+            return;
+        }
+        // Handle backspace
+        if (key.backspace) {
+            const currentLine = lines[cursorRow] || '';
+            if (cursorCol > 0) {
+                // Delete character before cursor
+                const before = currentLine.slice(0, cursorCol - 1);
+                const after = currentLine.slice(cursorCol);
+                const newLines = [...lines];
+                newLines[cursorRow] = before + after;
+                updateText(newLines, cursorRow, cursorCol - 1);
+            }
+            else if (cursorRow > 0) {
+                // At beginning of line, merge with previous line
+                const prevLine = lines[cursorRow - 1] || '';
+                const newCol = prevLine.length;
+                const newLines = [...lines];
+                newLines[cursorRow - 1] = prevLine + currentLine;
+                newLines.splice(cursorRow, 1);
+                updateText(newLines, cursorRow - 1, newCol);
+            }
+            return;
+        }
+        // Handle delete
+        if (key.delete) {
+            const currentLine = lines[cursorRow] || '';
+            if (cursorCol < currentLine.length) {
+                // Delete character after cursor
+                const before = currentLine.slice(0, cursorCol);
+                const after = currentLine.slice(cursorCol + 1);
+                const newLines = [...lines];
+                newLines[cursorRow] = before + after;
+                updateText(newLines, cursorRow, cursorCol);
+            }
+            else if (cursorRow < lines.length - 1) {
+                // At end of line, merge with next line
+                const nextLine = lines[cursorRow + 1] || '';
+                const newLines = [...lines];
+                newLines[cursorRow] = currentLine + nextLine;
+                newLines.splice(cursorRow + 1, 1);
+                updateText(newLines, cursorRow, cursorCol);
+            }
+            return;
+        }
+        // Handle arrow keys
+        if (key.leftArrow) {
+            if (cursorCol > 0) {
+                setCursorCol(cursorCol - 1);
+            }
+            else if (cursorRow > 0) {
+                const prevLine = lines[cursorRow - 1] || '';
+                setCursorRow(cursorRow - 1);
+                setCursorCol(prevLine.length);
+            }
+            return;
+        }
+        if (key.rightArrow) {
+            const currentLine = lines[cursorRow] || '';
+            if (cursorCol < currentLine.length) {
+                setCursorCol(cursorCol + 1);
+            }
+            else if (cursorRow < lines.length - 1) {
+                setCursorRow(cursorRow + 1);
+                setCursorCol(0);
+            }
+            return;
+        }
+        if (key.upArrow && multiline) {
+            if (cursorRow > 0) {
+                const targetLine = lines[cursorRow - 1] || '';
+                setCursorRow(cursorRow - 1);
+                setCursorCol(Math.min(cursorCol, targetLine.length));
+            }
+            return;
+        }
+        if (key.downArrow && multiline) {
+            if (cursorRow < lines.length - 1) {
+                const targetLine = lines[cursorRow + 1] || '';
+                setCursorRow(cursorRow + 1);
+                setCursorCol(Math.min(cursorCol, targetLine.length));
+            }
+            return;
+        }
+        // Handle Home/End
+        if (key.ctrl && input === 'a') {
+            setCursorCol(0);
+            return;
+        }
+        if (key.ctrl && input === 'e') {
+            const currentLine = lines[cursorRow] || '';
+            setCursorCol(currentLine.length);
+            return;
+        }
+        // Handle regular text input
+        if (input && !key.ctrl && !key.meta) {
+            const currentLine = lines[cursorRow] || '';
+            const before = currentLine.slice(0, cursorCol);
+            const after = currentLine.slice(cursorCol);
+            const newLines = [...lines];
+            newLines[cursorRow] = before + input + after;
+            updateText(newLines, cursorRow, cursorCol + 1);
+        }
+    });
+    // Render the input with cursor
+    const renderLine = (line, rowIndex) => {
+        const isCursorLine = rowIndex === cursorRow;
+        if (!isCursorLine) {
+            // Line without cursor - add prefix for continuation lines
+            return (React.createElement(Box, { key: rowIndex },
+                React.createElement(Text, null, rowIndex > 0 ? '  ' : ''),
+                React.createElement(Text, null, line || ' ')));
+        }
+        // Line with cursor
+        const before = line.slice(0, cursorCol);
+        const cursorChar = line[cursorCol] || ' ';
+        const after = line.slice(cursorCol + 1);
+        return (React.createElement(Box, { key: rowIndex },
+            React.createElement(Text, null, rowIndex > 0 ? '  ' : ''),
+            React.createElement(Text, null, before),
+            React.createElement(Text, { inverse: true }, cursorChar),
+            React.createElement(Text, null, after)));
+    };
+    // Show placeholder when empty
+    if (value === '' && placeholder) {
+        return (React.createElement(Box, null,
+            React.createElement(Text, null, '> '),
+            React.createElement(Text, { dimColor: true }, placeholder),
+            React.createElement(Text, { inverse: true }, ' ')));
+    }
+    // Render multiline
+    if (multiline) {
+        return (React.createElement(Box, { flexDirection: "column" },
+            React.createElement(Box, { flexDirection: "row" },
+                React.createElement(Text, null, '> '),
+                React.createElement(Box, { flexDirection: "column", flexGrow: 1 }, lines.map((line, index) => renderLine(line, index))))));
+    }
+    // Render single line
+    const line = lines[0] || '';
+    const before = line.slice(0, cursorCol);
+    const cursorChar = line[cursorCol] || ' ';
+    const after = line.slice(cursorCol + 1);
+    return (React.createElement(Box, null,
+        React.createElement(Text, null, '> '),
+        React.createElement(Text, null, before),
+        React.createElement(Text, { inverse: true }, cursorChar),
+        React.createElement(Text, null, after)));
+};
+export default GeminiTextInput;
+//# sourceMappingURL=GeminiTextInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 8416
+  },
+  'MergePane.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useApp } from 'ink';
+import { execSync } from 'child_process';
+import CleanTextInput from './CleanTextInput.js';
+export default function MergePane({ pane, onComplete, onCancel, mainBranch }) {
+    const { exit } = useApp();
+    const [status, setStatus] = useState('checking');
+    const [commandHistory, setCommandHistory] = useState([]);
+    const [error, setError] = useState(null);
+    const [conflictFiles, setConflictFiles] = useState([]);
+    const [showResolutionPrompt, setShowResolutionPrompt] = useState(false);
+    const [agentPrompt, setAgentPrompt] = useState('');
+    const [showAgentPromptInput, setShowAgentPromptInput] = useState(false);
+    const [commitMessage, setCommitMessage] = useState('');
+    const [showCommitInput, setShowCommitInput] = useState(false);
+    const addCommandOutput = (command, output, error) => {
+        setCommandHistory(prev => [...prev, {
+                command,
+                output,
+                error,
+                timestamp: new Date()
+            }]);
+    };
+    const runCommand = (command, cwd) => {
+        try {
+            const output = execSync(command, {
+                cwd: cwd || pane.worktreePath,
+                encoding: 'utf8',
+                stdio: 'pipe'
+            });
+            addCommandOutput(command, output);
+            return { success: true, output };
+        }
+        catch (err) {
+            const errorMsg = err.stderr || err.message;
+            addCommandOutput(command, '', errorMsg);
+            return { success: false, output: '', error: errorMsg };
+        }
+    };
+    const checkForConflicts = (cwd) => {
+        const result = runCommand('git status --porcelain', cwd);
+        if (result.success) {
+            const conflicts = result.output
+                .split('\\n')
+                .filter(line => line.startsWith('UU ') || line.startsWith('AA '))
+                .map(line => line.substring(3).trim());
+            if (conflicts.length > 0) {
+                setConflictFiles(conflicts);
+                return true;
+            }
+        }
+        return false;
+    };
+    const generateCommitMessage = async () => {
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+            return \`chore: merge \${pane.slug} into \${mainBranch}\`;
+        }
+        try {
+            const diff = runCommand('git diff --staged');
+            if (!diff.success) {
+                return \`chore: merge \${pane.slug} into \${mainBranch}\`;
+            }
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': \`Bearer \${apiKey}\`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'openai/gpt-4o-mini',
+                    messages: [{
+                            role: 'user',
+                            content: \`Generate a concise, semantic commit message for these changes. Follow conventional commits format (feat:, fix:, chore:, etc). Be specific about what changed:\\n\\n\${diff.output.substring(0, 4000)}\`
+                        }],
+                    max_tokens: 100,
+                    temperature: 0.3,
+                }),
+            });
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content?.trim() || \`chore: merge \${pane.slug} into \${mainBranch}\`;
+        }
+        catch {
+            return \`chore: merge \${pane.slug} into \${mainBranch}\`;
+        }
+    };
+    const performMerge = async () => {
+        setStatus('checking');
+        // Step 1: Check for uncommitted changes in the worktree
+        const statusResult = runCommand('git status --porcelain');
+        if (statusResult.success && statusResult.output.trim()) {
+            setStatus('uncommitted-changes');
+            // Generate commit message
+            setStatus('committing');
+            const message = await generateCommitMessage();
+            setCommitMessage(message);
+            // Stage and commit changes in the worktree
+            runCommand('git add -A');
+            const commitResult = runCommand(\`git commit -m "\${message}"\`);
+            if (!commitResult.success) {
+                setError('Failed to commit changes');
+                setStatus('error');
+                return;
+            }
+        }
+        // Step 2: Get the main repository path (parent of .dmux/worktrees)
+        const mainRepoPath = pane.worktreePath?.replace(/\\/\\.dmux\\/worktrees\\/[^/]+$/, '');
+        if (!mainRepoPath) {
+            setError('Could not determine main repository path');
+            setStatus('error');
+            return;
+        }
+        // Step 3: Switch to main repository and checkout main branch
+        setStatus('switching-branch');
+        const checkoutResult = runCommand(\`git checkout \${mainBranch}\`, mainRepoPath);
+        if (!checkoutResult.success) {
+            // If main is already checked out, that's fine
+            if (!checkoutResult.error?.includes('already on')) {
+                setError(\`Failed to switch to \${mainBranch} branch: \${checkoutResult.error}\`);
+                setStatus('error');
+                return;
+            }
+        }
+        // Step 4: Attempt merge in the main repository
+        setStatus('merging');
+        const mergeResult = runCommand(\`git merge \${pane.slug} --no-ff\`, mainRepoPath);
+        if (!mergeResult.success) {
+            // Check if it's a merge conflict
+            if (mergeResult.error?.includes('Automatic merge failed') || checkForConflicts(mainRepoPath)) {
+                setStatus('merge-conflict');
+                setShowResolutionPrompt(true);
+                return;
+            }
+            else {
+                setError('Merge failed: ' + mergeResult.error);
+                setStatus('error');
+                return;
+            }
+        }
+        // Step 5: Success - worktree cleanup will happen if user confirms pane closure
+        setStatus('success');
+    };
+    const handleAgentResolution = () => {
+        setShowResolutionPrompt(false);
+        setShowAgentPromptInput(true);
+    };
+    const submitAgentResolution = () => {
+        setShowAgentPromptInput(false);
+        setStatus('resolving-with-agent');
+        // Get the main repository path
+        const mainRepoPath = pane.worktreePath?.replace(/\\/\\.dmux\\/worktrees\\/[^/]+$/, '');
+        // Exit the app and launch agent with conflict resolution prompt
+        const fullPrompt = agentPrompt || \`Fix the merge conflicts in the following files: \${conflictFiles.join(', ')}. Resolve them appropriately based on the changes from branch \${pane.slug} (\${pane.prompt}) and ensure the code remains functional.\`;
+        // Clear screen and exit
+        process.stdout.write('\\x1b[2J\\x1b[H');
+        // Launch Claude to resolve conflicts in the main repository
+        try {
+            execSync(\`claude "\${fullPrompt}" --permission-mode=acceptEdits\`, {
+                stdio: 'inherit',
+                cwd: mainRepoPath || process.cwd()
+            });
+        }
+        catch {
+            // Try opencode as fallback
+            try {
+                execSync(\`echo "\${fullPrompt}" | opencode\`, {
+                    stdio: 'inherit',
+                    cwd: mainRepoPath || process.cwd()
+                });
+            }
+            catch { }
+        }
+        exit();
+    };
+    const handleManualResolution = () => {
+        setShowResolutionPrompt(false);
+        setStatus('manual-resolution');
+        // Show instructions and exit
+        process.stdout.write('\\x1b[2J\\x1b[H');
+        exit();
+    };
+    useEffect(() => {
+        performMerge();
+    }, []);
+    useInput((input, key) => {
+        if (key.escape) {
+            onCancel();
+            return;
+        }
+        if (showResolutionPrompt && !showAgentPromptInput) {
+            if (input === 'a' || input === 'A') {
+                handleAgentResolution();
+            }
+            else if (input === 'm' || input === 'M') {
+                handleManualResolution();
+            }
+            else if (input === 'c' || input === 'C') {
+                onCancel();
+            }
+        }
+        if (status === 'success') {
+            if (input === 'y' || input === 'Y' || key.return) {
+                onComplete();
+            }
+            else if (input === 'n' || input === 'N') {
+                onCancel();
+            }
+        }
+        if (status === 'error' && key.return) {
+            onCancel();
+        }
+    });
+    const getStatusColor = (s) => {
+        switch (s) {
+            case 'error':
+            case 'merge-conflict':
+                return 'red';
+            case 'success':
+                return 'green';
+            case 'checking':
+            case 'committing':
+            case 'switching-branch':
+            case 'merging':
+            case 'completing':
+                return 'yellow';
+            default:
+                return 'white';
+        }
+    };
+    const getStatusText = (s) => {
+        switch (s) {
+            case 'checking': return 'Checking repository status...';
+            case 'uncommitted-changes': return 'Found uncommitted changes, committing...';
+            case 'committing': return \`Committing changes: \${commitMessage}\`;
+            case 'switching-branch': return \`Switching to \${mainBranch} branch...\`;
+            case 'merging': return \`Merging \${pane.slug} into \${mainBranch}...\`;
+            case 'merge-conflict': return 'Merge conflict detected!';
+            case 'conflict-resolution-prompt': return 'Choose conflict resolution method';
+            case 'resolving-with-agent': return 'Launching agent to resolve conflicts...';
+            case 'manual-resolution': return 'Manual resolution selected';
+            case 'completing': return 'Cleaning up worktree and branch...';
+            case 'success': return 'Merge completed successfully!';
+            case 'error': return \`Error: \${error}\`;
+            default: return '';
+        }
+    };
+    return (React.createElement(Box, { flexDirection: "column", padding: 1 },
+        React.createElement(Box, { marginBottom: 1 },
+            React.createElement(Text, { bold: true, color: "cyan" },
+                "Merging: ",
+                pane.slug,
+                " \\u2192 ",
+                mainBranch)),
+        React.createElement(Box, { borderStyle: "round", borderColor: "gray", flexDirection: "column", padding: 1, marginBottom: 1 },
+            React.createElement(Text, { color: getStatusColor(status), bold: true },
+                "Status: ",
+                getStatusText(status))),
+        commandHistory.length > 0 && (React.createElement(Box, { borderStyle: "single", borderColor: "gray", flexDirection: "column", padding: 1, marginBottom: 1, height: 10 },
+            React.createElement(Text, { dimColor: true }, "Command Output:"),
+            commandHistory.slice(-5).map((cmd, i) => (React.createElement(Box, { key: i, flexDirection: "column" },
+                React.createElement(Text, { color: "blue" },
+                    "$ ",
+                    cmd.command),
+                cmd.output && React.createElement(Text, { dimColor: true }, cmd.output.substring(0, 200)),
+                cmd.error && React.createElement(Text, { color: "red" }, cmd.error.substring(0, 200))))))),
+        showResolutionPrompt && !showAgentPromptInput && (React.createElement(Box, { borderStyle: "double", borderColor: "yellow", flexDirection: "column", padding: 1 },
+            React.createElement(Text, { color: "yellow", bold: true }, "Merge Conflict Resolution Required"),
+            React.createElement(Text, null, "Conflicted files:"),
+            conflictFiles.map(file => (React.createElement(Text, { key: file, color: "red" },
+                "  \\u2022 ",
+                file))),
+            React.createElement(Text, null, " "),
+            React.createElement(Text, null, "Choose resolution method:"),
+            React.createElement(Text, { color: "cyan" }, "  (A) Resolve with AI agent"),
+            React.createElement(Text, { color: "green" }, "  (M) Resolve manually"),
+            React.createElement(Text, { color: "gray" }, "  (C) Cancel merge"))),
+        showAgentPromptInput && (React.createElement(Box, { borderStyle: "round", borderColor: "cyan", flexDirection: "column", padding: 1 },
+            React.createElement(Text, null, "Enter prompt for agent (or press Enter for default):"),
+            React.createElement(CleanTextInput, { value: agentPrompt, onChange: setAgentPrompt, onSubmit: submitAgentResolution, placeholder: \`Fix merge conflicts from \${pane.slug} branch\` }))),
+        status === 'success' && (React.createElement(Box, { borderStyle: "double", borderColor: "green", flexDirection: "column", padding: 1 },
+            React.createElement(Text, { color: "green", bold: true }, "\\u2713 Merge completed successfully!"),
+            React.createElement(Text, null,
+                "Branch ",
+                pane.slug,
+                " has been merged into ",
+                mainBranch),
+            React.createElement(Text, null, " "),
+            React.createElement(Text, null,
+                "Close the pane \\"",
+                pane.slug,
+                "\\"? (Y/n)"))),
+        status === 'error' && (React.createElement(Box, { borderStyle: "double", borderColor: "red", flexDirection: "column", padding: 1 },
+            React.createElement(Text, { color: "red", bold: true }, "\\u2717 Merge failed"),
+            React.createElement(Text, null, error),
+            React.createElement(Text, null, " "),
+            React.createElement(Text, { dimColor: true }, "Press Enter to return to main menu")))));
+}
+//# sourceMappingURL=MergePane.js.map`,
+    mimeType: 'application/javascript',
+    size: 13852
+  },
+  'MultilineTextInput.js': {
+    content: `import React, { useState, useEffect, useCallback } from 'react';
+import { Box, Text, useInput, useFocus } from 'ink';
+const MultilineTextInput = ({ value, onChange, onSubmit, placeholder = 'Type your message...' }) => {
+    const { isFocused } = useFocus({ autoFocus: true });
+    const [cursorPosition, setCursorPosition] = useState(0);
+    // Keep cursor in bounds
+    useEffect(() => {
+        if (cursorPosition > value.length) {
+            setCursorPosition(value.length);
+        }
+    }, [value.length, cursorPosition]);
+    const getCurrentLineAndColumn = useCallback(() => {
+        let lineNumber = 0;
+        let columnNumber = 0;
+        let charCount = 0;
+        const lines = value.split('\\n');
+        for (let i = 0; i < lines.length; i++) {
+            const lineLength = lines[i].length;
+            if (charCount + lineLength >= cursorPosition) {
+                lineNumber = i;
+                columnNumber = cursorPosition - charCount;
+                break;
+            }
+            charCount += lineLength + 1; // +1 for newline
+        }
+        return { lineNumber, columnNumber, lines };
+    }, [value, cursorPosition]);
+    const positionFromLineColumn = (lineNumber, columnNumber, lines) => {
+        let position = 0;
+        for (let i = 0; i < lineNumber && i < lines.length; i++) {
+            position += lines[i].length + 1; // +1 for newline
+        }
+        if (lineNumber < lines.length) {
+            position += Math.min(columnNumber, lines[lineNumber].length);
+        }
+        return position;
+    };
+    useInput((input, key) => {
+        if (!isFocused)
+            return;
+        // Handle escape
+        if (key.escape) {
+            onChange('');
+            setCursorPosition(0);
+            return;
+        }
+        // Handle submit
+        if (key.return && key.shift) {
+            onSubmit?.();
+            return;
+        }
+        // Handle enter (new line)
+        if (key.return) {
+            const before = value.slice(0, cursorPosition);
+            const after = value.slice(cursorPosition);
+            onChange(before + '\\n' + after);
+            setCursorPosition(cursorPosition + 1);
+            return;
+        }
+        // Handle backspace
+        if (key.backspace) {
+            if (cursorPosition > 0) {
+                const before = value.slice(0, cursorPosition - 1);
+                const after = value.slice(cursorPosition);
+                onChange(before + after);
+                setCursorPosition(cursorPosition - 1);
+            }
+            return;
+        }
+        // Handle delete
+        if (key.delete) {
+            if (cursorPosition < value.length) {
+                const before = value.slice(0, cursorPosition);
+                const after = value.slice(cursorPosition + 1);
+                onChange(before + after);
+            }
+            return;
+        }
+        // Handle left arrow
+        if (key.leftArrow) {
+            if (key.meta || key.ctrl) {
+                // Move to beginning of line
+                const { lineNumber, lines } = getCurrentLineAndColumn();
+                const newPosition = positionFromLineColumn(lineNumber, 0, lines);
+                setCursorPosition(newPosition);
+            }
+            else {
+                setCursorPosition(Math.max(0, cursorPosition - 1));
+            }
+            return;
+        }
+        // Handle right arrow
+        if (key.rightArrow) {
+            if (key.meta || key.ctrl) {
+                // Move to end of line
+                const { lineNumber, lines } = getCurrentLineAndColumn();
+                const lineLength = lines[lineNumber]?.length || 0;
+                const newPosition = positionFromLineColumn(lineNumber, lineLength, lines);
+                setCursorPosition(newPosition);
+            }
+            else {
+                setCursorPosition(Math.min(value.length, cursorPosition + 1));
+            }
+            return;
+        }
+        // Handle up arrow
+        if (key.upArrow) {
+            const { lineNumber, columnNumber, lines } = getCurrentLineAndColumn();
+            if (lineNumber > 0) {
+                const targetLine = lineNumber - 1;
+                const targetColumn = Math.min(columnNumber, lines[targetLine].length);
+                const newPosition = positionFromLineColumn(targetLine, targetColumn, lines);
+                setCursorPosition(newPosition);
+            }
+            return;
+        }
+        // Handle down arrow
+        if (key.downArrow) {
+            const { lineNumber, columnNumber, lines } = getCurrentLineAndColumn();
+            if (lineNumber < lines.length - 1) {
+                const targetLine = lineNumber + 1;
+                const targetColumn = Math.min(columnNumber, lines[targetLine].length);
+                const newPosition = positionFromLineColumn(targetLine, targetColumn, lines);
+                setCursorPosition(newPosition);
+            }
+            return;
+        }
+        // Handle ctrl+a (home)
+        if (key.ctrl && input === 'a') {
+            const { lineNumber, lines } = getCurrentLineAndColumn();
+            const newPosition = positionFromLineColumn(lineNumber, 0, lines);
+            setCursorPosition(newPosition);
+            return;
+        }
+        // Handle ctrl+e (end)
+        if (key.ctrl && input === 'e') {
+            const { lineNumber, lines } = getCurrentLineAndColumn();
+            const lineLength = lines[lineNumber]?.length || 0;
+            const newPosition = positionFromLineColumn(lineNumber, lineLength, lines);
+            setCursorPosition(newPosition);
+            return;
+        }
+        // Handle regular text input
+        if (input && !key.ctrl && !key.meta) {
+            const before = value.slice(0, cursorPosition);
+            const after = value.slice(cursorPosition);
+            onChange(before + input + after);
+            setCursorPosition(cursorPosition + input.length);
+        }
+    });
+    // Render the text with cursor
+    const renderContent = () => {
+        if (!value && placeholder) {
+            return (React.createElement(Box, null,
+                React.createElement(Text, { dimColor: true }, placeholder),
+                React.createElement(Text, { inverse: true }, ' ')));
+        }
+        const lines = value.split('\\n');
+        const { lineNumber: cursorLine, columnNumber: cursorCol } = getCurrentLineAndColumn();
+        return (React.createElement(Box, { flexDirection: "column" }, lines.map((line, index) => {
+            const isFirstLine = index === 0;
+            const isCursorLine = index === cursorLine;
+            if (!isCursorLine) {
+                return (React.createElement(Box, { key: index },
+                    !isFirstLine && React.createElement(Text, null, '  '),
+                    React.createElement(Text, null, line || ' ')));
+            }
+            // Render line with cursor
+            const before = line.slice(0, cursorCol);
+            const atCursor = line[cursorCol] || ' ';
+            const after = line.slice(cursorCol + 1);
+            return (React.createElement(Box, { key: index },
+                !isFirstLine && React.createElement(Text, null, '  '),
+                React.createElement(Text, null, before),
+                React.createElement(Text, { inverse: true }, atCursor),
+                React.createElement(Text, null, after)));
+        })));
+    };
+    return (React.createElement(Box, { flexDirection: "row", alignItems: "flex-start" },
+        React.createElement(Text, null, '> '),
+        React.createElement(Box, { flexGrow: 1 }, renderContent())));
+};
+export default MultilineTextInput;
+//# sourceMappingURL=MultilineTextInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 7643
+  },
+  'PaneAnalyzer.js': {
+    content: `import { execSync } from 'child_process';
+export class PaneAnalyzer {
+    apiKey;
+    constructor() {
+        this.apiKey = process.env.OPENROUTER_API_KEY || '';
+    }
+    /**
+     * Captures the last N lines from a tmux pane
+     */
+    capturePaneContent(paneId, lines = 50) {
+        try {
+            // Capture pane content with line history
+            // -p prints to stdout, -S -<lines> starts from <lines> lines back
+            const content = execSync(\`tmux capture-pane -t '\${paneId}' -p -S -\${lines}\`, { encoding: 'utf8', stdio: 'pipe' });
+            return content;
+        }
+        catch (error) {
+            // Failed to capture pane content
+            return '';
+        }
+    }
+    /**
+     * Stage 1: Determines the state of the pane
+     */
+    async determineState(content, signal) {
+        if (!this.apiKey) {
+            // API key not set
+            return 'in_progress';
+        }
+        const systemPrompt = \`You are analyzing terminal output to determine its current state.
+IMPORTANT: Focus primarily on the LAST 10 LINES of the output, as that's where the current state is shown.
+
+Return a JSON object with a "state" field containing exactly one of these three values:
+- "option_dialog": ONLY when specific options/choices are clearly presented
+- "in_progress": When there are progress indicators showing active work
+- "open_prompt": DEFAULT state - use this unless you're certain it's one of the above
+
+OPTION DIALOG - Must have clear choices presented:
+- "Continue? [y/n]"
+- "Select: 1) Create 2) Edit 3) Cancel"
+- "[A]ccept, [R]eject, [E]dit"
+- Menu with numbered/lettered options
+- Clear list of specific keys/choices to select
+
+IN PROGRESS - Look for these in the BOTTOM 10 LINES:
+- KEY INDICATOR: "(esc to interrupt)" or "esc to cancel" = ALWAYS in_progress
+- Progress symbols with ANY action word: ✶ ⏺ ✽ ⏳ 🔄 followed by any word ending in "ing..."
+- Common progress words: "Working..." "Loading..." "Processing..." "Running..." "Building..."
+- Claude Code's creative words: "Pondering..." "Crunching..." "Flibbergibberating..." etc.
+- ANY word ending in "ing..." with progress symbols
+- Active progress bars or percentages
+- The phrase "esc to interrupt" anywhere = definitely in_progress
+
+OPEN PROMPT - The DEFAULT state:
+- Empty prompts: "> "
+- Questions waiting for input
+- Any prompt line without specific options
+- Static UI elements like "⏵⏵ accept edits on" (without "esc to interrupt")
+- When there's no clear progress or options
+
+CRITICAL:
+1. Check the BOTTOM 10 lines first - that's where the current state appears
+2. If you see "(esc to interrupt)" ANYWHERE = it's in_progress
+3. When uncertain, default to "open_prompt"\`;
+        try {
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': \`Bearer \${this.apiKey}\`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://github.com/dmux/dmux',
+                    'X-Title': 'dmux',
+                },
+                body: JSON.stringify({
+                    model: 'x-ai/grok-4-fast:free',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: \`Analyze this terminal output and return a JSON object with the state:\\n\\n\${content}\` }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 20,
+                    response_format: { type: 'json_object' },
+                }),
+                signal
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                // API error
+                return 'in_progress';
+            }
+            const data = await response.json();
+            const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+            // Validate the state
+            const state = result.state;
+            if (state === 'option_dialog' || state === 'open_prompt' || state === 'in_progress') {
+                return state;
+            }
+            return 'in_progress';
+        }
+        catch (error) {
+            // Failed to determine state
+            return 'in_progress';
+        }
+    }
+    /**
+     * Stage 2: Extract option details if state is option_dialog
+     */
+    async extractOptions(content, signal) {
+        if (!this.apiKey) {
+            return {};
+        }
+        const systemPrompt = \`You are analyzing an option dialog in a terminal.
+Extract the following and return as JSON:
+1. The question being asked
+2. Each available option with:
+   - The action/choice description
+   - The exact keys to press (could be letters, numbers, arrow keys + enter, etc.)
+   - Any additional context
+
+Return a JSON object with:
+- question: The question or prompt text
+- options: Array of {action, keys, description}
+- potential_harm: {has_risk, description} if there's risk of harm
+
+EXAMPLES:
+Input: "Delete all files? [y/n]"
+Output: {
+  "question": "Delete all files?",
+  "options": [
+    {"action": "Yes", "keys": ["y"]},
+    {"action": "No", "keys": ["n"]}
+  ],
+  "potential_harm": {"has_risk": true, "description": "Will delete all files"}
+}
+
+Input: "Select option:\\n1. Create file\\n2. Edit file\\n3. Cancel"
+Output: {
+  "question": "Select option:",
+  "options": [
+    {"action": "Create file", "keys": ["1"]},
+    {"action": "Edit file", "keys": ["2"]},
+    {"action": "Cancel", "keys": ["3"]}
+  ]
+}
+
+Input: "[A]ccept edits, [R]eject, [E]dit manually"
+Output: {
+  "question": "Choose action for edits",
+  "options": [
+    {"action": "Accept edits", "keys": ["a", "A"]},
+    {"action": "Reject", "keys": ["r", "R"]},
+    {"action": "Edit manually", "keys": ["e", "E"]}
+  ]
+}\`;
+        try {
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': \`Bearer \${this.apiKey}\`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://github.com/dmux/dmux',
+                    'X-Title': 'dmux',
+                },
+                body: JSON.stringify({
+                    model: 'x-ai/grok-4-fast:free',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: \`Extract the option details from this dialog and return as JSON:\\n\\n\${content}\` }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 300,
+                    response_format: { type: 'json_object' },
+                }),
+                signal
+            });
+            if (!response.ok) {
+                // API error in option extraction
+                return {};
+            }
+            const data = await response.json();
+            const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+            return {
+                question: result.question,
+                options: result.options?.map((opt) => ({
+                    action: opt.action,
+                    keys: Array.isArray(opt.keys) ? opt.keys : [opt.keys],
+                    description: opt.description
+                })),
+                potentialHarm: result.potential_harm ? {
+                    hasRisk: result.potential_harm.has_risk,
+                    description: result.potential_harm.description
+                } : undefined
+            };
+        }
+        catch (error) {
+            // Failed to extract options
+            return {};
+        }
+    }
+    /**
+     * Stage 3: Extract summary when state is open_prompt (idle)
+     */
+    async extractSummary(content, signal) {
+        if (!this.apiKey) {
+            return undefined;
+        }
+        const systemPrompt = \`You are analyzing terminal output from an AI coding agent (Claude Code or opencode).
+The agent is now idle and waiting for the next prompt.
+
+Your task: Provide a 1 paragraph or shorter summary of what the agent communicated to the user before going idle.
+
+Focus on:
+- What the agent just finished doing or said
+- Any results, conclusions, or feedback provided
+- Keep it concise (1-2 sentences max)
+- Use past tense ("completed", "fixed", "created", etc.)
+
+Return a JSON object with a "summary" field.
+
+Examples:
+- "Completed refactoring the authentication module and fixed TypeScript errors."
+- "Created the new user dashboard component with responsive design."
+- "Build succeeded with no errors. All tests passed."
+- "Unable to find the specified file. Waiting for clarification."
+
+If there's no meaningful content or the output is unclear, return an empty summary.\`;
+        try {
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': \`Bearer \${this.apiKey}\`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://github.com/dmux/dmux',
+                    'X-Title': 'dmux',
+                },
+                body: JSON.stringify({
+                    model: 'x-ai/grok-4-fast:free',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: \`Extract the summary from this terminal output:\\n\\n\${content}\` }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 100,
+                    response_format: { type: 'json_object' },
+                }),
+                signal
+            });
+            if (!response.ok) {
+                return undefined;
+            }
+            const data = await response.json();
+            const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+            return result.summary || undefined;
+        }
+        catch (error) {
+            return undefined;
+        }
+    }
+    /**
+     * Main analysis function that captures and analyzes a pane
+     */
+    async analyzePane(paneId, signal) {
+        // Capture the pane content (50 lines for state detection)
+        const content = this.capturePaneContent(paneId, 50);
+        if (!content) {
+            return { state: 'in_progress' };
+        }
+        // Stage 1: Determine the state
+        const state = await this.determineState(content, signal);
+        // If it's an option dialog, extract option details
+        if (state === 'option_dialog') {
+            const optionDetails = await this.extractOptions(content, signal);
+            return {
+                state,
+                ...optionDetails
+            };
+        }
+        // If it's open_prompt (idle), extract summary
+        if (state === 'open_prompt') {
+            const summary = await this.extractSummary(content, signal);
+            return {
+                state,
+                summary
+            };
+        }
+        // Otherwise just return the state (in_progress)
+        return { state };
+    }
+}
+//# sourceMappingURL=PaneAnalyzer.js.map`,
+    mimeType: 'application/javascript',
+    size: 11125
+  },
+  'SimpleEnhancedInput.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useStdout } from 'ink';
+import { execSync } from 'child_process';
+import path from 'path';
+import stringWidth from 'string-width';
+import chalk from 'chalk';
+const SimpleEnhancedInput = ({ value, onChange, placeholder = '', onSubmit, onCancel, isActive = true, workingDirectory = process.cwd() }) => {
+    const [cursorPosition, setCursorPosition] = useState(0);
+    const [showAutocomplete, setShowAutocomplete] = useState(false);
+    const [autocompleteQuery, setAutocompleteQuery] = useState('');
+    const [autocompleteStartPos, setAutocompleteStartPos] = useState(0);
+    const [fileMatches, setFileMatches] = useState([]);
+    const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
+    const [displayValue, setDisplayValue] = useState(value);
+    const { stdout } = useStdout();
+    const terminalWidth = stdout?.columns || 80;
+    const [pastedContent, setPastedContent] = useState(new Map());
+    // Update cursor when value changes externally
+    useEffect(() => {
+        // Only update cursor to end if value actually changed and we're not already editing
+        if (value.length > 0 && cursorPosition === 0) {
+            // This is initial value, keep cursor at 0
+        }
+        else if (value === '') {
+            setCursorPosition(0);
+        }
+    }, [value]);
+    // Helper function to check if text looks like a paste that should be formatted
+    const shouldFormatPaste = (text) => {
+        // Only format if it's a large paste, not single newlines
+        // Single newline = user pressing shift+enter
+        // Multiple lines with content = likely a paste
+        if (text === '\\n')
+            return false; // Single newline is never a paste
+        const hasMultipleLines = text.includes('\\n') && text.length > 1;
+        const isVeryLong = text.length > 100;
+        // Check for code-like patterns that might break display
+        const hasSpecialChars = /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/.test(text);
+        const hasAnsiCodes = /\\x1b\\[[0-9;]*[a-zA-Z]/.test(text);
+        return hasMultipleLines || isVeryLong || hasSpecialChars || hasAnsiCodes;
+    };
+    // Helper function to process pasted text
+    const processPastedText = (text) => {
+        if (!shouldFormatPaste(text)) {
+            return text;
+        }
+        // Generate a unique ID for this paste
+        const pasteId = pastedContent.size + 1;
+        // Store the actual content
+        const newPastedContent = new Map(pastedContent);
+        newPastedContent.set(pasteId, text);
+        setPastedContent(newPastedContent);
+        // Count lines in the pasted content
+        const lineCount = (text.match(/\\n/g) || []).length + 1;
+        // Return placeholder text
+        return \`[#\${pasteId} pasted \${lineCount} lines]\`;
+    };
+    // Helper function to get the actual value with pasted content restored
+    const getActualValue = () => {
+        let actualValue = displayValue;
+        // Replace all placeholders with actual content
+        pastedContent.forEach((content, id) => {
+            const placeholder = \`[#\${id} pasted \${(content.match(/\\n/g) || []).length + 1} lines]\`;
+            actualValue = actualValue.replace(placeholder, content);
+        });
+        return actualValue;
+    };
+    // Update display value when value prop changes
+    useEffect(() => {
+        setDisplayValue(value);
+        // Clear pasted content when value is cleared
+        if (value === '') {
+            setPastedContent(new Map());
+        }
+    }, [value]);
+    // Search for files when autocomplete query changes or when @ is typed
+    useEffect(() => {
+        if (showAutocomplete) {
+            searchFiles(autocompleteQuery);
+        }
+        else {
+            setFileMatches([]);
+        }
+    }, [autocompleteQuery, showAutocomplete]);
+    const searchFiles = async (query) => {
+        try {
+            // Directories to exclude from search
+            const excludeDirs = [
+                'node_modules',
+                '.git',
+                'dist',
+                'build',
+                '.next',
+                '.nuxt',
+                '.cache',
+                'coverage',
+                '.vscode',
+                '.idea',
+                'vendor',
+                'target',
+                '.pnpm-store',
+                '__pycache__',
+                '.pytest_cache',
+                '.tox',
+                'venv',
+                '.venv',
+                'env',
+                '.env'
+            ];
+            // Build exclude arguments for find command
+            const excludeArgs = excludeDirs.map(dir => \`-path "*/\${dir}" -prune -o\`).join(' ');
+            // If query is empty, show root directory files
+            let searchCmd;
+            let dirSearchCmd;
+            // Check if query is a directory path (ends with /)
+            const isDirectoryPath = query.endsWith('/');
+            if (query === '') {
+                // Show files and directories in the root of the working directory (excluding common dirs)
+                searchCmd = \`find "\${workingDirectory}" -maxdepth 1 \\\\( \${excludeArgs} -type f -print \\\\) 2>/dev/null | head -20\`;
+                dirSearchCmd = \`find "\${workingDirectory}" -maxdepth 1 \\\\( \${excludeArgs} -type d -print \\\\) 2>/dev/null | grep -v "^\${workingDirectory}$" | head -10\`;
+            }
+            else if (isDirectoryPath) {
+                // Navigate into directory - show contents of the specified directory
+                const dirPath = path.join(workingDirectory, query.slice(0, -1)); // Remove trailing slash
+                searchCmd = \`find "\${dirPath}" -maxdepth 1 \\\\( \${excludeArgs} -type f -print \\\\) 2>/dev/null | head -20\`;
+                dirSearchCmd = \`find "\${dirPath}" -maxdepth 1 \\\\( \${excludeArgs} -type d -print \\\\) 2>/dev/null | grep -v "^\${dirPath}$" | head -10\`;
+            }
+            else {
+                // Search for files matching the query (excluding common dirs)
+                searchCmd = \`find "\${workingDirectory}" \\\\( \${excludeArgs} -type f -name "*\${query}*" -print \\\\) 2>/dev/null | head -20\`;
+                dirSearchCmd = \`find "\${workingDirectory}" \\\\( \${excludeArgs} -type d -name "*\${query}*" -print \\\\) 2>/dev/null | head -10\`;
+            }
+            let fileResults = [];
+            let dirResults = [];
+            try {
+                fileResults = execSync(searchCmd, { encoding: 'utf-8' }).trim().split('\\n').filter(Boolean);
+            }
+            catch { }
+            try {
+                dirResults = execSync(dirSearchCmd, { encoding: 'utf-8' }).trim().split('\\n').filter(Boolean);
+            }
+            catch { }
+            const matches = [];
+            // Helper to check if path contains excluded directories
+            const isExcluded = (filepath) => {
+                const excludedPatterns = [
+                    'node_modules', '.git', 'dist', 'build', '.next', '.nuxt',
+                    '.cache', 'coverage', '.vscode', '.idea', 'vendor', 'target',
+                    '.pnpm-store', '__pycache__', '.pytest_cache', '.tox',
+                    'venv', '.venv', 'env', '.env'
+                ];
+                return excludedPatterns.some(pattern => filepath.includes(\`/\${pattern}/\`) || filepath.endsWith(\`/\${pattern}\`));
+            };
+            // Process directory matches
+            for (const dirPath of dirResults) {
+                if (isExcluded(dirPath))
+                    continue;
+                const relativePath = path.relative(workingDirectory, dirPath);
+                if (relativePath && !relativePath.startsWith('..')) {
+                    // When browsing within a directory, adjust the display path
+                    let displayPath = relativePath;
+                    if (isDirectoryPath && query) {
+                        // We're inside a subdirectory, show just the item name
+                        displayPath = path.basename(dirPath);
+                    }
+                    matches.push({
+                        path: dirPath,
+                        displayPath: displayPath + '/',
+                        type: 'directory'
+                    });
+                }
+            }
+            // Process file matches
+            for (const filePath of fileResults) {
+                if (isExcluded(filePath))
+                    continue;
+                const relativePath = path.relative(workingDirectory, filePath);
+                if (relativePath && !relativePath.startsWith('..')) {
+                    // When browsing within a directory, adjust the display path
+                    let displayPath = relativePath;
+                    if (isDirectoryPath && query) {
+                        // We're inside a subdirectory, show just the item name
+                        displayPath = path.basename(filePath);
+                    }
+                    matches.push({
+                        path: filePath,
+                        displayPath: displayPath,
+                        type: 'file'
+                    });
+                }
+            }
+            // Sort by relevance
+            matches.sort((a, b) => {
+                const aScore = a.displayPath.length;
+                const bScore = b.displayPath.length;
+                return aScore - bScore;
+            });
+            setFileMatches(matches.slice(0, 10));
+            setSelectedMatchIndex(0);
+        }
+        catch (error) {
+            setFileMatches([]);
+        }
+    };
+    const insertText = (text, position, isPaste = false) => {
+        // Process text if it's a paste
+        const processedText = isPaste ? processPastedText(text) : text;
+        const before = displayValue.slice(0, position);
+        const after = displayValue.slice(position);
+        const newDisplayValue = before + processedText + after;
+        setDisplayValue(newDisplayValue);
+        // Update the actual value with processed text (placeholder for pastes)
+        const newValue = before + processedText + after;
+        onChange(newValue);
+        // Update cursor position - just move by the length of inserted text
+        // Don't add any special handling for wrapping
+        const newCursorPos = position + processedText.length;
+        setCursorPosition(newCursorPos);
+    };
+    const deleteText = (start, end) => {
+        const before = displayValue.slice(0, start);
+        const after = displayValue.slice(end);
+        const newDisplayValue = before + after;
+        setDisplayValue(newDisplayValue);
+        onChange(newDisplayValue);
+        setCursorPosition(start);
+    };
+    const moveCursor = (position) => {
+        const clampedPosition = Math.max(0, Math.min(displayValue.length, position));
+        setCursorPosition(clampedPosition);
+    };
+    // Gemini CLI-style buffer system with proper line tracking
+    const getBuffer = (text, width) => {
+        const lines = [];
+        let charPosition = 0;
+        const charToLineMap = [];
+        // Split by actual newlines first
+        const logicalLines = text.split('\\n');
+        for (let logicalIdx = 0; logicalIdx < logicalLines.length; logicalIdx++) {
+            const logicalLine = logicalLines[logicalIdx];
+            if (logicalLine.length === 0) {
+                // Empty line
+                lines.push('');
+                charToLineMap[charPosition] = { line: lines.length - 1, col: 0 };
+                charPosition += 1; // for the newline
+            }
+            else {
+                // Break this logical line into visual lines
+                let remaining = logicalLine;
+                let isFirstWrap = true;
+                while (remaining.length > 0) {
+                    let lineContent = '';
+                    let charsUsed = 0;
+                    // Try to fit as many complete words as possible
+                    const words = remaining.split(' ');
+                    let wordIndex = 0;
+                    while (wordIndex < words.length) {
+                        const word = words[wordIndex];
+                        const separator = (wordIndex === 0 || lineContent === '') ? '' : ' ';
+                        const testContent = lineContent + separator + word;
+                        if (stringWidth(testContent) <= width) {
+                            lineContent = testContent;
+                            charsUsed += (separator + word).length;
+                            wordIndex++;
+                        }
+                        else {
+                            // This word doesn't fit
+                            if (lineContent === '') {
+                                // Word is longer than line width, break it
+                                let charCount = 0;
+                                for (let i = 0; i < word.length; i++) {
+                                    const testChar = word.slice(0, i + 1);
+                                    if (stringWidth(testChar) <= width) {
+                                        charCount = i + 1;
+                                    }
+                                    else {
+                                        break;
+                                    }
+                                }
+                                lineContent = word.slice(0, Math.max(1, charCount));
+                                charsUsed = lineContent.length;
+                            }
+                            break;
+                        }
+                    }
+                    // Add this visual line
+                    lines.push(lineContent);
+                    // Map character positions to line/col
+                    for (let i = 0; i < charsUsed; i++) {
+                        charToLineMap[charPosition + i] = {
+                            line: lines.length - 1,
+                            col: i
+                        };
+                    }
+                    // Move to next part
+                    remaining = remaining.slice(charsUsed).trimStart();
+                    charPosition += charsUsed;
+                    // Skip spaces that were trimmed
+                    const originalRemaining = logicalLine.slice(charPosition - (logicalIdx === 0 ? 0 : logicalIdx));
+                    const spacesToSkip = originalRemaining.length - remaining.length - charsUsed;
+                    if (spacesToSkip > 0 && !isFirstWrap) {
+                        charPosition += spacesToSkip;
+                    }
+                    isFirstWrap = false;
+                }
+            }
+            // Add newline mapping if not last logical line
+            if (logicalIdx < logicalLines.length - 1) {
+                charToLineMap[charPosition] = {
+                    line: lines.length - 1,
+                    col: lines[lines.length - 1]?.length || 0
+                };
+                charPosition += 1;
+            }
+        }
+        // Handle cursor at end
+        if (charPosition <= text.length) {
+            charToLineMap[text.length] = {
+                line: Math.max(0, lines.length - 1),
+                col: lines[lines.length - 1]?.length || 0
+            };
+        }
+        return { lines, charToLineMap };
+    };
+    const findWordBoundary = (text, position, direction) => {
+        const wordRegex = /\\w/;
+        let pos = position;
+        if (direction === 'left') {
+            // Skip any non-word chars
+            while (pos > 0 && !wordRegex.test(text[pos - 1])) {
+                pos--;
+            }
+            // Skip the word
+            while (pos > 0 && wordRegex.test(text[pos - 1])) {
+                pos--;
+            }
+        }
+        else {
+            // Skip any non-word chars
+            while (pos < text.length && !wordRegex.test(text[pos])) {
+                pos++;
+            }
+            // Skip the word
+            while (pos < text.length && wordRegex.test(text[pos])) {
+                pos++;
+            }
+        }
+        return pos;
+    };
+    const completeFileReference = (match) => {
+        const before = displayValue.slice(0, autocompleteStartPos);
+        const after = displayValue.slice(cursorPosition);
+        // Build the complete path to insert
+        let completePath;
+        if (autocompleteQuery.endsWith('/')) {
+            // We're in a subdirectory, need to build the full path
+            completePath = autocompleteQuery + match.displayPath.replace(/\\/$/, ''); // Remove trailing slash from directories
+        }
+        else {
+            // Use the relative path from working directory
+            completePath = path.relative(workingDirectory, match.path);
+        }
+        const newDisplayValue = before + completePath + after;
+        setDisplayValue(newDisplayValue);
+        onChange(newDisplayValue);
+        setCursorPosition(autocompleteStartPos + completePath.length);
+        setShowAutocomplete(false);
+        setAutocompleteQuery('');
+    };
+    useInput((input, key) => {
+        // Only handle input when active
+        if (!isActive)
+            return;
+        // Handle autocomplete navigation
+        if (showAutocomplete) {
+            if (key.escape) {
+                setShowAutocomplete(false);
+                setAutocompleteQuery('');
+                return;
+            }
+            else if (key.upArrow) {
+                setSelectedMatchIndex(Math.max(0, selectedMatchIndex - 1));
+                return;
+            }
+            else if (key.downArrow) {
+                setSelectedMatchIndex(Math.min(fileMatches.length - 1, selectedMatchIndex + 1));
+                return;
+            }
+            else if (key.rightArrow) {
+                // Navigate into directory with right arrow
+                if (fileMatches.length > 0) {
+                    const selectedMatch = fileMatches[selectedMatchIndex];
+                    if (selectedMatch.type === 'directory') {
+                        // Build the full path for navigation
+                        let newQuery;
+                        if (autocompleteQuery.endsWith('/')) {
+                            // We're already in a directory, append the selected subdirectory
+                            newQuery = autocompleteQuery + selectedMatch.displayPath;
+                        }
+                        else if (autocompleteQuery) {
+                            // We have a search query, replace it with the full path
+                            const relativePath = path.relative(workingDirectory, selectedMatch.path);
+                            newQuery = relativePath + '/';
+                        }
+                        else {
+                            // We're at root, use the display path
+                            newQuery = selectedMatch.displayPath;
+                        }
+                        setAutocompleteQuery(newQuery);
+                        // Trigger a new search within this directory
+                        searchFiles(newQuery);
+                    }
+                }
+                return;
+            }
+            else if (key.leftArrow) {
+                // Navigate back/up one directory level with left arrow
+                if (autocompleteQuery.includes('/')) {
+                    // Remove the last directory segment
+                    const segments = autocompleteQuery.split('/');
+                    segments.pop(); // Remove last segment
+                    if (segments.length > 0) {
+                        segments.pop(); // Remove the directory we're going back from
+                        const newQuery = segments.length > 0 ? segments.join('/') + '/' : '';
+                        setAutocompleteQuery(newQuery);
+                        searchFiles(newQuery);
+                    }
+                    else {
+                        // Go back to root
+                        setAutocompleteQuery('');
+                        searchFiles('');
+                    }
+                }
+                else if (autocompleteQuery !== '') {
+                    // Go back to root if we have a query but no slashes
+                    setAutocompleteQuery('');
+                    searchFiles('');
+                }
+                return;
+            }
+            else if (key.return || key.tab) {
+                if (fileMatches.length > 0) {
+                    completeFileReference(fileMatches[selectedMatchIndex]);
+                }
+                return;
+            }
+        }
+        // Handle special keys
+        if (key.escape) {
+            onCancel?.();
+            return;
+        }
+        if (key.shift && key.return) {
+            // Insert newline for multiline input
+            // Force insert a newline character directly into the value
+            const before = displayValue.slice(0, cursorPosition);
+            const after = displayValue.slice(cursorPosition);
+            const newValue = before + '\\n' + after;
+            setDisplayValue(newValue);
+            onChange(newValue);
+            setCursorPosition(cursorPosition + 1);
+            return;
+        }
+        if (key.return && !key.shift) {
+            // Get the actual value with pasted content restored before submitting
+            const actualValue = getActualValue();
+            onChange(actualValue);
+            onSubmit?.();
+            return;
+        }
+        // Buffer-based navigation like Gemini CLI
+        if (!showAutocomplete && key.upArrow) {
+            const inputWidth = Math.max(1, terminalWidth - 4);
+            const buffer = getBuffer(displayValue, inputWidth);
+            const currentPos = buffer.charToLineMap[cursorPosition] || { line: 0, col: 0 };
+            if (currentPos.line > 0) {
+                const targetLine = currentPos.line - 1;
+                const targetLineLength = buffer.lines[targetLine].length;
+                const targetColumn = Math.min(currentPos.col, targetLineLength);
+                // Find character position for this line/column
+                let newCursorPos = 0;
+                for (let charPos = 0; charPos < displayValue.length; charPos++) {
+                    const mapped = buffer.charToLineMap[charPos];
+                    if (mapped && mapped.line === targetLine && mapped.col === targetColumn) {
+                        newCursorPos = charPos;
+                        break;
+                    }
+                }
+                moveCursor(newCursorPos);
+            }
+            return;
+        }
+        if (!showAutocomplete && key.downArrow) {
+            const inputWidth = Math.max(1, terminalWidth - 4);
+            const buffer = getBuffer(displayValue, inputWidth);
+            const currentPos = buffer.charToLineMap[cursorPosition] || { line: 0, col: 0 };
+            if (currentPos.line < buffer.lines.length - 1) {
+                const targetLine = currentPos.line + 1;
+                const targetLineLength = buffer.lines[targetLine].length;
+                const targetColumn = Math.min(currentPos.col, targetLineLength);
+                // Find character position for this line/column
+                let newCursorPos = displayValue.length;
+                for (let charPos = 0; charPos <= displayValue.length; charPos++) {
+                    const mapped = buffer.charToLineMap[charPos];
+                    if (mapped && mapped.line === targetLine && mapped.col === targetColumn) {
+                        newCursorPos = charPos;
+                        break;
+                    }
+                }
+                moveCursor(newCursorPos);
+            }
+            else {
+                // At last line, move to end
+                moveCursor(displayValue.length);
+            }
+            return;
+        }
+        // Cursor movement
+        if (key.leftArrow) {
+            if (key.meta || key.alt || key.option) {
+                // Move to previous word
+                const newPos = findWordBoundary(displayValue, cursorPosition, 'left');
+                moveCursor(newPos);
+            }
+            else {
+                // Regular left movement - skip over newlines
+                if (cursorPosition > 0) {
+                    moveCursor(cursorPosition - 1);
+                }
+            }
+            return;
+        }
+        if (key.rightArrow) {
+            if (key.meta || key.alt || key.option) {
+                // Move to next word
+                const newPos = findWordBoundary(displayValue, cursorPosition, 'right');
+                moveCursor(newPos);
+            }
+            else {
+                // Regular right movement - skip over newlines
+                if (cursorPosition < displayValue.length) {
+                    moveCursor(cursorPosition + 1);
+                }
+            }
+            return;
+        }
+        // Home/End keys - Ctrl+A / Ctrl+E
+        if (key.ctrl && input === 'a') {
+            moveCursor(0);
+            return;
+        }
+        if (key.ctrl && input === 'e') {
+            moveCursor(displayValue.length);
+            return;
+        }
+        // Deletion
+        if (key.backspace || key.delete) {
+            if (key.meta || key.alt || key.option) {
+                // Delete word
+                const wordStart = findWordBoundary(displayValue, cursorPosition, 'left');
+                deleteText(wordStart, cursorPosition);
+            }
+            else if (cursorPosition > 0) {
+                deleteText(cursorPosition - 1, cursorPosition);
+            }
+            return;
+        }
+        // Text input
+        if (input && !key.ctrl && !key.meta) {
+            // Detect paste by checking if input is unusually long or contains special characters
+            const isPaste = input.length > 1 && shouldFormatPaste(input);
+            // Use input as-is - terminal wrapping is visual only, not actual newlines
+            const filteredInput = input;
+            // Check for @ symbol to trigger autocomplete
+            if (filteredInput === '@') {
+                setShowAutocomplete(true);
+                setAutocompleteStartPos(cursorPosition + 1);
+                setAutocompleteQuery('');
+                insertText(filteredInput, cursorPosition, false);
+            }
+            else if (showAutocomplete) {
+                // Update autocomplete query
+                insertText(filteredInput, cursorPosition, isPaste);
+                const newQuery = displayValue.slice(autocompleteStartPos, cursorPosition + 1) + filteredInput;
+                setAutocompleteQuery(newQuery);
+            }
+            else {
+                insertText(filteredInput, cursorPosition, isPaste);
+            }
+        }
+    });
+    // Gemini CLI-style display with proper buffer-based cursor calculation
+    const getDisplayWithCursor = () => {
+        const inputWidth = Math.max(1, terminalWidth - 4);
+        const buffer = getBuffer(displayValue, inputWidth);
+        // Get cursor position from the character map
+        const cursorPos = buffer.charToLineMap[cursorPosition] || { line: 0, col: 0 };
+        const cursorLine = cursorPos.line;
+        const cursorColumn = cursorPos.col;
+        // Handle empty input
+        if (buffer.lines.length === 0 || (buffer.lines.length === 1 && buffer.lines[0] === '')) {
+            return (React.createElement(Box, null,
+                React.createElement(Text, null, chalk.inverse(' ')),
+                placeholder && React.createElement(Text, { dimColor: true }, placeholder)));
+        }
+        return (React.createElement(Box, { flexDirection: "column" }, buffer.lines.map((line, idx) => {
+            if (idx === cursorLine) {
+                // Line with cursor - exact Gemini CLI approach
+                const beforeCursor = line.slice(0, cursorColumn);
+                const atCursor = line[cursorColumn] || ' ';
+                const afterCursor = line.slice(cursorColumn + 1);
+                return (React.createElement(Box, { key: idx },
+                    React.createElement(Text, null, beforeCursor),
+                    React.createElement(Text, null, chalk.inverse(atCursor)),
+                    React.createElement(Text, null, afterCursor)));
+            }
+            else {
+                return React.createElement(Text, { key: idx }, line);
+            }
+        })));
+    };
+    return (React.createElement(Box, { flexDirection: "column" },
+        React.createElement(Box, null, displayValue ? (getDisplayWithCursor()) : (React.createElement(React.Fragment, null,
+            React.createElement(Text, { inverse: true }, " "),
+            placeholder && React.createElement(Text, { dimColor: true }, placeholder)))),
+        showAutocomplete && fileMatches.length > 0 && (React.createElement(Box, { flexDirection: "column", marginTop: 1, borderStyle: "single", borderColor: "cyan", paddingX: 1 },
+            React.createElement(Text, { color: "cyan", dimColor: true }, autocompleteQuery.endsWith('/')
+                ? \`Browsing: @\${autocompleteQuery}\`
+                : autocompleteQuery
+                    ? \`Files matching: @\${autocompleteQuery}\`
+                    : 'Files in current directory:'),
+            fileMatches.map((match, index) => (React.createElement(Box, { key: match.path },
+                React.createElement(Text, { color: index === selectedMatchIndex ? 'cyan' : 'gray' },
+                    index === selectedMatchIndex ? '▶ ' : '  ',
+                    match.displayPath)))),
+            React.createElement(Text, { dimColor: true, italic: true }, "\\u2191\\u2193 select \\u2022 \\u2192 enter directory \\u2022 \\u2190 go back \\u2022 Tab/Enter complete \\u2022 Esc cancel")))));
+};
+export default SimpleEnhancedInput;
+//# sourceMappingURL=SimpleEnhancedInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 29480
+  },
+  'SimpleGeminiInput.js': {
+    content: `import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useFocus } from 'ink';
+const SimpleGeminiInput = ({ value, onChange, onSubmit, onCancel, multiline = false, placeholder = '' }) => {
+    const { isFocused } = useFocus({ autoFocus: true });
+    const [cursorOffset, setCursorOffset] = useState(0);
+    // Keep cursor in bounds when value changes
+    useEffect(() => {
+        if (cursorOffset > value.length) {
+            setCursorOffset(value.length);
+        }
+    }, [value, cursorOffset]);
+    useInput((input, key) => {
+        if (!isFocused)
+            return;
+        // Handle special keys
+        if (key.escape) {
+            onCancel?.();
+            return;
+        }
+        if (key.return && !multiline) {
+            onSubmit?.();
+            return;
+        }
+        if (key.return && multiline && !key.shift) {
+            // Add newline in multiline mode
+            const before = value.slice(0, cursorOffset);
+            const after = value.slice(cursorOffset);
+            onChange(before + '\\n' + after);
+            setCursorOffset(cursorOffset + 1);
+            return;
+        }
+        if (key.return && multiline && key.shift) {
+            // Shift+Enter submits in multiline mode
+            onSubmit?.();
+            return;
+        }
+        // Handle backspace - delete character BEFORE cursor
+        if (key.backspace) {
+            if (cursorOffset > 0) {
+                const before = value.slice(0, cursorOffset - 1);
+                const after = value.slice(cursorOffset);
+                onChange(before + after);
+                setCursorOffset(cursorOffset - 1);
+            }
+            return;
+        }
+        // Handle delete - delete character AT cursor
+        if (key.delete) {
+            if (cursorOffset < value.length) {
+                const before = value.slice(0, cursorOffset);
+                const after = value.slice(cursorOffset + 1);
+                onChange(before + after);
+                // Cursor stays in same position
+            }
+            return;
+        }
+        // Handle arrow keys
+        if (key.leftArrow) {
+            if (cursorOffset > 0) {
+                setCursorOffset(cursorOffset - 1);
+            }
+            return;
+        }
+        if (key.rightArrow) {
+            if (cursorOffset < value.length) {
+                setCursorOffset(cursorOffset + 1);
+            }
+            return;
+        }
+        // Handle up/down for multiline
+        if (multiline) {
+            const lines = value.split('\\n');
+            let currentPos = 0;
+            let currentLine = 0;
+            let colInLine = 0;
+            // Find current line and column
+            for (let i = 0; i < lines.length; i++) {
+                const lineLength = lines[i].length;
+                if (currentPos + lineLength >= cursorOffset) {
+                    currentLine = i;
+                    colInLine = cursorOffset - currentPos;
+                    break;
+                }
+                currentPos += lineLength + 1; // +1 for newline
+            }
+            if (key.upArrow) {
+                if (currentLine > 0) {
+                    // Move to previous line, same column or end of line
+                    const prevLine = lines[currentLine - 1];
+                    const newCol = Math.min(colInLine, prevLine.length);
+                    let newOffset = 0;
+                    for (let i = 0; i < currentLine - 1; i++) {
+                        newOffset += lines[i].length + 1;
+                    }
+                    newOffset += newCol;
+                    setCursorOffset(newOffset);
+                }
+                else {
+                    // Already at first line, move to start
+                    setCursorOffset(0);
+                }
+                return;
+            }
+            if (key.downArrow) {
+                if (currentLine < lines.length - 1) {
+                    // Move to next line, same column or end of line
+                    const nextLine = lines[currentLine + 1];
+                    const newCol = Math.min(colInLine, nextLine.length);
+                    let newOffset = 0;
+                    for (let i = 0; i <= currentLine; i++) {
+                        newOffset += lines[i].length + 1;
+                    }
+                    newOffset += newCol;
+                    setCursorOffset(newOffset);
+                }
+                else {
+                    // Already at last line, move to end
+                    setCursorOffset(value.length);
+                }
+                return;
+            }
+        }
+        // Handle Home/End
+        if (key.ctrl && input === 'a') {
+            if (multiline) {
+                // Move to start of current line
+                const beforeCursor = value.slice(0, cursorOffset);
+                const lastNewline = beforeCursor.lastIndexOf('\\n');
+                setCursorOffset(lastNewline === -1 ? 0 : lastNewline + 1);
+            }
+            else {
+                setCursorOffset(0);
+            }
+            return;
+        }
+        if (key.ctrl && input === 'e') {
+            if (multiline) {
+                // Move to end of current line
+                const afterCursor = value.slice(cursorOffset);
+                const nextNewline = afterCursor.indexOf('\\n');
+                if (nextNewline === -1) {
+                    setCursorOffset(value.length);
+                }
+                else {
+                    setCursorOffset(cursorOffset + nextNewline);
+                }
+            }
+            else {
+                setCursorOffset(value.length);
+            }
+            return;
+        }
+        // Handle regular text input
+        if (input && !key.ctrl && !key.meta) {
+            const before = value.slice(0, cursorOffset);
+            const after = value.slice(cursorOffset);
+            onChange(before + input + after);
+            setCursorOffset(cursorOffset + input.length);
+        }
+    });
+    // Render the display with cursor
+    const renderDisplay = () => {
+        // Show placeholder when empty
+        if (value === '' && placeholder) {
+            return (React.createElement(React.Fragment, null,
+                React.createElement(Text, { dimColor: true }, placeholder),
+                React.createElement(Text, { inverse: true }, ' ')));
+        }
+        // For multiline, split and render each line
+        if (multiline) {
+            const lines = value.split('\\n');
+            let currentPos = 0;
+            const elements = [];
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const lineStart = currentPos;
+                const lineEnd = currentPos + line.length;
+                if (i > 0) {
+                    elements.push(React.createElement(Text, { key: \`indent-\${i}\` }, '  '));
+                }
+                if (cursorOffset >= lineStart && cursorOffset <= lineEnd) {
+                    // This line contains the cursor
+                    const posInLine = cursorOffset - lineStart;
+                    const before = line.slice(0, posInLine);
+                    const cursorChar = line[posInLine] || ' ';
+                    const after = line.slice(posInLine + 1);
+                    elements.push(React.createElement(React.Fragment, { key: \`line-\${i}\` },
+                        React.createElement(Text, null, before),
+                        React.createElement(Text, { inverse: true }, cursorChar),
+                        React.createElement(Text, null, after)));
+                }
+                else {
+                    // Normal line without cursor
+                    elements.push(React.createElement(Text, { key: \`line-\${i}\` }, line || ' '));
+                }
+                // Add newline representation except for last line
+                if (i < lines.length - 1) {
+                    elements.push(React.createElement(Text, { key: \`newline-\${i}\` }, '\\n'));
+                }
+                currentPos = lineEnd + 1; // +1 for newline
+            }
+            // Handle cursor at very end after a newline
+            if (cursorOffset === value.length && value.endsWith('\\n')) {
+                elements.push(React.createElement(Text, { key: "indent-end" }, '  '));
+                elements.push(React.createElement(Text, { key: "cursor-end", inverse: true }, ' '));
+            }
+            return React.createElement(React.Fragment, null, elements);
+        }
+        // Single line rendering
+        const before = value.slice(0, cursorOffset);
+        const cursorChar = value[cursorOffset] || ' ';
+        const after = value.slice(cursorOffset + 1);
+        return (React.createElement(React.Fragment, null,
+            React.createElement(Text, null, before),
+            React.createElement(Text, { inverse: true }, cursorChar),
+            React.createElement(Text, null, after)));
+    };
+    return (React.createElement(Box, null,
+        React.createElement(Text, null, '> '),
+        renderDisplay()));
+};
+export default SimpleGeminiInput;
+//# sourceMappingURL=SimpleGeminiInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 9085
+  },
+  'StyledTextInput.js': {
+    content: `import React from 'react';
+import { Box, Text } from 'ink';
+import TextInput from 'ink-text-input';
+const StyledTextInput = ({ value, onChange, onSubmit, placeholder = 'Type your message...' }) => {
+    return (React.createElement(Box, null,
+        React.createElement(Text, null, '> '),
+        React.createElement(TextInput, { value: value, onChange: onChange, onSubmit: onSubmit, placeholder: placeholder, showCursor: true })));
+};
+export default StyledTextInput;
+//# sourceMappingURL=StyledTextInput.js.map`,
+    mimeType: 'application/javascript',
+    size: 511
+  },
   '_plugin-vue_export-helper.css': {
     content: `*{margin:0;padding:0;box-sizing:border-box}:root{--bg-gradient-start: #0f0f23;--bg-gradient-mid: #1a1a2e;--bg-gradient-end: #16213e;--text-primary: #e0e0e0;--text-secondary: #a0a0a0;--text-tertiary: #808080;--text-dim: #606060;--text-dimmer: #666;--text-bright: #fff;--border-color: rgba(255, 255, 255, .1);--border-accent: rgba(255, 140, 0, .3);--card-bg: rgba(255, 255, 255, .05);--card-border: rgba(255, 255, 255, .1);--header-bg: rgba(255, 255, 255, .05);--input-bg: rgba(255, 255, 255, .05);--input-border: rgba(255, 255, 255, .12);--input-focus-border: rgba(255, 140, 0, .5);--input-focus-bg: rgba(255, 255, 255, .08);--input-focus-shadow: rgba(255, 140, 0, .1);--button-bg: rgba(200, 210, 230, .15);--button-border: rgba(255, 255, 255, .08);--button-hover-bg: rgba(200, 210, 230, .25);--button-hover-border: rgba(255, 255, 255, .15);--tooltip-bg: rgba(20, 20, 30, .98);--tooltip-border: rgba(255, 255, 255, .15);--hint-bg: rgba(255, 255, 255, .05);--agent-bg: rgba(255, 255, 255, .08);--agent-border: rgba(255, 255, 255, .15);--idle-badge-bg: rgba(255, 255, 255, .08);--idle-badge-border: rgba(255, 255, 255, .1)}[data-theme=light]{--bg-gradient-start: #f0f4f8;--bg-gradient-mid: #e6eef5;--bg-gradient-end: #dce7f0;--text-primary: #1a1a2e;--text-secondary: #4a5568;--text-tertiary: #718096;--text-dim: #a0aec0;--text-dimmer: #cbd5e0;--text-bright: #000;--border-color: rgba(0, 0, 0, .1);--border-accent: rgba(255, 140, 0, .4);--card-bg: rgba(255, 255, 255, .8);--card-border: rgba(0, 0, 0, .08);--header-bg: rgba(255, 255, 255, .9);--input-bg: rgba(255, 255, 255, .6);--input-border: rgba(0, 0, 0, .15);--input-focus-border: rgba(255, 140, 0, .6);--input-focus-bg: rgba(255, 255, 255, .9);--input-focus-shadow: rgba(255, 140, 0, .15);--button-bg: rgba(0, 0, 0, .05);--button-border: rgba(0, 0, 0, .1);--button-hover-bg: rgba(0, 0, 0, .1);--button-hover-border: rgba(0, 0, 0, .2);--tooltip-bg: rgba(255, 255, 255, .98);--tooltip-border: rgba(0, 0, 0, .15);--hint-bg: rgba(0, 0, 0, .03);--agent-bg: rgba(0, 0, 0, .05);--agent-border: rgba(0, 0, 0, .12);--idle-badge-bg: rgba(0, 0, 0, .05);--idle-badge-border: rgba(0, 0, 0, .1)}@keyframes fadeIn{0%{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,to{opacity:1}50%{opacity:.5}}@keyframes slideInFromTop{0%{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}body{font-family:-apple-system,BlinkMacSystemFont,SF Pro Display,SF Pro Text,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;background:linear-gradient(135deg,var(--bg-gradient-start) 0%,var(--bg-gradient-mid) 50%,var(--bg-gradient-end) 100%);background-attachment:fixed;color:var(--text-primary);min-height:100vh;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;transition:background .3s ease,color .3s ease}.container{max-width:1400px;margin:0 auto;padding:40px 20px;width:100%;flex:1;display:flex;flex-direction:column;animation:fadeIn .5s ease-out}header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;margin-bottom:0;background:var(--header-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:2px solid var(--border-accent);animation:slideInFromTop .6s ease-out;gap:16px}.logo{height:24px;width:auto;flex-shrink:0}h1{font-size:18px;font-weight:600;letter-spacing:-.5px;color:var(--text-primary);flex:1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:500px;margin:0 auto}.session-info{display:flex;gap:12px;align-items:center;font-size:13px;color:var(--text-secondary);flex-shrink:0}.theme-toggle{background:transparent;border:none;padding:4px;cursor:pointer;transition:all .2s ease;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);flex-shrink:0;width:24px;height:24px}.theme-toggle:hover{color:var(--text-primary);transform:scale(1.1)}.theme-toggle svg{width:20px;height:20px;fill:currentColor}.session-info span{display:flex;align-items:center;gap:6px}.status-indicator{color:#4ade80;font-size:16px;animation:pulse 2s ease-in-out infinite}main{flex:1;padding-top:40px;min-height:0}.panes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:24px;margin-bottom:40px}.pane-card{background:var(--card-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--card-border);border-radius:12px;padding:12px;position:relative;animation:fadeIn .5s ease-out backwards;color:inherit;display:block;min-width:0;overflow:hidden}.pane-card:nth-child(1){animation-delay:.1s}.pane-card:nth-child(2){animation-delay:.15s}.pane-card:nth-child(3){animation-delay:.2s}.pane-card:nth-child(4){animation-delay:.25s}.pane-card:nth-child(5){animation-delay:.3s}.pane-card:nth-child(6){animation-delay:.35s}.pane-header{margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:relative}.pane-header-content{flex:1;display:flex;flex-direction:column;gap:6px}.action-menu-btn{background:transparent;border:none;color:var(--text-tertiary);font-size:20px;padding:4px 8px;cursor:pointer;transition:all .2s ease;line-height:1;flex-shrink:0}.action-menu-btn:hover{color:var(--text-primary);background:var(--button-hover-bg);border-radius:4px}.action-menu-dropdown{position:absolute;top:32px;right:0;background:var(--tooltip-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--tooltip-border);border-radius:8px;padding:4px;z-index:100;min-width:180px;box-shadow:0 8px 24px #0000004d;animation:fadeIn .2s ease-out}.action-menu-item{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;background:transparent;border:none;border-radius:4px;color:var(--text-primary);font-size:13px;cursor:pointer;transition:all .15s ease;text-align:left}.action-menu-item:hover:not(:disabled){background:var(--button-hover-bg)}.action-menu-item:disabled{opacity:.5;cursor:not-allowed}.action-icon{font-size:14px;width:16px;text-align:center}.action-label{flex:1}.pane-title-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;width:fit-content}.pane-title-link:hover .pane-title{text-decoration:underline}.pane-title{font-size:20px;font-weight:600;color:var(--text-bright);letter-spacing:-.3px}.pane-arrow{font-size:16px;color:var(--text-secondary);transition:all .2s ease;opacity:.6}.pane-title-link:hover .pane-arrow{color:#ff8c00;transform:translate(2px);opacity:1}.pane-meta{display:flex;align-items:center;gap:12px}.pane-agent{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;background:var(--agent-bg);border:1px solid var(--agent-border);color:var(--text-tertiary);white-space:nowrap}.pane-agent.claude{background:#d9775726;border-color:#d977574d;color:#d97757}.pane-agent.opencode{background:#667eea26;border-color:#667eea4d;color:#667eea}.pane-prompt-section{margin-bottom:12px}.prompt-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-tertiary);transition:color .2s ease}.pane-prompt-preview{display:flex;flex-direction:column;gap:4px;cursor:pointer;transition:all .2s ease}.pane-prompt-preview:hover .prompt-text{color:var(--text-primary)}.pane-prompt-preview:hover .prompt-label{color:var(--text-secondary)}.prompt-header{display:flex;align-items:center;gap:6px}.prompt-text{color:var(--text-secondary);font-size:13px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .2s ease}.pane-prompt-preview.expanded .prompt-text{white-space:normal;display:none}.expand-icon{font-size:10px;color:var(--text-tertiary);transition:transform .2s ease;flex-shrink:0}.pane-prompt-full{color:var(--text-secondary);font-size:13px;margin-top:4px;line-height:1.6;font-family:SF Mono,Monaco,Courier New,monospace;word-wrap:break-word;overflow-wrap:break-word;word-break:break-word;max-width:100%}.agent-summary{color:var(--text-secondary);font-size:13px;margin-bottom:12px;padding:10px 12px;line-height:1.5;background:#60a5fa14;border:1px solid rgba(96,165,250,.2);border-radius:6px;font-style:italic}.analyzer-error{color:#ef4444;font-size:13px;margin-bottom:12px;padding:10px 12px;line-height:1.5;background:#ef444414;border:1px solid rgba(239,68,68,.2);border-radius:6px;font-weight:500}.tooltip{position:absolute;background:var(--tooltip-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--tooltip-border);padding:16px;border-radius:12px;z-index:1000;white-space:pre-wrap;max-width:400px;max-height:200px;overflow-y:auto;box-shadow:0 20px 60px #0000004d,0 0 0 1px var(--border-color);font-size:13px;color:var(--text-primary);pointer-events:none;animation:fadeIn .2s ease-out}.pane-status{display:flex;flex-direction:column;gap:10px}.status-item{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0}.status-label{color:var(--text-tertiary);font-weight:500}.status-value{display:flex;align-items:center;gap:6px}.status-badge{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;transition:all .2s ease}.status-badge.working{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#000;box-shadow:0 2px 8px #fbbf2466}.status-badge.waiting{background:linear-gradient(135deg,#60a5fa,#3b82f6);color:#000;box-shadow:0 2px 8px #60a5fa66}.status-badge.idle{background:var(--idle-badge-bg);color:var(--text-tertiary);border:1px solid var(--idle-badge-border)}.status-badge.running,.status-badge.passed{background:linear-gradient(135deg,#4ade80,#22c55e);color:#000;box-shadow:0 2px 8px #4ade8066}.status-badge.failed{background:linear-gradient(135deg,#f87171,#ef4444);color:#000;box-shadow:0 2px 8px #f8717166}.status-badge.analyzing{background:linear-gradient(135deg,#a78bfa,#8b5cf6);color:#000;box-shadow:0 2px 8px #a78bfa66;animation:pulse 2s ease-in-out infinite}.pane-id{font-family:SF Mono,Monaco,monospace;font-size:10px;color:var(--text-dimmer);font-weight:500;letter-spacing:.2px}.pane-interactive{margin-top:12px}.options-dialog{display:flex;flex-direction:column;gap:12px}.options-question{font-size:14px;font-weight:500;color:var(--text-primary);line-height:1.4}.options-warning{padding:8px 12px;background:#f871711a;border:1px solid rgba(248,113,113,.3);border-radius:6px;color:#fca5a5;font-size:12px;display:flex;align-items:center;gap:6px}.options-buttons{display:flex;flex-wrap:wrap;gap:8px}.option-button{padding:8px 16px;background:linear-gradient(135deg,#60a5fa,#3b82f6);color:#000;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s ease;box-shadow:0 2px 8px #60a5fa4d}.option-button:hover{transform:translateY(-2px);box-shadow:0 4px 12px #60a5fa66}.option-button:active{transform:translateY(0)}.option-button-danger{background:linear-gradient(135deg,#f87171,#ef4444);box-shadow:0 2px 8px #f871714d}.option-button-danger:hover{box-shadow:0 4px 12px #f8717166}.analyzing-state{display:flex;align-items:center;gap:12px;padding:8px 0;color:#a78bfa;font-size:14px;font-weight:500}.loader-spinner{width:20px;height:20px;border:3px solid rgba(167,139,250,.2);border-top-color:#a78bfa;border-radius:50%;animation:spin 1s linear infinite}.prompt-input-wrapper{display:flex;align-items:flex-start;gap:8px;padding:8px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:8px;transition:all .2s ease}.prompt-input-wrapper:focus-within{border-color:var(--input-focus-border);background:var(--input-focus-bg);box-shadow:0 0 0 3px var(--input-focus-shadow)}.queued-message{margin-top:8px;padding:6px 10px;background:#4ade801a;border:1px solid rgba(74,222,128,.3);border-radius:6px;color:#4ade80;font-size:12px;animation:fadeIn .3s ease-out}.prompt-textarea{flex:1;min-height:20px;max-height:150px;padding:0;background:transparent;border:none;color:var(--text-primary);font-family:SF Mono,Monaco,Courier New,monospace;font-size:13px;line-height:1.4;resize:none;overflow-y:auto}.prompt-textarea:focus{outline:none}.prompt-textarea:disabled{opacity:.5;cursor:not-allowed}.prompt-textarea::placeholder{color:var(--text-dimmer)}.send-button{flex-shrink:0;width:28px;height:28px;padding:6px;background:var(--button-bg);color:var(--text-secondary);border:1px solid var(--button-border);border-radius:50%;cursor:pointer;transition:all .2s ease;display:flex;align-items:center;justify-content:center}.send-button:hover:not(:disabled){background:var(--button-hover-bg);border-color:var(--button-hover-border)}.send-button:active:not(:disabled){transform:scale(.92)}.send-button:disabled{opacity:.3;cursor:not-allowed}.send-button svg{width:100%;height:100%;fill:currentColor}.button-loader{width:14px;height:14px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .8s linear infinite}.dev-server-status{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:8px;font-size:12px}.dev-link{color:#ff8c00;text-decoration:none;font-weight:600;transition:color .2s ease}.dev-link:hover{color:orange}.no-panes{text-align:center;padding:100px 20px;color:var(--text-tertiary);animation:fadeIn .6s ease-out}.no-panes p{margin-bottom:16px;font-size:18px;font-weight:500}.hint{font-size:14px;color:var(--text-dim);background:var(--hint-bg);padding:12px 24px;border-radius:12px;display:inline-block;margin-top:8px}footer{padding:12px 0;margin-top:auto;animation:fadeIn .8s ease-out}.footer-info{display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);padding:0}.footer-info span{display:flex;align-items:center;gap:8px}@media (max-width: 768px){.container{padding:0 16px 24px}header{padding:12px 18px;gap:8px}.logo{height:20px}h1{font-size:14px;max-width:none}.session-info{font-size:11px;gap:8px}.session-info span:not(.status-indicator){display:none}main{padding-top:24px}.panes-grid{grid-template-columns:1fr;gap:16px}.footer-info{flex-direction:column;gap:6px;font-size:10px}}.term-fg-black{color:#000}.term-fg-red{color:#cd3131}.term-fg-green{color:#0dbc79}.term-fg-yellow{color:#e5e510}.term-fg-blue{color:#2472c8}.term-fg-magenta{color:#bc3fbc}.term-fg-cyan{color:#11a8cd}.term-fg-white{color:#e5e5e5}.term-fg-bright-black{color:#666}.term-fg-bright-red{color:#f14c4c}.term-fg-bright-green{color:#23d18b}.term-fg-bright-yellow{color:#f5f543}.term-fg-bright-blue{color:#3b8eea}.term-fg-bright-magenta{color:#d670d6}.term-fg-bright-cyan{color:#29b8db}.term-fg-bright-white{color:#fff}.term-bg-black{background-color:#000}.term-bg-red{background-color:#cd3131}.term-bg-green{background-color:#0dbc79}.term-bg-yellow{background-color:#e5e510}.term-bg-blue{background-color:#2472c8}.term-bg-magenta{background-color:#bc3fbc}.term-bg-cyan{background-color:#11a8cd}.term-bg-white{background-color:#e5e5e5}.term-bold{font-weight:700}.term-dim{opacity:.7}.term-italic{font-style:italic}.term-underline{text-decoration:underline}.term-strikethrough{text-decoration:line-through}.action-dialog-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:#000000b3;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;animation:fadeIn .2s ease-out}.action-dialog{background:var(--card-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--card-border);border-radius:16px;padding:32px;max-width:540px;width:90%;box-shadow:0 20px 60px #0006;animation:slideInFromTop .3s ease-out}.action-dialog h3{margin:0 0 20px;font-size:24px;font-weight:600;color:var(--text-bright);letter-spacing:-.5px}.action-dialog p{margin:0 0 20px;color:var(--text-secondary);font-size:14px;line-height:1.5}.action-dialog label{display:block;font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:10px;letter-spacing:-.2px}.action-dialog textarea{width:100%;padding:14px 16px;background:var(--input-bg);border:2px solid var(--input-border);border-radius:10px;color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,SF Pro Display,SF Pro Text,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;resize:vertical;transition:all .2s ease;margin-bottom:20px}.action-dialog textarea:focus{outline:none;border-color:var(--input-focus-border);background:var(--input-focus-bg);box-shadow:0 0 0 4px var(--input-focus-shadow)}.action-dialog textarea::placeholder{color:var(--text-dim);font-style:italic}.dialog-hint{font-size:13px;color:var(--text-tertiary);margin-bottom:16px;display:flex;align-items:center;gap:6px}.dialog-hint kbd{background:var(--button-bg);border:1px solid var(--button-border);border-radius:4px;padding:2px 6px;font-family:SF Mono,Monaco,monospace;font-size:11px;font-weight:600;color:var(--text-primary);box-shadow:0 1px 2px #0000001a}.dialog-loading{display:flex;align-items:center;justify-content:center;gap:12px;padding:24px;color:var(--text-secondary);font-size:15px;font-weight:500}.dialog-loading .loader-spinner{width:24px;height:24px;border:3px solid rgba(96,165,250,.2);border-top-color:#60a5fa;border-radius:50%;animation:spin .8s linear infinite}.dialog-input{width:100%;padding:14px 16px;background:var(--input-bg);border:2px solid var(--input-border);border-radius:10px;color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,SF Pro Display,SF Pro Text,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.5;transition:all .2s ease;margin-bottom:20px}.dialog-input:focus{outline:none;border-color:var(--input-focus-border);background:var(--input-focus-bg);box-shadow:0 0 0 4px var(--input-focus-shadow)}.dialog-input::placeholder{color:var(--text-dim);font-style:italic}.dialog-buttons{display:flex;gap:12px;justify-content:flex-end}.dialog-btn{padding:12px 24px;border:2px solid var(--button-border);border-radius:10px;background:var(--button-bg);color:var(--text-primary);font-size:15px;font-weight:600;cursor:pointer;transition:all .2s ease}.dialog-btn:hover{background:var(--button-hover-bg);border-color:var(--button-hover-border);transform:translateY(-1px)}.dialog-btn:active{transform:translateY(0)}.dialog-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}.dialog-btn-primary{background:linear-gradient(135deg,#60a5fa,#3b82f6);color:#000;border-color:transparent;box-shadow:0 2px 8px #60a5fa4d}.dialog-btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 16px #60a5fa80}.dialog-btn-primary:active{transform:translateY(-1px);box-shadow:0 4px 12px #60a5fa66}.dialog-btn-primary:disabled{opacity:.6;transform:none;box-shadow:0 2px 8px #60a5fa33}.choice-options{display:flex;flex-direction:column;gap:8px}.choice-option-btn{width:100%;padding:12px 16px;background:var(--button-bg);border:1px solid var(--button-border);border-radius:8px;color:var(--text-primary);font-size:14px;text-align:left;cursor:pointer;transition:all .2s ease;display:flex;flex-direction:column;gap:4px}.choice-option-btn:hover{background:var(--button-hover-bg);border-color:var(--button-hover-border);transform:translate(4px)}.choice-option-btn.danger{border-color:#f871714d;background:#f871711a}.choice-option-btn.danger:hover{border-color:#f8717180;background:#f8717133}.agent-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}.agent-choice-button{padding:16px 20px;background:var(--button-bg);border:2px solid var(--button-border);border-radius:12px;color:var(--text-primary);font-size:15px;font-weight:600;cursor:pointer;transition:all .2s ease;text-align:center;text-transform:capitalize;position:relative;overflow:hidden}.agent-choice-button:before{content:"";position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(135deg,#60a5fa1a,#3b82f61a);opacity:0;transition:opacity .2s ease}.agent-choice-button:hover{background:var(--button-hover-bg);border-color:var(--input-focus-border);transform:translateY(-2px);box-shadow:0 4px 12px #60a5fa33}.agent-choice-button:hover:before{opacity:1}.agent-choice-button:active{transform:translateY(0)}.agent-choice-button:disabled{opacity:.5;cursor:not-allowed;transform:none}.option-description{font-size:12px;color:var(--text-tertiary);font-weight:400}.terminal-page{display:flex;flex-direction:column;height:100vh;background:#000}.back-button{color:#e0e0e0;text-decoration:none;font-size:14px;font-weight:500;transition:color .2s;white-space:nowrap;flex-shrink:0}.back-button:hover{color:#fff}.terminal-content{flex:1;overflow:auto;padding:10px}.terminal-page .terminal-output{font-family:JetBrains Mono,SF Mono,Monaco,Cascadia Code,Roboto Mono,monospace;line-height:1.2;color:#f0f0f0;margin:0;min-height:100%}.terminal-row{white-space:pre;margin:0;padding:0;line-height:1.2}.mobile-toolbar{display:flex;gap:6px;padding:8px;background:#1a1a1a;border-bottom:1px solid #333;overflow-x:auto;flex-wrap:nowrap}.toolbar-key{background:#2d2d2d;border:1px solid #444;border-radius:4px;color:#e0e0e0;padding:8px 12px;font-size:13px;font-family:SF Mono,Monaco,monospace;cursor:pointer;flex-shrink:0;min-width:44px;transition:all .15s;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}.toolbar-key:active{background:#3d3d3d;transform:scale(.95)}.toolbar-key.active{background:#667eea;border-color:#667eea;color:#fff}.mobile-input{position:absolute;left:-9999px;width:1px;height:1px;opacity:.01;pointer-events:none}.actions-bar{display:flex;justify-content:flex-end;margin-bottom:20px;padding:0 4px}.create-pane-button{display:flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#60a5fa,#3b82f6);color:#000;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s ease;box-shadow:0 2px 8px #60a5fa4d}.create-pane-button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px #60a5fa66}.create-pane-button:disabled{opacity:.5;cursor:not-allowed;transform:none}.create-pane-button svg{width:16px;height:16px;fill:none;stroke-width:2.5}.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#000000b3;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:2000;animation:fadeIn .2s ease-out}.modal-dialog{background:var(--card-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--card-border);border-radius:16px;width:90%;max-width:600px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px #0006;animation:slideUp .3s ease-out}@keyframes slideUp{0%{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.modal-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border-color)}.modal-header h2{font-size:20px;font-weight:600;color:var(--text-primary);margin:0}.modal-close{background:none;border:none;color:var(--text-secondary);font-size:32px;line-height:1;cursor:pointer;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:all .2s ease}.modal-close:hover{background:var(--button-hover-bg);color:var(--text-primary)}.modal-body{padding:24px;overflow-y:auto;flex:1}.form-group{margin-bottom:20px}.form-group:last-child{margin-bottom:0}.form-group label{display:block;font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px}.modal-textarea{width:100%;padding:12px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:8px;color:var(--text-primary);font-size:14px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;resize:vertical;min-height:100px;transition:all .2s ease}.modal-textarea:focus{outline:none;border-color:var(--input-focus-border);background:var(--input-focus-bg);box-shadow:0 0 0 3px var(--input-focus-shadow)}.modal-textarea:disabled{opacity:.5;cursor:not-allowed}.input-hint{font-size:12px;color:var(--text-tertiary);margin-top:6px}.agent-selector{display:flex;gap:12px}.agent-option{flex:1;display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--button-bg);border:2px solid var(--button-border);border-radius:8px;color:var(--text-primary);font-size:14px;font-weight:600;text-transform:capitalize;cursor:pointer;transition:all .2s ease}.agent-logo{width:40px;height:40px;flex-shrink:0}.agent-option:hover:not(:disabled){background:var(--button-hover-bg);border-color:var(--button-hover-border)}.agent-option.selected{background:var(--input-focus-bg);border-color:var(--input-focus-border);color:var(--text-bright)}.agent-option:disabled{opacity:.5;cursor:not-allowed}.modal-footer{display:flex;gap:12px;padding:20px 24px;border-top:1px solid var(--border-color);justify-content:flex-end}.modal-button{padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s ease;border:none;display:flex;align-items:center;gap:8px}.modal-button-secondary{background:var(--button-bg);color:var(--text-primary);border:1px solid var(--button-border)}.modal-button-secondary:hover:not(:disabled){background:var(--button-hover-bg);border-color:var(--button-hover-border)}.modal-button-primary{background:var(--input-focus-bg);color:var(--text-bright);border:1px solid var(--input-focus-border)}.modal-button-primary:hover:not(:disabled){background:var(--button-hover-bg);border-color:var(--button-hover-border)}.modal-button:disabled{opacity:.5;cursor:not-allowed}.button-loader{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 `,
@@ -69,10 +4506,409 @@ Expected function or array of functions, received type \${typeof e}.\`),ne)}func
     size: 479
   },
   'dashboard.js': {
-    content: `import{d as ye,r as p,o as _e,a as be,n as E,_ as ke,c as i,b as t,t as g,e as u,f as we,g as L,F as b,h as N,w as O,i as X,v as Y,j as $,k as s,l as M,m as Ce}from"./chunks/_plugin-vue_export-helper-Cvoq67hi.js";const Se=ye({__name:"Dashboard",setup(ae,{expose:n}){n();const q=p("Loading..."),e=p(""),k=p(!1),j=p([]),o=p(null),m=p("Never"),A=p({}),y=p(new Set),U=p({}),D=p(localStorage.getItem("dmux-theme")||"dark"),P=p(new Set),_=p(new Set),B=p(!1),T=p(""),w=p(null),J=p(!1),z=p([]),F=p(!1),x=p("prompt"),ne=p([]),H=p({}),C=p(null),h=p(null),K=p(!1),S=p(!1);let v=null;const ie=()=>{D.value=D.value==="dark"?"light":"dark",localStorage.setItem("dmux-theme",D.value),document.documentElement.setAttribute("data-theme",D.value)},se=a=>{P.value.has(a)?P.value.delete(a):P.value.add(a),P.value=new Set(P.value)},le=()=>{B.value=!0,T.value="",w.value=null,z.value=[],F.value=!1,x.value="prompt",E(()=>{const l=document.getElementById("pane-prompt");l&&l.focus()});const a=l=>{l.key==="Escape"&&(Q(),document.removeEventListener("keydown",a))};document.addEventListener("keydown",a)},Q=()=>{B.value=!1,T.value="",w.value=null,z.value=[],F.value=!1,x.value="prompt"},ee=async()=>{if(!(x.value==="prompt"&&!T.value.trim())&&!(x.value==="agent"&&!w.value))try{J.value=!0;const a={prompt:T.value.trim()};w.value&&(a.agent=w.value);const r=await(await fetch("/api/panes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(a)})).json();r.needsAgentChoice?(F.value=!0,z.value=r.availableAgents,x.value="agent"):Q()}catch(a){console.error("Failed to create pane:",a),alert("Failed to create pane")}finally{J.value=!1}},ce=a=>{w.value=a,ee()},R=a=>{q.value=a.projectName||"dmux",e.value=a.sessionName||"",k.value=!0,j.value=a.panes||[],o.value=new Date,m.value="Just now";for(const l of j.value)H.value[l.id]||te(l.id)},I=()=>{v&&v.close();try{v=new EventSource("/api/panes-stream"),v.onmessage=a=>{try{const l=JSON.parse(a.data);l.type==="init"||l.type==="update"?R(l.data):l.type==="heartbeat"&&console.debug("SSE heartbeat received")}catch(l){console.error("Failed to parse SSE message:",l)}},v.onerror=a=>{console.error("SSE connection error:",a),k.value=!1,setTimeout(()=>{(v==null?void 0:v.readyState)===EventSource.CLOSED&&(console.log("Reconnecting to SSE stream..."),I())},5e3)},v.onopen=()=>{console.log("SSE connection established"),k.value=!0}}catch(a){console.error("Failed to connect to SSE stream:",a),k.value=!1}},re=async()=>{try{const l=await(await fetch("/api/panes")).json();R(l)}catch(a){console.error("Failed to fetch panes:",a),k.value=!1}},te=async a=>{try{const r=await(await fetch(\`/api/panes/\${a}/actions\`)).json();console.log(\`Fetched actions for pane \${a}:\`,r),H.value[a]=r.actions||[]}catch(l){console.error(\`Failed to fetch actions for pane \${a}:\`,l)}},de=a=>{C.value===a?C.value=null:C.value=a},ue=async(a,l)=>{var r;try{K.value=!0,C.value=null;const d=await(await fetch(\`/api/panes/\${a.id}/actions/\${l.id}\`,{method:"POST"})).json();if(d.requiresInteraction){let f={};d.interactionType==="confirm"?f={type:"confirm",title:d.title||"Confirm",message:d.message,...d.confirmData}:d.interactionType==="choice"?f={type:"choice",title:d.title||"Choose",message:d.message,...d.choiceData}:d.interactionType==="input"&&(f={type:"input",title:d.title||"Input",message:d.message,...d.inputData,inputValue:((r=d.inputData)==null?void 0:r.defaultValue)||""},E(()=>{const G=document.querySelector(".dialog-input");G&&(G.focus(),G.select())})),f.paneId=a.id,h.value=f}}catch(c){console.error("Failed to execute action:",c),alert("Failed to execute action")}finally{K.value=!1}},V=()=>{h.value=null},ge=async a=>{var l;if(h.value)try{S.value=!0;const c=await(await fetch(\`/api/callbacks/confirm/\${h.value.callbackId}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirmed:a})})).json();if(c.requiresInteraction){let d={};c.interactionType==="confirm"?d={type:"confirm",title:c.title||"Confirm",message:c.message,...c.confirmData}:c.interactionType==="choice"?d={type:"choice",title:c.title||"Choose",message:c.message,...c.choiceData}:c.interactionType==="input"&&(d={type:"input",title:c.title||"Input",message:c.message,...c.inputData,inputValue:((l=c.inputData)==null?void 0:l.defaultValue)||""},E(()=>{const f=document.querySelector(".dialog-input");f&&(f.focus(),f.select())})),h.value=d}else V()}catch(r){console.error("Failed to confirm action:",r),alert("Failed to complete action")}finally{S.value=!1}},pe=async a=>{var l;if(h.value)try{S.value=!0;const c=await(await fetch(\`/api/callbacks/choice/\${h.value.callbackId}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({optionId:a})})).json();if(c.requiresInteraction){let d={};c.interactionType==="confirm"?d={type:"confirm",title:c.title||"Confirm",message:c.message,...c.confirmData}:c.interactionType==="choice"?d={type:"choice",title:c.title||"Choose",message:c.message,...c.choiceData}:c.interactionType==="input"&&(d={type:"input",title:c.title||"Input",message:c.message,...c.inputData,inputValue:((l=c.inputData)==null?void 0:l.defaultValue)||""},E(()=>{const f=document.querySelector(".dialog-input");f&&(f.focus(),f.select())})),h.value=d}else V()}catch(r){console.error("Failed to select choice:",r),alert("Failed to complete action")}finally{S.value=!1}},me=async()=>{var a;if(h.value)try{S.value=!0;const r=await(await fetch(\`/api/callbacks/input/\${h.value.callbackId}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:h.value.inputValue})})).json();if(r.requiresInteraction){let c={};r.interactionType==="confirm"?c={type:"confirm",title:r.title||"Confirm",message:r.message,...r.confirmData}:r.interactionType==="choice"?c={type:"choice",title:r.title||"Choose",message:r.message,...r.choiceData}:r.interactionType==="input"&&(c={type:"input",title:r.title||"Input",message:r.message,...r.inputData,inputValue:((a=r.inputData)==null?void 0:a.defaultValue)||""},E(()=>{const d=document.querySelector(".dialog-input");d&&(d.focus(),d.select())})),h.value=c}else V()}catch(l){console.error("Failed to submit input:",l),alert("Failed to complete action")}finally{S.value=!1}},ve=async(a,l)=>{try{_.value.add(a.id),_.value=new Set(_.value);const r=l.keys||[l.action];for(const c of r)await fetch(\`/api/keys/\${a.id}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:c})});setTimeout(()=>{_.value.delete(a.id),_.value=new Set(_.value)},1500)}catch(r){console.error("Failed to select option:",r),_.value.delete(a.id),_.value=new Set(_.value)}},he=async a=>{const l=A.value[a.id];if(!(!l||!l.trim()))try{y.value.add(a.id),y.value=new Set(y.value);for(const r of l)await fetch(\`/api/keys/\${a.id}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:r})});await fetch(\`/api/keys/\${a.id}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:"Enter"})}),U.value[a.id]=l.substring(0,50)+(l.length>50?"...":""),A.value[a.id]="",setTimeout(()=>{delete U.value[a.id],y.value.delete(a.id),y.value=new Set(y.value)},3e3)}catch(r){console.error("Failed to send prompt:",r),y.value.delete(a.id),y.value=new Set(y.value)}},fe=a=>{const l=a.target;l.style.height="auto",l.style.height=l.scrollHeight+"px"},W=()=>{v&&(v.close(),v=null)},Z=a=>{const l=a.target;C.value&&!l.closest(".action-menu-btn")&&!l.closest(".action-menu-dropdown")&&(C.value=null)};_e(()=>{document.documentElement.setAttribute("data-theme",D.value),I(),document.addEventListener("click",Z),document.addEventListener("visibilitychange",()=>{document.hidden?W():I()})}),be(()=>{W(),document.removeEventListener("click",Z)});const oe={projectName:q,sessionName:e,connected:k,panes:j,lastUpdate:o,timeSinceUpdate:m,promptInputs:A,sendingPrompts:y,queuedMessages:U,theme:D,expandedPrompts:P,loadingOptions:_,showCreateDialog:B,newPanePrompt:T,newPaneAgent:w,creatingPane:J,availableAgents:z,needsAgentChoice:F,createStep:x,actions:ne,paneActions:H,showActionMenu:C,actionDialog:h,executingAction:K,actionDialogLoading:S,get eventSource(){return v},set eventSource(a){v=a},toggleTheme:ie,togglePrompt:se,openCreateDialog:le,closeCreateDialog:Q,createPane:ee,selectAgent:ce,updatePanesFromData:R,connectToStream:I,fetchPanes:re,fetchPaneActions:te,toggleActionMenu:de,executeAction:ue,closeActionDialog:V,confirmAction:ge,selectChoice:pe,submitInput:me,selectOption:ve,sendPrompt:he,autoExpand:fe,disconnectStream:W,handleClickOutside:Z};return Object.defineProperty(oe,"__isScriptSetup",{enumerable:!1,value:!0}),oe}}),De={class:"session-info"},Pe=["title"],xe={key:0,xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 24 24"},Ae={key:1,xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 24 24"},Te={key:0},Ee={class:"container"},Ne={class:"actions-bar"},Oe=["disabled"],Me={key:0,class:"no-panes"},je={key:1,class:"panes-grid"},ze={class:"pane-header"},Fe={class:"pane-header-content"},Ie=["href"],Ve={class:"pane-title"},Le={class:"pane-meta"},qe={key:0,class:"pane-autopilot",title:"Autopilot enabled"},Ue={class:"pane-id"},Be=["onClick"],Je={key:0,class:"action-menu-dropdown"},He=["onClick","disabled"],Ke={class:"action-icon"},Qe={class:"action-label"},Re={class:"pane-prompt-section"},We=["onClick"],Ze={class:"prompt-header"},Ge={class:"expand-icon"},Xe={class:"prompt-text"},Ye={key:0,class:"pane-prompt-full"},$e={key:1,class:"agent-summary"},et={key:2,class:"analyzer-error"},tt={key:0,class:"options-dialog"},ot={class:"options-question"},at={key:0,class:"options-warning"},nt={key:1,class:"analyzing-state"},it={key:2,class:"options-buttons"},st=["onClick","disabled"],lt={class:"prompt-input-wrapper"},ct=["onUpdate:modelValue","placeholder","disabled"],rt=["onClick","disabled","title"],dt={key:0,class:"button-loader"},ut={key:1,xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 988.44 1200.05"},gt={key:0,class:"queued-message"},pt={key:3,class:"dev-server-status"},mt=["href"],vt={class:"action-dialog"},ht={key:0},ft=["onKeydown"],yt={class:"dialog-buttons"},_t=["disabled"],bt={key:1},kt={class:"agent-choices"},wt=["onClick","disabled"],Ct={key:0,class:"action-dialog"},St={key:0,class:"dialog-loading"},Dt={key:1,class:"dialog-buttons"},Pt=["disabled"],xt=["disabled"],At={class:"action-dialog"},Tt={key:0},Et={key:1,class:"dialog-loading"},Nt={key:2},Ot={class:"choice-options"},Mt=["onClick","disabled"],jt={class:"choice-label"},zt={key:0,class:"choice-description"},Ft={class:"dialog-buttons"},It=["disabled"],Vt={class:"action-dialog"},Lt={key:0},qt={key:1,class:"dialog-loading"},Ut={key:2},Bt=["placeholder"],Jt={class:"dialog-buttons"},Ht=["disabled"],Kt=["disabled"];function Qt(ae,n,q,e,k,j){return s(),i(b,null,[t("header",null,[n[7]||(n[7]=t("img",{src:"https://cdn.formk.it/dmux/dmux.png",alt:"dmux",class:"logo"},null,-1)),t("h1",null,g(e.projectName),1),t("div",De,[t("button",{onClick:e.toggleTheme,class:"theme-toggle",title:e.theme==="dark"?"Switch to light mode":"Switch to dark mode"},[e.theme==="dark"?(s(),i("svg",xe,[...n[5]||(n[5]=[t("path",{d:"M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"},null,-1)])])):(s(),i("svg",Ae,[...n[6]||(n[6]=[t("path",{d:"M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6.5a9 9 0 009 9 8.97 8.97 0 003.963-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z"},null,-1)])]))],8,Pe),e.sessionName?(s(),i("span",Te,g(e.sessionName),1)):u("v-if",!0),t("span",{class:"status-indicator",style:we({color:e.connected?"#4ade80":"#f87171"})},"●",4)])]),t("div",Ee,[t("main",null,[t("div",Ne,[t("button",{onClick:e.openCreateDialog,class:"create-pane-button",disabled:e.creatingPane},[...n[8]||(n[8]=[t("svg",{xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 24 24",fill:"currentColor"},[t("path",{d:"M12 4.5v15m7.5-7.5h-15",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round"})],-1),L(" Create New Pane ",-1)])],8,Oe)]),e.panes.length===0?(s(),i("div",Me,[...n[9]||(n[9]=[t("p",null,"No dmux panes active",-1),t("p",{class:"hint"},\`Click "Create New Pane" above or press 'n' in dmux\`,-1)])])):(s(),i("div",je,[(s(!0),i(b,null,N(e.panes,o=>(s(),i("div",{key:o.id,class:"pane-card"},[t("div",ze,[t("div",Fe,[t("a",{href:"/panes/"+o.id,class:"pane-title-link"},[t("span",Ve,g(o.slug),1),n[10]||(n[10]=t("span",{class:"pane-arrow"},"→",-1))],8,Ie),t("div",Le,[o.autopilot?(s(),i("span",qe,"🤖")):u("v-if",!0),t("span",{class:M(["pane-agent",o.agent||""])},g(o.agent||"unknown"),3),t("span",Ue,g(o.paneId),1)])]),t("button",{onClick:m=>e.toggleActionMenu(o.id),class:"action-menu-btn",title:"Actions"},[...n[11]||(n[11]=[t("span",null,"⋮",-1)])],8,Be)]),u(" Action Menu Dropdown "),e.showActionMenu===o.id&&e.paneActions[o.id]?(s(),i("div",Je,[(s(!0),i(b,null,N(e.paneActions[o.id],m=>(s(),i("button",{key:m.id,onClick:A=>e.executeAction(o,m),class:"action-menu-item",disabled:e.executingAction},[t("span",Ke,g(m.icon||"•"),1),t("span",Qe,g(m.label),1)],8,He))),128))])):u("v-if",!0),t("div",Re,[t("div",{class:M(["pane-prompt-preview",{expanded:e.expandedPrompts.has(o.id)}]),onClick:m=>e.togglePrompt(o.id)},[t("div",Ze,[n[12]||(n[12]=t("span",{class:"prompt-label"},"Initial Prompt",-1)),t("span",Ge,g(e.expandedPrompts.has(o.id)?"▼":"▶"),1)]),t("span",Xe,g(o.prompt||"No prompt"),1)],10,We),e.expandedPrompts.has(o.id)?(s(),i("div",Ye,g(o.prompt||"No prompt"),1)):u("v-if",!0)]),u(" Show agent summary when idle "),o.agentStatus==="idle"&&o.agentSummary?(s(),i("div",$e,g(o.agentSummary),1)):u("v-if",!0),u(" Show analyzer error if present "),o.analyzerError?(s(),i("div",et," ⚠ "+g(o.analyzerError),1)):u("v-if",!0),t("div",{class:"pane-interactive",onClick:n[0]||(n[0]=O(()=>{},["prevent"]))},[u(" Options Dialog (when waiting with options) "),o.agentStatus==="waiting"&&o.options&&o.options.length>0?(s(),i("div",tt,[t("div",ot,g(o.optionsQuestion||"Choose an option:"),1),o.potentialHarm&&o.potentialHarm.hasRisk?(s(),i("div",at," ⚠️ "+g(o.potentialHarm.description),1)):u("v-if",!0),e.loadingOptions.has(o.id)?(s(),i("div",nt,[...n[13]||(n[13]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing selection...",-1)])])):(s(),i("div",it,[(s(!0),i(b,null,N(o.options,m=>(s(),i("button",{key:m.action,onClick:A=>e.selectOption(o,m),class:M(["option-button",{"option-button-danger":o.potentialHarm&&o.potentialHarm.hasRisk}]),disabled:e.loadingOptions.has(o.id)},g(m.action),11,st))),128))]))])):o.agentStatus==="analyzing"?(s(),i(b,{key:1},[u(" Analyzing (show loader) "),n[14]||(n[14]=t("div",{class:"analyzing-state"},[t("div",{class:"loader-spinner"}),t("span",null,"Analyzing...")],-1))],2112)):(s(),i(b,{key:2},[u(" Working/Idle (show prompt input) "),t("div",null,[t("div",lt,[X(t("textarea",{"onUpdate:modelValue":m=>e.promptInputs[o.id]=m,onInput:e.autoExpand,placeholder:o.agentStatus==="working"?"Queue a prompt...":"Send a prompt...",disabled:e.sendingPrompts.has(o.id),class:"prompt-textarea",rows:"1"},null,40,ct),[[Y,e.promptInputs[o.id]]]),t("button",{onClick:m=>e.sendPrompt(o),disabled:!e.promptInputs[o.id]||e.sendingPrompts.has(o.id),class:"send-button",title:o.agentStatus==="working"?"Queue prompt":"Send prompt"},[e.sendingPrompts.has(o.id)?(s(),i("span",dt)):(s(),i("svg",ut,[...n[15]||(n[15]=[t("path",{d:"M425.13,28.37L30.09,423.41C11.19,441.37.34,466.2,0,492.27c-.34,26.07,9.86,51.17,28.29,69.61,18.43,18.45,43.52,28.67,69.59,28.35,26.07-.31,50.91-11.14,68.88-30.02l233.16-233.52v776.64c0,34.56,18.43,66.48,48.36,83.76,29.93,17.28,66.8,17.28,96.72,0,29.93-17.28,48.36-49.21,48.36-83.76V328.85l231.72,231.36c24.63,23.41,59.74,32.18,92.48,23.09,32.74-9.08,58.32-34.68,67.38-67.43,9.05-32.75.25-67.85-23.18-92.46L566.73,28.37C548.63,10.16,524-.04,498.33.05c-.8-.06-1.6-.06-2.4,0-.8-.06-1.6-.06-2.4,0-25.65,0-50.25,10.19-68.4,28.32h0Z"},null,-1)])]))],8,rt)]),e.queuedMessages[o.id]?(s(),i("div",gt," ✓ "+g(e.queuedMessages[o.id]),1)):u("v-if",!0)])],2112))]),o.devStatus&&o.devStatus!=="stopped"?(s(),i("div",pt,[n[16]||(n[16]=t("span",{class:"status-label"},"Dev Server:",-1)),t("span",{class:M(["status-badge",o.devStatus])},g(o.devStatus),3),o.devUrl?(s(),i("a",{key:0,href:o.devUrl,target:"_blank",class:"dev-link"},"↗",8,mt)):u("v-if",!0)])):u("v-if",!0)]))),128))]))]),u(" Create Pane Dialog "),e.showCreateDialog?(s(),i("div",{key:0,class:"action-dialog-overlay",onClick:O(e.closeCreateDialog,["self"])},[t("div",vt,[n[20]||(n[20]=t("h3",null,"Create New Pane",-1)),e.createStep==="prompt"?(s(),i("div",ht,[n[17]||(n[17]=t("label",{for:"pane-prompt"},"Provide an initial prompt for your agent",-1)),X(t("textarea",{id:"pane-prompt","onUpdate:modelValue":n[1]||(n[1]=o=>e.newPanePrompt=o),placeholder:"E.g., Fix the authentication bug, Add dark mode, etc.",rows:"4",onKeydown:[$(O(e.createPane,["meta"]),["enter"]),$(O(e.createPane,["ctrl"]),["enter"])]},null,40,ft),[[Y,e.newPanePrompt]]),n[18]||(n[18]=t("div",{class:"dialog-hint"},[L(" 💡 Press "),t("kbd",null,"⌘ Enter"),L(" or "),t("kbd",null,"Ctrl Enter"),L(" to create ")],-1)),t("div",yt,[t("button",{onClick:e.closeCreateDialog,class:"dialog-btn"},"Cancel"),t("button",{onClick:e.createPane,disabled:!e.newPanePrompt.trim()||e.creatingPane,class:"dialog-btn dialog-btn-primary"},g(e.creatingPane?"Creating...":"Create Pane"),9,_t)])])):e.createStep==="agent"?(s(),i("div",bt,[n[19]||(n[19]=t("p",null,"Multiple agents available. Choose one:",-1)),t("div",kt,[(s(!0),i(b,null,N(e.availableAgents,o=>(s(),i("button",{key:o,onClick:m=>e.selectAgent(o),class:"agent-choice-button",disabled:e.creatingPane},g(o),9,wt))),128))]),t("div",{class:"dialog-buttons"},[t("button",{onClick:e.closeCreateDialog,class:"dialog-btn"},"Cancel")])])):u("v-if",!0)])])):u("v-if",!0),u(" Action Dialogs "),e.actionDialog?(s(),i("div",{key:1,class:"action-dialog-overlay",onClick:O(e.closeActionDialog,["self"])},[u(" Confirm Dialog "),e.actionDialog.type==="confirm"?(s(),i("div",Ct,[t("h3",null,g(e.actionDialog.title),1),t("p",null,g(e.actionDialog.message),1),e.actionDialogLoading?(s(),i("div",St,[...n[21]||(n[21]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing...",-1)])])):(s(),i("div",Dt,[t("button",{onClick:n[2]||(n[2]=o=>e.confirmAction(!1)),class:"dialog-btn",disabled:e.actionDialogLoading},"Cancel",8,Pt),t("button",{onClick:n[3]||(n[3]=o=>e.confirmAction(!0)),class:"dialog-btn dialog-btn-primary",disabled:e.actionDialogLoading},"Confirm",8,xt)]))])):e.actionDialog.type==="choice"?(s(),i(b,{key:1},[u(" Choice Dialog "),t("div",At,[t("h3",null,g(e.actionDialog.title),1),e.actionDialog.message?(s(),i("p",Tt,g(e.actionDialog.message),1)):u("v-if",!0),e.actionDialogLoading?(s(),i("div",Et,[...n[22]||(n[22]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing...",-1)])])):(s(),i("div",Nt,[t("div",Ot,[(s(!0),i(b,null,N(e.actionDialog.options,o=>(s(),i("button",{key:o.id,onClick:m=>e.selectChoice(o.id),class:M(["choice-option-btn",{danger:o.danger}]),disabled:e.actionDialogLoading},[t("div",jt,g(o.label),1),o.description?(s(),i("div",zt,g(o.description),1)):u("v-if",!0)],10,Mt))),128))]),t("div",Ft,[t("button",{onClick:e.closeActionDialog,class:"dialog-btn",disabled:e.actionDialogLoading},"Cancel",8,It)])]))])],2112)):e.actionDialog.type==="input"?(s(),i(b,{key:2},[u(" Input Dialog "),t("div",Vt,[t("h3",null,g(e.actionDialog.title),1),e.actionDialog.message?(s(),i("p",Lt,g(e.actionDialog.message),1)):u("v-if",!0),e.actionDialogLoading?(s(),i("div",qt,[...n[23]||(n[23]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing...",-1)])])):(s(),i("div",Ut,[X(t("input",{type:"text","onUpdate:modelValue":n[4]||(n[4]=o=>e.actionDialog.inputValue=o),placeholder:e.actionDialog.placeholder,class:"dialog-input",onKeydown:$(e.submitInput,["enter"])},null,40,Bt),[[Y,e.actionDialog.inputValue]]),t("div",Jt,[t("button",{onClick:e.closeActionDialog,class:"dialog-btn",disabled:e.actionDialogLoading},"Cancel",8,Ht),t("button",{onClick:e.submitInput,class:"dialog-btn dialog-btn-primary",disabled:e.actionDialogLoading},"Submit",8,Kt)])]))])],2112)):u("v-if",!0)])):u("v-if",!0)])],64)}const Rt=ke(Se,[["render",Qt],["__file","/Users/justinschroeder/Projects/dmux/.dmux/worktrees/pane-analyzer-error/frontend/src/components/Dashboard.vue"]]),Wt=Ce(Rt);Wt.mount("#app");
+    content: `import{d as ye,r as p,o as _e,a as be,n as E,_ as ke,c as i,b as t,t as g,e as u,f as we,g as L,F as b,h as N,w as O,i as X,v as Y,j as $,k as s,l as M,m as Ce}from"./chunks/_plugin-vue_export-helper-Cvoq67hi.js";const Se=ye({__name:"Dashboard",setup(ae,{expose:n}){n();const q=p("Loading..."),e=p(""),k=p(!1),j=p([]),o=p(null),m=p("Never"),A=p({}),y=p(new Set),U=p({}),D=p(localStorage.getItem("dmux-theme")||"dark"),P=p(new Set),_=p(new Set),B=p(!1),T=p(""),w=p(null),J=p(!1),z=p([]),F=p(!1),x=p("prompt"),ne=p([]),H=p({}),C=p(null),h=p(null),K=p(!1),S=p(!1);let v=null;const ie=()=>{D.value=D.value==="dark"?"light":"dark",localStorage.setItem("dmux-theme",D.value),document.documentElement.setAttribute("data-theme",D.value)},se=a=>{P.value.has(a)?P.value.delete(a):P.value.add(a),P.value=new Set(P.value)},le=()=>{B.value=!0,T.value="",w.value=null,z.value=[],F.value=!1,x.value="prompt",E(()=>{const l=document.getElementById("pane-prompt");l&&l.focus()});const a=l=>{l.key==="Escape"&&(Q(),document.removeEventListener("keydown",a))};document.addEventListener("keydown",a)},Q=()=>{B.value=!1,T.value="",w.value=null,z.value=[],F.value=!1,x.value="prompt"},ee=async()=>{if(!(x.value==="prompt"&&!T.value.trim())&&!(x.value==="agent"&&!w.value))try{J.value=!0;const a={prompt:T.value.trim()};w.value&&(a.agent=w.value);const r=await(await fetch("/api/panes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(a)})).json();r.needsAgentChoice?(F.value=!0,z.value=r.availableAgents,x.value="agent"):Q()}catch(a){console.error("Failed to create pane:",a),alert("Failed to create pane")}finally{J.value=!1}},ce=a=>{w.value=a,ee()},R=a=>{q.value=a.projectName||"dmux",e.value=a.sessionName||"",k.value=!0,j.value=a.panes||[],o.value=new Date,m.value="Just now";for(const l of j.value)H.value[l.id]||te(l.id)},I=()=>{v&&v.close();try{v=new EventSource("/api/panes-stream"),v.onmessage=a=>{try{const l=JSON.parse(a.data);l.type==="init"||l.type==="update"?R(l.data):l.type==="heartbeat"&&console.debug("SSE heartbeat received")}catch(l){console.error("Failed to parse SSE message:",l)}},v.onerror=a=>{console.error("SSE connection error:",a),k.value=!1,setTimeout(()=>{(v==null?void 0:v.readyState)===EventSource.CLOSED&&(console.log("Reconnecting to SSE stream..."),I())},5e3)},v.onopen=()=>{console.log("SSE connection established"),k.value=!0}}catch(a){console.error("Failed to connect to SSE stream:",a),k.value=!1}},re=async()=>{try{const l=await(await fetch("/api/panes")).json();R(l)}catch(a){console.error("Failed to fetch panes:",a),k.value=!1}},te=async a=>{try{const r=await(await fetch(\`/api/panes/\${a}/actions\`)).json();console.log(\`Fetched actions for pane \${a}:\`,r),H.value[a]=r.actions||[]}catch(l){console.error(\`Failed to fetch actions for pane \${a}:\`,l)}},de=a=>{C.value===a?C.value=null:C.value=a},ue=async(a,l)=>{var r;try{K.value=!0,C.value=null;const d=await(await fetch(\`/api/panes/\${a.id}/actions/\${l.id}\`,{method:"POST"})).json();if(d.requiresInteraction){let f={};d.interactionType==="confirm"?f={type:"confirm",title:d.title||"Confirm",message:d.message,...d.confirmData}:d.interactionType==="choice"?f={type:"choice",title:d.title||"Choose",message:d.message,...d.choiceData}:d.interactionType==="input"&&(f={type:"input",title:d.title||"Input",message:d.message,...d.inputData,inputValue:((r=d.inputData)==null?void 0:r.defaultValue)||""},E(()=>{const G=document.querySelector(".dialog-input");G&&(G.focus(),G.select())})),f.paneId=a.id,h.value=f}}catch(c){console.error("Failed to execute action:",c),alert("Failed to execute action")}finally{K.value=!1}},V=()=>{h.value=null},ge=async a=>{var l;if(h.value)try{S.value=!0;const c=await(await fetch(\`/api/callbacks/confirm/\${h.value.callbackId}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirmed:a})})).json();if(c.requiresInteraction){let d={};c.interactionType==="confirm"?d={type:"confirm",title:c.title||"Confirm",message:c.message,...c.confirmData}:c.interactionType==="choice"?d={type:"choice",title:c.title||"Choose",message:c.message,...c.choiceData}:c.interactionType==="input"&&(d={type:"input",title:c.title||"Input",message:c.message,...c.inputData,inputValue:((l=c.inputData)==null?void 0:l.defaultValue)||""},E(()=>{const f=document.querySelector(".dialog-input");f&&(f.focus(),f.select())})),h.value=d}else V()}catch(r){console.error("Failed to confirm action:",r),alert("Failed to complete action")}finally{S.value=!1}},pe=async a=>{var l;if(h.value)try{S.value=!0;const c=await(await fetch(\`/api/callbacks/choice/\${h.value.callbackId}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({optionId:a})})).json();if(c.requiresInteraction){let d={};c.interactionType==="confirm"?d={type:"confirm",title:c.title||"Confirm",message:c.message,...c.confirmData}:c.interactionType==="choice"?d={type:"choice",title:c.title||"Choose",message:c.message,...c.choiceData}:c.interactionType==="input"&&(d={type:"input",title:c.title||"Input",message:c.message,...c.inputData,inputValue:((l=c.inputData)==null?void 0:l.defaultValue)||""},E(()=>{const f=document.querySelector(".dialog-input");f&&(f.focus(),f.select())})),h.value=d}else V()}catch(r){console.error("Failed to select choice:",r),alert("Failed to complete action")}finally{S.value=!1}},me=async()=>{var a;if(h.value)try{S.value=!0;const r=await(await fetch(\`/api/callbacks/input/\${h.value.callbackId}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:h.value.inputValue})})).json();if(r.requiresInteraction){let c={};r.interactionType==="confirm"?c={type:"confirm",title:r.title||"Confirm",message:r.message,...r.confirmData}:r.interactionType==="choice"?c={type:"choice",title:r.title||"Choose",message:r.message,...r.choiceData}:r.interactionType==="input"&&(c={type:"input",title:r.title||"Input",message:r.message,...r.inputData,inputValue:((a=r.inputData)==null?void 0:a.defaultValue)||""},E(()=>{const d=document.querySelector(".dialog-input");d&&(d.focus(),d.select())})),h.value=c}else V()}catch(l){console.error("Failed to submit input:",l),alert("Failed to complete action")}finally{S.value=!1}},ve=async(a,l)=>{try{_.value.add(a.id),_.value=new Set(_.value);const r=l.keys||[l.action];for(const c of r)await fetch(\`/api/keys/\${a.id}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:c})});setTimeout(()=>{_.value.delete(a.id),_.value=new Set(_.value)},1500)}catch(r){console.error("Failed to select option:",r),_.value.delete(a.id),_.value=new Set(_.value)}},he=async a=>{const l=A.value[a.id];if(!(!l||!l.trim()))try{y.value.add(a.id),y.value=new Set(y.value);for(const r of l)await fetch(\`/api/keys/\${a.id}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:r})});await fetch(\`/api/keys/\${a.id}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:"Enter"})}),U.value[a.id]=l.substring(0,50)+(l.length>50?"...":""),A.value[a.id]="",setTimeout(()=>{delete U.value[a.id],y.value.delete(a.id),y.value=new Set(y.value)},3e3)}catch(r){console.error("Failed to send prompt:",r),y.value.delete(a.id),y.value=new Set(y.value)}},fe=a=>{const l=a.target;l.style.height="auto",l.style.height=l.scrollHeight+"px"},W=()=>{v&&(v.close(),v=null)},Z=a=>{const l=a.target;C.value&&!l.closest(".action-menu-btn")&&!l.closest(".action-menu-dropdown")&&(C.value=null)};_e(()=>{document.documentElement.setAttribute("data-theme",D.value),I(),document.addEventListener("click",Z),document.addEventListener("visibilitychange",()=>{document.hidden?W():I()})}),be(()=>{W(),document.removeEventListener("click",Z)});const oe={projectName:q,sessionName:e,connected:k,panes:j,lastUpdate:o,timeSinceUpdate:m,promptInputs:A,sendingPrompts:y,queuedMessages:U,theme:D,expandedPrompts:P,loadingOptions:_,showCreateDialog:B,newPanePrompt:T,newPaneAgent:w,creatingPane:J,availableAgents:z,needsAgentChoice:F,createStep:x,actions:ne,paneActions:H,showActionMenu:C,actionDialog:h,executingAction:K,actionDialogLoading:S,get eventSource(){return v},set eventSource(a){v=a},toggleTheme:ie,togglePrompt:se,openCreateDialog:le,closeCreateDialog:Q,createPane:ee,selectAgent:ce,updatePanesFromData:R,connectToStream:I,fetchPanes:re,fetchPaneActions:te,toggleActionMenu:de,executeAction:ue,closeActionDialog:V,confirmAction:ge,selectChoice:pe,submitInput:me,selectOption:ve,sendPrompt:he,autoExpand:fe,disconnectStream:W,handleClickOutside:Z};return Object.defineProperty(oe,"__isScriptSetup",{enumerable:!1,value:!0}),oe}}),De={class:"session-info"},Pe=["title"],xe={key:0,xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 24 24"},Ae={key:1,xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 24 24"},Te={key:0},Ee={class:"container"},Ne={class:"actions-bar"},Oe=["disabled"],Me={key:0,class:"no-panes"},je={key:1,class:"panes-grid"},ze={class:"pane-header"},Fe={class:"pane-header-content"},Ie=["href"],Ve={class:"pane-title"},Le={class:"pane-meta"},qe={key:0,class:"pane-autopilot",title:"Autopilot enabled"},Ue={class:"pane-id"},Be=["onClick"],Je={key:0,class:"action-menu-dropdown"},He=["onClick","disabled"],Ke={class:"action-icon"},Qe={class:"action-label"},Re={class:"pane-prompt-section"},We=["onClick"],Ze={class:"prompt-header"},Ge={class:"expand-icon"},Xe={class:"prompt-text"},Ye={key:0,class:"pane-prompt-full"},$e={key:1,class:"agent-summary"},et={key:2,class:"analyzer-error"},tt={key:0,class:"options-dialog"},ot={class:"options-question"},at={key:0,class:"options-warning"},nt={key:1,class:"analyzing-state"},it={key:2,class:"options-buttons"},st=["onClick","disabled"],lt={class:"prompt-input-wrapper"},ct=["onUpdate:modelValue","placeholder","disabled"],rt=["onClick","disabled","title"],dt={key:0,class:"button-loader"},ut={key:1,xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 988.44 1200.05"},gt={key:0,class:"queued-message"},pt={key:3,class:"dev-server-status"},mt=["href"],vt={class:"action-dialog"},ht={key:0},ft=["onKeydown"],yt={class:"dialog-buttons"},_t=["disabled"],bt={key:1},kt={class:"agent-choices"},wt=["onClick","disabled"],Ct={key:0,class:"action-dialog"},St={key:0,class:"dialog-loading"},Dt={key:1,class:"dialog-buttons"},Pt=["disabled"],xt=["disabled"],At={class:"action-dialog"},Tt={key:0},Et={key:1,class:"dialog-loading"},Nt={key:2},Ot={class:"choice-options"},Mt=["onClick","disabled"],jt={class:"choice-label"},zt={key:0,class:"choice-description"},Ft={class:"dialog-buttons"},It=["disabled"],Vt={class:"action-dialog"},Lt={key:0},qt={key:1,class:"dialog-loading"},Ut={key:2},Bt=["placeholder"],Jt={class:"dialog-buttons"},Ht=["disabled"],Kt=["disabled"];function Qt(ae,n,q,e,k,j){return s(),i(b,null,[t("header",null,[n[7]||(n[7]=t("img",{src:"https://cdn.formk.it/dmux/dmux.png",alt:"dmux",class:"logo"},null,-1)),t("h1",null,g(e.projectName),1),t("div",De,[t("button",{onClick:e.toggleTheme,class:"theme-toggle",title:e.theme==="dark"?"Switch to light mode":"Switch to dark mode"},[e.theme==="dark"?(s(),i("svg",xe,[...n[5]||(n[5]=[t("path",{d:"M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"},null,-1)])])):(s(),i("svg",Ae,[...n[6]||(n[6]=[t("path",{d:"M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6.5a9 9 0 009 9 8.97 8.97 0 003.963-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z"},null,-1)])]))],8,Pe),e.sessionName?(s(),i("span",Te,g(e.sessionName),1)):u("v-if",!0),t("span",{class:"status-indicator",style:we({color:e.connected?"#4ade80":"#f87171"})},"●",4)])]),t("div",Ee,[t("main",null,[t("div",Ne,[t("button",{onClick:e.openCreateDialog,class:"create-pane-button",disabled:e.creatingPane},[...n[8]||(n[8]=[t("svg",{xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 24 24",fill:"currentColor"},[t("path",{d:"M12 4.5v15m7.5-7.5h-15",stroke:"currentColor","stroke-width":"2","stroke-linecap":"round","stroke-linejoin":"round"})],-1),L(" Create New Pane ",-1)])],8,Oe)]),e.panes.length===0?(s(),i("div",Me,[...n[9]||(n[9]=[t("p",null,"No dmux panes active",-1),t("p",{class:"hint"},\`Click "Create New Pane" above or press 'n' in dmux\`,-1)])])):(s(),i("div",je,[(s(!0),i(b,null,N(e.panes,o=>(s(),i("div",{key:o.id,class:"pane-card"},[t("div",ze,[t("div",Fe,[t("a",{href:"/panes/"+o.id,class:"pane-title-link"},[t("span",Ve,g(o.slug),1),n[10]||(n[10]=t("span",{class:"pane-arrow"},"→",-1))],8,Ie),t("div",Le,[o.autopilot?(s(),i("span",qe,"🤖")):u("v-if",!0),t("span",{class:M(["pane-agent",o.agent||""])},g(o.agent||"unknown"),3),t("span",Ue,g(o.paneId),1)])]),t("button",{onClick:m=>e.toggleActionMenu(o.id),class:"action-menu-btn",title:"Actions"},[...n[11]||(n[11]=[t("span",null,"⋮",-1)])],8,Be)]),u(" Action Menu Dropdown "),e.showActionMenu===o.id&&e.paneActions[o.id]?(s(),i("div",Je,[(s(!0),i(b,null,N(e.paneActions[o.id],m=>(s(),i("button",{key:m.id,onClick:A=>e.executeAction(o,m),class:"action-menu-item",disabled:e.executingAction},[t("span",Ke,g(m.icon||"•"),1),t("span",Qe,g(m.label),1)],8,He))),128))])):u("v-if",!0),t("div",Re,[t("div",{class:M(["pane-prompt-preview",{expanded:e.expandedPrompts.has(o.id)}]),onClick:m=>e.togglePrompt(o.id)},[t("div",Ze,[n[12]||(n[12]=t("span",{class:"prompt-label"},"Initial Prompt",-1)),t("span",Ge,g(e.expandedPrompts.has(o.id)?"▼":"▶"),1)]),t("span",Xe,g(o.prompt||"No prompt"),1)],10,We),e.expandedPrompts.has(o.id)?(s(),i("div",Ye,g(o.prompt||"No prompt"),1)):u("v-if",!0)]),u(" Show agent summary when idle "),o.agentStatus==="idle"&&o.agentSummary?(s(),i("div",$e,g(o.agentSummary),1)):u("v-if",!0),u(" Show analyzer error if present "),o.analyzerError?(s(),i("div",et," ⚠ "+g(o.analyzerError),1)):u("v-if",!0),t("div",{class:"pane-interactive",onClick:n[0]||(n[0]=O(()=>{},["prevent"]))},[u(" Options Dialog (when waiting with options) "),o.agentStatus==="waiting"&&o.options&&o.options.length>0?(s(),i("div",tt,[t("div",ot,g(o.optionsQuestion||"Choose an option:"),1),o.potentialHarm&&o.potentialHarm.hasRisk?(s(),i("div",at," ⚠️ "+g(o.potentialHarm.description),1)):u("v-if",!0),e.loadingOptions.has(o.id)?(s(),i("div",nt,[...n[13]||(n[13]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing selection...",-1)])])):(s(),i("div",it,[(s(!0),i(b,null,N(o.options,m=>(s(),i("button",{key:m.action,onClick:A=>e.selectOption(o,m),class:M(["option-button",{"option-button-danger":o.potentialHarm&&o.potentialHarm.hasRisk}]),disabled:e.loadingOptions.has(o.id)},g(m.action),11,st))),128))]))])):o.agentStatus==="analyzing"?(s(),i(b,{key:1},[u(" Analyzing (show loader) "),n[14]||(n[14]=t("div",{class:"analyzing-state"},[t("div",{class:"loader-spinner"}),t("span",null,"Analyzing...")],-1))],2112)):(s(),i(b,{key:2},[u(" Working/Idle (show prompt input) "),t("div",null,[t("div",lt,[X(t("textarea",{"onUpdate:modelValue":m=>e.promptInputs[o.id]=m,onInput:e.autoExpand,placeholder:o.agentStatus==="working"?"Queue a prompt...":"Send a prompt...",disabled:e.sendingPrompts.has(o.id),class:"prompt-textarea",rows:"1"},null,40,ct),[[Y,e.promptInputs[o.id]]]),t("button",{onClick:m=>e.sendPrompt(o),disabled:!e.promptInputs[o.id]||e.sendingPrompts.has(o.id),class:"send-button",title:o.agentStatus==="working"?"Queue prompt":"Send prompt"},[e.sendingPrompts.has(o.id)?(s(),i("span",dt)):(s(),i("svg",ut,[...n[15]||(n[15]=[t("path",{d:"M425.13,28.37L30.09,423.41C11.19,441.37.34,466.2,0,492.27c-.34,26.07,9.86,51.17,28.29,69.61,18.43,18.45,43.52,28.67,69.59,28.35,26.07-.31,50.91-11.14,68.88-30.02l233.16-233.52v776.64c0,34.56,18.43,66.48,48.36,83.76,29.93,17.28,66.8,17.28,96.72,0,29.93-17.28,48.36-49.21,48.36-83.76V328.85l231.72,231.36c24.63,23.41,59.74,32.18,92.48,23.09,32.74-9.08,58.32-34.68,67.38-67.43,9.05-32.75.25-67.85-23.18-92.46L566.73,28.37C548.63,10.16,524-.04,498.33.05c-.8-.06-1.6-.06-2.4,0-.8-.06-1.6-.06-2.4,0-25.65,0-50.25,10.19-68.4,28.32h0Z"},null,-1)])]))],8,rt)]),e.queuedMessages[o.id]?(s(),i("div",gt," ✓ "+g(e.queuedMessages[o.id]),1)):u("v-if",!0)])],2112))]),o.devStatus&&o.devStatus!=="stopped"?(s(),i("div",pt,[n[16]||(n[16]=t("span",{class:"status-label"},"Dev Server:",-1)),t("span",{class:M(["status-badge",o.devStatus])},g(o.devStatus),3),o.devUrl?(s(),i("a",{key:0,href:o.devUrl,target:"_blank",class:"dev-link"},"↗",8,mt)):u("v-if",!0)])):u("v-if",!0)]))),128))]))]),u(" Create Pane Dialog "),e.showCreateDialog?(s(),i("div",{key:0,class:"action-dialog-overlay",onClick:O(e.closeCreateDialog,["self"])},[t("div",vt,[n[20]||(n[20]=t("h3",null,"Create New Pane",-1)),e.createStep==="prompt"?(s(),i("div",ht,[n[17]||(n[17]=t("label",{for:"pane-prompt"},"Provide an initial prompt for your agent",-1)),X(t("textarea",{id:"pane-prompt","onUpdate:modelValue":n[1]||(n[1]=o=>e.newPanePrompt=o),placeholder:"E.g., Fix the authentication bug, Add dark mode, etc.",rows:"4",onKeydown:[$(O(e.createPane,["meta"]),["enter"]),$(O(e.createPane,["ctrl"]),["enter"])]},null,40,ft),[[Y,e.newPanePrompt]]),n[18]||(n[18]=t("div",{class:"dialog-hint"},[L(" 💡 Press "),t("kbd",null,"⌘ Enter"),L(" or "),t("kbd",null,"Ctrl Enter"),L(" to create ")],-1)),t("div",yt,[t("button",{onClick:e.closeCreateDialog,class:"dialog-btn"},"Cancel"),t("button",{onClick:e.createPane,disabled:!e.newPanePrompt.trim()||e.creatingPane,class:"dialog-btn dialog-btn-primary"},g(e.creatingPane?"Creating...":"Create Pane"),9,_t)])])):e.createStep==="agent"?(s(),i("div",bt,[n[19]||(n[19]=t("p",null,"Multiple agents available. Choose one:",-1)),t("div",kt,[(s(!0),i(b,null,N(e.availableAgents,o=>(s(),i("button",{key:o,onClick:m=>e.selectAgent(o),class:"agent-choice-button",disabled:e.creatingPane},g(o),9,wt))),128))]),t("div",{class:"dialog-buttons"},[t("button",{onClick:e.closeCreateDialog,class:"dialog-btn"},"Cancel")])])):u("v-if",!0)])])):u("v-if",!0),u(" Action Dialogs "),e.actionDialog?(s(),i("div",{key:1,class:"action-dialog-overlay",onClick:O(e.closeActionDialog,["self"])},[u(" Confirm Dialog "),e.actionDialog.type==="confirm"?(s(),i("div",Ct,[t("h3",null,g(e.actionDialog.title),1),t("p",null,g(e.actionDialog.message),1),e.actionDialogLoading?(s(),i("div",St,[...n[21]||(n[21]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing...",-1)])])):(s(),i("div",Dt,[t("button",{onClick:n[2]||(n[2]=o=>e.confirmAction(!1)),class:"dialog-btn",disabled:e.actionDialogLoading},"Cancel",8,Pt),t("button",{onClick:n[3]||(n[3]=o=>e.confirmAction(!0)),class:"dialog-btn dialog-btn-primary",disabled:e.actionDialogLoading},"Confirm",8,xt)]))])):e.actionDialog.type==="choice"?(s(),i(b,{key:1},[u(" Choice Dialog "),t("div",At,[t("h3",null,g(e.actionDialog.title),1),e.actionDialog.message?(s(),i("p",Tt,g(e.actionDialog.message),1)):u("v-if",!0),e.actionDialogLoading?(s(),i("div",Et,[...n[22]||(n[22]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing...",-1)])])):(s(),i("div",Nt,[t("div",Ot,[(s(!0),i(b,null,N(e.actionDialog.options,o=>(s(),i("button",{key:o.id,onClick:m=>e.selectChoice(o.id),class:M(["choice-option-btn",{danger:o.danger}]),disabled:e.actionDialogLoading},[t("div",jt,g(o.label),1),o.description?(s(),i("div",zt,g(o.description),1)):u("v-if",!0)],10,Mt))),128))]),t("div",Ft,[t("button",{onClick:e.closeActionDialog,class:"dialog-btn",disabled:e.actionDialogLoading},"Cancel",8,It)])]))])],2112)):e.actionDialog.type==="input"?(s(),i(b,{key:2},[u(" Input Dialog "),t("div",Vt,[t("h3",null,g(e.actionDialog.title),1),e.actionDialog.message?(s(),i("p",Lt,g(e.actionDialog.message),1)):u("v-if",!0),e.actionDialogLoading?(s(),i("div",qt,[...n[23]||(n[23]=[t("div",{class:"loader-spinner"},null,-1),t("span",null,"Processing...",-1)])])):(s(),i("div",Ut,[X(t("input",{type:"text","onUpdate:modelValue":n[4]||(n[4]=o=>e.actionDialog.inputValue=o),placeholder:e.actionDialog.placeholder,class:"dialog-input",onKeydown:$(e.submitInput,["enter"])},null,40,Bt),[[Y,e.actionDialog.inputValue]]),t("div",Jt,[t("button",{onClick:e.closeActionDialog,class:"dialog-btn",disabled:e.actionDialogLoading},"Cancel",8,Ht),t("button",{onClick:e.submitInput,class:"dialog-btn dialog-btn-primary",disabled:e.actionDialogLoading},"Submit",8,Kt)])]))])],2112)):u("v-if",!0)])):u("v-if",!0)])],64)}const Rt=ke(Se,[["render",Qt],["__file","/Users/justinschroeder/Projects/dmux/frontend/src/components/Dashboard.vue"]]),Wt=Ce(Rt);Wt.mount("#app");
 `,
     mimeType: 'application/javascript',
-    size: 20857
+    size: 20821
+  },
+  'index.js': {
+    content: `#!/usr/bin/env node
+import { execSync } from 'child_process';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { render } from 'ink';
+import React from 'react';
+import { createHash } from 'crypto';
+import DmuxApp from './DmuxApp.js';
+import { AutoUpdater } from './AutoUpdater.js';
+import readline from 'readline';
+import { DmuxServer } from './server/index.js';
+import { StateManager } from './shared/StateManager.js';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+class Dmux {
+    panesFile;
+    settingsFile;
+    projectName;
+    sessionName;
+    projectRoot;
+    autoUpdater;
+    server;
+    stateManager;
+    static cachedProjectRoot = null;
+    constructor() {
+        // Get git root directory to determine project scope (cached)
+        this.projectRoot = this.getProjectRoot();
+        // Get project name from git root directory
+        this.projectName = path.basename(this.projectRoot);
+        // Create a unique identifier for this project based on its full path
+        // This ensures different projects with the same folder name are kept separate
+        const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
+        const projectIdentifier = \`\${this.projectName}-\${projectHash}\`;
+        // Create unique session name for this project (sanitize for tmux compatibility)
+        // tmux converts dots to underscores, so we do it explicitly to avoid mismatches
+        const sanitizedProjectIdentifier = projectIdentifier.replace(/\\./g, '-');
+        this.sessionName = \`dmux-\${sanitizedProjectIdentifier}\`;
+        // Store config in .dmux directory inside project root
+        const dmuxDir = path.join(this.projectRoot, '.dmux');
+        const configFile = path.join(dmuxDir, 'dmux.config.json');
+        // Always use the .dmux directory config location
+        this.panesFile = configFile;
+        this.settingsFile = configFile; // Same file for all config
+        // Initialize auto-updater with config file
+        this.autoUpdater = new AutoUpdater(configFile);
+        // Initialize server and state manager
+        this.server = new DmuxServer();
+        this.stateManager = StateManager.getInstance();
+    }
+    async init() {
+        // Set up global signal handlers for clean exit
+        this.setupGlobalSignalHandlers();
+        // Ensure .dmux directory exists and is in .gitignore
+        await this.ensureDmuxDirectory();
+        // Check for migration from old config location
+        await this.migrateOldConfig();
+        // Initialize config file if it doesn't exist
+        if (!await this.fileExists(this.panesFile)) {
+            const initialConfig = {
+                projectName: this.projectName,
+                projectRoot: this.projectRoot,
+                panes: [],
+                settings: {},
+                lastUpdated: new Date().toISOString()
+            };
+            await fs.writeFile(this.panesFile, JSON.stringify(initialConfig, null, 2));
+        }
+        // Check for updates in background if needed
+        this.checkForUpdatesBackground();
+        const inTmux = process.env.TMUX !== undefined;
+        if (!inTmux) {
+            // Check if project-specific session already exists
+            try {
+                execSync(\`tmux has-session -t \${this.sessionName} 2>/dev/null\`, { stdio: 'pipe' });
+                // Session exists, will attach
+            }
+            catch {
+                // Create new session
+                // Create new session first
+                execSync(\`tmux new-session -d -s \${this.sessionName}\`, { stdio: 'inherit' });
+                // Enable pane borders to show titles
+                execSync(\`tmux set-option -t \${this.sessionName} pane-border-status top\`, { stdio: 'inherit' });
+                // Set pane title for the main dmux pane
+                execSync(\`tmux select-pane -t \${this.sessionName} -T "dmux-\${this.projectName}"\`, { stdio: 'inherit' });
+                // Send dmux command to the new session
+                execSync(\`tmux send-keys -t \${this.sessionName} "dmux" Enter\`, { stdio: 'inherit' });
+            }
+            execSync(\`tmux attach-session -t \${this.sessionName}\`, { stdio: 'inherit' });
+            return;
+        }
+        // Enable pane borders to show titles
+        try {
+            execSync(\`tmux set-option pane-border-status top\`, { stdio: 'pipe' });
+        }
+        catch {
+            // Ignore if it fails
+        }
+        // Set pane title for the current pane running dmux
+        try {
+            execSync(\`tmux select-pane -T "dmux-\${this.projectName}"\`, { stdio: 'pipe' });
+        }
+        catch {
+            // Ignore if it fails (might not have permission or tmux version doesn't support it)
+        }
+        // Update state manager with project info
+        this.stateManager.updateProjectInfo(this.projectName, this.sessionName, this.projectRoot, this.panesFile);
+        // Start the HTTP server
+        let serverInfo = { port: 0, url: '' };
+        try {
+            serverInfo = await this.server.start();
+            // Update StateManager with server info
+            this.stateManager.updateServerInfo(serverInfo.port, serverInfo.url);
+            // Don't log the local URL - tunnel will be created on demand when "r" is pressed
+        }
+        catch (err) {
+            console.error('Failed to start HTTP server:', err);
+            // Continue without server - not critical for main functionality
+        }
+        // Clear screen before launching Ink to prevent artifacts
+        process.stdout.write('\\x1b[2J\\x1b[H'); // Clear screen and move cursor to home
+        process.stdout.write('\\x1b[3J'); // Clear scrollback buffer
+        // Clear tmux history
+        try {
+            execSync('tmux clear-history', { stdio: 'pipe' });
+        }
+        catch { }
+        // Small delay to let the clear take effect before Ink renders
+        await new Promise(resolve => setTimeout(resolve, 50));
+        // Launch the Ink app
+        const app = render(React.createElement(DmuxApp, {
+            panesFile: this.panesFile,
+            settingsFile: this.settingsFile,
+            projectName: this.projectName,
+            sessionName: this.sessionName,
+            projectRoot: this.projectRoot,
+            autoUpdater: this.autoUpdater,
+            serverPort: serverInfo.port,
+            server: this.server
+        }), {
+            exitOnCtrlC: false // Disable automatic exit on Ctrl+C
+        });
+        // Clean shutdown on app exit
+        app.waitUntilExit().then(async () => {
+            await this.server.stop();
+            process.exit(0);
+        });
+    }
+    async fileExists(path) {
+        try {
+            await fs.access(path);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    getProjectRoot() {
+        // Return cached value if available
+        if (Dmux.cachedProjectRoot) {
+            return Dmux.cachedProjectRoot;
+        }
+        try {
+            // First, try to get the main worktree if we're in a git repository
+            // This ensures we always use the main repository root, even when run from a worktree
+            const worktreeList = execSync('git worktree list --porcelain', {
+                encoding: 'utf-8',
+                stdio: 'pipe'
+            }).trim();
+            // The first line contains the main worktree path
+            const mainWorktreeLine = worktreeList.split('\\n')[0];
+            if (mainWorktreeLine && mainWorktreeLine.startsWith('worktree ')) {
+                const mainWorktreePath = mainWorktreeLine.substring(9).trim();
+                Dmux.cachedProjectRoot = mainWorktreePath;
+                return mainWorktreePath;
+            }
+            // Fallback to git rev-parse if worktree list fails
+            const gitRoot = execSync('git rev-parse --show-toplevel', {
+                encoding: 'utf-8',
+                stdio: 'pipe'
+            }).trim();
+            Dmux.cachedProjectRoot = gitRoot;
+            return gitRoot;
+        }
+        catch {
+            // Fallback to current directory if not in a git repo
+            const cwd = process.cwd();
+            Dmux.cachedProjectRoot = cwd;
+            return cwd;
+        }
+    }
+    async ensureDmuxDirectory() {
+        const dmuxDir = path.join(this.projectRoot, '.dmux');
+        const worktreesDir = path.join(dmuxDir, 'worktrees');
+        // Create .dmux directory if it doesn't exist
+        if (!await this.fileExists(dmuxDir)) {
+            await fs.mkdir(dmuxDir, { recursive: true });
+        }
+        // Create worktrees directory if it doesn't exist
+        if (!await this.fileExists(worktreesDir)) {
+            await fs.mkdir(worktreesDir, { recursive: true });
+        }
+        // Check if .gitignore exists and if .dmux is in it
+        const gitignorePath = path.join(this.projectRoot, '.gitignore');
+        if (await this.fileExists(gitignorePath)) {
+            const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+            const lines = gitignoreContent.split('\\n');
+            const hasDmuxEntry = lines.some(line => line.trim() === '.dmux' ||
+                line.trim() === '.dmux/' ||
+                line.trim() === '/.dmux' ||
+                line.trim() === '/.dmux/');
+            if (!hasDmuxEntry) {
+                // Prompt user to add .dmux to .gitignore
+                const shouldAdd = await this.promptUser('The .dmux directory is not in .gitignore. Would you like to add it? (y/n): ');
+                if (shouldAdd) {
+                    // Add .dmux to .gitignore
+                    const newGitignore = gitignoreContent.endsWith('\\n')
+                        ? gitignoreContent + '.dmux/\\n'
+                        : gitignoreContent + '\\n.dmux/\\n';
+                    await fs.writeFile(gitignorePath, newGitignore);
+                }
+            }
+        }
+        else {
+            // No .gitignore exists, prompt to create one
+            const shouldCreate = await this.promptUser('No .gitignore file found. Would you like to create one with .dmux/ entry? (y/n): ');
+            if (shouldCreate) {
+                await fs.writeFile(gitignorePath, '.dmux/\\n');
+            }
+        }
+    }
+    async promptUser(question) {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+        return new Promise((resolve) => {
+            rl.question(question, (answer) => {
+                rl.close();
+                resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
+            });
+        });
+    }
+    async migrateOldConfig() {
+        // Check if we're using the new config location
+        const dmuxDir = path.join(this.projectRoot, '.dmux');
+        const newConfigFile = path.join(dmuxDir, 'dmux.config.json');
+        const oldParentConfigFile = path.join(path.dirname(this.projectRoot), 'dmux.config.json');
+        const homeDmuxDir = path.join(process.env.HOME, '.dmux');
+        if (this.panesFile === newConfigFile && !await this.fileExists(newConfigFile)) {
+            // Look for old config files to migrate
+            const projectHash = createHash('md5').update(this.projectRoot).digest('hex').substring(0, 8);
+            const projectIdentifier = \`\${this.projectName}-\${projectHash}\`;
+            const oldPanesFile = path.join(homeDmuxDir, \`\${projectIdentifier}-panes.json\`);
+            const oldSettingsFile = path.join(homeDmuxDir, \`\${projectIdentifier}-settings.json\`);
+            const oldUpdateSettingsFile = path.join(homeDmuxDir, 'update-settings.json');
+            let panes = [];
+            let settings = {};
+            let updateSettings = {};
+            // Try to read old panes file
+            if (await this.fileExists(oldPanesFile)) {
+                try {
+                    const oldPanesContent = await fs.readFile(oldPanesFile, 'utf-8');
+                    panes = JSON.parse(oldPanesContent);
+                }
+                catch { }
+            }
+            // Try to read old settings file
+            if (await this.fileExists(oldSettingsFile)) {
+                try {
+                    const oldSettingsContent = await fs.readFile(oldSettingsFile, 'utf-8');
+                    settings = JSON.parse(oldSettingsContent);
+                }
+                catch { }
+            }
+            // Try to read old update settings file
+            if (await this.fileExists(oldUpdateSettingsFile)) {
+                try {
+                    const oldUpdateContent = await fs.readFile(oldUpdateSettingsFile, 'utf-8');
+                    updateSettings = JSON.parse(oldUpdateContent);
+                }
+                catch { }
+            }
+            // Check for config from previous parent directory location
+            if (await this.fileExists(oldParentConfigFile)) {
+                try {
+                    const oldConfig = JSON.parse(await fs.readFile(oldParentConfigFile, 'utf-8'));
+                    if (oldConfig.panes)
+                        panes = oldConfig.panes;
+                    if (oldConfig.settings)
+                        settings = oldConfig.settings;
+                    if (oldConfig.updateSettings)
+                        updateSettings = oldConfig.updateSettings;
+                }
+                catch { }
+            }
+            // If we found old config, migrate it
+            if (panes.length > 0 || Object.keys(settings).length > 0 || Object.keys(updateSettings).length > 0) {
+                const migratedConfig = {
+                    projectName: this.projectName,
+                    projectRoot: this.projectRoot,
+                    panes: panes,
+                    settings: settings,
+                    updateSettings: updateSettings,
+                    lastUpdated: new Date().toISOString(),
+                    migratedFrom: 'dmux-legacy'
+                };
+                await fs.writeFile(newConfigFile, JSON.stringify(migratedConfig, null, 2));
+                // Clean up old files after successful migration
+                try {
+                    await fs.unlink(oldPanesFile);
+                }
+                catch { }
+                try {
+                    await fs.unlink(oldSettingsFile);
+                }
+                catch { }
+                try {
+                    await fs.unlink(oldUpdateSettingsFile);
+                }
+                catch { }
+                try {
+                    await fs.unlink(oldParentConfigFile);
+                }
+                catch { }
+            }
+        }
+    }
+    checkForUpdatesBackground() {
+        // Run update check in background without blocking startup
+        setImmediate(async () => {
+            try {
+                const shouldCheck = await this.autoUpdater.shouldCheckForUpdates();
+                if (shouldCheck) {
+                    // Check for updates asynchronously
+                    this.autoUpdater.checkForUpdates().catch(() => {
+                        // Silently ignore update check failures
+                    });
+                }
+            }
+            catch {
+                // Silently ignore errors in background update check
+            }
+        });
+    }
+    async getUpdateInfo() {
+        return await this.autoUpdater.checkForUpdates();
+    }
+    async performUpdate() {
+        const updateInfo = await this.autoUpdater.checkForUpdates();
+        return await this.autoUpdater.performUpdate(updateInfo);
+    }
+    async skipUpdate(version) {
+        return await this.autoUpdater.skipVersion(version);
+    }
+    getAutoUpdater() {
+        return this.autoUpdater;
+    }
+    setupGlobalSignalHandlers() {
+        const cleanTerminalExit = () => {
+            // Clear screen multiple times to ensure no artifacts
+            process.stdout.write('\\x1b[2J\\x1b[H'); // Clear screen and move to home
+            process.stdout.write('\\x1b[3J'); // Clear scrollback buffer
+            process.stdout.write('\\n'.repeat(100)); // Push any remaining content off screen
+            // Clear tmux pane if we're in tmux
+            if (process.env.TMUX) {
+                try {
+                    execSync('tmux clear-history', { stdio: 'pipe' });
+                    execSync('tmux send-keys C-l', { stdio: 'pipe' });
+                }
+                catch { }
+            }
+            // Wait a moment for clearing to settle, then show goodbye message
+            setTimeout(() => {
+                process.stdout.write('\\x1b[2J\\x1b[H');
+                process.stdout.write('\\n\\n  dmux session ended.\\n\\n');
+                process.exit(0);
+            }, 100);
+        };
+        // Handle Ctrl+C and SIGTERM
+        process.on('SIGINT', cleanTerminalExit);
+        process.on('SIGTERM', cleanTerminalExit);
+        // Handle uncaught exceptions and unhandled rejections
+        process.on('uncaughtException', (error) => {
+            console.error('Uncaught exception:', error);
+            cleanTerminalExit();
+        });
+        process.on('unhandledRejection', (reason) => {
+            console.error('Unhandled rejection:', reason);
+            cleanTerminalExit();
+        });
+    }
+}
+const dmux = new Dmux();
+dmux.init().catch(() => process.exit(1));
+//# sourceMappingURL=index.js.map`,
+    mimeType: 'application/javascript',
+    size: 17288
   },
   'terminal.html': {
     content: `<!DOCTYPE html>
@@ -97,12 +4933,18 @@ Expected function or array of functions, received type \${typeof e}.\`),ne)}func
     size: 738
   },
   'terminal.js': {
-    content: `import{d as ue,r as g,p as de,o as ce,n as he,_ as ge,c as x,k as R,b as c,e as N,i as ve,t as j,f as $,l as O,v as be,F as me,h as ye,m as pe}from"./chunks/_plugin-vue_export-helper-Cvoq67hi.js";const ke=ue({__name:"Terminal",setup(ee,{expose:u}){u();const k=window.location.pathname.split("/").pop()||"",n=g([]),s=g({width:80,height:24}),w=g(!1),i=g(0),o=g(0),V=g("Loading..."),P=g(!1),b=g(!1),m=g(!1),C=g(!1),M=g(""),D=g(null),A=g("");let r={};const K=["#000000","#800000","#008000","#808000","#000080","#800080","#008080","#c0c0c0","#808080","#ff0000","#00ff00","#ffff00","#0000ff","#ff00ff","#00ffff","#ffffff","#000000","#00005f","#000087","#0000af","#0000d7","#0000ff","#005f00","#005f5f","#005f87","#005faf","#005fd7","#005fff","#008700","#00875f","#008787","#0087af","#0087d7","#0087ff","#00af00","#00af5f","#00af87","#00afaf","#00afd7","#00afff","#00d700","#00d75f","#00d787","#00d7af","#00d7d7","#00d7ff","#00ff00","#00ff5f","#00ff87","#00ffaf","#00ffd7","#00ffff","#5f0000","#5f005f","#5f0087","#5f00af","#5f00d7","#5f00ff","#5f5f00","#5f5f5f","#5f5f87","#5f5faf","#5f5fd7","#5f5fff","#5f8700","#5f875f","#5f8787","#5f87af","#5f87d7","#5f87ff","#5faf00","#5faf5f","#5faf87","#5fafaf","#5fafd7","#5fafff","#5fd700","#5fd75f","#5fd787","#5fd7af","#5fd7d7","#5fd7ff","#5fff00","#5fff5f","#5fff87","#5fffaf","#5fffd7","#5fffff","#870000","#87005f","#870087","#8700af","#8700d7","#8700ff","#875f00","#875f5f","#875f87","#875faf","#875fd7","#875fff","#878700","#87875f","#878787","#8787af","#8787d7","#8787ff","#87af00","#87af5f","#87af87","#87afaf","#87afd7","#87afff","#87d700","#87d75f","#87d787","#87d7af","#87d7d7","#87d7ff","#87ff00","#87ff5f","#87ff87","#87ffaf","#87ffd7","#87ffff","#af0000","#af005f","#af0087","#af00af","#af00d7","#af00ff","#af5f00","#af5f5f","#af5f87","#af5faf","#af5fd7","#af5fff","#af8700","#af875f","#af8787","#af87af","#af87d7","#af87ff","#afaf00","#afaf5f","#afaf87","#afafaf","#afafd7","#afafff","#afd700","#afd75f","#afd787","#afd7af","#afd7d7","#afd7ff","#afff00","#afff5f","#afff87","#afffaf","#afffd7","#afffff","#d70000","#d7005f","#d70087","#d700af","#d700d7","#d700ff","#d75f00","#d75f5f","#d75f87","#d75faf","#d75fd7","#d75fff","#d78700","#d7875f","#d78787","#d787af","#d787d7","#d787ff","#d7af00","#d7af5f","#d7af87","#d7afaf","#d7afd7","#d7afff","#d7d700","#d7d75f","#d7d787","#d7d7af","#d7d7d7","#d7d7ff","#d7ff00","#d7ff5f","#d7ff87","#d7ffaf","#d7ffd7","#d7ffff","#ff0000","#ff005f","#ff0087","#ff00af","#ff00d7","#ff00ff","#ff5f00","#ff5f5f","#ff5f87","#ff5faf","#ff5fd7","#ff5fff","#ff8700","#ff875f","#ff8787","#ff87af","#ff87d7","#ff87ff","#ffaf00","#ffaf5f","#ffaf87","#ffafaf","#ffafd7","#ffafff","#ffd700","#ffd75f","#ffd787","#ffd7af","#ffd7d7","#ffd7ff","#ffff00","#ffff5f","#ffff87","#ffffaf","#ffffd7","#ffffff","#080808","#121212","#1c1c1c","#262626","#303030","#3a3a3a","#444444","#4e4e4e","#585858","#626262","#6c6c6c","#767676","#808080","#8a8a8a","#949494","#9e9e9e","#a8a8a8","#b2b2b2","#bcbcbc","#c6c6c6","#d0d0d0","#dadada","#e4e4e4","#eeeeee"];function T(){n.value=Array(s.value.height).fill(null).map(()=>Array(s.value.width).fill(null).map(()=>({char:" ",fg:null,bg:null,bold:!1,dim:!1,italic:!1,underline:!1,strikethrough:!1})))}function E(e,f=!1,a=!0){let t=0;for(;t<e.length;){const l=e.charCodeAt(t);if(l===27){const d=H(e,t);if(d>t){const p=e.substring(t,d);L(p),t=d;continue}}if(l===8){o.value>0&&o.value--,t++;continue}U(e[t],a),t++}}function H(e,f){if(f+1>=e.length)return f+1;const a=e[f+1];if(a==="[")for(let t=f+2;t<e.length;t++){const l=e[t];if(l>="@"&&l<="~")return t+1}if(a==="]")for(let t=f+2;t<e.length;t++){const l=e.charCodeAt(t);if(l===7)return t+1;if(l===27&&t+1<e.length&&e[t+1]==="\\\\")return t+2}return f+2}function L(e){if(!(e.length<2)&&e[1]==="["){const f=e.substring(2,e.length-1),a=e[e.length-1];W(f,a)}}function W(e,f){const a=e.split(";").map(t=>parseInt(t)||0);switch(f){case"H":case"f":i.value=Math.min(Math.max((a[0]||1)-1,0),s.value.height-1),o.value=Math.min(Math.max((a[1]||1)-1,0),s.value.width-1);break;case"A":i.value=Math.max(i.value-(a[0]||1),0);break;case"B":i.value=Math.min(i.value+(a[0]||1),s.value.height-1);break;case"C":o.value=Math.min(o.value+(a[0]||1),s.value.width-1);break;case"D":o.value=Math.max(o.value-(a[0]||1),0);break;case"G":o.value=Math.min(Math.max((a[0]||1)-1,0),s.value.width-1);break;case"J":J(a[0]||0);break;case"K":F(a[0]||0);break;case"m":z(a);break}}function z(e){if(e.length===0||e[0]===0){r={};return}let f=0;for(;f<e.length;){const a=e[f];a===0?r={}:a===1?r.bold=!0:a===2?r.dim=!0:a===3?r.italic=!0:a===4?r.underline=!0:a===9?r.strikethrough=!0:a===22?(r.bold=!1,r.dim=!1):a===23?r.italic=!1:a===24?r.underline=!1:a===29?r.strikethrough=!1:a>=30&&a<=37?r.fg=["black","red","green","yellow","blue","magenta","cyan","white"][a-30]:a===38?f+1<e.length&&(e[f+1]===5&&f+2<e.length?(r.fg="c"+e[f+2],f+=2):e[f+1]===2&&f+4<e.length&&(r.fg=\`rgb(\${e[f+2]},\${e[f+3]},\${e[f+4]})\`,f+=4)):a===39?r.fg=null:a>=40&&a<=47?r.bg=["black","red","green","yellow","blue","magenta","cyan","white"][a-40]:a===48?f+1<e.length&&(e[f+1]===5&&f+2<e.length?(r.bg="c"+e[f+2],f+=2):e[f+1]===2&&f+4<e.length&&(r.bg=\`rgb(\${e[f+2]},\${e[f+3]},\${e[f+4]})\`,f+=4)):a===49?r.bg=null:a>=90&&a<=97?r.fg="bright-"+["black","red","green","yellow","blue","magenta","cyan","white"][a-90]:a>=100&&a<=107&&(r.bg="bright-"+["black","red","green","yellow","blue","magenta","cyan","white"][a-100]),f++}}function U(e,f=!0){if(e===\`
+    content: `import{d as ue,r as g,p as de,o as ce,n as he,_ as ge,c as x,k as R,b as c,e as N,i as ve,t as j,f as $,l as O,v as be,F as me,h as ye,m as pe}from"./chunks/_plugin-vue_export-helper-Cvoq67hi.js";const ke=ue({__name:"Terminal",setup(ee,{expose:u}){u();const k=window.location.pathname.split("/").pop()||"",n=g([]),s=g({width:80,height:24}),w=g(!1),i=g(0),o=g(0),V=g("Loading..."),P=g(!1),b=g(!1),m=g(!1),C=g(!1),M=g(""),D=g(null),A=g("");let r={};const K=["#000000","#800000","#008000","#808000","#000080","#800080","#008080","#c0c0c0","#808080","#ff0000","#00ff00","#ffff00","#0000ff","#ff00ff","#00ffff","#ffffff","#000000","#00005f","#000087","#0000af","#0000d7","#0000ff","#005f00","#005f5f","#005f87","#005faf","#005fd7","#005fff","#008700","#00875f","#008787","#0087af","#0087d7","#0087ff","#00af00","#00af5f","#00af87","#00afaf","#00afd7","#00afff","#00d700","#00d75f","#00d787","#00d7af","#00d7d7","#00d7ff","#00ff00","#00ff5f","#00ff87","#00ffaf","#00ffd7","#00ffff","#5f0000","#5f005f","#5f0087","#5f00af","#5f00d7","#5f00ff","#5f5f00","#5f5f5f","#5f5f87","#5f5faf","#5f5fd7","#5f5fff","#5f8700","#5f875f","#5f8787","#5f87af","#5f87d7","#5f87ff","#5faf00","#5faf5f","#5faf87","#5fafaf","#5fafd7","#5fafff","#5fd700","#5fd75f","#5fd787","#5fd7af","#5fd7d7","#5fd7ff","#5fff00","#5fff5f","#5fff87","#5fffaf","#5fffd7","#5fffff","#870000","#87005f","#870087","#8700af","#8700d7","#8700ff","#875f00","#875f5f","#875f87","#875faf","#875fd7","#875fff","#878700","#87875f","#878787","#8787af","#8787d7","#8787ff","#87af00","#87af5f","#87af87","#87afaf","#87afd7","#87afff","#87d700","#87d75f","#87d787","#87d7af","#87d7d7","#87d7ff","#87ff00","#87ff5f","#87ff87","#87ffaf","#87ffd7","#87ffff","#af0000","#af005f","#af0087","#af00af","#af00d7","#af00ff","#af5f00","#af5f5f","#af5f87","#af5faf","#af5fd7","#af5fff","#af8700","#af875f","#af8787","#af87af","#af87d7","#af87ff","#afaf00","#afaf5f","#afaf87","#afafaf","#afafd7","#afafff","#afd700","#afd75f","#afd787","#afd7af","#afd7d7","#afd7ff","#afff00","#afff5f","#afff87","#afffaf","#afffd7","#afffff","#d70000","#d7005f","#d70087","#d700af","#d700d7","#d700ff","#d75f00","#d75f5f","#d75f87","#d75faf","#d75fd7","#d75fff","#d78700","#d7875f","#d78787","#d787af","#d787d7","#d787ff","#d7af00","#d7af5f","#d7af87","#d7afaf","#d7afd7","#d7afff","#d7d700","#d7d75f","#d7d787","#d7d7af","#d7d7d7","#d7d7ff","#d7ff00","#d7ff5f","#d7ff87","#d7ffaf","#d7ffd7","#d7ffff","#ff0000","#ff005f","#ff0087","#ff00af","#ff00d7","#ff00ff","#ff5f00","#ff5f5f","#ff5f87","#ff5faf","#ff5fd7","#ff5fff","#ff8700","#ff875f","#ff8787","#ff87af","#ff87d7","#ff87ff","#ffaf00","#ffaf5f","#ffaf87","#ffafaf","#ffafd7","#ffafff","#ffd700","#ffd75f","#ffd787","#ffd7af","#ffd7d7","#ffd7ff","#ffff00","#ffff5f","#ffff87","#ffffaf","#ffffd7","#ffffff","#080808","#121212","#1c1c1c","#262626","#303030","#3a3a3a","#444444","#4e4e4e","#585858","#626262","#6c6c6c","#767676","#808080","#8a8a8a","#949494","#9e9e9e","#a8a8a8","#b2b2b2","#bcbcbc","#c6c6c6","#d0d0d0","#dadada","#e4e4e4","#eeeeee"];function T(){n.value=Array(s.value.height).fill(null).map(()=>Array(s.value.width).fill(null).map(()=>({char:" ",fg:null,bg:null,bold:!1,dim:!1,italic:!1,underline:!1,strikethrough:!1})))}function E(e,f=!1,a=!0){let t=0;for(;t<e.length;){const l=e.charCodeAt(t);if(l===27){const d=H(e,t);if(d>t){const p=e.substring(t,d);L(p),t=d;continue}}if(l===8){o.value>0&&o.value--,t++;continue}z(e[t],a),t++}}function H(e,f){if(f+1>=e.length)return f+1;const a=e[f+1];if(a==="[")for(let t=f+2;t<e.length;t++){const l=e[t];if(l>="@"&&l<="~")return t+1}if(a==="]")for(let t=f+2;t<e.length;t++){const l=e.charCodeAt(t);if(l===7)return t+1;if(l===27&&t+1<e.length&&e[t+1]==="\\\\")return t+2}return f+2}function L(e){if(!(e.length<2)&&e[1]==="["){const f=e.substring(2,e.length-1),a=e[e.length-1];W(f,a)}}function W(e,f){const a=e.split(";").map(t=>parseInt(t)||0);switch(f){case"H":case"f":i.value=Math.min(Math.max((a[0]||1)-1,0),s.value.height-1),o.value=Math.min(Math.max((a[1]||1)-1,0),s.value.width-1);break;case"A":i.value=Math.max(i.value-(a[0]||1),0);break;case"B":i.value=Math.min(i.value+(a[0]||1),s.value.height-1);break;case"C":o.value=Math.min(o.value+(a[0]||1),s.value.width-1);break;case"D":o.value=Math.max(o.value-(a[0]||1),0);break;case"G":o.value=Math.min(Math.max((a[0]||1)-1,0),s.value.width-1);break;case"J":J(a[0]||0);break;case"K":F(a[0]||0);break;case"m":U(a);break}}function U(e){if(e.length===0||e[0]===0){r={};return}let f=0;for(;f<e.length;){const a=e[f];a===0?r={}:a===1?r.bold=!0:a===2?r.dim=!0:a===3?r.italic=!0:a===4?r.underline=!0:a===9?r.strikethrough=!0:a===22?(r.bold=!1,r.dim=!1):a===23?r.italic=!1:a===24?r.underline=!1:a===29?r.strikethrough=!1:a>=30&&a<=37?r.fg=["black","red","green","yellow","blue","magenta","cyan","white"][a-30]:a===38?f+1<e.length&&(e[f+1]===5&&f+2<e.length?(r.fg="c"+e[f+2],f+=2):e[f+1]===2&&f+4<e.length&&(r.fg=\`rgb(\${e[f+2]},\${e[f+3]},\${e[f+4]})\`,f+=4)):a===39?r.fg=null:a>=40&&a<=47?r.bg=["black","red","green","yellow","blue","magenta","cyan","white"][a-40]:a===48?f+1<e.length&&(e[f+1]===5&&f+2<e.length?(r.bg="c"+e[f+2],f+=2):e[f+1]===2&&f+4<e.length&&(r.bg=\`rgb(\${e[f+2]},\${e[f+3]},\${e[f+4]})\`,f+=4)):a===49?r.bg=null:a>=90&&a<=97?r.fg="bright-"+["black","red","green","yellow","blue","magenta","cyan","white"][a-90]:a>=100&&a<=107&&(r.bg="bright-"+["black","red","green","yellow","blue","magenta","cyan","white"][a-100]),f++}}function z(e,f=!0){if(e===\`
 \`){i.value++,o.value=0,i.value>=s.value.height&&(f&&(n.value.shift(),n.value.push(Array(s.value.width).fill(null).map(()=>({char:" ",fg:null,bg:null,bold:!1,dim:!1,italic:!1,underline:!1,strikethrough:!1})))),i.value=s.value.height-1);return}if(e==="\\r"){o.value=0;return}if(e==="	"){o.value=Math.min(Math.floor((o.value+8)/8)*8,s.value.width-1);return}o.value>=s.value.width&&(o.value=0,i.value++,i.value>=s.value.height&&(f&&(n.value.shift(),n.value.push(Array(s.value.width).fill(null).map(()=>({char:" ",fg:null,bg:null,bold:!1,dim:!1,italic:!1,underline:!1,strikethrough:!1})))),i.value=s.value.height-1)),i.value<s.value.height&&o.value<s.value.width&&(n.value[i.value][o.value]={char:e,...r},o.value++)}function J(e){e===2&&T()}function F(e){if(e===0)for(let f=o.value;f<s.value.width;f++)n.value[i.value][f]={char:" ",fg:null,bg:null,bold:!1,dim:!1,italic:!1,underline:!1,strikethrough:!1};else if(e===2)for(let f=0;f<s.value.width;f++)n.value[i.value][f]={char:" ",fg:null,bg:null,bold:!1,dim:!1,italic:!1,underline:!1,strikethrough:!1}}function _(e){return e.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}function G(e,f){return e.fg===f.fg&&e.bg===f.bg&&e.bold===f.bold&&e.dim===f.dim&&e.italic===f.italic&&e.underline===f.underline&&e.strikethrough===f.strikethrough}function X(e){const f=[],a=[];if(e.fg)if(e.fg.startsWith("rgb("))a.push(\`color: \${e.fg}\`);else if(e.fg.startsWith("c")){const t=parseInt(e.fg.substring(1));t>=0&&t<K.length&&a.push(\`color: \${K[t]}\`)}else f.push("term-fg-"+e.fg);if(e.bg)if(e.bg.startsWith("rgb("))a.push(\`background-color: \${e.bg}\`);else if(e.bg.startsWith("c")){const t=parseInt(e.bg.substring(1));t>=0&&t<K.length&&a.push(\`background-color: \${K[t]}\`)}else f.push("term-bg-"+e.bg);return e.bold&&f.push("term-bold"),e.dim&&f.push("term-dim"),e.italic&&f.push("term-italic"),e.underline&&f.push("term-underline"),e.strikethrough&&f.push("term-strikethrough"),{classes:f,styles:a}}function B(){const f=\`/api/stream/\${A.value||k}\`;fetch(f).then(a=>{if(!a.ok)throw new Error("Failed to connect");if(!a.body)throw new Error("No response body");const t=a.body.getReader(),l=new TextDecoder;let d="";w.value=!0,(async()=>{try{for(;;){const{done:v,value:h}=await t.read();if(v)break;d+=l.decode(h,{stream:!0});let y;for(;(y=d.indexOf(\`
-\`))!==-1;){const I=d.substring(0,y);d=d.substring(y+1),I&&Z(I)}}}catch{w.value=!1}})()}).catch(a=>{w.value=!1})}function Z(e){const f=e.indexOf(":");if(f===-1)return;const a=e.substring(0,f),t=e.substring(f+1);try{const l=JSON.parse(t);switch(a){case"INIT":s.value={width:l.width,height:l.height},T(),i.value=0,o.value=0,E(l.content||"",!1,!1),l.cursorRow!==void 0&&l.cursorCol!==void 0&&(i.value=l.cursorRow,o.value=l.cursorCol);break;case"PATCH":const d=l.cursorRow,p=l.cursorCol;l.changes.forEach(v=>{E(v.text,!1,!1)}),d!==void 0&&p!==void 0&&(i.value=d,o.value=p);break;case"RESIZE":s.value={width:l.width,height:l.height},T(),E(l.content||"");break;case"HEARTBEAT":break}}catch{}}const fe=de(()=>({width:\`\${s.value.width}ch\`,maxWidth:"100vw",fontSize:\`clamp(11px, calc(100vw / \${s.value.width} / 0.6), 20px)\`}));function ae(e,f){let a="",t=0;for(;t<e.length;){const l=e[t],d=f===i.value&&t===o.value;if(l.fg||l.bg||l.bold||l.dim||l.italic||l.underline||l.strikethrough||d){const{classes:v,styles:h}=X(l);d&&v.push("term-cursor");let y=l.char;for(t++;t<e.length;){const Y=e[t];if(f===i.value&&t===o.value||!G(l,Y))break;y+=Y.char,t++}const I=v.length?' class="'+v.join(" ")+'"':"",re=h.length?' style="'+h.join("; ")+'"':"";a+="<span"+I+re+">"+_(y)+"</span>"}else{let v="";for(;t<e.length;){const h=e[t],y=f===i.value&&t===o.value;if(h.fg||h.bg||h.bold||h.dim||h.italic||h.underline||h.strikethrough||y)break;v+=h.char,t++}a+=_(v)}}return a}function te(){b.value=!b.value,b.value&&m.value&&(m.value=!1)}function le(){m.value=!m.value,m.value&&b.value&&(b.value=!1)}function ne(){C.value=!C.value}async function S(e){const f={key:e,ctrlKey:b.value,altKey:m.value,shiftKey:C.value,metaKey:!1};b.value=!1,m.value=!1,C.value=!1;try{await fetch(\`/api/keys/\${A.value}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(f)})}catch{}}function ie(){P.value&&D.value&&D.value.focus()}function oe(e){const a=e.target.value,t=M.value;if(a.length>t.length){const l=a.substring(t.length);for(const d of l)S(d)}else if(a.length<t.length){const l=t.length-a.length;for(let d=0;d<l;d++)S("Backspace")}he(()=>{M.value=""})}function se(e){e.key==="Enter"?(e.preventDefault(),S("Enter")):e.key==="Backspace"&&M.value===""&&(e.preventDefault(),S("Backspace"))}function q(e){const f=document.activeElement;if(f&&(f.tagName==="INPUT"||f.tagName==="TEXTAREA")||["Shift","Control","Alt","Meta"].includes(e.key))return;(!e.metaKey&&!e.ctrlKey||e.key==="c"||e.key==="d")&&e.preventDefault();const t={key:e.key,ctrlKey:e.ctrlKey,altKey:e.altKey,shiftKey:e.shiftKey,metaKey:e.metaKey};fetch(\`/api/keys/\${A.value}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(t)}).catch(l=>{})}ce(()=>{P.value="ontouchstart"in window||navigator.maxTouchPoints>0||window.innerWidth<768,fetch("/api/panes").then(e=>e.json()).then(e=>{let f=e.panes.find(a=>a.id===k);f||(f=e.panes.find(a=>a.slug===k)),f&&(V.value=f.slug,A.value=f.id),B()}).catch(e=>{B()}),document.addEventListener("keydown",q)});const Q={paneId:k,terminalBuffer:n,dimensions:s,connected:w,cursorRow:i,cursorCol:o,paneTitle:V,isMobile:P,ctrlActive:b,altActive:m,shiftActive:C,mobileInputValue:M,mobileInputRef:D,actualPaneId:A,get currentAttrs(){return r},set currentAttrs(e){r=e},colorPalette:K,initTerminal:T,parseAnsiAndUpdate:E,findEscapeSequenceEnd:H,handleEscapeSequence:L,handleCSI:W,handleSGR:z,handleCharacter:U,handleEraseDisplay:J,handleEraseLine:F,escapeHtml:_,hasSameStyle:G,buildStyleAttrs:X,connectToStream:B,processMessage:Z,terminalContainerStyle:fe,renderRow:ae,toggleCtrl:te,toggleAlt:le,toggleShift:ne,sendKey:S,focusMobileInput:ie,handleMobileInput:oe,handleMobileKeydown:se,handleGlobalKeydown:q};return Object.defineProperty(Q,"__isScriptSetup",{enumerable:!1,value:!0}),Q}}),we={class:"terminal-page"},Ce={class:"session-info"},Ae={class:"mobile-toolbar"},Ke=["data-row","innerHTML"];function Se(ee,u,k,n,s,w){return R(),x("div",we,[c("header",null,[u[8]||(u[8]=c("a",{href:"/",class:"back-button"},"← dmux",-1)),c("h1",null,j(n.paneTitle),1),c("div",Ce,[c("span",null,j(n.dimensions.width)+"×"+j(n.dimensions.height),1),c("span",{class:"status-indicator",style:$({color:n.connected?"#4ade80":"#f87171"})},"●",4)])]),N(" Keyboard toolbar (always visible for easier terminal control) "),c("div",Ae,[c("button",{onClick:n.toggleCtrl,class:O([{active:n.ctrlActive},"toolbar-key"])},"Ctrl",2),c("button",{onClick:n.toggleAlt,class:O([{active:n.altActive},"toolbar-key"])},"Alt",2),c("button",{onClick:n.toggleShift,class:O([{active:n.shiftActive},"toolbar-key"])},"Shift",2),c("button",{onClick:u[0]||(u[0]=i=>n.sendKey("Escape")),class:"toolbar-key"},"Esc"),c("button",{onClick:u[1]||(u[1]=i=>n.sendKey("Tab")),class:"toolbar-key"},"Tab"),c("button",{onClick:u[2]||(u[2]=i=>n.sendKey("Enter")),class:"toolbar-key"},"Enter"),c("button",{onClick:u[3]||(u[3]=i=>n.sendKey("ArrowUp")),class:"toolbar-key"},"↑"),c("button",{onClick:u[4]||(u[4]=i=>n.sendKey("ArrowDown")),class:"toolbar-key"},"↓"),c("button",{onClick:u[5]||(u[5]=i=>n.sendKey("ArrowLeft")),class:"toolbar-key"},"←"),c("button",{onClick:u[6]||(u[6]=i=>n.sendKey("ArrowRight")),class:"toolbar-key"},"→")]),N(" Hidden input for mobile keyboard "),n.isMobile?ve((R(),x("input",{key:0,ref:"mobileInputRef",type:"text",class:"mobile-input","onUpdate:modelValue":u[7]||(u[7]=i=>n.mobileInputValue=i),onInput:n.handleMobileInput,onKeydown:n.handleMobileKeydown,autocomplete:"off",autocapitalize:"off",autocorrect:"off"},null,544)),[[be,n.mobileInputValue]]):N("v-if",!0),c("div",{class:"terminal-content",onClick:n.focusMobileInput},[c("div",{class:"terminal-output",style:$(n.terminalContainerStyle)},[(R(!0),x(me,null,ye(n.terminalBuffer,(i,o)=>(R(),x("div",{key:o,class:"terminal-row","data-row":o,innerHTML:n.renderRow(i,o)},null,8,Ke))),128))],4)])])}const Me=ge(ke,[["render",Se],["__file","/Users/justinschroeder/Projects/dmux/.dmux/worktrees/pane-analyzer-error/frontend/src/components/Terminal.vue"]]),Te=pe(Me);Te.mount("#app");
+\`))!==-1;){const I=d.substring(0,y);d=d.substring(y+1),I&&Z(I)}}}catch{w.value=!1}})()}).catch(a=>{w.value=!1})}function Z(e){const f=e.indexOf(":");if(f===-1)return;const a=e.substring(0,f),t=e.substring(f+1);try{const l=JSON.parse(t);switch(a){case"INIT":s.value={width:l.width,height:l.height},T(),i.value=0,o.value=0,E(l.content||"",!1,!1),l.cursorRow!==void 0&&l.cursorCol!==void 0&&(i.value=l.cursorRow,o.value=l.cursorCol);break;case"PATCH":const d=l.cursorRow,p=l.cursorCol;l.changes.forEach(v=>{E(v.text,!1,!1)}),d!==void 0&&p!==void 0&&(i.value=d,o.value=p);break;case"RESIZE":s.value={width:l.width,height:l.height},T(),E(l.content||"");break;case"HEARTBEAT":break}}catch{}}const fe=de(()=>({width:\`\${s.value.width}ch\`,maxWidth:"100vw",fontSize:\`clamp(11px, calc(100vw / \${s.value.width} / 0.6), 20px)\`}));function ae(e,f){let a="",t=0;for(;t<e.length;){const l=e[t],d=f===i.value&&t===o.value;if(l.fg||l.bg||l.bold||l.dim||l.italic||l.underline||l.strikethrough||d){const{classes:v,styles:h}=X(l);d&&v.push("term-cursor");let y=l.char;for(t++;t<e.length;){const Y=e[t];if(f===i.value&&t===o.value||!G(l,Y))break;y+=Y.char,t++}const I=v.length?' class="'+v.join(" ")+'"':"",re=h.length?' style="'+h.join("; ")+'"':"";a+="<span"+I+re+">"+_(y)+"</span>"}else{let v="";for(;t<e.length;){const h=e[t],y=f===i.value&&t===o.value;if(h.fg||h.bg||h.bold||h.dim||h.italic||h.underline||h.strikethrough||y)break;v+=h.char,t++}a+=_(v)}}return a}function te(){b.value=!b.value,b.value&&m.value&&(m.value=!1)}function le(){m.value=!m.value,m.value&&b.value&&(b.value=!1)}function ne(){C.value=!C.value}async function S(e){const f={key:e,ctrlKey:b.value,altKey:m.value,shiftKey:C.value,metaKey:!1};b.value=!1,m.value=!1,C.value=!1;try{await fetch(\`/api/keys/\${A.value}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(f)})}catch{}}function ie(){P.value&&D.value&&D.value.focus()}function oe(e){const a=e.target.value,t=M.value;if(a.length>t.length){const l=a.substring(t.length);for(const d of l)S(d)}else if(a.length<t.length){const l=t.length-a.length;for(let d=0;d<l;d++)S("Backspace")}he(()=>{M.value=""})}function se(e){e.key==="Enter"?(e.preventDefault(),S("Enter")):e.key==="Backspace"&&M.value===""&&(e.preventDefault(),S("Backspace"))}function q(e){const f=document.activeElement;if(f&&(f.tagName==="INPUT"||f.tagName==="TEXTAREA")||["Shift","Control","Alt","Meta"].includes(e.key))return;(!e.metaKey&&!e.ctrlKey||e.key==="c"||e.key==="d")&&e.preventDefault();const t={key:e.key,ctrlKey:e.ctrlKey,altKey:e.altKey,shiftKey:e.shiftKey,metaKey:e.metaKey};fetch(\`/api/keys/\${A.value}\`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(t)}).catch(l=>{})}ce(()=>{P.value="ontouchstart"in window||navigator.maxTouchPoints>0||window.innerWidth<768,fetch("/api/panes").then(e=>e.json()).then(e=>{let f=e.panes.find(a=>a.id===k);f||(f=e.panes.find(a=>a.slug===k)),f&&(V.value=f.slug,A.value=f.id),B()}).catch(e=>{B()}),document.addEventListener("keydown",q)});const Q={paneId:k,terminalBuffer:n,dimensions:s,connected:w,cursorRow:i,cursorCol:o,paneTitle:V,isMobile:P,ctrlActive:b,altActive:m,shiftActive:C,mobileInputValue:M,mobileInputRef:D,actualPaneId:A,get currentAttrs(){return r},set currentAttrs(e){r=e},colorPalette:K,initTerminal:T,parseAnsiAndUpdate:E,findEscapeSequenceEnd:H,handleEscapeSequence:L,handleCSI:W,handleSGR:U,handleCharacter:z,handleEraseDisplay:J,handleEraseLine:F,escapeHtml:_,hasSameStyle:G,buildStyleAttrs:X,connectToStream:B,processMessage:Z,terminalContainerStyle:fe,renderRow:ae,toggleCtrl:te,toggleAlt:le,toggleShift:ne,sendKey:S,focusMobileInput:ie,handleMobileInput:oe,handleMobileKeydown:se,handleGlobalKeydown:q};return Object.defineProperty(Q,"__isScriptSetup",{enumerable:!1,value:!0}),Q}}),we={class:"terminal-page"},Ce={class:"session-info"},Ae={class:"mobile-toolbar"},Ke=["data-row","innerHTML"];function Se(ee,u,k,n,s,w){return R(),x("div",we,[c("header",null,[u[8]||(u[8]=c("a",{href:"/",class:"back-button"},"← dmux",-1)),c("h1",null,j(n.paneTitle),1),c("div",Ce,[c("span",null,j(n.dimensions.width)+"×"+j(n.dimensions.height),1),c("span",{class:"status-indicator",style:$({color:n.connected?"#4ade80":"#f87171"})},"●",4)])]),N(" Keyboard toolbar (always visible for easier terminal control) "),c("div",Ae,[c("button",{onClick:n.toggleCtrl,class:O([{active:n.ctrlActive},"toolbar-key"])},"Ctrl",2),c("button",{onClick:n.toggleAlt,class:O([{active:n.altActive},"toolbar-key"])},"Alt",2),c("button",{onClick:n.toggleShift,class:O([{active:n.shiftActive},"toolbar-key"])},"Shift",2),c("button",{onClick:u[0]||(u[0]=i=>n.sendKey("Escape")),class:"toolbar-key"},"Esc"),c("button",{onClick:u[1]||(u[1]=i=>n.sendKey("Tab")),class:"toolbar-key"},"Tab"),c("button",{onClick:u[2]||(u[2]=i=>n.sendKey("Enter")),class:"toolbar-key"},"Enter"),c("button",{onClick:u[3]||(u[3]=i=>n.sendKey("ArrowUp")),class:"toolbar-key"},"↑"),c("button",{onClick:u[4]||(u[4]=i=>n.sendKey("ArrowDown")),class:"toolbar-key"},"↓"),c("button",{onClick:u[5]||(u[5]=i=>n.sendKey("ArrowLeft")),class:"toolbar-key"},"←"),c("button",{onClick:u[6]||(u[6]=i=>n.sendKey("ArrowRight")),class:"toolbar-key"},"→")]),N(" Hidden input for mobile keyboard "),n.isMobile?ve((R(),x("input",{key:0,ref:"mobileInputRef",type:"text",class:"mobile-input","onUpdate:modelValue":u[7]||(u[7]=i=>n.mobileInputValue=i),onInput:n.handleMobileInput,onKeydown:n.handleMobileKeydown,autocomplete:"off",autocapitalize:"off",autocorrect:"off"},null,544)),[[be,n.mobileInputValue]]):N("v-if",!0),c("div",{class:"terminal-content",onClick:n.focusMobileInput},[c("div",{class:"terminal-output",style:$(n.terminalContainerStyle)},[(R(!0),x(me,null,ye(n.terminalBuffer,(i,o)=>(R(),x("div",{key:o,class:"terminal-row","data-row":o,innerHTML:n.renderRow(i,o)},null,8,Ke))),128))],4)])])}const Me=ge(ke,[["render",Se],["__file","/Users/justinschroeder/Projects/dmux/frontend/src/components/Terminal.vue"]]),Te=pe(Me);Te.mount("#app");
 `,
     mimeType: 'application/javascript',
-    size: 13763
+    size: 13727
+  },
+  'types.js': {
+    content: `export {};
+//# sourceMappingURL=types.js.map`,
+    mimeType: 'application/javascript',
+    size: 44
   }
 };
 
