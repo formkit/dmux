@@ -15,6 +15,7 @@ export interface StatusUpdateEvent {
   options?: OptionChoice[];
   potentialHarm?: PotentialHarm;
   summary?: string;
+  analyzerError?: string;
 }
 
 /**
@@ -210,6 +211,8 @@ export class StatusDetector extends EventEmitter {
           // Default to idle when timing out
           this.paneStatuses.set(paneId, 'idle');
 
+          const errorMessage = 'Analysis timeout';
+
           // Notify worker that analysis is complete (defaulting to idle)
           this.workerManager.notifyWorker(paneId, {
             type: 'analyze-complete',
@@ -224,7 +227,8 @@ export class StatusDetector extends EventEmitter {
           this.emit('status-updated', {
             paneId,
             status: 'idle',
-            previousStatus: 'analyzing'
+            previousStatus: 'analyzing',
+            analyzerError: errorMessage
           } as StatusUpdateEvent);
           return;
         }
@@ -235,12 +239,16 @@ export class StatusDetector extends EventEmitter {
 
       console.error(`LLM analysis error for pane ${paneId}:`, error);
 
+      // Extract error message
+      const errorMessage = error.message || 'Analysis failed';
+
       // Default to idle on error
       this.paneStatuses.set(paneId, 'idle');
       this.emit('status-updated', {
         paneId,
         status: 'idle',
-        previousStatus: 'analyzing'
+        previousStatus: 'analyzing',
+        analyzerError: errorMessage
       } as StatusUpdateEvent);
     } finally {
       this.llmRequests.delete(paneId);

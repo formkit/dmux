@@ -678,6 +678,11 @@ onBeforeUnmount(() => {
             {{ pane.agentSummary }}
           </div>
 
+          <!-- Show analyzer error if present -->
+          <div v-if="pane.analyzerError" class="analyzer-error">
+            ⚠ {{ pane.analyzerError }}
+          </div>
+
           <div class="pane-interactive" @click.prevent>
             <!-- Options Dialog (when waiting with options) -->
             <div v-if="pane.agentStatus === 'waiting' && pane.options && pane.options.length > 0" class="options-dialog">

@@ -143,6 +143,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             if (event.summary !== undefined) {
               updated.agentSummary = event.summary;
             }
+            if (event.analyzerError !== undefined) {
+              updated.analyzerError = event.analyzerError;
+            }
 
             // Clear option dialog data when transitioning away from 'waiting' state
             if (event.status !== 'waiting' && pane.agentStatus === 'waiting') {
@@ -154,6 +157,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             // Clear summary when transitioning away from 'idle' state
             if (event.status !== 'idle' && pane.agentStatus === 'idle') {
               updated.agentSummary = undefined;
+            }
+
+            // Clear analyzer error when successfully getting a new analysis
+            if (event.status === 'waiting' || event.status === 'idle') {
+              if (event.analyzerError === undefined && (event.optionsQuestion || event.summary)) {
+                updated.analyzerError = undefined;
+              }
             }
 
             return updated;

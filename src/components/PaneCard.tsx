@@ -63,6 +63,12 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected, isKebabMenuTarget =
           </Box>
         )}
 
+        {pane.analyzerError && (
+          <Box>
+            <Text color="red">⚠ {pane.analyzerError}</Text>
+          </Box>
+        )}
+
         {/* Test and Dev status indicators - commented out for now */}
         {/* {(pane.testStatus || pane.devStatus) && (
           <Box>
