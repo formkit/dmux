@@ -70,11 +70,21 @@ async function callClaudeCode(prompt: string): Promise<string | null> {
  */
 export async function generateCommitMessage(repoPath: string): Promise<string> {
   try {
-    const diff = execSync('git diff --cached', {
+    // Get staged changes first, then fall back to unstaged if nothing staged
+    let diff = execSync('git diff --cached', {
       cwd: repoPath,
       encoding: 'utf-8',
       stdio: 'pipe',
     });
+
+    // If nothing staged, check unstaged changes
+    if (!diff.trim()) {
+      diff = execSync('git diff', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+    }
 
     if (!diff.trim()) {
       return 'chore: automated commit';
