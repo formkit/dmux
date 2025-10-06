@@ -206,18 +206,32 @@ export function validateMerge(
 }
 
 /**
- * Commit uncommitted changes with a generated message
+ * Stage all uncommitted changes
  */
-export function commitChanges(
-  repoPath: string,
-  message: string
-): { success: boolean; error?: string } {
+export function stageAllChanges(repoPath: string): { success: boolean; error?: string } {
   try {
     execSync('git add -A', {
       cwd: repoPath,
       stdio: 'pipe',
     });
 
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Commit staged changes with a message
+ */
+export function commitChanges(
+  repoPath: string,
+  message: string
+): { success: boolean; error?: string } {
+  try {
     execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
       cwd: repoPath,
       stdio: 'pipe',
