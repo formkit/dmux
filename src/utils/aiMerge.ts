@@ -9,31 +9,55 @@ import fs from 'fs/promises';
 import path from 'path';
 
 /**
+ * Fetch with timeout wrapper
+ */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+/**
  * Call OpenRouter API for AI assistance
  */
-async function callOpenRouter(prompt: string, maxTokens: number = 1000): Promise<string | null> {
+async function callOpenRouter(prompt: string, maxTokens: number = 1000, timeoutMs: number = 12000): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+    const response = await fetchWithTimeout(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o-mini',
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.3,
+        }),
       },
-      body: JSON.stringify({
-        model: 'openai/gpt-4o-mini',
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.3,
-      }),
-    });
+      timeoutMs
+    );
 
     if (response.ok) {
       const data = (await response.json()) as any;
@@ -49,14 +73,14 @@ async function callOpenRouter(prompt: string, maxTokens: number = 1000): Promise
 /**
  * Call Claude Code CLI for AI assistance
  */
-async function callClaudeCode(prompt: string): Promise<string | null> {
+async function callClaudeCode(prompt: string, timeoutMs: number = 15000): Promise<string | null> {
   try {
     const result = execSync(
       `echo "${prompt.replace(/"/g, '\\"')}" | claude --no-interactive --max-turns 1 2>/dev/null`,
       {
         encoding: 'utf-8',
         stdio: 'pipe',
-        timeout: 30000, // 30 second timeout for merge operations
+        timeout: timeoutMs,
       }
     );
     return result.trim() || null;
@@ -257,11 +281,11 @@ ${content}
 
 Respond with ONLY the complete resolved file content, no explanations:`;
 
-    // Try OpenRouter
-    let resolved = await callOpenRouter(prompt, 2000);
+    // Try OpenRouter with longer timeout for conflict resolution
+    let resolved = await callOpenRouter(prompt, 2000, 20000);
     if (!resolved) {
-      // Try Claude Code
-      resolved = await callClaudeCode(prompt);
+      // Try Claude Code with longer timeout for conflict resolution
+      resolved = await callClaudeCode(prompt, 20000);
     }
 
     if (!resolved) {
