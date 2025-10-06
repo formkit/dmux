@@ -1800,7 +1800,6 @@ const app = createApp({
           // Pane created without agent selection (only one agent available)
           this.closeCreateDialog();
           await this.fetchPanes();
-          console.log('Pane created:', data.pane);
         } else if (data.needsAgentChoice) {
           // Agent selection required
           this.availableAgents = data.availableAgents || [];
@@ -1845,7 +1844,6 @@ const app = createApp({
           // Pane created successfully
           this.closeCreateDialog();
           await this.fetchPanes();
-          console.log('Pane created:', data.pane);
         } else {
           // Error occurred
           console.error('Failed to create pane:', data.error);
