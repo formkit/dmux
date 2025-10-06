@@ -254,16 +254,27 @@ export class StatusDetector extends EventEmitter {
           const match = error.message.match(/API error \(([^)]+)\): (\d+)/);
           if (match) {
             const [, model, status] = match;
-            errorMessage = `API error: ${status} (${model})`;
+            // Provide helpful messages for common status codes
+            if (status === '401') {
+              errorMessage = `API auth failed - check OPENROUTER_API_KEY`;
+            } else if (status === '402') {
+              errorMessage = `Insufficient credits - add credits to OpenRouter account`;
+            } else if (status === '429') {
+              errorMessage = `Rate limited - wait before retrying`;
+            } else if (status === '503') {
+              errorMessage = `API unavailable (${model})`;
+            } else {
+              errorMessage = `API error: ${status} (${model})`;
+            }
           } else {
             errorMessage = error.message;
           }
         } else if (error.message.includes('API key')) {
-          errorMessage = 'API key not available';
+          errorMessage = 'Set OPENROUTER_API_KEY env var';
         } else if (error.message.includes('All models')) {
-          errorMessage = 'All models failed';
+          errorMessage = 'All models failed - check API key & credits';
         } else if (error.message.includes('fetch')) {
-          errorMessage = 'Network error';
+          errorMessage = 'Network error - check connection';
         } else {
           errorMessage = error.message;
         }

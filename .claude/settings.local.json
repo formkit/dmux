@@ -89,7 +89,13 @@
       "Bash(ps:*)",
       "Bash(npm run clean:*)",
       "Bash(ls:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(if [ -n \"$OPENROUTER_API_KEY\" ])",
+      "Bash(then echo \"API key is set\")",
+      "Bash(else echo \"No API key set\")",
+      "Bash(fi)",
+      "Bash(then echo \"API key is set in main\")",
+      "Bash(else echo \"No API key in main either\")"
     ],
     "deny": [],
     "ask": [],
