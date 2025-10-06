@@ -724,6 +724,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Update handling moved to useAutoUpdater
 
+  // Helper function to clear screen artifacts
+  const clearScreen = () => {
+    // Multiple clearing strategies to prevent artifacts
+    // 1. Clear screen with ANSI codes
+    process.stdout.write('\x1b[2J\x1b[H');
+
+    // 2. Clear tmux history
+    try {
+      execSync('tmux clear-history', { stdio: 'pipe' });
+    } catch {}
+
+    // 3. Force tmux to refresh the display
+    try {
+      execSync('tmux refresh-client', { stdio: 'pipe' });
+    } catch {}
+  };
+
   // Cleanup function for exit
   const cleanExit = () => {
     // Clear screen before exiting Ink
@@ -788,6 +805,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         setKebabMenuPaneIndex(null);
         setKebabMenuOption(0);
         setKebabMenuActions([]);
+        clearScreen();
         return;
       } else if (key.upArrow) {
         setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
@@ -798,6 +816,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       } else if (key.return) {
         // Execute the selected menu action
         setShowKebabMenu(false);
+        clearScreen();
 
         const selectedAction = availableActions[kebabMenuOption];
         if (selectedAction) {
