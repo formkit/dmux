@@ -95,7 +95,14 @@
       "Bash(else echo \"No API key set\")",
       "Bash(fi)",
       "Bash(then echo \"API key is set in main\")",
-      "Bash(else echo \"No API key in main either\")"
+      "Bash(else echo \"No API key in main either\")",
+      "Bash(tree:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_resize",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": [],

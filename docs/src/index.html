@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dmux - Mission Control for CLI Agents</title>
+  <meta name="description" content="Mission Control for CLI Agents. Run Claude Code or opencode in parallel tmux panes with git worktrees, autopilot mode, and web + terminal interfaces.">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <!-- CRT Effects -->
+  <div class="crt-overlay"></div>
+  <div class="crt-bloom"></div>
+
+  <!-- Intro canvas (fullscreen, independent) -->
+  <canvas id="logo-canvas"></canvas>
+
+  <!-- Logo Container (floats during intro, settles in header after) -->
+  <div class="logo-container">
+    <canvas id="logo-canvas-static"></canvas>
+  </div>
+
+  <!-- Page Content (slides up from bottom) -->
+  <div class="page-content">
+    <!-- Terminal-style header -->
+    <header class="terminal-header">
+      <div class="container">
+        <div class="header-content">
+          <h1 class="tagline" data-text="Mission Control for CLI Agents">Mission Control for CLI Agents</h1>
+          <p class="subtitle">Run Claude Code or opencode in parallel tmux panes with git worktrees</p>
+          <div class="cta-buttons">
+            <a href="#installation" class="btn btn-primary">
+              <span class="prompt">$</span> npm install -g dmux
+            </a>
+            <a href="https://github.com/justinschroeder/dmux" class="btn btn-secondary" target="_blank" rel="noopener">
+              View on GitHub →
+            </a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero Demo Section -->
+    <section class="hero-demo">
+      <div class="container">
+        <div class="demo-split">
+          <div class="demo-left">
+            <h2 class="demo-heading">Parallel AI Agents</h2>
+            <p class="demo-description">
+              Run multiple AI agents simultaneously, each working on different features in isolated environments.
+              Each agent operates in its own git worktree with independent branches, so you can develop features
+              in parallel without conflicts or context switching.
+            </p>
+          </div>
+          <div class="demo-right">
+            <div class="terminal-window">
+              <div class="terminal-title">
+                <div class="terminal-chrome">
+                  <span class="chrome-dot red"></span>
+                  <span class="chrome-dot yellow"></span>
+                  <span class="chrome-dot green"></span>
+                </div>
+                <span class="terminal-path">~/projects/my-app/main</span>
+              </div>
+              <div class="terminal-content">
+                <div class="terminal-line">
+                  <span class="prompt">$</span>
+                  <span class="command typed-text"></span>
+                  <span class="cursor">█</span>
+                </div>
+                <div class="terminal-output">
+                  <div class="demo-ui"></div>
+                </div>
+              </div>
+            </div>
+            <div class="terminal-controls">
+              <a href="#" class="play-again-link">▶ Play again</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  <!-- Value Proposition -->
+  <section class="value-prop">
+    <div class="container">
+      <h2 class="section-title">
+        <span class="prompt">$</span> Why dmux?
+      </h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="holographic-scanlines"></div>
+          <div class="holographic-shimmer"></div>
+          <div class="feature-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 18 22 12 16 6"></polyline>
+              <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+          </div>
+          <h3>Parallel Development</h3>
+          <p>Work on multiple features simultaneously. Each pane is a separate tmux pane with its own git worktree.</p>
+          <code class="code-example">$ dmux<br># Press 'n' → Enter prompt → Agent launches</code>
+        </div>
+        <div class="feature-card">
+          <div class="holographic-scanlines"></div>
+          <div class="holographic-shimmer"></div>
+          <div class="feature-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6"></path>
+              <path d="M1 12h6m6 0h6"></path>
+            </svg>
+          </div>
+          <h3>Git Worktree Isolation</h3>
+          <p>Each pane operates in its own git worktree. No more branch switching or stashing changes.</p>
+          <code class="code-example">.dmux/worktrees/<br>  ├── fix-auth/<br>  └── add-dashboard/</code>
+        </div>
+        <div class="feature-card">
+          <div class="holographic-scanlines"></div>
+          <div class="holographic-shimmer"></div>
+          <div class="feature-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+          <h3>AI-Powered Automation</h3>
+          <p>Automatic branch naming and commit message generation using AI. Smart merge workflows.</p>
+          <code class="code-example">"fix authentication bug"<br>→ Branch: fix-auth<br>→ Commit: "fix: resolve auth token..."</code>
+        </div>
+        <div class="feature-card">
+          <div class="holographic-scanlines"></div>
+          <div class="holographic-shimmer"></div>
+          <div class="feature-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <h3>Agent Ready</h3>
+          <p>Launches Claude Code (with auto-accept edits) or opencode with your prompt. Ready to work instantly.</p>
+          <code class="code-example">Claude: --permission-mode=acceptEdits<br>opencode: prompt auto-submitted</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Installation Section -->
+  <section id="installation" class="installation">
+    <div class="container">
+      <h2 class="section-title">
+        <span class="prompt">$</span> Installation
+      </h2>
+      <div class="install-steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Install dmux</h3>
+            <div class="code-block">
+              <button class="copy-btn" data-copy="npm install -g dmux">Copy</button>
+              <pre><code><span class="prompt">$</span> npm install -g dmux</code></pre>
+            </div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Install an Agent</h3>
+            <div class="code-block">
+              <button class="copy-btn" data-copy="npm install -g claude-code opencode">Copy</button>
+              <pre><code><span class="comment"># Install Claude Code or opencode</span>
+<span class="prompt">$</span> npm install -g claude-code
+<span class="comment"># or</span>
+<span class="prompt">$</span> npm install -g opencode</code></pre>
+            </div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Enable AI Features (Optional)</h3>
+            <div class="code-block">
+              <button class="copy-btn" data-copy="export OPENROUTER_API_KEY='your-key-here'">Copy</button>
+              <pre><code><span class="comment"># Add to ~/.bashrc or ~/.zshrc</span>
+<span class="prompt">$</span> export OPENROUTER_API_KEY=<span class="string">"your-key-here"</span>
+
+<span class="comment"># Get your key at openrouter.ai</span></code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="how-it-works">
+    <div class="container">
+      <h2 class="section-title">
+        <span class="prompt">$</span> How It Works
+      </h2>
+      <div class="workflow">
+        <div class="workflow-step">
+          <div class="workflow-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <h3>1. Start dmux</h3>
+          <p>Run <code>dmux</code> in your project directory</p>
+          <div class="code-block">
+            <pre><code><span class="prompt">$</span> cd ~/projects/my-app/main
+<span class="prompt">$</span> dmux</code></pre>
+          </div>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step">
+          <div class="workflow-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </div>
+          <h3>2. Create Panes</h3>
+          <p>Press <kbd>n</kbd> and enter your prompt</p>
+          <div class="code-block">
+            <pre><code>Enter prompt: <span class="string">fix authentication bug</span>
+
+<span class="comment"># Creates worktree, launches agent</span></code></pre>
+          </div>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step">
+          <div class="workflow-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+          <h3>3. Merge Work</h3>
+          <p>Press <kbd>m</kbd> when done to merge and clean up</p>
+          <div class="code-block">
+            <pre><code><span class="comment"># Auto-commits, merges to main</span>
+<span class="prompt">$</span> git log -1
+<span class="string">fix: resolve authentication token expiry</span></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Keyboard Shortcuts -->
+  <section class="keyboard-shortcuts">
+    <div class="container">
+      <h2 class="section-title">
+        <span class="prompt">$</span> Keyboard Shortcuts
+      </h2>
+      <div class="shortcuts-grid">
+        <div class="shortcut">
+          <kbd>n</kbd>
+          <span>Create new pane</span>
+        </div>
+        <div class="shortcut">
+          <kbd>j</kbd> or <kbd>Enter</kbd>
+          <span>Jump to pane</span>
+        </div>
+        <div class="shortcut">
+          <kbd>m</kbd>
+          <span>Merge to main</span>
+        </div>
+        <div class="shortcut">
+          <kbd>x</kbd>
+          <span>Close pane</span>
+        </div>
+        <div class="shortcut">
+          <kbd>↑</kbd> <kbd>↓</kbd>
+          <span>Navigate list</span>
+        </div>
+        <div class="shortcut">
+          <kbd>q</kbd>
+          <span>Quit dmux</span>
+        </div>
+        <div class="shortcut">
+          <kbd>Esc</kbd>
+          <span>Cancel dialog</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Use Cases -->
+  <section class="use-cases">
+    <div class="container">
+      <h2 class="section-title">
+        <span class="prompt">$</span> Perfect For
+      </h2>
+      <div class="use-cases-grid">
+        <div class="use-case">
+          <h3>Bug Hunting</h3>
+          <p>Spin up multiple panes to test different fixes in parallel. Keep the winner, close the rest.</p>
+        </div>
+        <div class="use-case">
+          <h3>Feature Development</h3>
+          <p>Work on the main feature while agents handle tests, docs, and refactoring in separate panes.</p>
+        </div>
+        <div class="use-case">
+          <h3>Experimentation</h3>
+          <p>Try different approaches without commitment. Each worktree is isolated and disposable.</p>
+        </div>
+        <div class="use-case">
+          <h3>Team Workflows</h3>
+          <p>Share dmux sessions for pair programming with AI agents alongside human developers.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Requirements -->
+  <section class="requirements">
+    <div class="container">
+      <h2 class="section-title">
+        <span class="prompt">$</span> Requirements
+      </h2>
+      <div class="requirements-list">
+        <div class="requirement">
+          <span class="requirement-name">tmux</span>
+          <span class="requirement-version">≥ 3.0</span>
+        </div>
+        <div class="requirement">
+          <span class="requirement-name">Node.js</span>
+          <span class="requirement-version">≥ 18</span>
+        </div>
+        <div class="requirement">
+          <span class="requirement-name">Git</span>
+          <span class="requirement-version">≥ 2.20</span>
+        </div>
+        <div class="requirement">
+          <span class="requirement-name">Agent CLI</span>
+          <span class="requirement-version">claude or opencode</span>
+        </div>
+        <div class="requirement optional">
+          <span class="requirement-name">OpenRouter API</span>
+          <span class="requirement-version">Optional for AI features</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-section">
+          <h4>Resources</h4>
+          <ul>
+            <li><a href="https://github.com/justinschroeder/dmux" target="_blank" rel="noopener">GitHub</a></li>
+            <li><a href="https://github.com/justinschroeder/dmux/issues" target="_blank" rel="noopener">Issues</a></li>
+            <li><a href="https://www.npmjs.com/package/dmux" target="_blank" rel="noopener">npm Package</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Agents</h4>
+          <ul>
+            <li><a href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude Code</a></li>
+            <li><a href="https://github.com/yourusername/opencode" target="_blank" rel="noopener">opencode</a></li>
+          </ul>
+        </div>
+        <div class="footer-section">
+          <h4>Tools</h4>
+          <ul>
+            <li><a href="https://github.com/tmux/tmux" target="_blank" rel="noopener">tmux</a></li>
+            <li><a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>Built for parallel development</p>
+        <p class="license">MIT Licensed</p>
+      </div>
+    </div>
+  </footer>
+  </div> <!-- end page-content -->
+
+  <script type="module" src="./script.js"></script>
+</body>
+</html>
