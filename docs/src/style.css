@@ -434,7 +434,7 @@ body.intro-mode .page-content {
   display: grid;
   grid-template-columns: 1fr 1.5fr;
   gap: 3rem;
-  align-items: center;
+  align-items: start;
 }
 
 .demo-left {
@@ -478,6 +478,24 @@ body.intro-mode .page-content {
 
 .demo-right {
   width: 100%;
+}
+
+.terminal-controls {
+  margin-top: 0.75rem;
+  text-align: right;
+}
+
+.play-again-link {
+  color: var(--orange-primary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+  display: inline-block;
+}
+
+.play-again-link:hover {
+  color: var(--orange-light);
+  text-shadow: 0 0 10px rgba(255, 107, 26, 0.5);
 }
 
 .terminal-window {
@@ -524,6 +542,7 @@ body.intro-mode .page-content {
   font-size: 0.85rem;
   background: rgba(0, 0, 0, 0.3);
   line-height: 1.2;
+  min-height: 450px;
 }
 
 .terminal-line {
@@ -669,7 +688,7 @@ body.intro-mode .page-content {
 }
 
 .pane-card {
-  border: 2px solid var(--orange-dark);
+  border: 2px dashed var(--orange-dark);
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.4);
   padding: 0.6rem;
@@ -677,16 +696,17 @@ body.intro-mode .page-content {
   flex-direction: column;
   gap: 0.4rem;
   transition: all 0.3s;
+  opacity: 0.6;
 }
 
 .pane-card.active-pane {
+  border-style: solid;
   border-color: var(--orange-primary);
   box-shadow: 0 0 15px rgba(255, 107, 26, 0.3);
+  opacity: 1;
 }
 
 .pane-card.new-pane {
-  border-style: dashed;
-  opacity: 0.6;
   justify-content: center;
   align-items: center;
   text-align: center;
@@ -744,6 +764,73 @@ body.intro-mode .page-content {
 
 .pane-empty {
   height: 40px;
+}
+
+/* Menu Styles */
+.menu-box {
+  width: 100%;
+}
+
+.menu-header {
+  padding: 0.6rem 0.8rem;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: bold;
+  border-bottom: 1px solid var(--orange-dark);
+}
+
+.menu-content {
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.menu-item {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  padding: 0.1rem 0;
+  font-family: 'Courier New', monospace;
+  line-height: 1.3;
+}
+
+.menu-item.active {
+  color: var(--orange-primary);
+  font-weight: bold;
+}
+
+.menu-arrow {
+  color: var(--orange-primary);
+  margin-right: 0.3rem;
+}
+
+.menu-footer {
+  padding: 0.6rem 0.8rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  border-top: 1px solid var(--orange-dark);
+}
+
+.menu-spacer {
+  height: 1rem;
+}
+
+.merge-info {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.merge-files {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-left: 1rem;
+  line-height: 1.6;
+  margin-bottom: 0.3rem;
+}
+
+.merge-files div {
+  margin-bottom: 0.2rem;
 }
 
 /* Terminal Footer */

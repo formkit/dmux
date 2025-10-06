@@ -107,7 +107,106 @@ export function initTerminalSim() {
               <span class="status-text">Working...</span>
             </div>
           </div>
-          <div class="pane-card">
+          <div class="pane-card active-pane">
+            <div class="pane-header">
+              <span class="pane-icon">⋮</span>
+              <span class="pane-name">coffee-order-api</span>
+              <span class="pane-agent">(cc)</span>
+            </div>
+            <div class="pane-prompt">"Create an api endpoint for che…"</div>
+            <div class="pane-status">
+              <span class="status-icon">✻</span>
+              <span class="status-text">Working...</span>
+            </div>
+          </div>
+          <div class="pane-card new-pane">
+            <div class="pane-header">
+              <span class="pane-icon">+</span>
+              <span class="pane-name">New dmux pane</span>
+            </div>
+            <div class="pane-empty"></div>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <div class="terminal-commands">Commands: <span class="cmd-key">[j]</span>ump • <span class="cmd-key">[m]</span>enu • <span class="cmd-key">[x]</span>close • <span class="cmd-key">[n]</span>ew • <span class="cmd-key">[r]</span>emote • <span class="cmd-key">[q]</span>uit</div>
+          <div class="terminal-hint">Use arrow keys (↑↓←→) for spatial navigation, Enter to select</div>
+          <div class="terminal-version">v2.2.1</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createMenuScreen() {
+    return `
+      <div class="terminal-screen">
+        <div class="terminal-box menu-box">
+          <div class="menu-header">Menu: soy-latte-order</div>
+          <div class="menu-content">
+            <div class="menu-item active"><span class="menu-arrow">▶</span> View</div>
+            <div class="menu-item">  Close</div>
+            <div class="menu-item">  Merge</div>
+            <div class="menu-item">  Rename</div>
+            <div class="menu-item">  Duplicate</div>
+            <div class="menu-item">  Run Tests</div>
+            <div class="menu-item">  Run Dev Server</div>
+            <div class="menu-item">  Copy Path</div>
+            <div class="menu-item">  Open in Editor</div>
+            <div class="menu-item">  Toggle Autopilot</div>
+          </div>
+          <div class="menu-footer">↑↓ to navigate • Enter to select • ESC to cancel</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createMergeDialog() {
+    return `
+      <div class="terminal-screen">
+        <div class="terminal-box menu-box">
+          <div class="menu-header">Worktree Has Uncommitted Changes</div>
+          <div class="menu-content">
+            <div class="merge-info">Changes in:</div>
+            <div class="merge-files">
+              <div>src/components/OrderForm.tsx</div>
+              <div>src/api/orders.ts</div>
+              <div>src/styles/form.css</div>
+              <div>package.json</div>
+              <div>...</div>
+            </div>
+            <div class="menu-spacer"></div>
+            <div class="menu-item active"><span class="menu-arrow">▶</span> AI commit (editable) - Generate message from diff, edit before commit</div>
+            <div class="menu-item">  AI commit (automatic) - Auto-generate and commit immediately</div>
+            <div class="menu-item">  Manual commit message - Write your own commit message</div>
+            <div class="menu-item">  Cancel merge - Resolve manually later</div>
+          </div>
+          <div class="menu-footer">↑↓ to navigate • Enter to select • ESC to cancel</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createClosePaneDialog() {
+    return `
+      <div class="terminal-screen">
+        <div class="terminal-box menu-box">
+          <div class="menu-header">Close Pane?</div>
+          <div class="menu-content">
+            <div class="merge-info">Merge successful! Close pane "soy-latte-order"?</div>
+            <div class="menu-spacer"></div>
+            <div class="menu-item active"><span class="menu-arrow">▶</span> Yes - Close pane and remove worktree</div>
+            <div class="menu-item">  No - Keep pane open</div>
+          </div>
+          <div class="menu-footer">↑↓ to navigate • Enter to select • ESC to cancel</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createFinalTwoPaneScreen() {
+    return `
+      <div class="terminal-screen">
+        <div class="pane-grid">
+          <div class="pane-card active-pane">
             <div class="pane-header">
               <span class="pane-icon">⋮</span>
               <span class="pane-name">coffee-order-api</span>
@@ -274,22 +373,149 @@ export function initTerminalSim() {
   // Step 4: Show final 3-pane screen with both tasks working
   function showThreePaneScreen() {
     terminalOutput.innerHTML = createThreePaneScreen();
-    // Final state - stay here
+
+    // After 2 seconds, change soy-latte-order to "◌ Idle" and highlight it
+    setTimeout(() => {
+      const firstPane = terminalOutput.querySelector('.pane-card:first-child');
+      const secondPane = terminalOutput.querySelector('.pane-card.active-pane');
+
+      if (firstPane) {
+        const statusIcon = firstPane.querySelector('.status-icon');
+        const statusText = firstPane.querySelector('.status-text');
+        if (statusIcon) statusIcon.textContent = '◌';
+        if (statusText) statusText.textContent = 'Idle';
+
+        // Highlight first pane, dim second
+        firstPane.classList.add('active-pane');
+      }
+      if (secondPane) {
+        secondPane.classList.remove('active-pane');
+      }
+
+      // Show menu after 1 second
+      setTimeout(() => {
+        showMenuScreen();
+      }, 1000);
+    }, 2000);
+  }
+
+  // Show menu and navigate to merge
+  function showMenuScreen() {
+    terminalOutput.innerHTML = createMenuScreen();
+
+    let menuIndex = 0;
+    const menuItems = ['View', 'Close', 'Merge'];
+
+    function navigateMenu() {
+      menuIndex++;
+
+      if (menuIndex >= menuItems.length) {
+        // Reached "Merge", show merge dialog
+        setTimeout(() => {
+          showMergeDialog();
+        }, 500);
+        return;
+      }
+
+      // Update active menu item
+      const items = terminalOutput.querySelectorAll('.menu-item');
+      items.forEach((item, idx) => {
+        const arrow = item.querySelector('.menu-arrow');
+        if (idx === menuIndex) {
+          item.classList.add('active');
+          if (!arrow) {
+            item.innerHTML = `<span class="menu-arrow">▶</span> ${item.textContent.trim()}`;
+          }
+        } else {
+          item.classList.remove('active');
+          if (arrow) {
+            item.textContent = '  ' + item.textContent.replace('▶ ', '');
+          }
+        }
+      });
+
+      setTimeout(navigateMenu, 400);
+    }
+
+    setTimeout(navigateMenu, 600);
+  }
+
+  // Show merge dialog and navigate to automatic commit
+  function showMergeDialog() {
+    terminalOutput.innerHTML = createMergeDialog();
+
+    setTimeout(() => {
+      // Move to "AI commit (automatic)"
+      const items = terminalOutput.querySelectorAll('.menu-item');
+      items.forEach((item, idx) => {
+        const arrow = item.querySelector('.menu-arrow');
+        if (idx === 1) {
+          item.classList.add('active');
+          if (!arrow) {
+            item.innerHTML = `<span class="menu-arrow">▶</span> ${item.textContent.trim()}`;
+          }
+        } else {
+          item.classList.remove('active');
+          if (arrow) {
+            item.textContent = '  ' + item.textContent.replace('▶ ', '');
+          }
+        }
+      });
+
+      // Show close pane dialog after commit
+      setTimeout(() => {
+        showClosePaneDialog();
+      }, 1000);
+    }, 800);
+  }
+
+  // Show close pane confirmation dialog
+  function showClosePaneDialog() {
+    terminalOutput.innerHTML = createClosePaneDialog();
+
+    // Pause for 1.5 seconds, then show final screen
+    setTimeout(() => {
+      showFinalScreen();
+    }, 1500);
+  }
+
+  // Show final 2-pane screen
+  function showFinalScreen() {
+    terminalOutput.innerHTML = createFinalTwoPaneScreen();
+    // Final state
+  }
+
+  // Function to start the animation sequence
+  function startAnimation() {
+    // Reset state
+    typingIndex = 0;
+    agentIndex = 0;
+
+    // Show prompt screen first
+    setTimeout(() => {
+      showPromptScreen();
+
+      // Pause on prompt screen for 1.5 seconds before typing
+      setTimeout(() => {
+        typeUserInput();
+      }, 1500);
+    }, 300);
   }
 
   // Listen for dmux typing completion to start the simulation
   window.addEventListener('dmuxTypingComplete', () => {
     if (!hasStarted) {
       hasStarted = true;
-      // Show prompt screen first
-      setTimeout(() => {
-        showPromptScreen();
+      startAnimation();
+    }
+  });
 
-        // Pause on prompt screen for 1.5 seconds before typing
-        setTimeout(() => {
-          typeUserInput();
-        }, 1500);
-      }, 300);
+  // Add play again button handler
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('play-again-link')) {
+      e.preventDefault();
+      terminalOutput.innerHTML = '';
+      startAnimation();
     }
   });
 
