@@ -105,6 +105,31 @@ export function handleActionResult(
     targetPaneId: null,
   };
 
+  // Two-phase update: first clear all dialogs, then show new one
+  // This prevents visual artifacts when transitioning between dialogs
+  if (currentState.showConfirmDialog || currentState.showChoiceDialog ||
+      currentState.showInputDialog || currentState.showProgressDialog) {
+    // First clear all dialogs
+    setState(resetState);
+
+    // Then schedule the new state after a brief delay to allow Ink to re-render
+    setTimeout(() => {
+      applyNewDialogState(result, resetState, setState);
+    }, 50);
+  } else {
+    // No active dialog, apply immediately
+    applyNewDialogState(result, resetState, setState);
+  }
+}
+
+/**
+ * Apply the new dialog state
+ */
+function applyNewDialogState(
+  result: ActionResult,
+  resetState: Partial<TUIActionState>,
+  setState: (updates: Partial<TUIActionState>) => void
+): void {
   switch (result.type) {
     case 'success':
     case 'error':
