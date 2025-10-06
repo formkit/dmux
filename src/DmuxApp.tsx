@@ -82,6 +82,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
   const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, false);
 
+  // Track intentionally closed panes to prevent race condition
+  // When a user closes a pane, we add it to this set. If the worker detects
+  // the pane is gone (which it will), we check this set first before re-saving.
+  const intentionallyClosedPanes = React.useRef<Set<string>>(new Set());
+
   // Action system
   const actionSystem = useActionSystem({
     panes,
@@ -89,8 +94,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     sessionName,
     projectName,
     onPaneRemove: (paneId) => {
+      // Mark this pane as intentionally closed
+      intentionallyClosedPanes.current.add(paneId);
+
       const updated = panes.filter(p => p.id !== paneId);
       setPanes(updated);
+
+      // Clean up the tracking after a delay (in case of race conditions)
+      setTimeout(() => {
+        intentionallyClosedPanes.current.delete(paneId);
+      }, 5000);
     },
   });
 
@@ -249,7 +262,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     panes,
     suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || !!showCommandPrompt || showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
-      // Remove pane from list when it no longer exists in tmux
+      // Check if this pane was intentionally closed
+      // If so, don't re-save - the close action already handled it
+      if (intentionallyClosedPanes.current.has(paneId)) {
+        return;
+      }
+
+      // Pane was removed unexpectedly (e.g., user killed tmux pane manually)
+      // Remove it from our tracking
       const updatedPanes = panes.filter(p => p.id !== paneId);
       savePanes(updatedPanes);
     },
