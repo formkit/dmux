@@ -1104,7 +1104,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
     
-    if (input === 'm' && selectedIndex < panes.length) {
+    if ((input === 'm' || key.return) && selectedIndex < panes.length) {
       // Open kebab menu for selected pane
       const selectedPane = panes[selectedIndex];
       const actions = getAvailableActions(selectedPane, projectSettings);
