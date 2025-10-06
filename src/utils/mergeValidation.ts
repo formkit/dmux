@@ -172,8 +172,9 @@ export function validateMerge(
     });
   }
 
-  // Check if there's anything to merge
-  if (!hasCommitsToMerge(mainRepoPath, worktreeBranch, mainBranch)) {
+  // Check if there's anything to merge (commits OR uncommitted changes)
+  const hasCommits = hasCommitsToMerge(mainRepoPath, worktreeBranch, mainBranch);
+  if (!hasCommits && !worktreeStatus.hasChanges) {
     issues.push({
       type: 'nothing_to_merge',
       message: 'No new commits to merge',
