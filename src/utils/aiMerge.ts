@@ -129,13 +129,14 @@ export function getComprehensiveDiff(repoPath: string): { diff: string; summary:
 
 /**
  * Get AI-generated commit message from git diff
+ * Returns null if generation fails, so caller can handle fallback
  */
-export async function generateCommitMessage(repoPath: string): Promise<string> {
+export async function generateCommitMessage(repoPath: string): Promise<string | null> {
   try {
     const { diff, summary } = getComprehensiveDiff(repoPath);
 
     if (!diff.trim()) {
-      return 'chore: automated commit';
+      return null; // No changes, let caller handle
     }
 
     // Include more context (up to 5000 chars) for better commit messages
@@ -162,10 +163,10 @@ export async function generateCommitMessage(repoPath: string): Promise<string> {
       }
     }
 
-    // Default fallback
-    return 'chore: automated commit';
+    // Both methods failed
+    return null;
   } catch {
-    return 'chore: automated commit';
+    return null;
   }
 }
 
