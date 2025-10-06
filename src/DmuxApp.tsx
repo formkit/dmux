@@ -43,6 +43,8 @@ import QRCode from './components/QRCode.js';
 import KebabMenu from './components/KebabMenu.js';
 import ActionChoiceDialog from './components/ActionChoiceDialog.js';
 import ActionConfirmDialog from './components/ActionConfirmDialog.js';
+import ActionInputDialog from './components/ActionInputDialog.js';
+import ActionProgressDialog from './components/ActionProgressDialog.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
@@ -82,6 +84,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
   const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, false);
 
+  // Track intentionally closed panes to prevent race condition
+  // When a user closes a pane, we add it to this set. If the worker detects
+  // the pane is gone (which it will), we check this set first before re-saving.
+  const intentionallyClosedPanes = React.useRef<Set<string>>(new Set());
+
   // Action system
   const actionSystem = useActionSystem({
     panes,
@@ -89,8 +96,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     sessionName,
     projectName,
     onPaneRemove: (paneId) => {
+      // Mark this pane as intentionally closed
+      intentionallyClosedPanes.current.add(paneId);
+
       const updated = panes.filter(p => p.id !== paneId);
       setPanes(updated);
+
+      // Clean up the tracking after a delay (in case of race conditions)
+      setTimeout(() => {
+        intentionallyClosedPanes.current.delete(paneId);
+      }, 5000);
     },
   });
 
@@ -143,6 +158,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             if (event.summary !== undefined) {
               updated.agentSummary = event.summary;
             }
+            if (event.analyzerError !== undefined) {
+              updated.analyzerError = event.analyzerError;
+            }
 
             // Clear option dialog data when transitioning away from 'waiting' state
             if (event.status !== 'waiting' && pane.agentStatus === 'waiting') {
@@ -154,6 +172,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             // Clear summary when transitioning away from 'idle' state
             if (event.status !== 'idle' && pane.agentStatus === 'idle') {
               updated.agentSummary = undefined;
+            }
+
+            // Clear analyzer error when successfully getting a new analysis
+            // or when transitioning to 'working' status
+            if (event.status === 'working') {
+              updated.analyzerError = undefined;
+            } else if (event.status === 'waiting' || event.status === 'idle') {
+              if (event.analyzerError === undefined && (event.optionsQuestion || event.summary)) {
+                updated.analyzerError = undefined;
+              }
             }
 
             return updated;
@@ -212,6 +240,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         !showNewPaneDialog &&
         !actionSystem.actionState.showConfirmDialog &&
         !actionSystem.actionState.showChoiceDialog &&
+        !actionSystem.actionState.showInputDialog &&
+        !actionSystem.actionState.showProgressDialog &&
         !showCommandPrompt &&
         !showFileCopyPrompt &&
         !showAgentChoiceDialog &&
@@ -220,7 +250,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         !isUpdating) {
       setShowNewPaneDialog(true);
     }
-  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
   // Update checking moved to useAutoUpdater
 
@@ -234,9 +264,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
     panes,
-    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || !!showCommandPrompt || showFileCopyPrompt,
+    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || actionSystem.actionState.showProgressDialog || !!showCommandPrompt || showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
-      // Remove pane from list when it no longer exists in tmux
+      // Check if this pane was intentionally closed
+      // If so, don't re-save - the close action already handled it
+      if (intentionallyClosedPanes.current.has(paneId)) {
+        return;
+      }
+
+      // Pane was removed unexpectedly (e.g., user killed tmux pane manually)
+      // Remove it from our tracking
       const updatedPanes = panes.filter(p => p.id !== paneId);
       savePanes(updatedPanes);
     },
@@ -711,6 +748,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Update handling moved to useAutoUpdater
 
+  // Helper function to clear screen artifacts
+  const clearScreen = () => {
+    // Multiple clearing strategies to prevent artifacts
+    // 1. Clear screen with ANSI codes
+    process.stdout.write('\x1b[2J\x1b[H');
+
+    // 2. Clear tmux history
+    try {
+      execSync('tmux clear-history', { stdio: 'pipe' });
+    } catch {}
+
+    // 3. Force tmux to refresh the display
+    try {
+      execSync('tmux refresh-client', { stdio: 'pipe' });
+    } catch {}
+  };
+
   // Cleanup function for exit
   const cleanExit = () => {
     // Clear screen before exiting Ink
@@ -775,6 +829,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         setKebabMenuPaneIndex(null);
         setKebabMenuOption(0);
         setKebabMenuActions([]);
+        clearScreen();
         return;
       } else if (key.upArrow) {
         setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
@@ -785,6 +840,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       } else if (key.return) {
         // Execute the selected menu action
         setShowKebabMenu(false);
+        clearScreen();
 
         const selectedAction = availableActions[kebabMenuOption];
         if (selectedAction) {
@@ -868,6 +924,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
         return;
       }
+      return;
+    }
+
+    // Handle action system input dialog
+    if (actionSystem.actionState.showInputDialog) {
+      if (key.escape) {
+        actionSystem.setActionState(prev => ({ ...prev, showInputDialog: false }));
+        return;
+      } else if (key.return) {
+        if (actionSystem.actionState.onInputSubmit) {
+          actionSystem.executeCallback(async () =>
+            actionSystem.actionState.onInputSubmit!(actionSystem.actionState.inputValue)
+          );
+        }
+        return;
+      }
+      // Let CleanTextInput handle all other key events
       return;
     }
 
@@ -1162,6 +1235,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {/* Action system confirm dialog */}
       {actionSystem.actionState.showConfirmDialog && (
         <ActionConfirmDialog
+          key="confirm-dialog"
           title={actionSystem.actionState.confirmTitle}
           message={actionSystem.actionState.confirmMessage}
           yesLabel={actionSystem.actionState.confirmYesLabel}
@@ -1173,10 +1247,34 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {/* Action system choice dialog */}
       {actionSystem.actionState.showChoiceDialog && (
         <ActionChoiceDialog
+          key="choice-dialog"
           title={actionSystem.actionState.choiceTitle}
           message={actionSystem.actionState.choiceMessage}
           options={actionSystem.actionState.choiceOptions}
           selectedIndex={actionSystem.actionState.choiceSelectedIndex}
+        />
+      )}
+
+      {/* Action system input dialog */}
+      {actionSystem.actionState.showInputDialog && (
+        <ActionInputDialog
+          key="input-dialog"
+          title={actionSystem.actionState.inputTitle}
+          message={actionSystem.actionState.inputMessage}
+          placeholder={actionSystem.actionState.inputPlaceholder}
+          value={actionSystem.actionState.inputValue}
+          onValueChange={(value) => {
+            actionSystem.setActionState(prev => ({ ...prev, inputValue: value }));
+          }}
+        />
+      )}
+
+      {/* Action system progress dialog */}
+      {actionSystem.actionState.showProgressDialog && (
+        <ActionProgressDialog
+          key="progress-dialog"
+          message={actionSystem.actionState.progressMessage}
+          percent={actionSystem.actionState.progressPercent}
         />
       )}
 

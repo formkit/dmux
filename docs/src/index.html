@@ -45,7 +45,7 @@
       <div class="container">
         <div class="demo-split">
           <div class="demo-left">
-            <h2 class="demo-heading">Parallel AI Agents</h2>
+            <h2 class="section-title-hero">Parallel agents</h2>
             <p class="demo-description">
               Run multiple AI agents simultaneously, each working on different features in isolated environments.
               Each agent operates in its own git worktree with independent branches, so you can develop features
@@ -81,65 +81,61 @@
       </div>
     </section>
 
-  <!-- Value Proposition -->
-  <section class="value-prop">
+  <!-- Autopilot Section -->
+  <section class="autopilot">
     <div class="container">
-      <h2 class="section-title">
-        <span class="prompt">$</span> Why dmux?
-      </h2>
-      <div class="features-grid">
-        <div class="feature-card">
-          <div class="holographic-scanlines"></div>
-          <div class="holographic-shimmer"></div>
-          <div class="feature-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="16 18 22 12 16 6"></polyline>
-              <polyline points="8 6 2 12 8 18"></polyline>
-            </svg>
+      <div class="autopilot-split">
+        <div class="autopilot-right">
+          <div class="autopilot-visual">
+            <div class="autopilot-card">
+              <div class="autopilot-header">Permission Request</div>
+              <div class="autopilot-request">
+                <div class="request-line">
+                  <span class="request-label">Action:</span>
+                  <span class="request-value">Edit src/components/Button.tsx</span>
+                </div>
+                <div class="request-line">
+                  <span class="request-label">Agent:</span>
+                  <span class="request-value">Claude Code</span>
+                </div>
+              </div>
+              <div class="autopilot-separator"></div>
+              <div class="autopilot-review">
+                <div class="review-icon">🤖</div>
+                <div class="review-content">
+                  <div class="review-status">Autopilot Review</div>
+                  <div class="review-result approved">✓ Safe operation detected</div>
+                  <div class="review-action">Auto-approved in 0.3s</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <h3>Parallel Development</h3>
-          <p>Work on multiple features simultaneously. Each pane is a separate tmux pane with its own git worktree.</p>
-          <code class="code-example">$ dmux<br># Press 'n' → Enter prompt → Agent launches</code>
         </div>
-        <div class="feature-card">
-          <div class="holographic-scanlines"></div>
-          <div class="holographic-shimmer"></div>
-          <div class="feature-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M12 1v6m0 6v6"></path>
-              <path d="M1 12h6m6 0h6"></path>
-            </svg>
+        <div class="autopilot-left">
+          <h2 class="section-title-hero">Autopilot Mode</h2>
+          <h3 class="autopilot-heading">Stop babysitting your agents</h3>
+          <p class="autopilot-description">
+            Agents work faster when they don't need constant permission. Autopilot uses a second LLM to review
+            permission requests and automatically approve safe operations—so your agents keep coding while you stay in control.
+          </p>
+          <div class="autopilot-benefits">
+            <div class="benefit-item">
+              <span class="benefit-icon">✓</span>
+              <span>AI reviews every permission request in real-time</span>
+            </div>
+            <div class="benefit-item">
+              <span class="benefit-icon">✓</span>
+              <span>Auto-approves safe operations like file edits and tests</span>
+            </div>
+            <div class="benefit-item">
+              <span class="benefit-icon">✓</span>
+              <span>Flags risky operations for manual review</span>
+            </div>
+            <div class="benefit-item">
+              <span class="benefit-icon">✓</span>
+              <span>Work on other tasks while agents run autonomously</span>
+            </div>
           </div>
-          <h3>Git Worktree Isolation</h3>
-          <p>Each pane operates in its own git worktree. No more branch switching or stashing changes.</p>
-          <code class="code-example">.dmux/worktrees/<br>  ├── fix-auth/<br>  └── add-dashboard/</code>
-        </div>
-        <div class="feature-card">
-          <div class="holographic-scanlines"></div>
-          <div class="holographic-shimmer"></div>
-          <div class="feature-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-          </div>
-          <h3>AI-Powered Automation</h3>
-          <p>Automatic branch naming and commit message generation using AI. Smart merge workflows.</p>
-          <code class="code-example">"fix authentication bug"<br>→ Branch: fix-auth<br>→ Commit: "fix: resolve auth token..."</code>
-        </div>
-        <div class="feature-card">
-          <div class="holographic-scanlines"></div>
-          <div class="holographic-shimmer"></div>
-          <div class="feature-icon">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-          </div>
-          <h3>Agent Ready</h3>
-          <p>Launches Claude Code (with auto-accept edits) or opencode with your prompt. Ready to work instantly.</p>
-          <code class="code-example">Claude: --permission-mode=acceptEdits<br>opencode: prompt auto-submitted</code>
         </div>
       </div>
     </div>

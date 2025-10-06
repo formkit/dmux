@@ -10,6 +10,36 @@ import type { DmuxPane } from '../types.js';
 import type { ActionResult, ActionContext, ActionOption } from './types.js';
 
 /**
+ * Generate commit message with timeout and error handling
+ * Returns null if it fails, so caller can fall back to manual input
+ */
+async function generateCommitMessageSafe(
+  repoPath: string,
+  timeoutMs: number = 15000
+): Promise<string | null> {
+  try {
+    const { generateCommitMessage } = await import('../utils/aiMerge.js');
+
+    // Race between generation and timeout
+    const result = await Promise.race([
+      generateCommitMessage(repoPath),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+      ),
+    ]);
+
+    if (!result) {
+      console.error('[generateCommitMessageSafe] AI generation returned null');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('[generateCommitMessageSafe] Error or timeout:', error);
+    return null;
+  }
+}
+
+/**
  * View/Jump to a pane
  */
 export async function viewPane(
@@ -227,10 +257,20 @@ async function handleMergeIssues(
       message: `${mainBranch} has uncommitted changes in:\n${mainDirty.files.slice(0, 5).join('\n')}${mainDirty.files.length > 5 ? '\n...' : ''}`,
       options: [
         {
-          id: 'commit_main',
-          label: 'Commit changes in main',
-          description: 'Generate commit message and commit',
+          id: 'commit_ai_editable',
+          label: 'AI commit (editable)',
+          description: 'Generate message from diff, edit before commit',
           default: true,
+        },
+        {
+          id: 'commit_automatic',
+          label: 'AI commit (automatic)',
+          description: 'Auto-generate and commit immediately',
+        },
+        {
+          id: 'commit_manual',
+          label: 'Manual commit message',
+          description: 'Write your own commit message',
         },
         {
           id: 'stash_main',
@@ -257,15 +297,147 @@ async function handleMergeIssues(
           return mergePane(pane, context, { mainBranch });
         }
 
-        if (optionId === 'commit_main') {
+        if (optionId === 'commit_ai_editable') {
+          try {
+            const { stageAllChanges } = await import('../utils/mergeValidation.js');
+            const { getComprehensiveDiff } = await import('../utils/aiMerge.js');
+
+            // Stage all changes first
+            const stageResult = stageAllChanges(mainRepoPath);
+            if (!stageResult.success) {
+              return { type: 'error', message: `Failed to stage changes: ${stageResult.error}`, dismissable: true };
+            }
+
+            // Get diff and generate message
+            const { diff, summary } = getComprehensiveDiff(mainRepoPath);
+            console.error('[commit_ai_editable] Calling generateCommitMessageSafe for main repo');
+            const generatedMessage = await generateCommitMessageSafe(mainRepoPath);
+            console.error('[commit_ai_editable] Generated message:', generatedMessage);
+
+            // If AI generation failed, fall back to manual with explanation
+            if (!generatedMessage) {
+              console.error('[commit_ai_editable] Falling back to manual input');
+              return {
+                type: 'input',
+                title: 'Enter Commit Message',
+                message: `⚠️ Auto-generation failed or timed out. Please write a commit message manually.\n\nFiles changed:\n${summary}`,
+                placeholder: 'feat: add new feature',
+                onSubmit: async (message: string) => {
+                  if (!message || !message.trim()) {
+                    return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+                  }
+                  const result = commitChanges(mainRepoPath, message.trim());
+                  if (!result.success) {
+                    return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+                  }
+                  // Retry merge after committing
+                  return mergePane(pane, context, { mainBranch });
+                },
+                dismissable: true,
+              };
+            }
+
+            console.error('[commit_ai_editable] Returning editable input with generated message');
+            return {
+              type: 'input',
+              title: 'Review & Edit Commit Message',
+              message: `Files changed:\n${summary}\n\nGenerated message (edit as needed):`,
+              placeholder: 'feat: add new feature',
+              defaultValue: generatedMessage,
+              onSubmit: async (message: string) => {
+                if (!message || !message.trim()) {
+                  return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+                }
+                const result = commitChanges(mainRepoPath, message.trim());
+                if (!result.success) {
+                  return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+                }
+                // Retry merge after committing
+                return mergePane(pane, context, { mainBranch });
+              },
+              dismissable: true,
+            };
+          } catch (error) {
+            console.error('[commit_ai_editable] Unexpected error:', error);
+            return {
+              type: 'error',
+              message: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+              dismissable: true,
+            };
+          }
+        }
+
+        if (optionId === 'commit_automatic') {
+          const { stageAllChanges } = await import('../utils/mergeValidation.js');
+          const { getComprehensiveDiff } = await import('../utils/aiMerge.js');
+
+          // Stage all changes first
+          const stageResult = stageAllChanges(mainRepoPath);
+          if (!stageResult.success) {
+            return { type: 'error', message: `Failed to stage changes: ${stageResult.error}`, dismissable: true };
+          }
+
           // Generate commit message
-          const message = await generateCommitMessage(mainRepoPath);
+          const message = await generateCommitMessageSafe(mainRepoPath);
+
+          // If AI generation failed, fall back to manual input
+          if (!message) {
+            const { summary } = getComprehensiveDiff(mainRepoPath);
+            return {
+              type: 'input',
+              title: 'Enter Commit Message',
+              message: `⚠️ Auto-generation failed or timed out. Please write a commit message manually.\n\nFiles changed:\n${summary}`,
+              placeholder: 'feat: add new feature',
+              onSubmit: async (manualMessage: string) => {
+                if (!manualMessage || !manualMessage.trim()) {
+                  return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+                }
+                const result = commitChanges(mainRepoPath, manualMessage.trim());
+                if (!result.success) {
+                  return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+                }
+                // Retry merge after committing
+                return mergePane(pane, context, { mainBranch });
+              },
+              dismissable: true,
+            };
+          }
+
           const result = commitChanges(mainRepoPath, message);
           if (!result.success) {
             return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
           }
           // Retry merge after committing
           return mergePane(pane, context, { mainBranch });
+        }
+
+        if (optionId === 'commit_manual') {
+          const { stageAllChanges } = await import('../utils/mergeValidation.js');
+
+          // Stage all changes first
+          const stageResult = stageAllChanges(mainRepoPath);
+          if (!stageResult.success) {
+            return { type: 'error', message: `Failed to stage changes: ${stageResult.error}`, dismissable: true };
+          }
+
+          return {
+            type: 'input',
+            title: 'Enter Commit Message',
+            message: 'Write a commit message for the changes in main:',
+            placeholder: 'feat: add new feature',
+            onSubmit: async (message: string) => {
+              if (!message || !message.trim()) {
+                return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+              }
+              const result = commitChanges(mainRepoPath, message.trim());
+              if (!result.success) {
+                return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+              }
+              // Retry merge after committing
+              return mergePane(pane, context, { mainBranch });
+            },
+            dismissable: true,
+          };
         }
 
         return { type: 'info', message: 'Unknown option', dismissable: true };
@@ -282,10 +454,20 @@ async function handleMergeIssues(
       message: `Changes in:\n${worktreeUncommitted.files.slice(0, 5).join('\n')}${worktreeUncommitted.files.length > 5 ? '\n...' : ''}`,
       options: [
         {
-          id: 'commit_worktree',
-          label: 'Commit changes',
-          description: 'Generate commit message and commit',
+          id: 'commit_ai_editable',
+          label: 'AI commit (editable)',
+          description: 'Generate message from diff, edit before commit',
           default: true,
+        },
+        {
+          id: 'commit_automatic',
+          label: 'AI commit (automatic)',
+          description: 'Auto-generate and commit immediately',
+        },
+        {
+          id: 'commit_manual',
+          label: 'Manual commit message',
+          description: 'Write your own commit message',
         },
         {
           id: 'cancel',
@@ -298,14 +480,146 @@ async function handleMergeIssues(
           return { type: 'info', message: 'Merge cancelled', dismissable: true };
         }
 
-        if (optionId === 'commit_worktree') {
-          const message = await generateCommitMessage(pane.worktreePath!);
+        if (optionId === 'commit_ai_editable') {
+          try {
+            const { stageAllChanges } = await import('../utils/mergeValidation.js');
+            const { getComprehensiveDiff } = await import('../utils/aiMerge.js');
+
+            // Stage all changes first
+            const stageResult = stageAllChanges(pane.worktreePath!);
+            if (!stageResult.success) {
+              return { type: 'error', message: `Failed to stage changes: ${stageResult.error}`, dismissable: true };
+            }
+
+            // Get diff and generate message
+            const { diff, summary } = getComprehensiveDiff(pane.worktreePath!);
+            console.error('[worktree commit_ai_editable] Calling generateCommitMessageSafe');
+            const generatedMessage = await generateCommitMessageSafe(pane.worktreePath!);
+            console.error('[worktree commit_ai_editable] Generated message:', generatedMessage);
+
+            // If AI generation failed, fall back to manual with explanation
+            if (!generatedMessage) {
+              console.error('[worktree commit_ai_editable] Falling back to manual input');
+              return {
+                type: 'input',
+                title: 'Enter Commit Message',
+                message: `⚠️ Auto-generation failed or timed out. Please write a commit message manually.\n\nFiles changed:\n${summary}`,
+                placeholder: 'feat: add new feature',
+                onSubmit: async (message: string) => {
+                  if (!message || !message.trim()) {
+                    return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+                  }
+                  const result = commitChanges(pane.worktreePath!, message.trim());
+                  if (!result.success) {
+                    return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+                  }
+                  // Retry merge after committing
+                  return mergePane(pane, context, { mainBranch });
+                },
+                dismissable: true,
+              };
+            }
+
+            console.error('[worktree commit_ai_editable] Returning editable input with generated message');
+            return {
+              type: 'input',
+              title: 'Review & Edit Commit Message',
+              message: `Files changed:\n${summary}\n\nGenerated message (edit as needed):`,
+              placeholder: 'feat: add new feature',
+              defaultValue: generatedMessage,
+              onSubmit: async (message: string) => {
+                if (!message || !message.trim()) {
+                  return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+                }
+                const result = commitChanges(pane.worktreePath!, message.trim());
+                if (!result.success) {
+                  return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+                }
+                // Retry merge after committing
+                return mergePane(pane, context, { mainBranch });
+              },
+              dismissable: true,
+            };
+          } catch (error) {
+            console.error('[worktree commit_ai_editable] Unexpected error:', error);
+            return {
+              type: 'error',
+              message: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+              dismissable: true,
+            };
+          }
+        }
+
+        if (optionId === 'commit_automatic') {
+          const { stageAllChanges } = await import('../utils/mergeValidation.js');
+          const { getComprehensiveDiff } = await import('../utils/aiMerge.js');
+
+          // Stage all changes first
+          const stageResult = stageAllChanges(pane.worktreePath!);
+          if (!stageResult.success) {
+            return { type: 'error', message: `Failed to stage changes: ${stageResult.error}`, dismissable: true };
+          }
+
+          const message = await generateCommitMessageSafe(pane.worktreePath!);
+
+          // If AI generation failed, fall back to manual input
+          if (!message) {
+            const { summary } = getComprehensiveDiff(pane.worktreePath!);
+            return {
+              type: 'input',
+              title: 'Enter Commit Message',
+              message: `⚠️ Auto-generation failed or timed out. Please write a commit message manually.\n\nFiles changed:\n${summary}`,
+              placeholder: 'feat: add new feature',
+              onSubmit: async (manualMessage: string) => {
+                if (!manualMessage || !manualMessage.trim()) {
+                  return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+                }
+                const result = commitChanges(pane.worktreePath!, manualMessage.trim());
+                if (!result.success) {
+                  return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+                }
+                // Retry merge after committing
+                return mergePane(pane, context, { mainBranch });
+              },
+              dismissable: true,
+            };
+          }
+
           const result = commitChanges(pane.worktreePath!, message);
           if (!result.success) {
             return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
           }
           // Retry merge after committing
           return mergePane(pane, context, { mainBranch });
+        }
+
+        if (optionId === 'commit_manual') {
+          const { stageAllChanges } = await import('../utils/mergeValidation.js');
+
+          // Stage all changes first
+          const stageResult = stageAllChanges(pane.worktreePath!);
+          if (!stageResult.success) {
+            return { type: 'error', message: `Failed to stage changes: ${stageResult.error}`, dismissable: true };
+          }
+
+          return {
+            type: 'input',
+            title: 'Enter Commit Message',
+            message: 'Write a commit message for the changes:',
+            placeholder: 'feat: add new feature',
+            onSubmit: async (message: string) => {
+              if (!message || !message.trim()) {
+                return { type: 'error', message: 'Commit message cannot be empty', dismissable: true };
+              }
+              const result = commitChanges(pane.worktreePath!, message.trim());
+              if (!result.success) {
+                return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
+              }
+              // Retry merge after committing
+              return mergePane(pane, context, { mainBranch });
+            },
+            dismissable: true,
+          };
         }
 
         return { type: 'info', message: 'Unknown option', dismissable: true };

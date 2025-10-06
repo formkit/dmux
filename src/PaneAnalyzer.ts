@@ -21,6 +21,11 @@ export interface PaneAnalysis {
 
 export class PaneAnalyzer {
   private apiKey: string;
+  private modelStack: string[] = [
+    'z-ai/glm-4.6',
+    'openai/gpt-5',
+    'x-ai/grok-4-fast'
+  ];
 
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY || '';
@@ -43,6 +48,63 @@ export class PaneAnalyzer {
       // Failed to capture pane content
       return '';
     }
+  }
+
+  /**
+   * Makes a request to OpenRouter API with model fallback
+   */
+  private async makeRequestWithFallback(
+    systemPrompt: string,
+    userPrompt: string,
+    maxTokens: number,
+    signal?: AbortSignal
+  ): Promise<any> {
+    if (!this.apiKey) {
+      throw new Error('API key not available');
+    }
+
+    let lastError: Error | null = null;
+
+    // Try each model in the stack
+    for (const model of this.modelStack) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://github.com/dmux/dmux',
+            'X-Title': 'dmux',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.1,
+            max_tokens: maxTokens,
+            response_format: { type: 'json_object' },
+          }),
+          signal
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`API error (${model}): ${response.status} ${errorText}`);
+        }
+
+        const data: any = await response.json();
+        return data;
+      } catch (error) {
+        lastError = error as Error;
+        // Continue to next model in stack
+        continue;
+      }
+    }
+
+    // All models failed
+    throw lastError || new Error('All models in fallback stack failed');
   }
 
   /**
@@ -91,34 +153,13 @@ CRITICAL:
 3. When uncertain, default to "open_prompt"`;
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/dmux/dmux',
-          'X-Title': 'dmux',
-        },
-        body: JSON.stringify({
-          model: 'x-ai/grok-4-fast:free',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Analyze this terminal output and return a JSON object with the state:\n\n${content}` }
-          ],
-          temperature: 0.1,
-          max_tokens: 20,
-          response_format: { type: 'json_object' },
-        }),
+      const data = await this.makeRequestWithFallback(
+        systemPrompt,
+        `Analyze this terminal output and return a JSON object with the state:\n\n${content}`,
+        20,
         signal
-      });
+      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        // API error
-        return 'in_progress';
-      }
-
-      const data: any = await response.json();
       const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
       // Validate the state
@@ -129,8 +170,8 @@ CRITICAL:
 
       return 'in_progress';
     } catch (error) {
-      // Failed to determine state
-      return 'in_progress';
+      // Failed to determine state - throw error to be handled by caller
+      throw error;
     }
   }
 
@@ -187,33 +228,13 @@ Output: {
 }`;
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/dmux/dmux',
-          'X-Title': 'dmux',
-        },
-        body: JSON.stringify({
-          model: 'x-ai/grok-4-fast:free',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Extract the option details from this dialog and return as JSON:\n\n${content}` }
-          ],
-          temperature: 0.1,
-          max_tokens: 300,
-          response_format: { type: 'json_object' },
-        }),
+      const data = await this.makeRequestWithFallback(
+        systemPrompt,
+        `Extract the option details from this dialog and return as JSON:\n\n${content}`,
+        300,
         signal
-      });
+      );
 
-      if (!response.ok) {
-        // API error in option extraction
-        return {};
-      }
-
-      const data: any = await response.json();
       const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
       return {
@@ -229,8 +250,8 @@ Output: {
         } : undefined
       };
     } catch (error) {
-      // Failed to extract options
-      return {};
+      // Failed to extract options - throw error to be handled by caller
+      throw error;
     }
   }
 
@@ -264,36 +285,18 @@ Examples:
 If there's no meaningful content or the output is unclear, return an empty summary.`;
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/dmux/dmux',
-          'X-Title': 'dmux',
-        },
-        body: JSON.stringify({
-          model: 'x-ai/grok-4-fast:free',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Extract the summary from this terminal output:\n\n${content}` }
-          ],
-          temperature: 0.1,
-          max_tokens: 100,
-          response_format: { type: 'json_object' },
-        }),
+      const data = await this.makeRequestWithFallback(
+        systemPrompt,
+        `Extract the summary from this terminal output:\n\n${content}`,
+        100,
         signal
-      });
+      );
 
-      if (!response.ok) {
-        return undefined;
-      }
-
-      const data: any = await response.json();
       const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
       return result.summary || undefined;
     } catch (error) {
+      // Failed to extract summary - return undefined
       return undefined;
     }
   }
@@ -309,28 +312,34 @@ If there's no meaningful content or the output is unclear, return an empty summa
       return { state: 'in_progress' };
     }
 
-    // Stage 1: Determine the state
-    const state = await this.determineState(content, signal);
+    try {
+      // Stage 1: Determine the state
+      const state = await this.determineState(content, signal);
 
-    // If it's an option dialog, extract option details
-    if (state === 'option_dialog') {
-      const optionDetails = await this.extractOptions(content, signal);
-      return {
-        state,
-        ...optionDetails
-      };
+      // If it's an option dialog, extract option details
+      if (state === 'option_dialog') {
+        const optionDetails = await this.extractOptions(content, signal);
+        return {
+          state,
+          ...optionDetails
+        };
+      }
+
+      // If it's open_prompt (idle), extract summary
+      if (state === 'open_prompt') {
+        const summary = await this.extractSummary(content, signal);
+        return {
+          state,
+          summary
+        };
+      }
+
+      // Otherwise just return the state (in_progress)
+      return { state };
+    } catch (error) {
+      // All models failed or other error occurred
+      // Return open_prompt as fallback (idle state) and let error be handled by caller
+      throw error;
     }
-
-    // If it's open_prompt (idle), extract summary
-    if (state === 'open_prompt') {
-      const summary = await this.extractSummary(content, signal);
-      return {
-        state,
-        summary
-      };
-    }
-
-    // Otherwise just return the state (in_progress)
-    return { state };
   }
 }

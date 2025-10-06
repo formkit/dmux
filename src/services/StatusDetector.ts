@@ -15,6 +15,7 @@ export interface StatusUpdateEvent {
   options?: OptionChoice[];
   potentialHarm?: PotentialHarm;
   summary?: string;
+  analyzerError?: string;
 }
 
 /**
@@ -109,11 +110,18 @@ export class StatusDetector extends EventEmitter {
     }
 
     // Emit event for UI updates
-    this.emit('status-updated', {
+    const updateEvent: StatusUpdateEvent = {
       paneId,
       status,
       previousStatus: oldStatus
-    } as StatusUpdateEvent);
+    };
+
+    // Clear analyzerError when transitioning to working status
+    if (status === 'working') {
+      updateEvent.analyzerError = '';
+    }
+
+    this.emit('status-updated', updateEvent);
   }
 
   /**
@@ -206,8 +214,9 @@ export class StatusDetector extends EventEmitter {
         clearTimeout(timeoutId);
 
         if (error.name === 'AbortError') {
-          // Request was aborted (either manually or by timeout)
-          // Default to idle when timing out
+          // Request was aborted due to timeout
+          console.error(`LLM analysis timeout for pane ${paneId} after 10 seconds`);
+
           this.paneStatuses.set(paneId, 'idle');
 
           // Notify worker that analysis is complete (defaulting to idle)
@@ -224,7 +233,8 @@ export class StatusDetector extends EventEmitter {
           this.emit('status-updated', {
             paneId,
             status: 'idle',
-            previousStatus: 'analyzing'
+            previousStatus: 'analyzing',
+            analyzerError: 'Analysis timeout (10s limit)'
           } as StatusUpdateEvent);
           return;
         }
@@ -232,15 +242,51 @@ export class StatusDetector extends EventEmitter {
         throw error; // Re-throw other errors to outer catch
       }
     } catch (error: any) {
-
       console.error(`LLM analysis error for pane ${paneId}:`, error);
+
+      // Extract detailed error message
+      let errorMessage = 'Analysis failed';
+
+      if (error.message) {
+        // Clean up common API error patterns
+        if (error.message.includes('API error')) {
+          // Extract model name and status from API errors
+          const match = error.message.match(/API error \(([^)]+)\): (\d+)/);
+          if (match) {
+            const [, model, status] = match;
+            // Provide helpful messages for common status codes
+            if (status === '401') {
+              errorMessage = `API auth failed - check OPENROUTER_API_KEY`;
+            } else if (status === '402') {
+              errorMessage = `Insufficient credits - add credits to OpenRouter account`;
+            } else if (status === '429') {
+              errorMessage = `Rate limited - wait before retrying`;
+            } else if (status === '503') {
+              errorMessage = `API unavailable (${model})`;
+            } else {
+              errorMessage = `API error: ${status} (${model})`;
+            }
+          } else {
+            errorMessage = error.message;
+          }
+        } else if (error.message.includes('API key')) {
+          errorMessage = 'Set OPENROUTER_API_KEY env var';
+        } else if (error.message.includes('All models')) {
+          errorMessage = 'All models failed - check API key & credits';
+        } else if (error.message.includes('fetch')) {
+          errorMessage = 'Network error - check connection';
+        } else {
+          errorMessage = error.message;
+        }
+      }
 
       // Default to idle on error
       this.paneStatuses.set(paneId, 'idle');
       this.emit('status-updated', {
         paneId,
         status: 'idle',
-        previousStatus: 'analyzing'
+        previousStatus: 'analyzing',
+        analyzerError: errorMessage
       } as StatusUpdateEvent);
     } finally {
       this.llmRequests.delete(paneId);

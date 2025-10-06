@@ -9,31 +9,55 @@ import fs from 'fs/promises';
 import path from 'path';
 
 /**
+ * Fetch with timeout wrapper
+ */
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+/**
  * Call OpenRouter API for AI assistance
  */
-async function callOpenRouter(prompt: string, maxTokens: number = 1000): Promise<string | null> {
+async function callOpenRouter(prompt: string, maxTokens: number = 1000, timeoutMs: number = 12000): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+    const response = await fetchWithTimeout(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o-mini',
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.3,
+        }),
       },
-      body: JSON.stringify({
-        model: 'openai/gpt-4o-mini',
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.3,
-      }),
-    });
+      timeoutMs
+    );
 
     if (response.ok) {
       const data = (await response.json()) as any;
@@ -49,14 +73,14 @@ async function callOpenRouter(prompt: string, maxTokens: number = 1000): Promise
 /**
  * Call Claude Code CLI for AI assistance
  */
-async function callClaudeCode(prompt: string): Promise<string | null> {
+async function callClaudeCode(prompt: string, timeoutMs: number = 15000): Promise<string | null> {
   try {
     const result = execSync(
       `echo "${prompt.replace(/"/g, '\\"')}" | claude --no-interactive --max-turns 1 2>/dev/null`,
       {
         encoding: 'utf-8',
         stdio: 'pipe',
-        timeout: 30000, // 30 second timeout for merge operations
+        timeout: timeoutMs,
       }
     );
     return result.trim() || null;
@@ -66,21 +90,59 @@ async function callClaudeCode(prompt: string): Promise<string | null> {
 }
 
 /**
- * Get AI-generated commit message from git diff
+ * Get comprehensive git diff with context for commit message generation
  */
-export async function generateCommitMessage(repoPath: string): Promise<string> {
+export function getComprehensiveDiff(repoPath: string): { diff: string; summary: string } {
   try {
-    const diff = execSync('git diff --cached', {
+    // Get staged changes first, then fall back to unstaged if nothing staged
+    let diff = execSync('git diff --cached', {
       cwd: repoPath,
       encoding: 'utf-8',
       stdio: 'pipe',
     });
 
+    let staged = true;
+
+    // If nothing staged, check unstaged changes
     if (!diff.trim()) {
-      return 'chore: automated commit';
+      diff = execSync('git diff', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+      staged = false;
     }
 
-    const prompt = `Generate a concise conventional commit message (e.g., "feat: add feature", "fix: bug") for these changes. Respond with ONLY the commit message, nothing else:\n\n${diff.slice(0, 3000)}`;
+    // Get file summary
+    const statusCmd = staged ? 'git diff --cached --stat' : 'git diff --stat';
+    const summary = execSync(statusCmd, {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    });
+
+    return { diff, summary };
+  } catch {
+    return { diff: '', summary: '' };
+  }
+}
+
+/**
+ * Get AI-generated commit message from git diff
+ * Returns null if generation fails, so caller can handle fallback
+ */
+export async function generateCommitMessage(repoPath: string): Promise<string | null> {
+  try {
+    const { diff, summary } = getComprehensiveDiff(repoPath);
+
+    if (!diff.trim()) {
+      return null; // No changes, let caller handle
+    }
+
+    // Include more context (up to 5000 chars) for better commit messages
+    const contextDiff = diff.length > 5000 ? diff.slice(0, 5000) + '\n...(truncated)' : diff;
+
+    const prompt = `Generate a concise conventional commit message (e.g., "feat: add feature", "fix: bug") for these changes. Respond with ONLY the commit message, nothing else:\n\nFile changes:\n${summary}\n\nDiff:\n${contextDiff}`;
 
     // Try OpenRouter first
     let message = await callOpenRouter(prompt, 50);
@@ -101,10 +163,10 @@ export async function generateCommitMessage(repoPath: string): Promise<string> {
       }
     }
 
-    // Default fallback
-    return 'chore: automated commit';
+    // Both methods failed
+    return null;
   } catch {
-    return 'chore: automated commit';
+    return null;
   }
 }
 
@@ -220,11 +282,11 @@ ${content}
 
 Respond with ONLY the complete resolved file content, no explanations:`;
 
-    // Try OpenRouter
-    let resolved = await callOpenRouter(prompt, 2000);
+    // Try OpenRouter with longer timeout for conflict resolution
+    let resolved = await callOpenRouter(prompt, 2000, 20000);
     if (!resolved) {
-      // Try Claude Code
-      resolved = await callClaudeCode(prompt);
+      // Try Claude Code with longer timeout for conflict resolution
+      resolved = await callClaudeCode(prompt, 20000);
     }
 
     if (!resolved) {

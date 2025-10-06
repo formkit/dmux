@@ -172,8 +172,9 @@ export function validateMerge(
     });
   }
 
-  // Check if there's anything to merge
-  if (!hasCommitsToMerge(mainRepoPath, worktreeBranch, mainBranch)) {
+  // Check if there's anything to merge (commits OR uncommitted changes)
+  const hasCommits = hasCommitsToMerge(mainRepoPath, worktreeBranch, mainBranch);
+  if (!hasCommits && !worktreeStatus.hasChanges) {
     issues.push({
       type: 'nothing_to_merge',
       message: 'No new commits to merge',
@@ -206,18 +207,32 @@ export function validateMerge(
 }
 
 /**
- * Commit uncommitted changes with a generated message
+ * Stage all uncommitted changes
  */
-export function commitChanges(
-  repoPath: string,
-  message: string
-): { success: boolean; error?: string } {
+export function stageAllChanges(repoPath: string): { success: boolean; error?: string } {
   try {
     execSync('git add -A', {
       cwd: repoPath,
       stdio: 'pipe',
     });
 
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Commit staged changes with a message
+ */
+export function commitChanges(
+  repoPath: string,
+  message: string
+): { success: boolean; error?: string } {
+  try {
     execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
       cwd: repoPath,
       stdio: 'pipe',

@@ -458,6 +458,18 @@ main {
   font-style: italic;
 }
 
+.analyzer-error {
+  color: #ef4444;
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+  font-weight: 500;
+}
+
 .tooltip {
   position: absolute;
   background: var(--tooltip-bg);
@@ -957,11 +969,14 @@ footer {
   letter-spacing: -0.5px;
 }
 
-.action-dialog p {
+.action-dialog p,
+.action-dialog .dialog-message {
   margin: 0 0 20px 0;
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
 }
 
 .action-dialog label {

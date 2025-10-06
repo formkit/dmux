@@ -138,11 +138,12 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
       // Generate commit message
       setStatus('committing');
       const message = await generateCommitMessage();
-      setCommitMessage(message);
+      const finalMessage = message || 'chore: automated commit';
+      setCommitMessage(finalMessage);
 
       // Stage and commit changes in the worktree
       runCommand('git add -A');
-      const commitResult = runCommand(`git commit -m "${message}"`);
+      const commitResult = runCommand(`git commit -m "${finalMessage}"`);
       if (!commitResult.success) {
         setError('Failed to commit changes');
         setStatus('error');

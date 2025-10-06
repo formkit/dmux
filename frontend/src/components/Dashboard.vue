@@ -174,14 +174,12 @@ const connectToStream = () => {
       // Reconnect after 5 seconds
       setTimeout(() => {
         if (eventSource?.readyState === EventSource.CLOSED) {
-          console.log('Reconnecting to SSE stream...');
           connectToStream();
         }
       }, 5000);
     };
 
     eventSource.onopen = () => {
-      console.log('SSE connection established');
       connected.value = true;
     };
   } catch (error) {
@@ -205,7 +203,6 @@ const fetchPaneActions = async (paneId: string) => {
   try {
     const response = await fetch(`/api/panes/${paneId}/actions`);
     const data = await response.json();
-    console.log(`Fetched actions for pane ${paneId}:`, data);
     paneActions.value[paneId] = data.actions || [];
   } catch (error) {
     console.error(`Failed to fetch actions for pane ${paneId}:`, error);
@@ -408,6 +405,32 @@ const selectChoice = async (optionId: string) => {
   } finally {
     actionDialogLoading.value = false;
   }
+};
+
+/**
+ * Colorize git diff stat output for HTML display
+ * Example: " src/file.ts | 10 ++--" -> adds spans with colors
+ */
+const colorizeDiffStat = (text: string): string => {
+  return text.split('\n').map(line => {
+    // Check if line contains diff markers
+    if (line.includes('|')) {
+      // Split by | to separate file path from changes
+      const parts = line.split('|');
+      if (parts.length === 2) {
+        const filePart = parts[0];
+        const statPart = parts[1];
+
+        // Colorize + and - in the stat part
+        const colorizedStat = statPart
+          .replace(/\+/g, '<span style="color: #4ade80;">+</span>')
+          .replace(/-/g, '<span style="color: #f87171;">-</span>');
+
+        return filePart + '<span style="opacity: 0.6;">|</span>' + colorizedStat;
+      }
+    }
+    return line;
+  }).join('<br>');
 };
 
 const submitInput = async () => {
@@ -678,6 +701,11 @@ onBeforeUnmount(() => {
             {{ pane.agentSummary }}
           </div>
 
+          <!-- Show analyzer error if present -->
+          <div v-if="pane.analyzerError" class="analyzer-error">
+            ⚠ {{ pane.analyzerError }}
+          </div>
+
           <div class="pane-interactive" @click.prevent>
             <!-- Options Dialog (when waiting with options) -->
             <div v-if="pane.agentStatus === 'waiting' && pane.options && pane.options.length > 0" class="options-dialog">
@@ -840,7 +868,7 @@ onBeforeUnmount(() => {
       <!-- Input Dialog -->
       <div v-else-if="actionDialog.type === 'input'" class="action-dialog">
         <h3>{{ actionDialog.title }}</h3>
-        <p v-if="actionDialog.message">{{ actionDialog.message }}</p>
+        <div v-if="actionDialog.message" class="dialog-message" v-html="colorizeDiffStat(actionDialog.message)"></div>
         <div v-if="actionDialogLoading" class="dialog-loading">
           <div class="loader-spinner"></div>
           <span>Processing...</span>

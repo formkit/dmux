@@ -37,6 +37,8 @@ export interface DmuxPane {
   agentSummary?: string;
   // Autopilot mode - automatically accept options when no risk detected
   autopilot?: boolean;
+  // Error message if pane analyzer encounters issues
+  analyzerError?: string;
 }
 
 export interface PanePosition {

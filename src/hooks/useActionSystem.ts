@@ -70,11 +70,25 @@ export default function useActionSystem({
 
   // Handle callback execution (for multi-step actions)
   const executeCallback = useCallback(async (
-    callback: (() => Promise<ActionResult>) | null
+    callback: (() => Promise<ActionResult>) | null,
+    options?: { showProgress?: boolean; progressMessage?: string }
   ) => {
     if (!callback) return;
 
+    const showProgress = options?.showProgress !== false; // default true
+    const progressMessage = options?.progressMessage || 'Processing...';
+
     try {
+      // Show progress indicator while executing
+      if (showProgress) {
+        setActionState(prev => ({
+          ...prev,
+          showProgressDialog: true,
+          progressMessage,
+          progressPercent: undefined,
+        }));
+      }
+
       const result = await callback();
       handleActionResult(result, actionState, (updates) => {
         setActionState(prev => ({ ...prev, ...updates }));
@@ -82,6 +96,7 @@ export default function useActionSystem({
     } catch (error) {
       setActionState(prev => ({
         ...prev,
+        showProgressDialog: false,
         statusMessage: `Action failed: ${error}`,
         statusType: 'error',
       }));
