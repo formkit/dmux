@@ -257,15 +257,15 @@ async function handleMergeIssues(
       message: `${mainBranch} has uncommitted changes in:\n${mainDirty.files.slice(0, 5).join('\n')}${mainDirty.files.length > 5 ? '\n...' : ''}`,
       options: [
         {
-          id: 'commit_ai_editable',
-          label: 'AI commit (editable)',
-          description: 'Generate message from diff, edit before commit',
-          default: true,
-        },
-        {
           id: 'commit_automatic',
           label: 'AI commit (automatic)',
           description: 'Auto-generate and commit immediately',
+          default: true,
+        },
+        {
+          id: 'commit_ai_editable',
+          label: 'AI commit (editable)',
+          description: 'Generate message from diff, edit before commit',
         },
         {
           id: 'commit_manual',
@@ -454,15 +454,15 @@ async function handleMergeIssues(
       message: `Changes in:\n${worktreeUncommitted.files.slice(0, 5).join('\n')}${worktreeUncommitted.files.length > 5 ? '\n...' : ''}`,
       options: [
         {
-          id: 'commit_ai_editable',
-          label: 'AI commit (editable)',
-          description: 'Generate message from diff, edit before commit',
-          default: true,
-        },
-        {
           id: 'commit_automatic',
           label: 'AI commit (automatic)',
           description: 'Auto-generate and commit immediately',
+          default: true,
+        },
+        {
+          id: 'commit_ai_editable',
+          label: 'AI commit (editable)',
+          description: 'Generate message from diff, edit before commit',
         },
         {
           id: 'commit_manual',
