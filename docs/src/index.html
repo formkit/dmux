@@ -25,11 +25,6 @@
     <!-- Terminal-style header -->
     <header class="terminal-header">
       <div class="container">
-        <div class="terminal-chrome">
-          <span class="chrome-dot red"></span>
-          <span class="chrome-dot yellow"></span>
-          <span class="chrome-dot green"></span>
-        </div>
         <div class="header-content">
           <h1 class="tagline" data-text="Mission Control for CLI Agents">Mission Control for CLI Agents</h1>
           <p class="subtitle">Run Claude Code or opencode in parallel tmux panes with git worktrees</p>
@@ -47,28 +42,41 @@
 
     <!-- Hero Demo Section -->
     <section class="hero-demo">
-    <div class="container">
-      <div class="terminal-window">
-        <div class="terminal-title">
-          <div class="terminal-chrome">
-            <span class="chrome-dot red"></span>
-            <span class="chrome-dot yellow"></span>
-            <span class="chrome-dot green"></span>
+      <div class="container">
+        <div class="demo-split">
+          <div class="demo-left">
+            <h2 class="demo-heading">Parallel AI Agents</h2>
+            <p class="demo-description">
+              Run multiple AI agents simultaneously, each working on different features in isolated environments.
+              Each agent operates in its own git worktree with independent branches, so you can develop features
+              in parallel without conflicts or context switching.
+            </p>
           </div>
-          <span class="terminal-path">~/projects/my-app/main</span>
-        </div>
-        <div class="terminal-content">
-          <div class="terminal-line">
-            <span class="prompt">$</span>
-            <span class="command typed-text">dmux</span>
-          </div>
-          <div class="terminal-output">
-            <pre class="demo-ui"></pre>
+          <div class="demo-right">
+            <div class="terminal-window">
+              <div class="terminal-title">
+                <div class="terminal-chrome">
+                  <span class="chrome-dot red"></span>
+                  <span class="chrome-dot yellow"></span>
+                  <span class="chrome-dot green"></span>
+                </div>
+                <span class="terminal-path">~/projects/my-app/main</span>
+              </div>
+              <div class="terminal-content">
+                <div class="terminal-line">
+                  <span class="prompt">$</span>
+                  <span class="command typed-text"></span>
+                  <span class="cursor">█</span>
+                </div>
+                <div class="terminal-output">
+                  <div class="demo-ui"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
   <!-- Value Proposition -->
   <section class="value-prop">

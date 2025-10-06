@@ -4,21 +4,46 @@ import { animateStaticLogo } from './logo-static.js';
 import { initTerminalSim } from './terminal-sim.js';
 import { initHolographicCards } from './holographic-cards.js';
 
+// Fetch and display current version
+async function updateVersion() {
+  try {
+    const response = await fetch('/../../package.json');
+    const pkg = await response.json();
+    const versionEl = document.getElementById('dmux-version');
+    if (versionEl && pkg.version) {
+      versionEl.textContent = `v${pkg.version}`;
+    }
+  } catch (e) {
+    console.error('Failed to fetch version:', e);
+  }
+}
+
 // Initialize everything when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+  // Update version from package.json
+  updateVersion();
   // Always start the static breathing logo
   animateStaticLogo();
 
   // Check if mobile
   const isMobile = window.innerWidth <= 768;
 
-  if (isMobile) {
+  // TEMP: Disable intro animation for testing
+  const SKIP_INTRO = false;
+
+  if (isMobile || SKIP_INTRO) {
     // On mobile, hide intro canvas and don't use intro mode
     const introCanvas = document.getElementById('logo-canvas');
     if (introCanvas) {
       introCanvas.classList.add('hidden');
     }
     // Don't add intro-mode class on mobile
+    // Immediately dispatch intro complete event
+    if (SKIP_INTRO) {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('introComplete'));
+      }, 100);
+    }
   } else {
     // On desktop, start in intro mode and run animation
     document.body.classList.add('intro-mode');
@@ -35,6 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // Function to end intro and reveal page
 export function endIntro() {
   document.body.classList.remove('intro-mode');
+  // Dispatch event to signal intro is complete
+  window.dispatchEvent(new CustomEvent('introComplete'));
 }
 
 // Copy to clipboard functionality
@@ -66,11 +93,25 @@ document.querySelectorAll('.copy-btn').forEach(button => {
 
 // Typing animation for hero demo
 const typedElement = document.querySelector('.typed-text');
-if (typedElement) {
+const typedTerminalLine = document.querySelector('.terminal-line');
+const typedCursor = document.querySelector('.terminal-line .cursor');
+const typedTerminalWindow = document.querySelector('.terminal-window');
+if (typedElement && typedTerminalWindow) {
   const text = 'dmux';
   let index = 0;
+  let hasTyped = false;
+  let introComplete = false;
+  let isInView = false;
 
   typedElement.textContent = '';
+
+  function checkAndStartTyping() {
+    if (introComplete && isInView && !hasTyped) {
+      hasTyped = true;
+      // Wait 1.5 seconds before typing "dmux"
+      setTimeout(type, 1500);
+    }
+  }
 
   function type() {
     if (index < text.length) {
@@ -78,15 +119,48 @@ if (typedElement) {
       index++;
       setTimeout(type, 150);
     } else {
-      // Remove blinking cursor effect after typing is complete
+      // Hide the cursor and terminal line after a delay
       setTimeout(() => {
-        typedElement.style.animation = 'none';
-      }, 1000);
+        if (typedCursor) {
+          typedCursor.style.display = 'none';
+        }
+        setTimeout(() => {
+          if (typedTerminalLine) {
+            typedTerminalLine.style.display = 'none';
+          }
+          // Dispatch event to signal typing is complete
+          window.dispatchEvent(new CustomEvent('dmuxTypingComplete'));
+        }, 500);
+      }, 500);
     }
   }
 
-  // Start typing after a brief delay
-  setTimeout(type, 500);
+  // Listen for intro completion
+  window.addEventListener('introComplete', () => {
+    introComplete = true;
+    checkAndStartTyping();
+  });
+
+  // On mobile, intro completes immediately
+  const isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    introComplete = true;
+  }
+
+  // Use IntersectionObserver to detect when terminal window is in view
+  const typedObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        isInView = true;
+        typedObserver.unobserve(entry.target);
+        checkAndStartTyping();
+      }
+    });
+  }, {
+    threshold: 0.3
+  });
+
+  typedObserver.observe(typedTerminalWindow);
 }
 
 // Animate elements on scroll

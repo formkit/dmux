@@ -1,162 +1,299 @@
-// Living Terminal Simulation - Realistic dmux Demo
-export class TerminalSimulator {
-  constructor(element) {
-    this.element = element;
-    this.lines = [];
-    this.currentLine = 0;
-    this.charIndex = 0;
-    this.isTyping = false;
-    this.currentColor = 'var(--text-primary)';
-
-    // Terminal simulation script - realistic dmux workflow
-    this.script = [
-      { text: '$ dmux', color: 'var(--orange-primary)', delay: 1000, speed: 80 },
-      { text: '', delay: 500 },
-      { text: '╭─ dmux Panes ─────────────────────────────────────╮', color: 'var(--orange-primary)', delay: 200, speed: 20 },
-      { text: '│                                                   │', color: 'var(--orange-primary)', speed: 20 },
-      { text: '│  <span class="dim">No panes yet. Press \'n\' to create one.</span>       │', color: 'var(--orange-primary)', speed: 20 },
-      { text: '│                                                   │', color: 'var(--orange-primary)', speed: 20 },
-      { text: '│  <span class="dim">[n] New  [q] Quit</span>                              │', color: 'var(--orange-primary)', speed: 20 },
-      { text: '╰───────────────────────────────────────────────────╯', color: 'var(--orange-primary)', speed: 20 },
-      { text: '', delay: 1500 },
-      { text: 'Enter prompt: <span class="cursor-blink">█</span>', color: 'var(--text-primary)', delay: 800, persist: true },
-      { text: 'Enter prompt: fix authentication bug<span class="cursor-blink">█</span>', color: 'var(--text-primary)', delay: 100, speed: 100, replace: true },
-      { text: '', delay: 800, clear: 11 },
-      { text: '╭─ dmux Panes ─────────────────────────────────────╮', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│                                                   │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│  → <span class="highlight">fix-auth</span>          [<span class="status-working">Working</span>]   Claude Code │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│                                                   │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│  <span class="dim">[j] Jump  [m] Merge  [x] Close  [n] New  [q] Quit</span> │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '╰───────────────────────────────────────────────────╯', color: 'var(--orange-primary)', speed: 10 },
-      { text: '', delay: 2000 },
-      { text: 'Enter prompt: <span class="cursor-blink">█</span>', color: 'var(--text-primary)', delay: 500, persist: true },
-      { text: 'Enter prompt: add user dashboard<span class="cursor-blink">█</span>', color: 'var(--text-primary)', delay: 100, speed: 120, replace: true },
-      { text: '', delay: 800, clear: 8 },
-      { text: '╭─ dmux Panes ─────────────────────────────────────╮', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│                                                   │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│  → <span class="highlight">add-dashboard</span>    [<span class="status-working">Working</span>]   Claude Code │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│    fix-auth          [<span class="status-done">Done</span>]      Merged       │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│                                                   │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '│  <span class="dim">[j] Jump  [m] Merge  [x] Close  [n] New  [q] Quit</span> │', color: 'var(--orange-primary)', speed: 10 },
-      { text: '╰───────────────────────────────────────────────────╯', color: 'var(--orange-primary)', speed: 10 },
-      { text: '', delay: 3000, loop: true }
-    ];
-  }
-
-  async start() {
-    await this.runScript();
-  }
-
-  async runScript() {
-    while (true) {
-      for (let i = 0; i < this.script.length; i++) {
-        const step = this.script[i];
-
-        // Handle clear command
-        if (step.clear) {
-          await this.clearLines(step.clear);
-          await this.sleep(step.delay || 100);
-          continue;
-        }
-
-        // Handle replace command
-        if (step.replace) {
-          this.lines[this.lines.length - 1] = `<span style="color: ${step.color}">${step.text}</span>`;
-          this.render();
-          await this.sleep(step.delay || 100);
-          continue;
-        }
-
-        // Type out the line
-        await this.typeLine(step.text, step.color || 'var(--text-primary)', step.speed || 30);
-
-        // Wait after typing
-        await this.sleep(step.delay || 100);
-
-        // Check if we should loop
-        if (step.loop) {
-          await this.sleep(2000);
-          this.lines = [];
-          this.render();
-          break; // Restart the script
-        }
-      }
-    }
-  }
-
-  async typeLine(text, color, speed) {
-    return new Promise(resolve => {
-      let charIndex = 0;
-      const plainText = text.replace(/<[^>]*>/g, ''); // Remove HTML for char counting
-      const lineIndex = this.lines.length;
-
-      // Start with empty line
-      this.lines.push('');
-
-      const typeChar = () => {
-        if (charIndex < plainText.length) {
-          // Build up the visible text with HTML preserved
-          const beforeHTML = text.substring(0, this.findHTMLAwareIndex(text, charIndex + 1));
-          this.lines[lineIndex] = `<span style="color: ${color}">${beforeHTML}</span>`;
-          this.render();
-          charIndex++;
-          setTimeout(typeChar, speed);
-        } else {
-          this.lines[lineIndex] = `<span style="color: ${color}">${text}</span>`;
-          this.render();
-          resolve();
-        }
-      };
-
-      typeChar();
-    });
-  }
-
-  findHTMLAwareIndex(htmlText, targetIndex) {
-    let visibleCount = 0;
-    let htmlIndex = 0;
-    let inTag = false;
-
-    while (htmlIndex < htmlText.length && visibleCount < targetIndex) {
-      if (htmlText[htmlIndex] === '<') {
-        inTag = true;
-      } else if (htmlText[htmlIndex] === '>') {
-        inTag = false;
-        htmlIndex++;
-        continue;
-      }
-
-      if (!inTag) {
-        visibleCount++;
-      }
-      htmlIndex++;
-    }
-
-    return htmlIndex;
-  }
-
-  async clearLines(count) {
-    this.lines = this.lines.slice(0, -count);
-    this.render();
-  }
-
-  render() {
-    this.element.innerHTML = this.lines.join('\n');
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-}
-
-// Initialize terminal simulation
+// Interactive dmux terminal simulation
 export function initTerminalSim() {
   const terminalOutput = document.querySelector('.demo-ui');
-  if (!terminalOutput) {
-    console.error('Terminal output element not found');
-    return;
+  if (!terminalOutput) return;
+
+  const terminalWindow = terminalOutput.closest('.terminal-window');
+  if (!terminalWindow) return;
+
+  // Clear any existing content
+  terminalOutput.innerHTML = '';
+
+  // State
+  let currentStep = 0;
+  let typingIndex = 0;
+  let agentIndex = 0;
+  let hasStarted = false;
+  const userPrompt = 'Create an order form for my soy latte coffee stand.';
+  const agents = ['Claude Code', 'opencode', 'Codex'];
+
+  // Create initial UI structure
+  function createPromptScreen() {
+    return `
+      <div class="terminal-screen">
+        <div class="terminal-label">Enter initial prompt (ESC to cancel):</div>
+        <div class="terminal-box">
+          <div class="terminal-box-content">
+            <span class="prompt-symbol">&gt;</span>
+            <span class="user-input"></span>
+            <span class="cursor">█</span>
+          </div>
+        </div>
+        <div class="terminal-hint">Press Ctrl+O to open in $EDITOR for complex multi-line input</div>
+        <div class="terminal-version">v2.2.1</div>
+      </div>
+    `;
   }
 
-  const sim = new TerminalSimulator(terminalOutput);
-  sim.start();
+  function createAgentSelectScreen() {
+    return `
+      <div class="terminal-screen">
+        <div class="terminal-box">
+          <div class="terminal-box-header">Select agent (←/→, 1/2, C/O, Enter, ESC):</div>
+          <div class="terminal-box-content agent-selection">
+            <div class="agent-options">
+              <span class="agent active" data-agent-index="0">
+                <span class="agent-arrow">▶</span> <span class="agent-name">Claude Code</span>
+              </span>
+              <span class="agent" data-agent-index="1">
+                <span class="agent-arrow" style="visibility: hidden;">▶</span> <span class="agent-name">opencode</span>
+              </span>
+              <span class="agent" data-agent-index="2">
+                <span class="agent-arrow" style="visibility: hidden;">▶</span> <span class="agent-name">Codex</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createPaneScreen() {
+    return `
+      <div class="terminal-screen">
+        <div class="pane-grid">
+          <div class="pane-card active-pane">
+            <div class="pane-header">
+              <span class="pane-icon">⋮</span>
+              <span class="pane-name">soy-latte-order</span>
+              <span class="pane-agent">(cc)</span>
+            </div>
+            <div class="pane-prompt">"Create an order form for my s…"</div>
+            <div class="pane-status">
+              <span class="status-icon">⟳</span>
+              <span class="status-text">Analyzing...</span>
+            </div>
+          </div>
+          <div class="pane-card new-pane">
+            <div class="pane-header">
+              <span class="pane-icon">+</span>
+              <span class="pane-name">New dmux pane</span>
+            </div>
+            <div class="pane-empty"></div>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <div class="terminal-commands">Commands: <span class="cmd-key">[j]</span>ump • <span class="cmd-key">[m]</span>enu • <span class="cmd-key">[x]</span>close • <span class="cmd-key">[n]</span>ew • <span class="cmd-key">[r]</span>emote • <span class="cmd-key">[q]</span>uit</div>
+          <div class="terminal-hint">Use arrow keys (↑↓←→) for spatial navigation, Enter to select</div>
+          <div class="terminal-version">v2.2.1</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function createThreePaneScreen() {
+    return `
+      <div class="terminal-screen">
+        <div class="pane-grid">
+          <div class="pane-card">
+            <div class="pane-header">
+              <span class="pane-icon">⋮</span>
+              <span class="pane-name">soy-latte-order</span>
+              <span class="pane-agent">(cc)</span>
+            </div>
+            <div class="pane-prompt">"Create an order form for my s…"</div>
+            <div class="pane-status">
+              <span class="status-icon">✻</span>
+              <span class="status-text">Working...</span>
+            </div>
+          </div>
+          <div class="pane-card">
+            <div class="pane-header">
+              <span class="pane-icon">⋮</span>
+              <span class="pane-name">coffee-order-api</span>
+              <span class="pane-agent">(cc)</span>
+            </div>
+            <div class="pane-prompt">"Create an api endpoint for che…"</div>
+            <div class="pane-status">
+              <span class="status-icon">✻</span>
+              <span class="status-text">Working...</span>
+            </div>
+          </div>
+          <div class="pane-card new-pane">
+            <div class="pane-header">
+              <span class="pane-icon">+</span>
+              <span class="pane-name">New dmux pane</span>
+            </div>
+            <div class="pane-empty"></div>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <div class="terminal-commands">Commands: <span class="cmd-key">[j]</span>ump • <span class="cmd-key">[m]</span>enu • <span class="cmd-key">[x]</span>close • <span class="cmd-key">[n]</span>ew • <span class="cmd-key">[r]</span>emote • <span class="cmd-key">[q]</span>uit</div>
+          <div class="terminal-hint">Use arrow keys (↑↓←→) for spatial navigation, Enter to select</div>
+          <div class="terminal-version">v2.2.1</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Step 0: Empty terminal (initial state)
+  function showEmptyTerminal() {
+    terminalOutput.innerHTML = '';
+  }
+
+  // Step 1: Show prompt screen
+  function showPromptScreen() {
+    terminalOutput.innerHTML = createPromptScreen();
+  }
+
+  // Type out user input character by character
+  function typeUserInput() {
+    const userInputEl = terminalOutput.querySelector('.user-input');
+    const cursor = terminalOutput.querySelector('.cursor');
+
+    if (!userInputEl || !cursor) return;
+
+    if (typingIndex < userPrompt.length) {
+      userInputEl.textContent += userPrompt[typingIndex];
+      typingIndex++;
+      setTimeout(typeUserInput, 80); // Typing speed
+    } else {
+      // Typing done, hide cursor and show agent select after delay
+      setTimeout(() => {
+        cursor.style.display = 'none';
+        setTimeout(showAgentSelect, 500);
+      }, 500);
+    }
+  }
+
+  // Step 2: Show agent selection screen
+  function showAgentSelect() {
+    terminalOutput.innerHTML = createAgentSelectScreen();
+
+    // Start cycling through agents
+    setTimeout(cycleAgents, 500);
+  }
+
+  // Cycle through agent options
+  function cycleAgents() {
+    agentIndex++;
+
+    // Cycle: Claude Code (0) → opencode (1) → Codex (2) → back to Claude Code (3 wraps to 0)
+    if (agentIndex > agents.length) {
+      // We've completed the full cycle back to Claude Code
+      setTimeout(showPaneScreen, 800);
+      return;
+    }
+
+    const actualIndex = agentIndex % agents.length;
+
+    // Update the active agent and arrow visibility
+    const agentOptions = terminalOutput.querySelectorAll('.agent');
+    agentOptions.forEach((agent, idx) => {
+      const arrow = agent.querySelector('.agent-arrow');
+      if (idx === actualIndex) {
+        agent.classList.add('active');
+        if (arrow) arrow.style.visibility = 'visible';
+      } else {
+        agent.classList.remove('active');
+        if (arrow) arrow.style.visibility = 'hidden';
+      }
+    });
+
+    // Continue cycling
+    setTimeout(cycleAgents, 400);
+  }
+
+  // Step 3: Show pane with analyzing status
+  function showPaneScreen() {
+    terminalOutput.innerHTML = createPaneScreen();
+
+    // After 2 seconds, change "Analyzing..." to "✻ Working..."
+    setTimeout(() => {
+      const statusText = terminalOutput.querySelector('.status-text');
+      if (statusText) {
+        statusText.textContent = 'Working...';
+      }
+      const statusIcon = terminalOutput.querySelector('.status-icon');
+      if (statusIcon) {
+        statusIcon.textContent = '✻';
+      }
+
+      // After another 2 seconds, dim the first pane and highlight the new pane
+      setTimeout(() => {
+        const firstPane = terminalOutput.querySelector('.pane-card.active-pane');
+        const newPane = terminalOutput.querySelector('.pane-card.new-pane');
+
+        if (firstPane) {
+          firstPane.classList.remove('active-pane');
+        }
+        if (newPane) {
+          newPane.classList.add('active-pane');
+          newPane.classList.remove('new-pane');
+        }
+
+        // After 1 second, show prompt screen for second task
+        setTimeout(() => {
+          showPromptScreen();
+
+          // Type the second prompt after 1.5 seconds
+          setTimeout(() => {
+            typeSecondUserInput();
+          }, 1500);
+        }, 1000);
+      }, 2000);
+    }, 2000);
+  }
+
+  // Type out second user input
+  function typeSecondUserInput() {
+    const secondPrompt = 'Create an api endpoint for checking your coffee order\'s status';
+    let secondIndex = 0;
+
+    function typeSecond() {
+      const userInputEl = terminalOutput.querySelector('.user-input');
+      const cursor = terminalOutput.querySelector('.cursor');
+
+      if (!userInputEl || !cursor) return;
+
+      if (secondIndex < secondPrompt.length) {
+        userInputEl.textContent += secondPrompt[secondIndex];
+        secondIndex++;
+        setTimeout(typeSecond, 80);
+      } else {
+        // Typing done, show the 3-pane screen after a delay
+        setTimeout(() => {
+          showThreePaneScreen();
+        }, 1000);
+      }
+    }
+
+    typeSecond();
+  }
+
+  // Step 4: Show final 3-pane screen with both tasks working
+  function showThreePaneScreen() {
+    terminalOutput.innerHTML = createThreePaneScreen();
+    // Final state - stay here
+  }
+
+  // Listen for dmux typing completion to start the simulation
+  window.addEventListener('dmuxTypingComplete', () => {
+    if (!hasStarted) {
+      hasStarted = true;
+      // Show prompt screen first
+      setTimeout(() => {
+        showPromptScreen();
+
+        // Pause on prompt screen for 1.5 seconds before typing
+        setTimeout(() => {
+          typeUserInput();
+        }, 1500);
+      }, 300);
+    }
+  });
+
+  // Initialize with empty terminal (wait for dmux typing to complete)
+  showEmptyTerminal();
 }
+
