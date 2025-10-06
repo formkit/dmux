@@ -969,11 +969,14 @@ footer {
   letter-spacing: -0.5px;
 }
 
-.action-dialog p {
+.action-dialog p,
+.action-dialog .dialog-message {
   margin: 0 0 20px 0;
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
 }
 
 .action-dialog label {

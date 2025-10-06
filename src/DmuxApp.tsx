@@ -44,6 +44,7 @@ import KebabMenu from './components/KebabMenu.js';
 import ActionChoiceDialog from './components/ActionChoiceDialog.js';
 import ActionConfirmDialog from './components/ActionConfirmDialog.js';
 import ActionInputDialog from './components/ActionInputDialog.js';
+import ActionProgressDialog from './components/ActionProgressDialog.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
@@ -240,6 +241,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         !actionSystem.actionState.showConfirmDialog &&
         !actionSystem.actionState.showChoiceDialog &&
         !actionSystem.actionState.showInputDialog &&
+        !actionSystem.actionState.showProgressDialog &&
         !showCommandPrompt &&
         !showFileCopyPrompt &&
         !showAgentChoiceDialog &&
@@ -248,7 +250,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         !isUpdating) {
       setShowNewPaneDialog(true);
     }
-  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
   // Update checking moved to useAutoUpdater
 
@@ -262,7 +264,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
     panes,
-    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || !!showCommandPrompt || showFileCopyPrompt,
+    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || actionSystem.actionState.showProgressDialog || !!showCommandPrompt || showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
       // Check if this pane was intentionally closed
       // If so, don't re-save - the close action already handled it
@@ -1261,6 +1263,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           onValueChange={(value) => {
             actionSystem.setActionState(prev => ({ ...prev, inputValue: value }));
           }}
+        />
+      )}
+
+      {/* Action system progress dialog */}
+      {actionSystem.actionState.showProgressDialog && (
+        <ActionProgressDialog
+          message={actionSystem.actionState.progressMessage}
+          percent={actionSystem.actionState.progressPercent}
         />
       )}
 
