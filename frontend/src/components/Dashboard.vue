@@ -174,14 +174,12 @@ const connectToStream = () => {
       // Reconnect after 5 seconds
       setTimeout(() => {
         if (eventSource?.readyState === EventSource.CLOSED) {
-          console.log('Reconnecting to SSE stream...');
           connectToStream();
         }
       }, 5000);
     };
 
     eventSource.onopen = () => {
-      console.log('SSE connection established');
       connected.value = true;
     };
   } catch (error) {
@@ -205,7 +203,6 @@ const fetchPaneActions = async (paneId: string) => {
   try {
     const response = await fetch(`/api/panes/${paneId}/actions`);
     const data = await response.json();
-    console.log(`Fetched actions for pane ${paneId}:`, data);
     paneActions.value[paneId] = data.actions || [];
   } catch (error) {
     console.error(`Failed to fetch actions for pane ${paneId}:`, error);
