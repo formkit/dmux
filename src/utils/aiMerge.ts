@@ -66,9 +66,9 @@ async function callClaudeCode(prompt: string): Promise<string | null> {
 }
 
 /**
- * Get AI-generated commit message from git diff
+ * Get comprehensive git diff with context for commit message generation
  */
-export async function generateCommitMessage(repoPath: string): Promise<string> {
+export function getComprehensiveDiff(repoPath: string): { diff: string; summary: string } {
   try {
     // Get staged changes first, then fall back to unstaged if nothing staged
     let diff = execSync('git diff --cached', {
@@ -77,6 +77,8 @@ export async function generateCommitMessage(repoPath: string): Promise<string> {
       stdio: 'pipe',
     });
 
+    let staged = true;
+
     // If nothing staged, check unstaged changes
     if (!diff.trim()) {
       diff = execSync('git diff', {
@@ -84,13 +86,38 @@ export async function generateCommitMessage(repoPath: string): Promise<string> {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
+      staged = false;
     }
+
+    // Get file summary
+    const statusCmd = staged ? 'git diff --cached --stat' : 'git diff --stat';
+    const summary = execSync(statusCmd, {
+      cwd: repoPath,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    });
+
+    return { diff, summary };
+  } catch {
+    return { diff: '', summary: '' };
+  }
+}
+
+/**
+ * Get AI-generated commit message from git diff
+ */
+export async function generateCommitMessage(repoPath: string): Promise<string> {
+  try {
+    const { diff, summary } = getComprehensiveDiff(repoPath);
 
     if (!diff.trim()) {
       return 'chore: automated commit';
     }
 
-    const prompt = `Generate a concise conventional commit message (e.g., "feat: add feature", "fix: bug") for these changes. Respond with ONLY the commit message, nothing else:\n\n${diff.slice(0, 3000)}`;
+    // Include more context (up to 5000 chars) for better commit messages
+    const contextDiff = diff.length > 5000 ? diff.slice(0, 5000) + '\n...(truncated)' : diff;
+
+    const prompt = `Generate a concise conventional commit message (e.g., "feat: add feature", "fix: bug") for these changes. Respond with ONLY the commit message, nothing else:\n\nFile changes:\n${summary}\n\nDiff:\n${contextDiff}`;
 
     // Try OpenRouter first
     let message = await callOpenRouter(prompt, 50);
