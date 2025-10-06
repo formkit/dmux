@@ -1235,6 +1235,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {/* Action system confirm dialog */}
       {actionSystem.actionState.showConfirmDialog && (
         <ActionConfirmDialog
+          key="confirm-dialog"
           title={actionSystem.actionState.confirmTitle}
           message={actionSystem.actionState.confirmMessage}
           yesLabel={actionSystem.actionState.confirmYesLabel}
@@ -1246,6 +1247,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {/* Action system choice dialog */}
       {actionSystem.actionState.showChoiceDialog && (
         <ActionChoiceDialog
+          key="choice-dialog"
           title={actionSystem.actionState.choiceTitle}
           message={actionSystem.actionState.choiceMessage}
           options={actionSystem.actionState.choiceOptions}
@@ -1256,6 +1258,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {/* Action system input dialog */}
       {actionSystem.actionState.showInputDialog && (
         <ActionInputDialog
+          key="input-dialog"
           title={actionSystem.actionState.inputTitle}
           message={actionSystem.actionState.inputMessage}
           placeholder={actionSystem.actionState.inputPlaceholder}
@@ -1269,6 +1272,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {/* Action system progress dialog */}
       {actionSystem.actionState.showProgressDialog && (
         <ActionProgressDialog
+          key="progress-dialog"
           message={actionSystem.actionState.progressMessage}
           percent={actionSystem.actionState.progressPercent}
         />
