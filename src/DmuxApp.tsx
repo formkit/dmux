@@ -43,6 +43,7 @@ import QRCode from './components/QRCode.js';
 import KebabMenu from './components/KebabMenu.js';
 import ActionChoiceDialog from './components/ActionChoiceDialog.js';
 import ActionConfirmDialog from './components/ActionConfirmDialog.js';
+import ActionInputDialog from './components/ActionInputDialog.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
@@ -238,6 +239,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         !showNewPaneDialog &&
         !actionSystem.actionState.showConfirmDialog &&
         !actionSystem.actionState.showChoiceDialog &&
+        !actionSystem.actionState.showInputDialog &&
         !showCommandPrompt &&
         !showFileCopyPrompt &&
         !showAgentChoiceDialog &&
@@ -246,7 +248,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         !isUpdating) {
       setShowNewPaneDialog(true);
     }
-  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
   // Update checking moved to useAutoUpdater
 
@@ -260,7 +262,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
     panes,
-    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || !!showCommandPrompt || showFileCopyPrompt,
+    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || !!showCommandPrompt || showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
       // Check if this pane was intentionally closed
       // If so, don't re-save - the close action already handled it
@@ -923,6 +925,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
+    // Handle action system input dialog
+    if (actionSystem.actionState.showInputDialog) {
+      if (key.escape) {
+        actionSystem.setActionState(prev => ({ ...prev, showInputDialog: false }));
+        return;
+      } else if (key.return) {
+        if (actionSystem.actionState.onInputSubmit) {
+          actionSystem.executeCallback(async () =>
+            actionSystem.actionState.onInputSubmit!(actionSystem.actionState.inputValue)
+          );
+        }
+        return;
+      }
+      // Let CleanTextInput handle all other key events
+      return;
+    }
+
     // Handle action system choice dialog
     if (actionSystem.actionState.showChoiceDialog) {
       if (key.escape) {
@@ -1229,6 +1248,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           message={actionSystem.actionState.choiceMessage}
           options={actionSystem.actionState.choiceOptions}
           selectedIndex={actionSystem.actionState.choiceSelectedIndex}
+        />
+      )}
+
+      {/* Action system input dialog */}
+      {actionSystem.actionState.showInputDialog && (
+        <ActionInputDialog
+          title={actionSystem.actionState.inputTitle}
+          message={actionSystem.actionState.inputMessage}
+          placeholder={actionSystem.actionState.inputPlaceholder}
+          value={actionSystem.actionState.inputValue}
+          onValueChange={(value) => {
+            actionSystem.setActionState(prev => ({ ...prev, inputValue: value }));
+          }}
         />
       )}
 
