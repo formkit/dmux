@@ -13,9 +13,10 @@ interface Params {
   loadPanes: () => Promise<void>;
   panesFile: string;
   availableAgents: Array<'claude' | 'opencode'>;
+  forceRepaint?: () => void;
 }
 
-export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, setNewPanePrompt, loadPanes, panesFile, availableAgents }: Params) {
+export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, setNewPanePrompt, loadPanes, panesFile, availableAgents, forceRepaint }: Params) {
   const openInEditor = async (currentPrompt: string, setPrompt: (v: string) => void) => {
     try {
       const os = await import('os');
@@ -99,6 +100,11 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
 
       // Clear screen again
       process.stdout.write('\x1b[2J\x1b[H');
+
+      // Force repaint to prevent blank screen
+      if (forceRepaint) {
+        forceRepaint();
+      }
 
       setIsCreatingPane(false);
       setStatusMessage('');

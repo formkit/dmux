@@ -145,8 +145,13 @@ class Dmux {
       execSync('tmux clear-history', { stdio: 'pipe' });
     } catch {}
 
+    // Force tmux to refresh before Ink renders
+    try {
+      execSync('tmux refresh-client', { stdio: 'pipe' });
+    } catch {}
+
     // Small delay to let the clear take effect before Ink renders
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Launch the Ink app
     const app = render(React.createElement(DmuxApp, {

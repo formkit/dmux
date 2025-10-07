@@ -57,6 +57,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showQRCode, setShowQRCode] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
   const [isCreatingTunnel, setIsCreatingTunnel] = useState(false);
+  // Force repaint trigger - incrementing this causes Ink to re-render
+  const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
@@ -118,6 +120,22 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     setRunningCommand,
   });
 
+  // Force repaint helper
+  const forceRepaint = () => setForceRepaintTrigger(prev => prev + 1);
+
+  // Force repaint effect - ensures Ink re-renders when trigger changes
+  useEffect(() => {
+    if (forceRepaintTrigger > 0) {
+      // Small delay to ensure terminal is ready
+      const timer = setTimeout(() => {
+        try {
+          execSync('tmux refresh-client', { stdio: 'pipe' });
+        } catch {}
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [forceRepaintTrigger]);
+
   // Pane creation
   const { openInEditor: openEditor2, createNewPane: createNewPaneHook } = usePaneCreation({
     panes,
@@ -129,6 +147,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     loadPanes,
     panesFile,
     availableAgents,
+    forceRepaint,
   });
   
   // Listen for status updates with analysis data and merge into panes
@@ -763,6 +782,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     try {
       execSync('tmux refresh-client', { stdio: 'pipe' });
     } catch {}
+
+    // 4. Force Ink to repaint after clearing
+    // This prevents the blank screen bug by ensuring Ink re-renders
+    setForceRepaintTrigger(prev => prev + 1);
   };
 
   // Cleanup function for exit
