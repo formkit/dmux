@@ -104,8 +104,9 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       });
 
       // Only attempt to recreate missing panes on initial load AND only if not already completed
-      // This prevents disruptive recreation during regular polling and race conditions with pane closing
-      const missingPanes = (allPaneIds.length > 0 && panes.length === 0 && !initialLoadComplete)
+      // Check loadedPanes.length (from file) instead of panes.length (React state)
+      // This prevents recreation when panes are intentionally closed (e.g., after merge)
+      const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && panes.length === 0 && !initialLoadComplete)
         ? reboundPanes.filter(pane => !allPaneIds.includes(pane.paneId))
         : [];
 
