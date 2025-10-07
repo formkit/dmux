@@ -783,9 +783,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       execSync('tmux refresh-client', { stdio: 'pipe' });
     } catch {}
 
-    // 4. Force Ink to repaint after clearing
+    // 4. Force Ink to repaint after clearing with a delay
     // This prevents the blank screen bug by ensuring Ink re-renders
-    setForceRepaintTrigger(prev => prev + 1);
+    // after the terminal has processed the clear operations
+    setTimeout(() => {
+      setForceRepaintTrigger(prev => prev + 1);
+    }, 200);
   };
 
   // Cleanup function for exit
