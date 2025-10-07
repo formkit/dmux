@@ -29,42 +29,47 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 }
 
 /**
- * Call OpenRouter API for AI assistance
+ * Call OpenRouter API for AI assistance with model fallback
  */
 async function callOpenRouter(prompt: string, maxTokens: number = 1000, timeoutMs: number = 12000): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
-  try {
-    const response = await fetchWithTimeout(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-4o-mini',
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          max_tokens: maxTokens,
-          temperature: 0.3,
-        }),
-      },
-      timeoutMs
-    );
+  const models = ['google/gemini-2.5-flash', 'x-ai/grok-4-fast:free', 'openai/gpt-4o-mini'];
 
-    if (response.ok) {
-      const data = (await response.json()) as any;
-      return data.choices[0].message.content.trim();
+  for (const model of models) {
+    try {
+      const response = await fetchWithTimeout(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            max_tokens: maxTokens,
+            temperature: 0.3,
+          }),
+        },
+        timeoutMs
+      );
+
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        return data.choices[0].message.content.trim();
+      }
+    } catch {
+      // Try next model
+      continue;
     }
-  } catch {
-    return null;
   }
 
   return null;

@@ -22,9 +22,9 @@ export interface PaneAnalysis {
 export class PaneAnalyzer {
   private apiKey: string;
   private modelStack: string[] = [
-    'z-ai/glm-4.6',
-    'openai/gpt-5',
-    'x-ai/grok-4-fast'
+    'google/gemini-2.5-flash',
+    'x-ai/grok-4-fast:free',
+    'openai/gpt-4o-mini'
   ];
 
   constructor() {
