@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
+import { capturePaneContent } from '../utils/paneCapture.js';
 import type {
   WorkerConfig,
   InboundMessage,
@@ -86,15 +87,8 @@ class PaneWorker {
 
   private captureAndAnalyze(): void {
     try {
-      // Capture last 30 lines from tmux pane
-      const output = execSync(
-        `tmux capture-pane -t '${this.tmuxPaneId}' -p -S -30`,
-        {
-          encoding: 'utf-8',
-          stdio: 'pipe',
-          timeout: 500
-        }
-      );
+      // Capture last 30 lines from tmux pane (skipping trailing blanks)
+      const output = capturePaneContent(this.tmuxPaneId, 30);
 
       // First check for deterministic agent working indicators
       // Check the last 20 lines - enough to catch working state but avoid old output

@@ -3,6 +3,7 @@ import path from 'path';
 import type { DmuxPane } from '../types.js';
 import { applySmartLayout } from './tmux.js';
 import { generateSlug } from './slug.js';
+import { capturePaneContent } from './paneCapture.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -247,10 +248,7 @@ async function autoApproveTrustPrompt(
 
     try {
       // Capture the pane content
-      const paneContent = execSync(
-        `tmux capture-pane -t '${paneInfo}' -p -S -30`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      );
+      const paneContent = capturePaneContent(paneInfo, 30);
 
       // Check if content has stabilized
       if (paneContent === lastContent) {
@@ -304,10 +302,7 @@ async function autoApproveTrustPrompt(
           await new Promise((resolve) => setTimeout(resolve, 500));
 
           // Verify the prompt is gone
-          const updatedContent = execSync(
-            `tmux capture-pane -t '${paneInfo}' -p -S -10`,
-            { encoding: 'utf-8', stdio: 'pipe' }
-          );
+          const updatedContent = capturePaneContent(paneInfo, 10);
 
           const promptGone = !trustPromptPatterns.some((p) =>
             p.test(updatedContent)

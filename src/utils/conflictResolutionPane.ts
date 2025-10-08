@@ -7,6 +7,7 @@
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import { applySmartLayout } from './tmux.js';
+import { capturePaneContent } from './paneCapture.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
@@ -197,10 +198,7 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, checkInterval));
 
     try {
-      const paneContent = execSync(
-        `tmux capture-pane -t '${paneInfo}' -p -S -30`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      );
+      const paneContent = capturePaneContent(paneInfo, 30);
 
       if (paneContent === lastContent) {
         stableContentCount++;
@@ -245,10 +243,7 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
           promptHandled = true;
           await new Promise((resolve) => setTimeout(resolve, 500));
 
-          const updatedContent = execSync(
-            `tmux capture-pane -t '${paneInfo}' -p -S -10`,
-            { encoding: 'utf-8', stdio: 'pipe' }
-          );
+          const updatedContent = capturePaneContent(paneInfo, 10);
 
           const promptGone = !trustPromptPatterns.some((p) =>
             p.test(updatedContent)

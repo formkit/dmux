@@ -22,6 +22,7 @@ import { getPanePositions, applySmartLayout } from './utils/tmux.js';
 import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
+import { capturePaneContent } from './utils/paneCapture.js';
 import { StateManager } from './shared/StateManager.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
 import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
@@ -506,10 +507,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
         try {
           // Capture the pane content
-          const paneContent = execSync(
-            `tmux capture-pane -t '${paneInfo}' -p -S -30`,  // Capture last 30 lines
-            { encoding: 'utf-8', stdio: 'pipe' }
-          );
+          const paneContent = capturePaneContent(paneInfo, 30);
 
           if (i % 10 === 0) {  // Log every 10 checks (every second)
           }
@@ -567,10 +565,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
               await new Promise(resolve => setTimeout(resolve, 500));
               
               // Verify the prompt is gone
-              const updatedContent = execSync(
-                `tmux capture-pane -t '${paneInfo}' -p -S -10`,
-                { encoding: 'utf-8', stdio: 'pipe' }
-              );
+              const updatedContent = capturePaneContent(paneInfo, 10);
               
               // If trust prompt is gone, check if we need to resend the Claude command
               const promptGone = !trustPromptPatterns.some(p => p.test(updatedContent));

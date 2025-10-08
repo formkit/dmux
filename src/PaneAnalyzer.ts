@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { capturePaneContent } from './utils/paneCapture.js';
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';
@@ -31,24 +31,6 @@ export class PaneAnalyzer {
     this.apiKey = process.env.OPENROUTER_API_KEY || '';
   }
 
-  /**
-   * Captures the last N lines from a tmux pane
-   */
-  capturePaneContent(paneId: string, lines: number = 50): string {
-    try {
-      // Capture pane content with line history
-      // -p prints to stdout, -S -<lines> starts from <lines> lines back
-      const content = execSync(
-        `tmux capture-pane -t '${paneId}' -p -S -${lines}`,
-        { encoding: 'utf8', stdio: 'pipe' }
-      );
-
-      return content;
-    } catch (error) {
-      // Failed to capture pane content
-      return '';
-    }
-  }
 
   /**
    * Makes a request to OpenRouter API with model fallback
@@ -306,7 +288,7 @@ If there's no meaningful content or the output is unclear, return an empty summa
    */
   async analyzePane(paneId: string, signal?: AbortSignal): Promise<PaneAnalysis> {
     // Capture the pane content (50 lines for state detection)
-    const content = this.capturePaneContent(paneId, 50);
+    const content = capturePaneContent(paneId, 50);
 
     if (!content) {
       return { state: 'in_progress' };
