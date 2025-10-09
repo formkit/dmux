@@ -792,6 +792,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Helper function to clear screen artifacts
   const clearScreen = () => {
+    // CRITICAL: Force Ink to re-render FIRST, before clearing
+    // This prevents blank screen by ensuring React starts rendering immediately
+    setForceRepaintTrigger(prev => prev + 1);
+
     // Multiple clearing strategies to prevent artifacts
     // 1. Clear screen with ANSI codes
     process.stdout.write('\x1b[2J\x1b[H');
@@ -805,13 +809,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     try {
       execSync('tmux refresh-client', { stdio: 'pipe' });
     } catch {}
-
-    // 4. Force Ink to repaint after clearing with a delay
-    // This prevents the blank screen bug by ensuring Ink re-renders
-    // after the terminal has processed the clear operations
-    setTimeout(() => {
-      setForceRepaintTrigger(prev => prev + 1);
-    }, 200);
   };
 
   // Cleanup function for exit
