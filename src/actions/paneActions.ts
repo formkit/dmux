@@ -119,53 +119,85 @@ async function executeCloseOption(
   option: string
 ): Promise<ActionResult> {
   try {
-    // Kill the tmux pane
+    // CRITICAL: Pause ConfigWatcher to prevent race condition where
+    // the watcher reloads the pane list from disk before our save completes
+    StateManager.getInstance().pauseConfigWatcher();
+
     try {
-      execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
-    } catch {
-      // Pane might already be dead
-    }
-
-    // Handle worktree cleanup based on option
-    if (pane.worktreePath && (option === 'kill_and_clean' || option === 'kill_clean_branch')) {
-      const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
-
+      // Kill the tmux pane
       try {
-        execSync(`git worktree remove "${pane.worktreePath}" --force`, {
-          stdio: 'pipe',
-          cwd: mainRepoPath,
-        });
+        execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
       } catch {
-        // Worktree might already be removed
+        // Pane might already be dead
       }
 
-      // Delete branch if requested
-      if (option === 'kill_clean_branch') {
+      // Handle worktree cleanup based on option
+      if (pane.worktreePath && (option === 'kill_and_clean' || option === 'kill_clean_branch')) {
+        const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+
         try {
-          execSync(`git branch -D ${pane.slug}`, {
+          execSync(`git worktree remove "${pane.worktreePath}" --force`, {
             stdio: 'pipe',
             cwd: mainRepoPath,
           });
         } catch {
-          // Branch might not exist or already deleted
+          // Worktree might already be removed
+        }
+
+        // Delete branch if requested
+        if (option === 'kill_clean_branch') {
+          try {
+            execSync(`git branch -D ${pane.slug}`, {
+              stdio: 'pipe',
+              cwd: mainRepoPath,
+            });
+          } catch {
+            // Branch might not exist or already deleted
+          }
         }
       }
+
+      // Remove from panes list
+      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
+      await context.savePanes(updatedPanes);
+
+      if (context.onPaneRemove) {
+        context.onPaneRemove(pane.id);
+      }
+
+      // Wait a bit for the file save to stabilize
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // CRITICAL: Aggressively clear terminal BEFORE returning success
+      // This prevents artifacts when Ink re-renders the status message
+      try {
+        // Clear screen with ANSI codes
+        process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+        // Clear tmux history and scrollback
+        execSync('tmux clear-history', { stdio: 'pipe' });
+        // Force tmux client refresh
+        execSync('tmux refresh-client', { stdio: 'pipe' });
+      } catch {
+        // Ignore clearing errors
+      }
+
+      return {
+        type: 'success',
+        message: `Pane "${pane.slug}" closed successfully`,
+        dismissable: true,
+      };
+    } finally {
+      // CRITICAL: Always resume watcher, even if there was an error
+      StateManager.getInstance().resumeConfigWatcher();
     }
-
-    // Remove from panes list
-    const updatedPanes = context.panes.filter(p => p.id !== pane.id);
-    await context.savePanes(updatedPanes);
-
-    if (context.onPaneRemove) {
-      context.onPaneRemove(pane.id);
-    }
-
-    return {
-      type: 'success',
-      message: `Pane "${pane.slug}" closed successfully`,
-      dismissable: true,
-    };
   } catch (error) {
+    // Clear before showing error too
+    try {
+      process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+      execSync('tmux clear-history', { stdio: 'pipe' });
+      execSync('tmux refresh-client', { stdio: 'pipe' });
+    } catch {}
+
     return {
       type: 'error',
       message: `Failed to close pane: ${error}`,

@@ -15,10 +15,25 @@ export class ConfigWatcher extends EventEmitter {
   private watcher: FSWatcher | null = null;
   private configPath: string;
   private lastContent: string = '';
+  private paused: boolean = false;
 
   constructor(configPath: string) {
     super();
     this.configPath = configPath;
+  }
+
+  /**
+   * Temporarily pause emitting change events (for atomic operations)
+   */
+  pause(): void {
+    this.paused = true;
+  }
+
+  /**
+   * Resume emitting change events
+   */
+  resume(): void {
+    this.paused = false;
   }
 
   async start(): Promise<void> {
@@ -55,6 +70,11 @@ export class ConfigWatcher extends EventEmitter {
   }
 
   private async handleFileChange(path: string): Promise<void> {
+    // Skip if paused (during atomic operations)
+    if (this.paused) {
+      return;
+    }
+
     try {
       const newContent = await readFile(path, 'utf-8');
 

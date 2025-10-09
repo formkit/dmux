@@ -875,7 +875,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         setKebabMenuPaneIndex(null);
         setKebabMenuOption(0);
         setKebabMenuActions([]);
-        clearScreen();
         return;
       } else if (key.upArrow) {
         setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
@@ -886,7 +885,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       } else if (key.return) {
         // Execute the selected menu action
         setShowKebabMenu(false);
-        clearScreen();
 
         const selectedAction = availableActions[kebabMenuOption];
         if (selectedAction) {
@@ -929,7 +927,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           setSettingsMode('list');
           setSettingsSelectedIndex(0);
           setSettingsEditingKey(undefined);
-          clearScreen();
         } else {
           // Go back to list
           setSettingsMode('list');

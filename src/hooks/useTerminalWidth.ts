@@ -11,6 +11,10 @@ export default function useTerminalWidth() {
       const newWidth = process.stdout.columns || 80;
       setTerminalWidth(newWidth);
 
+      // CRITICAL: Force re-render FIRST before clearing
+      // This prevents blank screen during terminal resize
+      setRepaintTrigger(prev => prev + 1);
+
       // Clear screen artifacts when terminal is resized
       // This happens when tmux panes are closed/opened, causing layout shifts
       try {
@@ -25,12 +29,6 @@ export default function useTerminalWidth() {
       } catch {
         // Ignore errors if not in tmux or commands fail
       }
-
-      // Force Ink to re-render immediately after clearing
-      // Small delay ensures terminal processes the clear first
-      setTimeout(() => {
-        setRepaintTrigger(prev => prev + 1);
-      }, 50);
     };
 
     process.stdout.on('resize', handleResize);
