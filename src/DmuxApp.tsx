@@ -1372,10 +1372,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       />
 
       <Text dimColor>
-        v{packageJson.version}
         {updateAvailable && updateInfo && (
-          <Text color="yellow"> • Update available: {updateInfo.latestVersion}</Text>
+          <Text color="red" bold>Update available: npm i -g dmux@latest </Text>
         )}
+        v{packageJson.version}
         {debugMessage && (
           <Text dimColor> • {debugMessage}</Text>
         )}

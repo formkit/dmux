@@ -61,10 +61,10 @@ export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMe
       runWorkerCheck();
     }, 3000);
 
-    // Periodic checks every 6 hours
+    // Periodic checks every 1 hour
     updateInterval = setInterval(() => {
       runWorkerCheck();
-    }, 6 * 60 * 60 * 1000);
+    }, 1 * 60 * 60 * 1000);
 
     return () => {
       clearTimeout(initialCheckTimer);
