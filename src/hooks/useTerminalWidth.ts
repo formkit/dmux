@@ -3,6 +3,8 @@ import { execSync } from 'child_process';
 
 export default function useTerminalWidth() {
   const [terminalWidth, setTerminalWidth] = useState<number>(process.stdout.columns || 80);
+  // Repaint trigger forces Ink to re-render after resize clearing
+  const [repaintTrigger, setRepaintTrigger] = useState(0);
 
   useEffect(() => {
     const handleResize = () => {
@@ -23,6 +25,12 @@ export default function useTerminalWidth() {
       } catch {
         // Ignore errors if not in tmux or commands fail
       }
+
+      // Force Ink to re-render immediately after clearing
+      // Small delay ensures terminal processes the clear first
+      setTimeout(() => {
+        setRepaintTrigger(prev => prev + 1);
+      }, 50);
     };
 
     process.stdout.on('resize', handleResize);
