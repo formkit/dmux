@@ -196,8 +196,8 @@ export async function createPane(
     paneId: paneInfo,
     worktreePath,
     agent,
-    // Set autopilot based on settings
-    autopilot: settings.enableAutopilotByDefault || false,
+    // Set autopilot based on settings (use ?? to properly handle false vs undefined)
+    autopilot: settings.enableAutopilotByDefault ?? false,
   };
 
   // Switch back to the original pane
