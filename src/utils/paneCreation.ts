@@ -32,16 +32,31 @@ export async function createPane(
   // Load settings to check for default agent and autopilot
   const { SettingsManager } = await import('./settingsManager.js');
 
-  // Get project root
+  // Get project root (handle git worktrees correctly)
   let projectRoot: string;
   if (optionsProjectRoot) {
     projectRoot = optionsProjectRoot;
   } else {
     try {
-      projectRoot = execSync('git rev-parse --show-toplevel', {
+      // For git worktrees, we need to get the main repository root, not the worktree root
+      // git rev-parse --git-common-dir gives us the main .git directory
+      const gitCommonDir = execSync('git rev-parse --git-common-dir', {
         encoding: 'utf-8',
         stdio: 'pipe',
       }).trim();
+
+      // If it's a worktree, gitCommonDir will be an absolute path to main .git
+      // If it's the main repo, it will be just '.git'
+      if (gitCommonDir === '.git') {
+        // We're in the main repo
+        projectRoot = execSync('git rev-parse --show-toplevel', {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        }).trim();
+      } else {
+        // We're in a worktree, get the parent directory of the .git directory
+        projectRoot = path.dirname(gitCommonDir);
+      }
     } catch {
       projectRoot = process.cwd();
     }
