@@ -19,11 +19,6 @@ const NewPaneDialog: React.FC<NewPaneDialogProps> = ({ value, onChange, onSubmit
           onSubmit={(expandedValue) => onSubmit(expandedValue || value)}
         />
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor italic>
-          Press Ctrl+O to open in $EDITOR for complex multi-line input
-        </Text>
-      </Box>
     </Box>
   );
 };

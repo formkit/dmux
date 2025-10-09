@@ -151,7 +151,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   }, [forceRepaintTrigger]);
 
   // Pane creation
-  const { openInEditor: openEditor2, createNewPane: createNewPaneHook } = usePaneCreation({
+  const { createNewPane: createNewPaneHook } = usePaneCreation({
     panes,
     savePanes,
     projectName,
@@ -1206,9 +1206,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       if (key.escape) {
         setShowNewPaneDialog(false);
         setNewPanePrompt('');
-      } else if (key.ctrl && input === 'o') {
-        // Open in external editor
-        openEditor2(newPanePrompt, setNewPanePrompt);
       }
       // TextInput handles other input events
       return;
