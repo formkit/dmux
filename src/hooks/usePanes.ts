@@ -184,8 +184,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         return loadedPane;
       });
 
-      // For initial load (when panes is empty), always set the loaded panes
-      if (panes.length === 0 && activePanes.length > 0) {
+      // For initial load (when panes is empty AND we haven't loaded before), set the loaded panes
+      if (panes.length === 0 && activePanes.length > 0 && !initialLoadComplete) {
         // Initial load - set pane titles and update state
         activePanes.forEach(pane => {
           try {
