@@ -215,7 +215,7 @@ export class StatusDetector extends EventEmitter {
 
         if (error.name === 'AbortError') {
           // Request was aborted due to timeout
-          console.error(`LLM analysis timeout for pane ${paneId} after 10 seconds`);
+          StateManager.getInstance().setDebugMessage(`LLM analysis timeout for pane ${paneId} after 10 seconds`);
 
           this.paneStatuses.set(paneId, 'idle');
 
@@ -242,7 +242,7 @@ export class StatusDetector extends EventEmitter {
         throw error; // Re-throw other errors to outer catch
       }
     } catch (error: any) {
-      console.error(`LLM analysis error for pane ${paneId}:`, error);
+      StateManager.getInstance().setDebugMessage(`LLM analysis error for pane ${paneId}: ${error.message || error}`);
 
       // Extract detailed error message
       let errorMessage = 'Analysis failed';
@@ -323,32 +323,32 @@ export class StatusDetector extends EventEmitter {
 
     // Check if there's a risk - don't auto-accept risky options
     if (analysis.potentialHarm?.hasRisk) {
-      console.error(`[Autopilot] Skipping auto-accept for pane ${paneId}: potential harm detected`);
+      StateManager.getInstance().setDebugMessage(`[Autopilot] Skipping auto-accept for pane ${paneId}: potential harm detected`);
       return;
     }
 
     // Check if we have options
     if (!analysis.options || analysis.options.length === 0) {
-      console.error(`[Autopilot] Skipping auto-accept for pane ${paneId}: no options found`);
+      StateManager.getInstance().setDebugMessage(`[Autopilot] Skipping auto-accept for pane ${paneId}: no options found`);
       return;
     }
 
     // Get the first option (typically the "accept" or "continue" option)
     const firstOption = analysis.options[0];
     if (!firstOption.keys || firstOption.keys.length === 0) {
-      console.error(`[Autopilot] Skipping auto-accept for pane ${paneId}: no keys for first option`);
+      StateManager.getInstance().setDebugMessage(`[Autopilot] Skipping auto-accept for pane ${paneId}: no keys for first option`);
       return;
     }
 
     // Send the first key of the first option
     const keyToSend = firstOption.keys[0];
-    console.error(`[Autopilot] Auto-accepting option for pane ${paneId}: ${firstOption.action} (key: ${keyToSend})`);
+    StateManager.getInstance().setDebugMessage(`[Autopilot] Auto-accepting option for pane ${paneId}: ${firstOption.action} (key: ${keyToSend})`);
 
     try {
       // Send the key through the worker manager
       await this.sendKeysToPane(paneId, keyToSend);
     } catch (error) {
-      console.error(`[Autopilot] Failed to send keys for pane ${paneId}:`, error);
+      StateManager.getInstance().setDebugMessage(`[Autopilot] Failed to send keys for pane ${paneId}: ${error}`);
     }
   }
 

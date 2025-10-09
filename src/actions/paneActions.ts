@@ -8,6 +8,7 @@
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import type { ActionResult, ActionContext, ActionOption } from './types.js';
+import { StateManager } from '../shared/StateManager.js';
 
 /**
  * Generate commit message with timeout and error handling
@@ -29,12 +30,12 @@ async function generateCommitMessageSafe(
     ]);
 
     if (!result) {
-      console.error('[generateCommitMessageSafe] AI generation returned null');
+      StateManager.getInstance().setDebugMessage('[AI] Commit message generation returned null');
     }
 
     return result;
   } catch (error) {
-    console.error('[generateCommitMessageSafe] Error or timeout:', error);
+    StateManager.getInstance().setDebugMessage(`[AI] Commit message generation error: ${error}`);
     return null;
   }
 }
@@ -310,13 +311,15 @@ async function handleMergeIssues(
 
             // Get diff and generate message
             const { diff, summary } = getComprehensiveDiff(mainRepoPath);
-            console.error('[commit_ai_editable] Calling generateCommitMessageSafe for main repo');
+            StateManager.getInstance().setDebugMessage('[AI] Generating commit message for main repo...');
             const generatedMessage = await generateCommitMessageSafe(mainRepoPath);
-            console.error('[commit_ai_editable] Generated message:', generatedMessage);
+            if (generatedMessage) {
+              StateManager.getInstance().setDebugMessage(`[AI] Generated message: ${generatedMessage.split('\n')[0]}`);
+            }
 
             // If AI generation failed, fall back to manual with explanation
             if (!generatedMessage) {
-              console.error('[commit_ai_editable] Falling back to manual input');
+              StateManager.getInstance().setDebugMessage('[AI] Generation failed, falling back to manual input');
               return {
                 type: 'input',
                 title: 'Enter Commit Message',
@@ -337,7 +340,6 @@ async function handleMergeIssues(
               };
             }
 
-            console.error('[commit_ai_editable] Returning editable input with generated message');
             return {
               type: 'input',
               title: 'Review & Edit Commit Message',
@@ -358,7 +360,7 @@ async function handleMergeIssues(
               dismissable: true,
             };
           } catch (error) {
-            console.error('[commit_ai_editable] Unexpected error:', error);
+            StateManager.getInstance().setDebugMessage(`[AI] Unexpected error: ${error}`);
             return {
               type: 'error',
               message: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
@@ -493,13 +495,15 @@ async function handleMergeIssues(
 
             // Get diff and generate message
             const { diff, summary } = getComprehensiveDiff(pane.worktreePath!);
-            console.error('[worktree commit_ai_editable] Calling generateCommitMessageSafe');
+            StateManager.getInstance().setDebugMessage('[AI] Generating commit message for worktree...');
             const generatedMessage = await generateCommitMessageSafe(pane.worktreePath!);
-            console.error('[worktree commit_ai_editable] Generated message:', generatedMessage);
+            if (generatedMessage) {
+              StateManager.getInstance().setDebugMessage(`[AI] Generated message: ${generatedMessage.split('\n')[0]}`);
+            }
 
             // If AI generation failed, fall back to manual with explanation
             if (!generatedMessage) {
-              console.error('[worktree commit_ai_editable] Falling back to manual input');
+              StateManager.getInstance().setDebugMessage('[AI] Generation failed, falling back to manual input');
               return {
                 type: 'input',
                 title: 'Enter Commit Message',
@@ -520,7 +524,6 @@ async function handleMergeIssues(
               };
             }
 
-            console.error('[worktree commit_ai_editable] Returning editable input with generated message');
             return {
               type: 'input',
               title: 'Review & Edit Commit Message',
@@ -541,7 +544,7 @@ async function handleMergeIssues(
               dismissable: true,
             };
           } catch (error) {
-            console.error('[worktree commit_ai_editable] Unexpected error:', error);
+            StateManager.getInstance().setDebugMessage(`[AI] Unexpected error: ${error}`);
             return {
               type: 'error',
               message: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,

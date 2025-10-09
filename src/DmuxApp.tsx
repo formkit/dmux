@@ -71,6 +71,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [kebabMenuPaneIndex, setKebabMenuPaneIndex] = useState<number | null>(null);
   const [kebabMenuOption, setKebabMenuOption] = useState(0);
   const [kebabMenuActions, setKebabMenuActions] = useState<ActionMetadata[]>([]);
+  // Debug message state - for temporary logging messages
+  const [debugMessage, setDebugMessage] = useState<string>('');
   // Update state handled by hook
   const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
@@ -235,6 +237,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     stateManager.updateSettings(projectSettings);
   }, [projectSettings]);
 
+  // Expose debug message setter via StateManager
+  useEffect(() => {
+    const stateManager = StateManager.getInstance();
+    stateManager.setDebugMessageCallback(setDebugMessage);
+    return () => {
+      stateManager.setDebugMessageCallback(undefined);
+    };
+  }, []);
+
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
     // SIGTERM should quit immediately (for process management)
@@ -242,6 +253,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       cleanExit();
     };
     process.on('SIGTERM', handleTermination);
+
+    // Test debug message on mount
+    StateManager.getInstance().setDebugMessage('Debug logging initialized - watching for AI activity...');
+    setTimeout(() => {
+      StateManager.getInstance().setDebugMessage('');
+    }, 3000);
 
     return () => {
       process.removeListener('SIGTERM', handleTermination);
@@ -1162,12 +1179,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return; // Consume the 'n' keystroke so it doesn't propagate
     } else if (input === 'j' && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
+      StateManager.getInstance().setDebugMessage(`Jumping to pane: ${panes[selectedIndex].slug}`);
+      setTimeout(() => StateManager.getInstance().setDebugMessage(''), 2000);
       actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
     } else if (input === 'x' && selectedIndex < panes.length) {
       // Close pane (NEW: using action system)
+      StateManager.getInstance().setDebugMessage(`Closing pane: ${panes[selectedIndex].slug}`);
+      setTimeout(() => StateManager.getInstance().setDebugMessage(''), 2000);
       actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex]);
     } else if (key.return && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
+      StateManager.getInstance().setDebugMessage(`Jumping to pane: ${panes[selectedIndex].slug}`);
+      setTimeout(() => StateManager.getInstance().setDebugMessage(''), 2000);
       actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
     }
   });
@@ -1352,6 +1375,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         v{packageJson.version}
         {updateAvailable && updateInfo && (
           <Text color="yellow"> • Update available: {updateInfo.latestVersion}</Text>
+        )}
+        {debugMessage && (
+          <Text dimColor> • {debugMessage}</Text>
         )}
       </Text>
     </Box>

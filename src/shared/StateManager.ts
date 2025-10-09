@@ -18,6 +18,7 @@ export class StateManager extends EventEmitter {
   private state: DmuxState;
   private updateCallbacks: Set<(state: DmuxState) => void> = new Set();
   private configWatcher: ConfigWatcher | null = null;
+  private debugMessageCallback: ((message: string) => void) | undefined;
 
   private constructor() {
     super();
@@ -114,6 +115,16 @@ export class StateManager extends EventEmitter {
     this.emit('stateChange', stateCopy);
   }
 
+  setDebugMessageCallback(callback: ((message: string) => void) | undefined): void {
+    this.debugMessageCallback = callback;
+  }
+
+  setDebugMessage(message: string): void {
+    if (this.debugMessageCallback) {
+      this.debugMessageCallback(message);
+    }
+  }
+
   reset(): void {
     // Stop file watcher
     if (this.configWatcher) {
@@ -130,6 +141,7 @@ export class StateManager extends EventEmitter {
     };
     this.updateCallbacks.clear();
     this.removeAllListeners();
+    this.debugMessageCallback = undefined;
   }
 }
 
