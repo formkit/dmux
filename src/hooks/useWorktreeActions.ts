@@ -23,6 +23,11 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
         try { execSync(`tmux kill-window -t '${pane.devWindowId}'`, { stdio: 'pipe' }); } catch {}
       }
 
+      // CRITICAL: Force repaint FIRST to prevent blank screen
+      if (forceRepaint) {
+        forceRepaint();
+      }
+
       process.stdout.write('\x1b[2J\x1b[H');
       process.stdout.write('\n'.repeat(100));
       try {
@@ -31,11 +36,6 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
       } catch {}
       try { execSync('tmux refresh-client', { stdio: 'pipe' }); } catch {}
       await new Promise(r => setTimeout(r, 100));
-
-      // Force repaint to prevent blank screen
-      if (forceRepaint) {
-        forceRepaint();
-      }
 
       execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
       const paneCount = parseInt(execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim());

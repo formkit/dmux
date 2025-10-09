@@ -125,6 +125,24 @@ export class StateManager extends EventEmitter {
     }
   }
 
+  /**
+   * Pause config watcher during atomic operations to prevent race conditions
+   */
+  pauseConfigWatcher(): void {
+    if (this.configWatcher) {
+      this.configWatcher.pause();
+    }
+  }
+
+  /**
+   * Resume config watcher after atomic operations
+   */
+  resumeConfigWatcher(): void {
+    if (this.configWatcher) {
+      this.configWatcher.resume();
+    }
+  }
+
   reset(): void {
     // Stop file watcher
     if (this.configWatcher) {

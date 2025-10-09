@@ -42,6 +42,11 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
     setIsCreatingPane(true);
     setStatusMessage('Generating slug...');
 
+    // CRITICAL: Force repaint FIRST to prevent blank screen
+    if (forceRepaint) {
+      forceRepaint();
+    }
+
     // Clear the screen before creating pane
     process.stdout.write('\x1b[2J\x1b[H');
     process.stdout.write('\n'.repeat(100));
@@ -98,13 +103,13 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         console.error('Warning: Could not validate pane save:', error);
       }
 
-      // Clear screen again
-      process.stdout.write('\x1b[2J\x1b[H');
-
-      // Force repaint to prevent blank screen
+      // CRITICAL: Force repaint FIRST before clearing
       if (forceRepaint) {
         forceRepaint();
       }
+
+      // Clear screen again
+      process.stdout.write('\x1b[2J\x1b[H');
 
       setIsCreatingPane(false);
       setStatusMessage('');
