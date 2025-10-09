@@ -10,7 +10,9 @@ const MergeConfirmationDialog: React.FC<MergeConfirmationDialogProps> = ({ pane 
   return (
     <Box borderStyle="double" borderColor="yellow" paddingX={1} marginTop={1}>
       <Box flexDirection="column">
-        <Text color="yellow" bold>Worktree merged successfully!</Text>
+        <Box marginBottom={1}>
+          <Text color="yellow" bold>Worktree merged successfully!</Text>
+        </Box>
         <Text>Close the pane "{pane.slug}"? (y/n)</Text>
       </Box>
     </Box>

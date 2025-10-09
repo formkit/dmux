@@ -38,7 +38,7 @@ const ActionConfirmDialog: React.FC<ActionConfirmDialogProps> = ({
         <Text>{message}</Text>
       </Box>
 
-      <Box flexDirection="column" marginTop={1} gap={1}>
+      <Box flexDirection="column">
         {/* Yes option */}
         <Box>
           {selectedIndex === 0 ? (

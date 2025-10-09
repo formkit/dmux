@@ -11,9 +11,10 @@ const CloseOptionsDialog: React.FC<CloseOptionsDialogProps> = ({ pane, selectedI
   return (
     <Box borderStyle="double" borderColor="red" paddingX={1} marginTop={1}>
       <Box flexDirection="column">
-        <Text color="red" bold>Close pane "{pane.slug}"?</Text>
-        <Text dimColor>Select an option (ESC to cancel):</Text>
-        <Box flexDirection="column" marginTop={1}>
+        <Box marginBottom={1}>
+          <Text color="red" bold>Close pane "{pane.slug}"?</Text>
+        </Box>
+        <Box flexDirection="column">
           <Box>
             <Text color={selectedIndex === 0 ? 'cyan' : 'white'}>
               {selectedIndex === 0 ? '▶ ' : '  '}Merge & Prune - Merge worktree to main and close
@@ -34,6 +35,9 @@ const CloseOptionsDialog: React.FC<CloseOptionsDialogProps> = ({ pane, selectedI
               {selectedIndex === 3 ? '▶ ' : '  '}Just Close - Close pane only
             </Text>
           </Box>
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>↑/↓ to navigate • Enter to select • ESC to cancel</Text>
         </Box>
       </Box>
     </Box>
