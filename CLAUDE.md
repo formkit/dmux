@@ -169,10 +169,27 @@ Analyzes git diffs to create semantic commit messages:
 
 ### 4. Interactive TUI Controls
 
-**Commands**: `j` (jump), `x` (close), `m` (merge), `n` (new pane), `q` (quit)
+**Commands**: `j` (jump), `x` (close), `m` (merge), `n` (new pane), `s` (settings), `q` (quit)
 **Navigation**: ↑/↓ arrows, Enter to select, ESC to cancel
 
-### 5. Pane Lifecycle
+### 5. Global Settings
+
+dmux supports both global and project-specific settings stored in:
+- **Global**: `~/.dmux.global.json` (applies to all projects)
+- **Project**: `.dmux/settings.json` (project-specific overrides)
+
+**Available Settings:**
+- `enableAutopilotByDefault` (boolean): Automatically enable autopilot mode for new panes
+- `defaultAgent` ('claude' | 'opencode' | ''): Default agent for new panes (empty string means "ask each time")
+
+**Accessing Settings:**
+- **TUI**: Press `s` to open settings dialog
+- **Web**: Click "Settings" button in dashboard
+- **API**: `GET /api/settings`, `PATCH /api/settings`
+
+**Setting Precedence**: Project settings override global settings
+
+### 6. Pane Lifecycle
 
 **Creation**: Generate slug → create worktree → split tmux pane → launch agent with `--permission-mode=acceptEdits`
 **Auto-Cleanup**: Polls every 2s, removes dead panes from tracking
@@ -253,7 +270,8 @@ Handles: slug generation → worktree creation → tmux split → agent launch
 3. `j` - Jump to selected pane
 4. `m` - Merge completed work (auto-commit, merge to main)
 5. `x` - Close pane (with cleanup options)
-6. `q` - Exit dmux interface
+6. `s` - Open settings (global or project-specific)
+7. `q` - Exit dmux interface
 
 ### Programmatic Pane Creation
 ```bash

@@ -10,6 +10,7 @@ export interface CreatePaneOptions {
   agent?: 'claude' | 'opencode';
   projectName: string;
   existingPanes: DmuxPane[];
+  projectRoot?: string;
 }
 
 export interface CreatePaneResult {
@@ -26,7 +27,36 @@ export async function createPane(
   availableAgents: Array<'claude' | 'opencode'>
 ): Promise<CreatePaneResult> {
   const { prompt, projectName, existingPanes } = options;
-  let { agent } = options;
+  let { agent, projectRoot: optionsProjectRoot } = options;
+
+  // Load settings to check for default agent and autopilot
+  const { SettingsManager } = await import('./settingsManager.js');
+
+  // Get project root
+  let projectRoot: string;
+  if (optionsProjectRoot) {
+    projectRoot = optionsProjectRoot;
+  } else {
+    try {
+      projectRoot = execSync('git rev-parse --show-toplevel', {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      }).trim();
+    } catch {
+      projectRoot = process.cwd();
+    }
+  }
+
+  const settingsManager = new SettingsManager(projectRoot);
+  const settings = settingsManager.getSettings();
+
+  // If no agent specified, check settings for default agent
+  if (!agent && settings.defaultAgent) {
+    // Only use default if it's available
+    if (availableAgents.includes(settings.defaultAgent)) {
+      agent = settings.defaultAgent;
+    }
+  }
 
   // Determine if we need agent choice
   if (!agent && availableAgents.length > 1) {
@@ -44,17 +74,6 @@ export async function createPane(
 
   // Generate slug
   const slug = await generateSlug(prompt);
-
-  // Get project root
-  let projectRoot: string;
-  try {
-    projectRoot = execSync('git rev-parse --show-toplevel', {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-  } catch {
-    projectRoot = process.cwd();
-  }
 
   const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
   const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', {
@@ -177,6 +196,8 @@ export async function createPane(
     paneId: paneInfo,
     worktreePath,
     agent,
+    // Set autopilot based on settings
+    autopilot: settings.enableAutopilotByDefault || false,
   };
 
   // Switch back to the original pane

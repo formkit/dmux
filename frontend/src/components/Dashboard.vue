@@ -30,6 +30,12 @@ const actionDialog = ref<any | null>(null);
 const executingAction = ref(false);
 const actionDialogLoading = ref(false);
 
+// Settings
+const showSettingsDialog = ref(false);
+const settingsData = ref<any>(null);
+const settingDefinitions = ref<any[]>([]);
+const loadingSettings = ref(false);
+
 let eventSource: EventSource | null = null;
 
 // Methods
@@ -575,6 +581,49 @@ const disconnectStream = () => {
   }
 };
 
+const openSettingsDialog = async () => {
+  try {
+    loadingSettings.value = true;
+    const response = await fetch('/api/settings');
+    const data = await response.json();
+    settingsData.value = data.settings;
+    settingDefinitions.value = data.definitions;
+    showSettingsDialog.value = true;
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+    alert('Failed to load settings');
+  } finally {
+    loadingSettings.value = false;
+  }
+};
+
+const closeSettingsDialog = () => {
+  showSettingsDialog.value = false;
+  settingsData.value = null;
+  settingDefinitions.value = [];
+};
+
+const updateSetting = async (key: string, value: any, scope: 'global' | 'project') => {
+  try {
+    loadingSettings.value = true;
+    await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value, scope })
+    });
+
+    // Reload settings to show updated values
+    const response = await fetch('/api/settings');
+    const data = await response.json();
+    settingsData.value = data.settings;
+  } catch (error) {
+    console.error('Failed to update setting:', error);
+    alert('Failed to update setting');
+  } finally {
+    loadingSettings.value = false;
+  }
+};
+
 // Click-away handler for action menu
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
@@ -634,6 +683,12 @@ onBeforeUnmount(() => {
             <path d="M12 4.5v15m7.5-7.5h-15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           Create New Pane
+        </button>
+        <button @click="openSettingsDialog" class="settings-button" :disabled="loadingSettings" title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10.5 1.875a1.125 1.125 0 012.25 0v.563c0 1.018.84 1.843 1.854 1.839a.75.75 0 01.585.217l.4.4a.75.75 0 01.216.585c-.004 1.014.821 1.854 1.839 1.854h.563a1.125 1.125 0 010 2.25h-.563c-1.018 0-1.843.84-1.839 1.854a.75.75 0 01-.217.585l-.4.4a.75.75 0 01-.585.216c-1.014-.004-1.854.821-1.854 1.839v.563a1.125 1.125 0 01-2.25 0v-.563c0-1.018-.84-1.843-1.854-1.839a.75.75 0 01-.585-.217l-.4-.4a.75.75 0 01-.216-.585c.004-1.014-.821-1.854-1.839-1.854H3.75a1.125 1.125 0 010-2.25h.563c1.018 0 1.843-.84 1.839-1.854a.75.75 0 01.217-.585l.4-.4a.75.75 0 01.585-.216c1.014.004 1.854-.821 1.854-1.839V1.875zM12 15a3 3 0 100-6 3 3 0 000 6z"/>
+          </svg>
+          Settings
         </button>
       </div>
 
@@ -885,6 +940,73 @@ onBeforeUnmount(() => {
             <button @click="closeActionDialog" class="dialog-btn" :disabled="actionDialogLoading">Cancel</button>
             <button @click="submitInput" class="dialog-btn dialog-btn-primary" :disabled="actionDialogLoading">Submit</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Dialog -->
+    <div v-if="showSettingsDialog && settingsData" class="action-dialog-overlay" @click.self="closeSettingsDialog">
+      <div class="action-dialog settings-dialog">
+        <h3>Settings</h3>
+        <div v-if="loadingSettings" class="dialog-loading">
+          <div class="loader-spinner"></div>
+          <span>Loading...</span>
+        </div>
+        <div v-else class="settings-list">
+          <div v-for="def in settingDefinitions" :key="def.key" class="setting-item">
+            <div class="setting-header">
+              <div class="setting-info">
+                <div class="setting-label">{{ def.label }}</div>
+                <div class="setting-description">{{ def.description }}</div>
+              </div>
+            </div>
+
+            <!-- Boolean setting -->
+            <div v-if="def.type === 'boolean'" class="setting-control">
+              <div class="setting-value">
+                Current: <strong>{{ settingsData.merged[def.key] ? 'Enabled' : 'Disabled' }}</strong>
+                <span v-if="def.key in settingsData.project" class="setting-scope">(project)</span>
+                <span v-else-if="def.key in settingsData.global" class="setting-scope">(global)</span>
+              </div>
+              <div class="setting-buttons">
+                <button @click="updateSetting(def.key, true, 'global')" class="setting-btn" :disabled="loadingSettings">
+                  Enable (global)
+                </button>
+                <button @click="updateSetting(def.key, false, 'global')" class="setting-btn" :disabled="loadingSettings">
+                  Disable (global)
+                </button>
+                <button @click="updateSetting(def.key, true, 'project')" class="setting-btn" :disabled="loadingSettings">
+                  Enable (project)
+                </button>
+                <button @click="updateSetting(def.key, false, 'project')" class="setting-btn" :disabled="loadingSettings">
+                  Disable (project)
+                </button>
+              </div>
+            </div>
+
+            <!-- Select setting -->
+            <div v-else-if="def.type === 'select'" class="setting-control">
+              <div class="setting-value">
+                Current: <strong>{{ def.options.find((o: any) => o.value === settingsData.merged[def.key])?.label || 'Not set' }}</strong>
+                <span v-if="def.key in settingsData.project" class="setting-scope">(project)</span>
+                <span v-else-if="def.key in settingsData.global" class="setting-scope">(global)</span>
+              </div>
+              <div class="setting-select-group" v-for="option in def.options" :key="option.value">
+                <div class="setting-option-label">{{ option.label }}</div>
+                <div class="setting-buttons">
+                  <button @click="updateSetting(def.key, option.value, 'global')" class="setting-btn" :disabled="loadingSettings">
+                    Set global
+                  </button>
+                  <button @click="updateSetting(def.key, option.value, 'project')" class="setting-btn" :disabled="loadingSettings">
+                    Set project
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-buttons">
+          <button @click="closeSettingsDialog" class="dialog-btn dialog-btn-primary">Close</button>
         </div>
       </div>
     </div>

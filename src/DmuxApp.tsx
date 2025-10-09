@@ -26,6 +26,7 @@ import { capturePaneContent } from './utils/paneCapture.js';
 import { StateManager } from './shared/StateManager.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
 import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
+import { SettingsManager, SETTING_DEFINITIONS } from './utils/settingsManager.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -46,9 +47,10 @@ import ActionChoiceDialog from './components/ActionChoiceDialog.js';
 import ActionConfirmDialog from './components/ActionConfirmDialog.js';
 import ActionInputDialog from './components/ActionInputDialog.js';
 import ActionProgressDialog from './components/ActionProgressDialog.js';
+import SettingsDialog from './components/SettingsDialog.js';
 
 
-const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, autoUpdater, serverPort, server }) => {
+const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server }) => {
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
@@ -58,6 +60,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showQRCode, setShowQRCode] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
   const [isCreatingTunnel, setIsCreatingTunnel] = useState(false);
+
+  // Settings state
+  const [settingsManager] = useState(() => new SettingsManager(projectRoot));
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsMode, setSettingsMode] = useState<'list' | 'edit' | 'scope'>('list');
+  const [settingsSelectedIndex, setSettingsSelectedIndex] = useState(0);
+  const [settingsEditingKey, setSettingsEditingKey] = useState<keyof import('./types.js').DmuxSettings | undefined>();
+  const [settingsEditingValueIndex, setSettingsEditingValueIndex] = useState(0);
+  const [settingsScopeIndex, setSettingsScopeIndex] = useState(0);
   // Force repaint trigger - incrementing this causes Ink to re-render
   const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
@@ -912,6 +923,93 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
+    // Handle settings dialog
+    if (showSettingsDialog) {
+      if (key.escape) {
+        if (settingsMode === 'list') {
+          // Close settings dialog
+          setShowSettingsDialog(false);
+          setSettingsMode('list');
+          setSettingsSelectedIndex(0);
+          setSettingsEditingKey(undefined);
+          clearScreen();
+        } else {
+          // Go back to list
+          setSettingsMode('list');
+          setSettingsEditingKey(undefined);
+          setSettingsEditingValueIndex(0);
+          setSettingsScopeIndex(0);
+        }
+        return;
+      } else if (key.upArrow) {
+        if (settingsMode === 'list') {
+          setSettingsSelectedIndex(Math.max(0, settingsSelectedIndex - 1));
+        } else if (settingsMode === 'edit') {
+          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
+          const maxIndex = currentDef.type === 'boolean' ? 1 : (currentDef.options?.length || 1) - 1;
+          setSettingsEditingValueIndex(Math.max(0, settingsEditingValueIndex - 1));
+        } else if (settingsMode === 'scope') {
+          setSettingsScopeIndex(Math.max(0, settingsScopeIndex - 1));
+        }
+        return;
+      } else if (key.downArrow) {
+        if (settingsMode === 'list') {
+          setSettingsSelectedIndex(Math.min(SETTING_DEFINITIONS.length - 1, settingsSelectedIndex + 1));
+        } else if (settingsMode === 'edit') {
+          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
+          const maxIndex = currentDef.type === 'boolean' ? 1 : (currentDef.options?.length || 1) - 1;
+          setSettingsEditingValueIndex(Math.min(maxIndex, settingsEditingValueIndex + 1));
+        } else if (settingsMode === 'scope') {
+          setSettingsScopeIndex(Math.min(1, settingsScopeIndex + 1));
+        }
+        return;
+      } else if (key.return) {
+        if (settingsMode === 'list') {
+          // Enter edit mode
+          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
+          setSettingsEditingKey(currentDef.key);
+          setSettingsMode('edit');
+          // Set initial value index based on current setting
+          const currentValue = settingsManager.getSetting(currentDef.key);
+          if (currentDef.type === 'boolean') {
+            setSettingsEditingValueIndex(currentValue ? 0 : 1);
+          } else if (currentDef.type === 'select' && currentDef.options) {
+            const optIndex = currentDef.options.findIndex(o => o.value === currentValue);
+            setSettingsEditingValueIndex(Math.max(0, optIndex));
+          }
+        } else if (settingsMode === 'edit') {
+          // Go to scope selection
+          setSettingsMode('scope');
+          setSettingsScopeIndex(0);
+        } else if (settingsMode === 'scope') {
+          // Save the setting
+          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
+          const scope = settingsScopeIndex === 0 ? 'global' : 'project';
+
+          // Calculate the new value
+          let newValue: any;
+          if (currentDef.type === 'boolean') {
+            newValue = settingsEditingValueIndex === 0;
+          } else if (currentDef.type === 'select' && currentDef.options) {
+            newValue = currentDef.options[settingsEditingValueIndex]?.value || '';
+          }
+
+          // Update the setting
+          settingsManager.updateSetting(currentDef.key, newValue, scope);
+
+          // Reset to list view
+          setSettingsMode('list');
+          setSettingsEditingKey(undefined);
+          setSettingsEditingValueIndex(0);
+          setSettingsScopeIndex(0);
+          setStatusMessage(`Setting saved (${scope})`);
+          setTimeout(() => setStatusMessage(''), 2000);
+        }
+        return;
+      }
+      return;
+    }
+
     // Handle action system confirm dialog
     if (actionSystem.actionState.showConfirmDialog) {
       if (key.escape) {
@@ -1150,6 +1248,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       setShowKebabMenu(true);
       setKebabMenuPaneIndex(selectedIndex);
       setKebabMenuOption(0);
+    } else if (input === 's') {
+      // Open settings dialog
+      setShowSettingsDialog(true);
+      setSettingsMode('list');
+      setSettingsSelectedIndex(0);
     } else if (input === 'q') {
       cleanExit();
     } else if (input === 'r' && server) {
@@ -1273,6 +1376,21 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           selectedOption={kebabMenuOption}
           actions={kebabMenuActions}
           paneName={panes[kebabMenuPaneIndex].slug}
+        />
+      )}
+
+      {/* Settings dialog */}
+      {showSettingsDialog && (
+        <SettingsDialog
+          settings={settingsManager.getSettings()}
+          globalSettings={settingsManager.getGlobalSettings()}
+          projectSettings={settingsManager.getProjectSettings()}
+          settingDefinitions={SETTING_DEFINITIONS}
+          selectedIndex={settingsSelectedIndex}
+          mode={settingsMode}
+          editingKey={settingsEditingKey}
+          editingValueIndex={settingsEditingValueIndex}
+          scopeIndex={settingsScopeIndex}
         />
       )}
 

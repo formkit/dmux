@@ -65,6 +65,63 @@ export function setupRoutes(app: App) {
     };
   }));
 
+  // GET /api/settings - Get current settings (merged, global, and project)
+  app.use('/api/settings', eventHandler(async (event) => {
+    if (event.node.req.method === 'GET') {
+      const { SettingsManager, SETTING_DEFINITIONS } = await import('../utils/settingsManager.js');
+      const state = stateManager.getState();
+      const projectRoot = state.projectRoot || process.cwd();
+
+      const manager = new SettingsManager(projectRoot);
+
+      return {
+        settings: {
+          merged: manager.getSettings(),
+          global: manager.getGlobalSettings(),
+          project: manager.getProjectSettings()
+        },
+        definitions: SETTING_DEFINITIONS
+      };
+    }
+
+    // PATCH /api/settings - Update a setting
+    if (event.node.req.method === 'PATCH') {
+      try {
+        const body = await readBody(event);
+        const { key, value, scope } = body;
+
+        if (!key || scope === undefined) {
+          event.node.res.statusCode = 400;
+          return { error: 'Missing key or scope' };
+        }
+
+        if (scope !== 'global' && scope !== 'project') {
+          event.node.res.statusCode = 400;
+          return { error: 'Invalid scope. Must be "global" or "project"' };
+        }
+
+        const { SettingsManager } = await import('../utils/settingsManager.js');
+        const state = stateManager.getState();
+        const projectRoot = state.projectRoot || process.cwd();
+
+        const manager = new SettingsManager(projectRoot);
+        manager.updateSetting(key, value, scope);
+
+        return {
+          success: true,
+          message: `Setting "${key}" updated at ${scope} level`
+        };
+      } catch (err: any) {
+        console.error('Failed to update setting:', err);
+        event.node.res.statusCode = 500;
+        return { error: 'Failed to update setting', details: err.message };
+      }
+    }
+
+    event.node.res.statusCode = 405;
+    return { error: 'Method not allowed' };
+  }));
+
   // ===== Action System Routes =====
 
   // Create a router for exact route matching

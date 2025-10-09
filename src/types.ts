@@ -56,6 +56,23 @@ export interface ProjectSettings {
   firstDevRun?: boolean;   // Track if dev has been run before
 }
 
+export interface DmuxSettings {
+  // Autopilot settings
+  enableAutopilotByDefault?: boolean;
+  // Agent selection
+  defaultAgent?: 'claude' | 'opencode';
+}
+
+export type SettingsScope = 'global' | 'project';
+
+export interface SettingDefinition {
+  key: keyof DmuxSettings;
+  label: string;
+  description: string;
+  type: 'boolean' | 'select';
+  options?: Array<{ value: string; label: string }>;
+}
+
 export interface DmuxAppProps {
   panesFile: string;
   projectName: string;
