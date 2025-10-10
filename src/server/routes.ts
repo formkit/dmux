@@ -20,7 +20,6 @@ function serveEmbeddedAsset(filename: string): string {
   return asset.content;
 }
 import { getTerminalStreamer } from '../services/TerminalStreamer.js';
-import { getPanesStreamer } from '../services/PanesStreamer.js';
 import { formatStreamMessage, type HeartbeatMessage } from '../shared/StreamProtocol.js';
 import {
   handleListActions,
@@ -555,36 +554,6 @@ export function setupRoutes(app: App) {
 
   // Mount the API router
   app.use(apiRouter);
-
-  // GET /api/panes-stream - Stream pane updates via chunked HTTP
-  // MUST use app.use() directly (NOT apiRouter) - same as terminal endpoint
-  app.use('/api/panes-stream', eventHandler(async (event) => {
-    // CRITICAL: Set headers BEFORE creating stream
-    // Cloudflare requires text/event-stream to recognize streaming and not buffer
-    setHeader(event, 'Content-Type', 'text/event-stream');
-    setHeader(event, 'Cache-Control', 'no-cache');
-    setHeader(event, 'Connection', 'keep-alive');
-
-    // Create a readable stream (same as terminal endpoint)
-    const { Readable } = await import('stream');
-    const stream = new Readable({
-      read() {} // No-op, we'll push data as it arrives
-    });
-
-    const streamer = getPanesStreamer();
-
-    // Start streaming - pass the stream object (matches terminal streaming architecture)
-    await streamer.startStream(stream);
-
-    // Handle client disconnect
-    event.node.req.on('close', () => {
-      streamer.stopStream(stream);
-      stream.destroy();
-    });
-
-    // Return the readable stream - h3 will pipe it to the response
-    return stream;
-  }));
 
   // GET /api/stream/:paneId - Stream terminal output
   // MUST be before the catch-all route

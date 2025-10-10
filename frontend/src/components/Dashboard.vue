@@ -36,15 +36,10 @@ const settingsData = ref<any>(null);
 const settingDefinitions = ref<any[]>([]);
 const loadingSettings = ref(false);
 
-let streamAbortController: AbortController | null = null;
 let pollingInterval: ReturnType<typeof setInterval> | null = null;
-let streamFailureCount = 0;
-const MAX_STREAM_FAILURES = 3;
 
 // Methods
 const startPolling = () => {
-  console.log('[Dashboard] Starting polling fallback');
-
   // Clear any existing polling
   if (pollingInterval) {
     clearInterval(pollingInterval);
@@ -61,7 +56,6 @@ const startPolling = () => {
 
 const stopPolling = () => {
   if (pollingInterval) {
-    console.log('[Dashboard] Stopping polling fallback');
     clearInterval(pollingInterval);
     pollingInterval = null;
   }
@@ -146,7 +140,7 @@ const createPane = async () => {
       createStep.value = 'agent';
     } else {
       closeCreateDialog();
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the new pane
     }
   } catch (error) {
     console.error('Failed to create pane:', error);
@@ -174,141 +168,6 @@ const updatePanesFromData = (data: any) => {
     if (!paneActions.value[pane.id]) {
       fetchPaneActions(pane.id);
     }
-  }
-};
-
-const connectToStream = async () => {
-  // Close existing connection
-  if (streamAbortController) {
-    console.log('[Dashboard] Closing existing stream connection');
-    streamAbortController.abort();
-  }
-
-  try {
-    console.log('[Dashboard] Connecting to chunked stream at /api/panes-stream');
-    streamAbortController = new AbortController();
-
-    const response = await fetch('/api/panes-stream', {
-      signal: streamAbortController.signal
-    });
-
-    if (!response.ok) {
-      throw new Error(`Stream failed with status ${response.status}`);
-    }
-
-    console.log('[Dashboard] Stream connection opened successfully');
-    connected.value = true;
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No reader available');
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let messageReceived = false;
-
-    // Fallback: if no message received within 10 seconds, switch to polling
-    const fallbackTimer = setTimeout(() => {
-      if (!messageReceived && !pollingInterval) {
-        console.warn('[Dashboard] No stream messages received within 10s, falling back to polling');
-        streamFailureCount = MAX_STREAM_FAILURES;
-        disconnectStream();
-        startPolling();
-      }
-    }, 10000);
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        console.log('[Dashboard] Stream ended');
-        clearTimeout(fallbackTimer);
-        connected.value = false;
-        streamFailureCount++;
-
-        // If stream keeps failing, fall back to polling
-        if (streamFailureCount >= MAX_STREAM_FAILURES) {
-          console.warn('[Dashboard] Stream failed', streamFailureCount, 'times, switching to polling');
-          disconnectStream();
-          startPolling();
-          return;
-        }
-
-        // Reconnect after 5 seconds
-        setTimeout(() => {
-          console.log('[Dashboard] Attempting to reconnect...');
-          connectToStream();
-        }, 5000);
-        break;
-      }
-
-      // Decode the chunk and add to buffer
-      buffer += decoder.decode(value, { stream: true });
-
-      // Process complete lines (messages)
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        try {
-          // Parse TYPE:JSON format (same as terminal streaming)
-          const colonIndex = line.indexOf(':');
-          if (colonIndex === -1) {
-            console.warn('[Dashboard] Invalid message format (missing colon):', line.substring(0, 100));
-            continue;
-          }
-
-          const type = line.substring(0, colonIndex).toLowerCase();
-          const jsonStr = line.substring(colonIndex + 1).trim();
-
-          if (!jsonStr) {
-            console.warn('[Dashboard] Invalid message format (empty JSON)');
-            continue;
-          }
-
-          const message = JSON.parse(jsonStr);
-          messageReceived = true;
-          streamFailureCount = 0; // Reset failure count on success
-          stopPolling(); // Stop polling if stream works
-          clearTimeout(fallbackTimer);
-
-          console.log('[Dashboard] Stream message received:', type);
-
-          if (type === 'init' || type === 'update') {
-            updatePanesFromData(message.data);
-          } else if (type === 'heartbeat') {
-            // Keep connection alive
-            console.debug('Stream heartbeat received');
-          }
-        } catch (error) {
-          console.error('[Dashboard] Failed to parse stream message:', error, line.substring(0, 100));
-        }
-      }
-    }
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.log('[Dashboard] Stream aborted');
-      return;
-    }
-    console.error('[Dashboard] Failed to connect to stream:', error);
-    connected.value = false;
-    streamFailureCount++;
-
-    // If stream keeps failing, fall back to polling
-    if (streamFailureCount >= MAX_STREAM_FAILURES) {
-      console.warn('[Dashboard] Stream failed, switching to polling');
-      startPolling();
-      return;
-    }
-
-    // Reconnect after 5 seconds
-    setTimeout(() => {
-      console.log('[Dashboard] Attempting to reconnect...');
-      connectToStream();
-    }, 5000);
   }
 };
 
@@ -457,7 +316,7 @@ const confirmAction = async (confirmed: boolean) => {
 
       actionDialog.value = dialogData;
     } else {
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
       closeActionDialog();
     }
   } catch (error) {
@@ -520,7 +379,7 @@ const selectChoice = async (optionId: string) => {
 
       actionDialog.value = dialogData;
     } else {
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
       closeActionDialog();
     }
   } catch (error) {
@@ -609,7 +468,7 @@ const submitInput = async () => {
 
       actionDialog.value = dialogData;
     } else {
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
       closeActionDialog();
     }
   } catch (error) {
@@ -638,7 +497,7 @@ const selectOption = async (pane: any, option: any) => {
     setTimeout(() => {
       loadingOptions.value.delete(pane.id);
       loadingOptions.value = new Set(loadingOptions.value);
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
     }, 1500);
   } catch (error) {
     console.error('Failed to select option:', error);
@@ -690,13 +549,6 @@ const autoExpand = (event: Event) => {
   const textarea = event.target as HTMLTextAreaElement;
   textarea.style.height = 'auto';
   textarea.style.height = textarea.scrollHeight + 'px';
-};
-
-const disconnectStream = () => {
-  if (streamAbortController) {
-    streamAbortController.abort();
-    streamAbortController = null;
-  }
 };
 
 const openSettingsDialog = async () => {
@@ -754,22 +606,21 @@ const handleClickOutside = (event: MouseEvent) => {
 // Lifecycle
 onMounted(() => {
   document.documentElement.setAttribute('data-theme', theme.value);
-  connectToStream();
+  startPolling();
 
   // Add click-away handler for action menu
   document.addEventListener('click', handleClickOutside);
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      disconnectStream();
+      stopPolling();
     } else {
-      connectToStream();
+      startPolling();
     }
   });
 });
 
 onBeforeUnmount(() => {
-  disconnectStream();
   stopPolling();
   // Remove click-away handler
   document.removeEventListener('click', handleClickOutside);
