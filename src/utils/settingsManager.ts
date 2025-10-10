@@ -23,6 +23,12 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: 'opencode', label: 'OpenCode' },
     ],
   },
+  {
+    key: 'hooks' as any,
+    label: 'Manage Hooks',
+    description: 'View and edit dmux lifecycle hooks',
+    type: 'action' as any,
+  },
 ];
 
 export class SettingsManager {

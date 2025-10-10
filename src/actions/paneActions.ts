@@ -9,6 +9,7 @@ import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import type { ActionResult, ActionContext, ActionOption } from './types.js';
 import { StateManager } from '../shared/StateManager.js';
+import { triggerHook } from '../utils/hooks.js';
 
 /**
  * Generate commit message with timeout and error handling
@@ -119,6 +120,13 @@ async function executeCloseOption(
   option: string
 ): Promise<ActionResult> {
   try {
+    // Get project root for hooks
+    const state = StateManager.getInstance().getState();
+    const projectRoot = state.projectRoot || process.cwd();
+
+    // Trigger before_pane_close hook
+    await triggerHook('before_pane_close', projectRoot, pane);
+
     // CRITICAL: Pause ConfigWatcher to prevent race condition where
     // the watcher reloads the pane list from disk before our save completes
     StateManager.getInstance().pauseConfigWatcher();
@@ -135,6 +143,9 @@ async function executeCloseOption(
       if (pane.worktreePath && (option === 'kill_and_clean' || option === 'kill_clean_branch')) {
         const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
 
+        // Trigger before_worktree_remove hook
+        await triggerHook('before_worktree_remove', projectRoot, pane);
+
         try {
           execSync(`git worktree remove "${pane.worktreePath}" --force`, {
             stdio: 'pipe',
@@ -143,6 +154,9 @@ async function executeCloseOption(
         } catch {
           // Worktree might already be removed
         }
+
+        // Trigger worktree_removed hook
+        await triggerHook('worktree_removed', projectRoot, pane);
 
         // Delete branch if requested
         if (option === 'kill_clean_branch') {
@@ -180,6 +194,9 @@ async function executeCloseOption(
       } catch {
         // Ignore clearing errors
       }
+
+      // Trigger pane_closed hook (after everything is cleaned up)
+      await triggerHook('pane_closed', projectRoot, pane);
 
       return {
         type: 'success',
@@ -242,6 +259,10 @@ export async function mergePane(
     confirmLabel: 'Merge',
     cancelLabel: 'Cancel',
     onConfirm: async () => {
+      // Trigger pre_merge hook before starting merge
+      await triggerHook('pre_merge', mainRepoPath, pane, {
+        DMUX_TARGET_BRANCH: validation.mainBranch,
+      });
       return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
     },
     onCancel: async () => {
@@ -916,6 +937,11 @@ async function executeMerge(
       dismissable: true,
     };
   }
+
+  // Trigger post_merge hook after successful merge
+  await triggerHook('post_merge', mainRepoPath, pane, {
+    DMUX_TARGET_BRANCH: mainBranch,
+  });
 
   // Merge successful! Ask about cleanup
   return {

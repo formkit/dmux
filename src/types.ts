@@ -66,10 +66,10 @@ export interface DmuxSettings {
 export type SettingsScope = 'global' | 'project';
 
 export interface SettingDefinition {
-  key: keyof DmuxSettings;
+  key: keyof DmuxSettings | string;
   label: string;
   description: string;
-  type: 'boolean' | 'select';
+  type: 'boolean' | 'select' | 'action';
   options?: Array<{ value: string; label: string }>;
 }
 
@@ -83,3 +83,9 @@ export interface DmuxAppProps {
   serverPort?: number;
   server?: any; // DmuxServer instance
 }
+
+// Hook types - re-exported from hooks utility for convenience
+export type {
+  HookType,
+  HookEnvironment,
+} from './utils/hooks.js';

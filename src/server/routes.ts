@@ -132,6 +132,45 @@ export function setupRoutes(app: App) {
     return { error: 'Method not allowed' };
   }));
 
+  // GET /api/hooks - Get hooks status
+  app.use('/api/hooks', eventHandler(async (event) => {
+    if (event.node.req.method === 'GET') {
+      const { listAvailableHooks, hasHook } = await import('../utils/hooks.js');
+      const state = stateManager.getState();
+      const projectRoot = state.projectRoot || process.cwd();
+
+      // All possible hooks
+      const allHookTypes = [
+        'before_pane_create',
+        'pane_created',
+        'worktree_created',
+        'before_pane_close',
+        'pane_closed',
+        'before_worktree_remove',
+        'worktree_removed',
+        'pre_merge',
+        'post_merge',
+        'run_test',
+        'run_dev',
+      ] as const;
+
+      // Check status of each hook
+      const hooks = allHookTypes.map(hookName => ({
+        name: hookName,
+        active: hasHook(projectRoot, hookName)
+      }));
+
+      return {
+        hooks,
+        activeCount: hooks.filter(h => h.active).length,
+        totalCount: hooks.length
+      };
+    }
+
+    event.node.res.statusCode = 405;
+    return { error: 'Method not allowed' };
+  }));
+
   // ===== Action System Routes =====
 
   // Create a router for exact route matching
@@ -307,6 +346,125 @@ export function setupRoutes(app: App) {
     } catch (error) {
       event.node.res.statusCode = 500;
       return { error: 'Failed to capture pane state' };
+    }
+  }));
+
+  // PUT /api/panes/:id/test - Update test status (called by run_test hook)
+  apiRouter.put('/api/panes/:id/test', eventHandler(async (event) => {
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
+    }
+
+    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
+
+    if (!pane) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    try {
+      const body = await readBody(event);
+      const { status, output } = body;
+
+      if (!status || !['running', 'passed', 'failed'].includes(status)) {
+        event.node.res.statusCode = 400;
+        return { error: 'Invalid or missing status. Must be: running, passed, or failed' };
+      }
+
+      // Update pane with test status
+      const updatedPane = {
+        ...pane,
+        testStatus: status as 'running' | 'passed' | 'failed',
+        testOutput: output || pane.testOutput,
+      };
+
+      // Update in StateManager
+      const state = stateManager.getState();
+      const updatedPanes = state.panes.map(p => p.id === pane.id ? updatedPane : p);
+      stateManager.updatePanes(updatedPanes);
+
+      // Persist to config file
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const projectRoot = state.projectRoot || process.cwd();
+      const panesFile = path.join(projectRoot, '.dmux', 'dmux.config.json');
+
+      await fs.writeFile(panesFile, JSON.stringify({ panes: updatedPanes }, null, 2));
+
+      return {
+        success: true,
+        paneId: pane.id,
+        testStatus: status,
+        message: `Test status updated to ${status}`,
+      };
+    } catch (err: any) {
+      console.error('Failed to update test status:', err);
+      event.node.res.statusCode = 500;
+      return { error: 'Failed to update test status', details: err.message };
+    }
+  }));
+
+  // PUT /api/panes/:id/dev - Update dev server status (called by run_dev hook)
+  apiRouter.put('/api/panes/:id/dev', eventHandler(async (event) => {
+    const params = getRouterParams(event);
+    const paneId = params?.id;
+
+    if (!paneId) {
+      event.node.res.statusCode = 400;
+      return { error: 'Missing pane ID' };
+    }
+
+    const pane = stateManager.getPaneById(decodeURIComponent(paneId));
+
+    if (!pane) {
+      event.node.res.statusCode = 404;
+      return { error: 'Pane not found' };
+    }
+
+    try {
+      const body = await readBody(event);
+      const { url, status } = body;
+
+      if (!status || !['running', 'stopped'].includes(status)) {
+        event.node.res.statusCode = 400;
+        return { error: 'Invalid or missing status. Must be: running or stopped' };
+      }
+
+      // Update pane with dev server info
+      const updatedPane = {
+        ...pane,
+        devStatus: status as 'running' | 'stopped',
+        devUrl: url || pane.devUrl,
+      };
+
+      // Update in StateManager
+      const state = stateManager.getState();
+      const updatedPanes = state.panes.map(p => p.id === pane.id ? updatedPane : p);
+      stateManager.updatePanes(updatedPanes);
+
+      // Persist to config file
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const projectRoot = state.projectRoot || process.cwd();
+      const panesFile = path.join(projectRoot, '.dmux', 'dmux.config.json');
+
+      await fs.writeFile(panesFile, JSON.stringify({ panes: updatedPanes }, null, 2));
+
+      return {
+        success: true,
+        paneId: pane.id,
+        devStatus: status,
+        devUrl: url,
+        message: `Dev server ${status === 'running' ? 'started' : 'stopped'}${url ? ` at ${url}` : ''}`,
+      };
+    } catch (err: any) {
+      console.error('Failed to update dev status:', err);
+      event.node.res.statusCode = 500;
+      return { error: 'Failed to update dev status', details: err.message };
     }
   }));
 

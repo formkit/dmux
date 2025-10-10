@@ -41,11 +41,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "pnpm run build:frontend && pnpm run embed:assets && tsc",
+    "build": "pnpm run generate:hooks-docs && pnpm run build:frontend && pnpm run embed:assets && tsc",
     "build:frontend": "pnpm --filter dmux-frontend run build",
     "build:docs": "pnpm --filter dmux-docs run build",
     "embed:assets": "node scripts/embed-assets.js",
-    "clean": "rm -rf dist src/server/embedded-assets.ts",
+    "generate:hooks-docs": "node scripts/generate-hooks-docs.js",
+    "clean": "rm -rf dist src/server/embedded-assets.ts src/utils/generated-agents-doc.ts",
     "dev": "tsx src/index.ts",
     "dev:frontend": "pnpm --filter dmux-frontend run dev",
     "dev:docs": "pnpm --filter dmux-docs run dev",
