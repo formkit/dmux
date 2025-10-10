@@ -65,7 +65,8 @@ export class DmuxServer {
 
     try {
       this.tunnelUrl = await tunnelService.start(this.port);
-      this.stateManager.updateServerInfo(this.port, this.tunnelUrl);
+      // Don't update StateManager with tunnel URL - keep local URL as primary
+      // The tunnel URL is just an alternative access method
       return this.tunnelUrl;
     } catch (error) {
       console.error('Failed to start tunnel:', error);

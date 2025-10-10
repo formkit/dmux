@@ -1488,6 +1488,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           <Text color="red" bold>Update available: npm i -g dmux@latest </Text>
         )}
         v{packageJson.version}
+        {serverPort && serverPort > 0 && (
+          <Text dimColor> • <Text color="cyan">http://127.0.0.1:{serverPort}</Text></Text>
+        )}
         {debugMessage && (
           <Text dimColor> • {debugMessage}</Text>
         )}
