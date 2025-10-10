@@ -5,8 +5,10 @@ dist/
 CLAUDE.local.md
 .dmux/test-output/
 .dmux/
+# Note: .dmux-hooks/ is version controlled (not ignored)
 frontend/dist
 frontend/node_modules
 .archive/
 src/server/embedded-assets.ts
+src/utils/generated-agents-doc.ts
 embedded-assets.js

@@ -1,9 +1,11 @@
 import { execSync } from 'child_process';
 import path from 'path';
+import * as fs from 'fs';
 import type { DmuxPane } from '../types.js';
 import { applySmartLayout } from './tmux.js';
 import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
+import { triggerHook } from './hooks.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -87,6 +89,12 @@ export async function createPane(
     agent = availableAgents[0];
   }
 
+  // Trigger before_pane_create hook
+  await triggerHook('before_pane_create', projectRoot, undefined, {
+    DMUX_PROMPT: prompt,
+    DMUX_AGENT: agent || 'unknown',
+  });
+
   // Generate slug
   const slug = await generateSlug(prompt);
 
@@ -128,6 +136,18 @@ export async function createPane(
   const newPaneCount = paneCount + 1;
   applySmartLayout(newPaneCount);
 
+  // Trigger pane_created hook (after pane created, before worktree)
+  await triggerHook('pane_created', projectRoot, undefined, {
+    DMUX_PANE_ID: `dmux-${Date.now()}`,
+    DMUX_SLUG: slug,
+    DMUX_PROMPT: prompt,
+    DMUX_AGENT: agent || 'unknown',
+    DMUX_TMUX_PANE_ID: paneInfo,
+  });
+
+  // Check if this is a hooks editing session (before worktree creation)
+  const isHooksEditingSession = prompt && /edit.*dmux.*hooks/i.test(prompt);
+
   // Create git worktree and cd into it
   try {
     const worktreeCmd = `git worktree add "${worktreePath}" -b ${slug} 2>/dev/null ; cd "${worktreePath}"`;
@@ -135,15 +155,37 @@ export async function createPane(
       stdio: 'pipe',
     });
 
-    // Wait for worktree creation and cd to complete
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    // Wait for worktree to actually exist on the filesystem
+    const maxWaitTime = 5000; // 5 seconds max
+    const checkInterval = 100; // Check every 100ms
+    const startTime = Date.now();
 
-    // Verify we're in the worktree directory
-    execSync(
-      `tmux send-keys -t '${paneInfo}' 'echo "Worktree created at:" && pwd' Enter`,
-      { stdio: 'pipe' }
-    );
+    while (!fs.existsSync(worktreePath) && (Date.now() - startTime) < maxWaitTime) {
+      await new Promise((resolve) => setTimeout(resolve, checkInterval));
+    }
+
+    // Give a bit more time for git to finish setting up the worktree
     await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Initialize .dmux-hooks if this is a hooks editing session
+    if (isHooksEditingSession) {
+      const hooksDir = path.join(worktreePath, '.dmux-hooks');
+
+      // Check if .dmux-hooks already exists
+      if (!fs.existsSync(hooksDir)) {
+        // Create the directory
+        fs.mkdirSync(hooksDir, { recursive: true });
+
+        // Import and write the documentation content
+        const { AGENTS_MD } = await import('./generated-agents-doc.js');
+
+        // Write AGENTS.md
+        fs.writeFileSync(path.join(hooksDir, 'AGENTS.md'), AGENTS_MD, 'utf-8');
+
+        // Copy to CLAUDE.md
+        fs.writeFileSync(path.join(hooksDir, 'CLAUDE.md'), AGENTS_MD, 'utf-8');
+      }
+    }
   } catch (error) {
     // Even if worktree creation failed, try to cd to the directory
     execSync(
@@ -214,6 +256,9 @@ export async function createPane(
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
     autopilot: settings.enableAutopilotByDefault ?? false,
   };
+
+  // Trigger worktree_created hook (after full pane setup)
+  await triggerHook('worktree_created', projectRoot, newPane);
 
   // Switch back to the original pane
   execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });

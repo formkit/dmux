@@ -1770,3 +1770,111 @@ footer {
   color: var(--text-secondary);
   font-weight: 500;
 }
+
+.setting-btn-action {
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  color: #000;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(96, 165, 250, 0.3);
+}
+
+.setting-btn-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+}
+
+/* Hooks section styles */
+.hooks-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.hooks-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.hooks-header h4 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  flex: 1;
+}
+
+.back-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.back-btn:hover {
+  background: var(--button-hover-bg);
+  color: var(--text-primary);
+}
+
+.hooks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hook-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.hook-item:hover {
+  background: var(--input-focus-bg);
+  border-color: var(--input-focus-border);
+}
+
+.hook-name {
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.hook-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding: 4px 10px;
+  background: var(--idle-badge-bg);
+  border: 1px solid var(--idle-badge-border);
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.hook-status.hook-active {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #4ade80;
+}
+
+.hooks-actions {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: center;
+}

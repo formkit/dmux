@@ -48,6 +48,7 @@ import ActionConfirmDialog from './components/ActionConfirmDialog.js';
 import ActionInputDialog from './components/ActionInputDialog.js';
 import ActionProgressDialog from './components/ActionProgressDialog.js';
 import SettingsDialog from './components/SettingsDialog.js';
+import HooksDialog from './components/HooksDialog.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server }) => {
@@ -66,12 +67,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [settingsMode, setSettingsMode] = useState<'list' | 'edit' | 'scope'>('list');
   const [settingsSelectedIndex, setSettingsSelectedIndex] = useState(0);
-  const [settingsEditingKey, setSettingsEditingKey] = useState<keyof import('./types.js').DmuxSettings | undefined>();
+  const [settingsEditingKey, setSettingsEditingKey] = useState<keyof import('./types.js').DmuxSettings | string | undefined>();
   const [settingsEditingValueIndex, setSettingsEditingValueIndex] = useState(0);
   const [settingsScopeIndex, setSettingsScopeIndex] = useState(0);
   // Force repaint trigger - incrementing this causes Ink to re-render
   const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
+  // Hooks management state
+  const [showHooksDialog, setShowHooksDialog] = useState(false);
+  const [hooksSelectedIndex, setHooksSelectedIndex] = useState(0);
+  const [hooksData, setHooksData] = useState<Array<{name: string; active: boolean}>>([]);
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
   const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
@@ -918,6 +923,44 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
+    // Handle hooks dialog
+    if (showHooksDialog) {
+      if (key.escape) {
+        setShowHooksDialog(false);
+        setHooksSelectedIndex(0);
+        // Go back to settings dialog
+        setShowSettingsDialog(true);
+        setSettingsMode('list');
+        return;
+      } else if (key.upArrow) {
+        setHooksSelectedIndex(Math.max(0, hooksSelectedIndex - 1));
+        return;
+      } else if (key.downArrow) {
+        setHooksSelectedIndex(Math.min(hooksData.length - 1, hooksSelectedIndex + 1));
+        return;
+      } else if (input === 'e') {
+        // Edit hooks using an agent
+        setShowHooksDialog(false);
+        setHooksSelectedIndex(0);
+        const prompt = "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit";
+        setPendingPrompt(prompt);
+        setNewPanePrompt(prompt);
+
+        // Choose agent
+        const agents = availableAgents;
+        if (agents.length === 0) {
+          createNewPaneHook(prompt);
+        } else if (agents.length === 1) {
+          createNewPaneHook(prompt, agents[0]);
+        } else {
+          setShowAgentChoiceDialog(true);
+          setAgentChoice(agentChoice || 'claude');
+        }
+        return;
+      }
+      return;
+    }
+
     // Handle settings dialog
     if (showSettingsDialog) {
       if (key.escape) {
@@ -959,12 +1002,45 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         return;
       } else if (key.return) {
         if (settingsMode === 'list') {
-          // Enter edit mode
           const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
+
+          // Handle action type - trigger the action instead of editing
+          if (currentDef.type === 'action') {
+            if (currentDef.key === 'hooks') {
+              // Show hooks dialog
+              setShowSettingsDialog(false);
+              const { hasHook } = await import('./utils/hooks.js');
+              const allHookTypes = [
+                'before_pane_create',
+                'pane_created',
+                'worktree_created',
+                'before_pane_close',
+                'pane_closed',
+                'before_worktree_remove',
+                'worktree_removed',
+                'pre_merge',
+                'post_merge',
+                'run_test',
+                'run_dev',
+              ];
+
+              const hooks = allHookTypes.map(hookName => ({
+                name: hookName,
+                active: hasHook(projectRoot || process.cwd(), hookName as any)
+              }));
+
+              setHooksData(hooks);
+              setShowHooksDialog(true);
+              setHooksSelectedIndex(0);
+            }
+            return;
+          }
+
+          // Enter edit mode for regular settings
           setSettingsEditingKey(currentDef.key);
           setSettingsMode('edit');
           // Set initial value index based on current setting
-          const currentValue = settingsManager.getSetting(currentDef.key);
+          const currentValue = settingsManager.getSetting(currentDef.key as keyof import('./types.js').DmuxSettings);
           if (currentDef.type === 'boolean') {
             setSettingsEditingValueIndex(currentValue ? 0 : 1);
           } else if (currentDef.type === 'select' && currentDef.options) {
@@ -980,16 +1056,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
           const scope = settingsScopeIndex === 0 ? 'global' : 'project';
 
-          // Calculate the new value
-          let newValue: any;
-          if (currentDef.type === 'boolean') {
-            newValue = settingsEditingValueIndex === 0;
-          } else if (currentDef.type === 'select' && currentDef.options) {
-            newValue = currentDef.options[settingsEditingValueIndex]?.value || '';
-          }
+          // Only save if this is not an action type (actions don't have values)
+          if (currentDef.type !== 'action') {
+            // Calculate the new value
+            let newValue: any;
+            if (currentDef.type === 'boolean') {
+              newValue = settingsEditingValueIndex === 0;
+            } else if (currentDef.type === 'select' && currentDef.options) {
+              newValue = currentDef.options[settingsEditingValueIndex]?.value || '';
+            }
 
-          // Update the setting
-          settingsManager.updateSetting(currentDef.key, newValue, scope);
+            // Update the setting - cast key to proper type since we know it's not an action
+            settingsManager.updateSetting(currentDef.key as keyof import('./types.js').DmuxSettings, newValue, scope);
+          }
 
           // Reset to list view
           setSettingsMode('list');
@@ -1156,7 +1235,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
        const promptValue = pendingPrompt;
        setShowAgentChoiceDialog(false);
        setPendingPrompt('');
-       await createNewPane(promptValue, chosen);
+       await createNewPaneHook(promptValue, chosen);
        setNewPanePrompt('');
      }
      return;
@@ -1379,9 +1458,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           settingDefinitions={SETTING_DEFINITIONS}
           selectedIndex={settingsSelectedIndex}
           mode={settingsMode}
-          editingKey={settingsEditingKey}
+          editingKey={settingsEditingKey as keyof import('./types.js').DmuxSettings | undefined}
           editingValueIndex={settingsEditingValueIndex}
           scopeIndex={settingsScopeIndex}
+        />
+      )}
+
+      {/* Hooks dialog */}
+      {showHooksDialog && (
+        <HooksDialog
+          hooks={hooksData}
+          selectedIndex={hooksSelectedIndex}
         />
       )}
 

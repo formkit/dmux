@@ -38,7 +38,23 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
         <>
           {settingDefinitions.map((def, index) => {
             const isSelected = index === selectedIndex;
-            const currentValue = settings[def.key];
+
+            // Handle action type differently - no value display
+            if (def.type === 'action') {
+              return (
+                <Box key={def.key}>
+                  <Text color={isSelected ? 'cyan' : 'white'} bold={isSelected}>
+                    {isSelected ? '▶ ' : '  '}
+                    {def.label}
+                  </Text>
+                  <Text color={isSelected ? 'cyan' : 'gray'} dimColor={!isSelected}>
+                    {' '}(press Enter)
+                  </Text>
+                </Box>
+              );
+            }
+
+            const currentValue = settings[def.key as keyof DmuxSettings];
             const isProjectOverride = def.key in projectSettings;
             const isGlobalSetting = def.key in globalSettings;
 

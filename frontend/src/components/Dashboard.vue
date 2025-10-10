@@ -36,6 +36,11 @@ const settingsData = ref<any>(null);
 const settingDefinitions = ref<any[]>([]);
 const loadingSettings = ref(false);
 
+// Hooks
+const showHooksSection = ref(false);
+const hooksData = ref<Array<{name: string; active: boolean}>>([]);
+const loadingHooks = ref(false);
+
 let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
 // Methods
@@ -559,6 +564,7 @@ const openSettingsDialog = async () => {
     settingsData.value = data.settings;
     settingDefinitions.value = data.definitions;
     showSettingsDialog.value = true;
+    showHooksSection.value = false; // Reset hooks section
   } catch (error) {
     console.error('Failed to load settings:', error);
     alert('Failed to load settings');
@@ -571,6 +577,8 @@ const closeSettingsDialog = () => {
   showSettingsDialog.value = false;
   settingsData.value = null;
   settingDefinitions.value = [];
+  showHooksSection.value = false;
+  hooksData.value = [];
 };
 
 const updateSetting = async (key: string, value: any, scope: 'global' | 'project') => {
@@ -592,6 +600,41 @@ const updateSetting = async (key: string, value: any, scope: 'global' | 'project
   } finally {
     loadingSettings.value = false;
   }
+};
+
+const openHooksSection = async () => {
+  try {
+    loadingHooks.value = true;
+    const response = await fetch('/api/hooks');
+    const data = await response.json();
+    hooksData.value = data.hooks || [];
+    showHooksSection.value = true;
+  } catch (error) {
+    console.error('Failed to load hooks:', error);
+    alert('Failed to load hooks');
+  } finally {
+    loadingHooks.value = false;
+  }
+};
+
+const closeHooksSection = () => {
+  showHooksSection.value = false;
+  hooksData.value = [];
+};
+
+const editHooksWithAgent = async () => {
+  const prompt = "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit";
+
+  // Close dialogs
+  closeHooksSection();
+  closeSettingsDialog();
+
+  // Open create pane dialog with pre-filled prompt
+  newPanePrompt.value = prompt;
+  await nextTick();
+
+  // Try to create the pane
+  await createPane();
 };
 
 // Click-away handler for action menu
@@ -973,8 +1016,43 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </div>
+
+            <!-- Action setting -->
+            <div v-else-if="def.type === 'action'" class="setting-control">
+              <div class="setting-buttons">
+                <button @click="openHooksSection" class="setting-btn setting-btn-action" :disabled="loadingSettings">
+                  Open
+                </button>
+              </div>
+            </div>
           </div>
         </div>
+
+        <!-- Hooks Section (shown when hooks action is triggered) -->
+        <div v-if="showHooksSection" class="hooks-section">
+          <div class="hooks-header">
+            <button @click="closeHooksSection" class="back-btn" title="Back to settings">← Back</button>
+            <h4>Hooks Management</h4>
+          </div>
+          <div v-if="loadingHooks" class="dialog-loading">
+            <div class="loader-spinner"></div>
+            <span>Loading hooks...</span>
+          </div>
+          <div v-else class="hooks-list">
+            <div v-for="hook in hooksData" :key="hook.name" class="hook-item">
+              <div class="hook-name">{{ hook.name }}</div>
+              <div class="hook-status" :class="{ 'hook-active': hook.active }">
+                {{ hook.active ? '✓ Active' : 'Inactive' }}
+              </div>
+            </div>
+            <div class="hooks-actions">
+              <button @click="editHooksWithAgent" class="dialog-btn dialog-btn-primary">
+                Edit Hooks with Agent
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="dialog-buttons">
           <button @click="closeSettingsDialog" class="dialog-btn dialog-btn-primary">Close</button>
         </div>
