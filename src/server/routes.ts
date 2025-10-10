@@ -5,7 +5,6 @@ import {
   readBody,
   setHeader,
   send,
-  createEventStream,
   createRouter,
   type App
 } from 'h3';
@@ -36,9 +35,20 @@ const stateManager = StateManager.getInstance();
 export function setupRoutes(app: App) {
   // CORS middleware for all routes
   app.use('/', eventHandler(async (event) => {
-    setHeader(event, 'Access-Control-Allow-Origin', '*');
-    setHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    setHeader(event, 'Access-Control-Allow-Headers', 'Content-Type');
+    // Get the origin from the request
+    const origin = event.node.req.headers.origin;
+
+    // Allow any origin (including tunnel URLs) for SSE and API requests
+    if (origin) {
+      setHeader(event, 'Access-Control-Allow-Origin', origin);
+      setHeader(event, 'Access-Control-Allow-Credentials', 'true');
+    } else {
+      setHeader(event, 'Access-Control-Allow-Origin', '*');
+    }
+
+    setHeader(event, 'Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+    setHeader(event, 'Access-Control-Allow-Headers', 'Content-Type, Cache-Control');
+    setHeader(event, 'Access-Control-Max-Age', 86400); // 24 hours
 
     if (event.node.req.method === 'OPTIONS') {
       event.node.res.statusCode = 204;
@@ -365,60 +375,6 @@ export function setupRoutes(app: App) {
     };
   }));
 
-  // GET /api/panes-stream - Stream pane updates via SSE
-  apiRouter.get('/api/panes-stream', eventHandler(async (event) => {
-    const eventStream = createEventStream(event);
-
-    // Send initial state
-    const initialState = stateManager.getState();
-    eventStream.push(JSON.stringify({
-      type: 'init',
-      data: {
-        panes: initialState.panes.map(formatPaneResponse),
-        projectName: initialState.projectName,
-        sessionName: initialState.sessionName,
-        timestamp: Date.now()
-      }
-    }));
-
-    // Subscribe to state changes
-    const unsubscribe = stateManager.subscribe((state) => {
-      try {
-        eventStream.push(JSON.stringify({
-          type: 'update',
-          data: {
-            panes: state.panes.map(formatPaneResponse),
-            projectName: state.projectName,
-            sessionName: state.sessionName,
-            timestamp: Date.now()
-          }
-        }));
-      } catch (err) {
-        console.error('Failed to send SSE update:', err);
-      }
-    });
-
-    // Send heartbeat every 30 seconds
-    const heartbeat = setInterval(() => {
-      try {
-        eventStream.push(JSON.stringify({
-          type: 'heartbeat',
-          timestamp: Date.now()
-        }));
-      } catch {
-        clearInterval(heartbeat);
-      }
-    }, 30000);
-
-    // Cleanup on disconnect
-    event.node.req.on('close', () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-      eventStream.close();
-    });
-
-    return eventStream.send();
-  }));
 
   // POST /api/panes - Create a new pane
   apiRouter.post('/api/panes', eventHandler(async (event) => {

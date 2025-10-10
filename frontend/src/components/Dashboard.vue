@@ -36,9 +36,31 @@ const settingsData = ref<any>(null);
 const settingDefinitions = ref<any[]>([]);
 const loadingSettings = ref(false);
 
-let eventSource: EventSource | null = null;
+let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
 // Methods
+const startPolling = () => {
+  // Clear any existing polling
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
+
+  // Initial fetch
+  fetchPanes();
+
+  // Poll every 2 seconds
+  pollingInterval = setInterval(() => {
+    fetchPanes();
+  }, 2000);
+};
+
+const stopPolling = () => {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+};
+
 const toggleTheme = () => {
   theme.value = theme.value === 'dark' ? 'light' : 'dark';
   localStorage.setItem('dmux-theme', theme.value);
@@ -118,7 +140,7 @@ const createPane = async () => {
       createStep.value = 'agent';
     } else {
       closeCreateDialog();
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the new pane
     }
   } catch (error) {
     console.error('Failed to create pane:', error);
@@ -146,51 +168,6 @@ const updatePanesFromData = (data: any) => {
     if (!paneActions.value[pane.id]) {
       fetchPaneActions(pane.id);
     }
-  }
-};
-
-const connectToStream = () => {
-  // Close existing connection
-  if (eventSource) {
-    eventSource.close();
-  }
-
-  try {
-    eventSource = new EventSource('/api/panes-stream');
-
-    eventSource.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-
-        if (message.type === 'init' || message.type === 'update') {
-          updatePanesFromData(message.data);
-        } else if (message.type === 'heartbeat') {
-          // Keep connection alive
-          console.debug('SSE heartbeat received');
-        }
-      } catch (error) {
-        console.error('Failed to parse SSE message:', error);
-      }
-    };
-
-    eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
-      connected.value = false;
-
-      // Reconnect after 5 seconds
-      setTimeout(() => {
-        if (eventSource?.readyState === EventSource.CLOSED) {
-          connectToStream();
-        }
-      }, 5000);
-    };
-
-    eventSource.onopen = () => {
-      connected.value = true;
-    };
-  } catch (error) {
-    console.error('Failed to connect to SSE stream:', error);
-    connected.value = false;
   }
 };
 
@@ -339,7 +316,7 @@ const confirmAction = async (confirmed: boolean) => {
 
       actionDialog.value = dialogData;
     } else {
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
       closeActionDialog();
     }
   } catch (error) {
@@ -402,7 +379,7 @@ const selectChoice = async (optionId: string) => {
 
       actionDialog.value = dialogData;
     } else {
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
       closeActionDialog();
     }
   } catch (error) {
@@ -491,7 +468,7 @@ const submitInput = async () => {
 
       actionDialog.value = dialogData;
     } else {
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
       closeActionDialog();
     }
   } catch (error) {
@@ -520,7 +497,7 @@ const selectOption = async (pane: any, option: any) => {
     setTimeout(() => {
       loadingOptions.value.delete(pane.id);
       loadingOptions.value = new Set(loadingOptions.value);
-      // No need to manually refresh - SSE will push the update
+      // Polling will pick up the update
     }, 1500);
   } catch (error) {
     console.error('Failed to select option:', error);
@@ -572,13 +549,6 @@ const autoExpand = (event: Event) => {
   const textarea = event.target as HTMLTextAreaElement;
   textarea.style.height = 'auto';
   textarea.style.height = textarea.scrollHeight + 'px';
-};
-
-const disconnectStream = () => {
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
 };
 
 const openSettingsDialog = async () => {
@@ -636,22 +606,22 @@ const handleClickOutside = (event: MouseEvent) => {
 // Lifecycle
 onMounted(() => {
   document.documentElement.setAttribute('data-theme', theme.value);
-  connectToStream();
+  startPolling();
 
   // Add click-away handler for action menu
   document.addEventListener('click', handleClickOutside);
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      disconnectStream();
+      stopPolling();
     } else {
-      connectToStream();
+      startPolling();
     }
   });
 });
 
 onBeforeUnmount(() => {
-  disconnectStream();
+  stopPolling();
   // Remove click-away handler
   document.removeEventListener('click', handleClickOutside);
 });
