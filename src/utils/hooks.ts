@@ -86,18 +86,18 @@ export function findHook(projectRoot: string, hookName: HookType): string | null
 /**
  * Build environment variables for a hook
  */
-export function buildHookEnvironment(
+export async function buildHookEnvironment(
   projectRoot: string,
   pane?: DmuxPane,
   extraData?: Record<string, string>
-): HookEnvironment {
+): Promise<HookEnvironment> {
   const env: HookEnvironment = {
     DMUX_ROOT: projectRoot,
     ...process.env, // Inherit parent environment
   };
 
   // Add server port if available
-  const { StateManager } = require('../shared/StateManager.js');
+  const { StateManager } = await import('../shared/StateManager.js');
   const state = StateManager.getInstance().getState();
   if (state.serverPort) {
     env.DMUX_SERVER_PORT = String(state.serverPort);
@@ -148,7 +148,7 @@ export async function triggerHook(
   }
 
   // Build environment
-  const env = buildHookEnvironment(projectRoot, pane, extraData);
+  const env = await buildHookEnvironment(projectRoot, pane, extraData);
 
   // Log hook execution
   console.error(`[Hooks] Executing ${hookName} hook: ${hookPath}`);
@@ -188,20 +188,20 @@ export async function triggerHook(
  * Use sparingly - only for hooks that MUST complete before proceeding.
  * Most hooks should use triggerHook() instead.
  */
-export function triggerHookSync(
+export async function triggerHookSync(
   hookName: HookType,
   projectRoot: string,
   pane?: DmuxPane,
   extraData?: Record<string, string>,
   timeoutMs: number = 30000
-): { success: boolean; output?: string; error?: string } {
+): Promise<{ success: boolean; output?: string; error?: string }> {
   const hookPath = findHook(projectRoot, hookName);
 
   if (!hookPath) {
     return { success: true }; // No hook = success
   }
 
-  const env = buildHookEnvironment(projectRoot, pane, extraData);
+  const env = await buildHookEnvironment(projectRoot, pane, extraData);
 
   console.error(`[Hooks] Executing ${hookName} hook (sync): ${hookPath}`);
 

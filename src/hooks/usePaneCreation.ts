@@ -108,13 +108,29 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         forceRepaint();
       }
 
-      // Clear screen again
-      process.stdout.write('\x1b[2J\x1b[H');
+      // CRITICAL: Aggressive clearing to prevent artifacts
+      // 1. Clear screen with ANSI codes (including scrollback)
+      process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+
+      // 2. Clear tmux history and scrollback
+      try {
+        execSync('tmux clear-history', { stdio: 'pipe' });
+      } catch {}
+
+      // 3. Force tmux client refresh
+      try {
+        execSync('tmux refresh-client', { stdio: 'pipe' });
+      } catch {}
 
       setIsCreatingPane(false);
       setStatusMessage('');
       setNewPanePrompt('');
       await loadPanes();
+
+      // CRITICAL: One more repaint after loadPanes to ensure clean render
+      if (forceRepaint) {
+        forceRepaint();
+      }
     } catch (error) {
       console.error('Failed to create pane:', error);
       setStatusMessage(`Failed to create pane: ${error}`);

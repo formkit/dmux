@@ -72,6 +72,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [settingsScopeIndex, setSettingsScopeIndex] = useState(0);
   // Force repaint trigger - incrementing this causes Ink to re-render
   const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0);
+  // Spinner state - shows for a few frames to force render
+  const [showRepaintSpinner, setShowRepaintSpinner] = useState(false);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
   // Hooks management state
   const [showHooksDialog, setShowHooksDialog] = useState(false);
@@ -139,8 +141,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     setRunningCommand,
   });
 
-  // Force repaint helper
-  const forceRepaint = () => setForceRepaintTrigger(prev => prev + 1);
+  // Force repaint helper - shows spinner for a few frames to force full re-render
+  const forceRepaint = () => {
+    setForceRepaintTrigger(prev => prev + 1);
+    setShowRepaintSpinner(true);
+    // Hide spinner after a few frames (enough to trigger multiple renders)
+    setTimeout(() => setShowRepaintSpinner(false), 100);
+  };
 
   // Force repaint effect - ensures Ink re-renders when trigger changes
   useEffect(() => {
@@ -685,8 +692,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       } catch {
         // Ignore if already set or fails
       }
-      
+
       execSync(`tmux select-pane -t '${paneId}'`, { stdio: 'pipe' });
+
+      // Clear screen after jump to remove artifacts
+      clearScreen();
+
       setStatusMessage('Jumped to pane');
       setTimeout(() => setStatusMessage(''), 2000);
     } catch {
@@ -1387,6 +1398,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   return (
     <Box flexDirection="column">
+      {/* CRITICAL: Hidden spinner that forces re-render when shown */}
+      {showRepaintSpinner && (
+        <Box marginTop={-10} marginLeft={-100}>
+          <Text>⟳</Text>
+        </Box>
+      )}
+
       <PanesGrid
         panes={panes}
         selectedIndex={selectedIndex}
