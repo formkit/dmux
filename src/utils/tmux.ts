@@ -1,8 +1,25 @@
 import { execSync } from 'child_process';
 import type { PanePosition } from '../types.js';
 
-// Sidebar configuration - adjust this to change sidebar width
+// Layout configuration - adjust these to change layout behavior
 export const SIDEBAR_WIDTH = 40;
+export const MIN_COMFORTABLE_WIDTH = 60;  // Minimum chars for comfortable code viewing
+export const MAX_COMFORTABLE_WIDTH = 120; // Maximum chars before too wide for comfort
+
+/**
+ * Calculate tmux layout checksum
+ * Based on tmux source: layout.c - layout_checksum()
+ */
+function calculateLayoutChecksum(layout: string): string {
+  let checksum = 0;
+
+  for (let i = 0; i < layout.length; i++) {
+    checksum = (checksum >> 1) + ((checksum & 1) << 15);
+    checksum += layout.charCodeAt(i);
+  }
+
+  return checksum.toString(16);
+}
 
 export interface WindowDimensions {
   width: number;
@@ -107,24 +124,15 @@ const generateSidebarGridLayout = (
   contentPanes: string[],
   sidebarWidth: number,
   windowWidth: number,
-  windowHeight: number
+  windowHeight: number,
+  columns: number
 ): string => {
   // Calculate grid dimensions for content panes
   const numContentPanes = contentPanes.length;
 
-  // For 2-3 panes, prefer vertical stacking. For 4+, use a grid.
-  let cols: number;
-  let rows: number;
-
-  if (numContentPanes <= 3) {
-    // Stack vertically (1 column, multiple rows)
-    cols = 1;
-    rows = numContentPanes;
-  } else {
-    // Use grid layout for 4+ panes
-    cols = Math.ceil(Math.sqrt(numContentPanes));
-    rows = Math.ceil(numContentPanes / cols);
-  }
+  // Use provided column count
+  const cols = columns;
+  const rows = Math.ceil(numContentPanes / cols);
 
   // Content area dimensions
   // Account for borders: horizontal split adds 1 char, vertical splits add 1 char per row
@@ -148,11 +156,11 @@ const generateSidebarGridLayout = (
   // Build grid rows (vertical splits within content area)
   const gridRows: string[] = [];
   let paneIndex = 0;
-  let currentY = 0; // Track actual Y position accounting for borders
+  let currentY = 0; // Track Y position relative to content area
 
   for (let row = 0; row < rows; row++) {
     const rowPanes: string[] = [];
-    let currentX = contentStartX;
+    let relativeX = 0; // Track X position relative to row container
 
     // Calculate height for this row
     // Last row gets remainder to account for rounding
@@ -174,28 +182,35 @@ const generateSidebarGridLayout = (
       let colWidth: number;
       if (col === cols - 1 || paneIndex === numContentPanes - 1) {
         // Last column or last pane: use all remaining width
-        colWidth = contentWidth - (currentX - contentStartX);
+        colWidth = contentWidth - relativeX;
       } else {
         colWidth = paneWidth;
       }
 
-      rowPanes.push(`${colWidth}x${rowHeight},${currentX},${currentY},${paneId}`);
+      // Use relative coordinates within the row container
+      rowPanes.push(`${colWidth}x${rowHeight},${relativeX},0,${paneId}`);
       paneIndex++;
 
-      // Move X position right by pane width + 1 for border (except on last column)
+      // Move X position right by actual pane width + 1 for border (except on last column)
       if (col < cols - 1) {
-        currentX += paneWidth + 1;
+        relativeX += colWidth + 1;
       }
     }
 
-    // If this row has multiple columns, wrap in horizontal container
+    // Wrap multi-pane rows in horizontal container
     if (rowPanes.length > 1) {
       // Horizontal split = use curly braces {}
-      gridRows.push(`${contentWidth}x${rowHeight},${contentStartX},${currentY}{${rowPanes.join(',')}}`);
+      // Position relative to content area
+      gridRows.push(`${contentWidth}x${rowHeight},0,${currentY}{${rowPanes.join(',')}}`);
     } else if (rowPanes.length === 1) {
-      // Single pane in row - needs to span full content width, not just paneWidth
-      const paneId = contentPanes[paneIndex - 1].replace('%', '');
-      gridRows.push(`${contentWidth}x${rowHeight},${contentStartX},${currentY},${paneId}`);
+      // Single pane - no container needed, just specify the pane
+      // Format: WxH,X,Y,pane_id where X=relativeX (0), Y=0 (relative to row)
+      // We need to change Y from 0 to currentY
+      // rowPanes[0] is like "127x26,0,0,9" and we want "127x26,0,27,9"
+      const paneStr = rowPanes[0];
+      const parts = paneStr.split(',');
+      parts[2] = currentY.toString(); // Update Y coordinate
+      gridRows.push(parts.join(','));
     }
 
     // Move Y position down by pane height + 1 for border (except on last row)
@@ -208,9 +223,12 @@ const generateSidebarGridLayout = (
   let contentArea: string;
   if (gridRows.length > 1) {
     // Multiple rows = vertical split (use square brackets)
+    // Position relative to root container
     contentArea = `${contentWidth}x${windowHeight},${contentStartX},0[${gridRows.join(',')}]`;
   } else if (gridRows.length === 1) {
-    contentArea = gridRows[0];
+    // Single row - need to adjust X position from 0 to contentStartX
+    // since it's not nested in a content area container
+    contentArea = gridRows[0].replace(/^(\d+x\d+),0,/, `$1,${contentStartX},`);
   } else {
     // No content panes
     return '';
@@ -218,10 +236,11 @@ const generateSidebarGridLayout = (
 
   // Build root container (horizontal split of sidebar and content)
   const sidebar = `${sidebarWidth}x${windowHeight},0,0,${sidebarId}`;
-  const root = `${windowWidth}x${windowHeight},0,0{${sidebar},${contentArea}}`;
+  const layoutWithoutChecksum = `${windowWidth}x${windowHeight},0,0{${sidebar},${contentArea}}`;
 
-  // Return without checksum - tmux will calculate it automatically
-  return root;
+  // Calculate checksum and prepend to layout string
+  const checksum = calculateLayoutChecksum(layoutWithoutChecksum);
+  return `${checksum},${layoutWithoutChecksum}`;
 };
 
 /**
@@ -254,10 +273,6 @@ export const enforceControlPaneSize = (
         const contentWidth = dimensions.width - width - 1; // -1 for border
         const sideBySideWidth = Math.floor(contentWidth / 2);
 
-        // Comfortable width thresholds for coding
-        const MIN_COMFORTABLE_WIDTH = 80;  // Minimum chars for comfortable viewing
-        const MAX_COMFORTABLE_WIDTH = 150; // Maximum chars before too wide
-
         // Decide layout: if side-by-side would be too narrow, stack vertically
         if (sideBySideWidth < MIN_COMFORTABLE_WIDTH) {
           // Too narrow for side-by-side - use vertical stack
@@ -282,9 +297,81 @@ export const enforceControlPaneSize = (
           execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
         }
       } else {
-        // 3+ panes: fallback to main-vertical for now (will implement later)
-        execSync(`tmux set-window-option main-pane-width ${width}`, { stdio: 'pipe' });
-        execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
+        // 3+ panes: calculate optimal layout based on comfortable reading widths
+        const dimensions = getWindowDimensions();
+        const contentWidth = dimensions.width - width - 1;
+
+        // Try different numbers of columns to find optimal layout
+        let bestCols = 1;
+        let singleColumnWidth = contentWidth; // Check if single column is too wide
+
+        for (let cols = 1; cols <= numContentPanes; cols++) {
+          const bordersWidth = cols - 1;
+          const paneWidth = Math.floor((contentWidth - bordersWidth) / cols);
+
+          // If this arrangement gives comfortable width, use it
+          if (paneWidth >= MIN_COMFORTABLE_WIDTH && paneWidth <= MAX_COMFORTABLE_WIDTH) {
+            bestCols = cols;
+            break;
+          }
+
+          // If we're below minimum, more columns won't help
+          if (paneWidth < MIN_COMFORTABLE_WIDTH) {
+            break;
+          }
+        }
+
+        // If single column is too wide and we're still at bestCols=1, force multi-column
+        if (bestCols === 1 && singleColumnWidth > MAX_COMFORTABLE_WIDTH) {
+          // Find the column count that gets closest to comfortable width
+          for (let cols = 2; cols <= numContentPanes; cols++) {
+            const bordersWidth = cols - 1;
+            const paneWidth = Math.floor((contentWidth - bordersWidth) / cols);
+            if (paneWidth <= MAX_COMFORTABLE_WIDTH) {
+              bestCols = cols;
+              break;
+            }
+          }
+        }
+
+        // Apply layout based on best column count
+        if (bestCols === 1) {
+          // Stack vertically
+          execSync(`tmux set-window-option main-pane-width ${width}`, { stdio: 'pipe' });
+          execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
+        } else if (bestCols >= numContentPanes) {
+          // All panes fit in one row - use horizontal layout
+          execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+          execSync(`tmux resize-pane -t '${controlPaneId}' -x ${width}`, { stdio: 'pipe' });
+
+          // Balance content panes
+          const bordersWidth = numContentPanes - 1;
+          const paneWidth = Math.floor((contentWidth - bordersWidth) / numContentPanes);
+          for (const paneId of contentPanes) {
+            execSync(`tmux resize-pane -t '${paneId}' -x ${paneWidth}`, { stdio: 'pipe' });
+          }
+        } else {
+          // Multi-row grid needed - generate custom layout string
+          const layoutString = generateSidebarGridLayout(
+            controlPaneId,
+            contentPanes,
+            width,
+            dimensions.width,
+            dimensions.height,
+            bestCols
+          );
+
+          if (layoutString) {
+            try {
+              execSync(`tmux select-layout '${layoutString}'`, { stdio: 'pipe' });
+            } catch (layoutError: any) {
+              // Fallback to main-vertical (clean vertical stack with full-height sidebar)
+              // This is better than creating unusable panes
+              execSync(`tmux set-window-option main-pane-width ${width}`, { stdio: 'pipe' });
+              execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
+            }
+          }
+        }
       }
     } catch (layoutError: any) {
       // If layout fails, fall back to simple resize
