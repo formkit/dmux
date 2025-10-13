@@ -86,7 +86,8 @@ class Dmux {
     this.checkForUpdatesBackground();
 
     const inTmux = process.env.TMUX !== undefined;
-    
+    const isDev = process.env.DMUX_DEV === 'true';
+
     if (!inTmux) {
       // Check if project-specific session already exists
       try {
@@ -100,8 +101,9 @@ class Dmux {
         execSync(`tmux set-option -t ${this.sessionName} pane-border-status top`, { stdio: 'inherit' });
         // Set pane title for the main dmux pane
         execSync(`tmux select-pane -t ${this.sessionName} -T "dmux-${this.projectName}"`, { stdio: 'inherit' });
-        // Send dmux command to the new session
-        execSync(`tmux send-keys -t ${this.sessionName} "dmux" Enter`, { stdio: 'inherit' });
+        // Send dmux command to the new session (use dev command if in dev mode)
+        const dmuxCommand = isDev ? `cd "${this.projectRoot}" && pnpm dev:watch` : 'dmux';
+        execSync(`tmux send-keys -t ${this.sessionName} "${dmuxCommand}" Enter`, { stdio: 'inherit' });
       }
       execSync(`tmux attach-session -t ${this.sessionName}`, { stdio: 'inherit' });
       return;
