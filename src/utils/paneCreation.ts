@@ -1,8 +1,12 @@
 import { execSync } from 'child_process';
 import path from 'path';
 import * as fs from 'fs';
-import type { DmuxPane } from '../types.js';
-import { applySmartLayout } from './tmux.js';
+import type { DmuxPane, DmuxConfig } from '../types.js';
+import {
+  setupSidebarLayout,
+  getContentPaneIds,
+  enforceControlPaneSize,
+} from './tmux.js';
 import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
 import { triggerHook } from './hooks.js';
@@ -103,6 +107,30 @@ export async function createPane(
     encoding: 'utf-8',
   }).trim();
 
+  // Load config to get control pane info
+  const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
+  const SIDEBAR_WIDTH = 40;
+  let controlPaneId: string | undefined;
+
+  try {
+    const configContent = fs.readFileSync(configPath, 'utf-8');
+    const config: DmuxConfig = JSON.parse(configContent);
+    controlPaneId = config.controlPaneId;
+
+    // If control pane ID is missing, save it
+    if (!controlPaneId) {
+      controlPaneId = originalPaneId;
+      config.controlPaneId = controlPaneId;
+      config.controlPaneSize = SIDEBAR_WIDTH;
+      config.lastUpdated = new Date().toISOString();
+
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    }
+  } catch (error) {
+    // Fallback if config loading fails
+    controlPaneId = originalPaneId;
+  }
+
   // Get current pane count
   const paneCount = parseInt(
     execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
@@ -115,10 +143,29 @@ export async function createPane(
     // Ignore if already set or fails
   }
 
-  // Create new pane
-  const paneInfo = execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
-    encoding: 'utf-8',
-  }).trim();
+  // Determine if this is the first content pane
+  const contentPaneIds = getContentPaneIds(controlPaneId);
+  const isFirstContentPane = contentPaneIds.length === 0;
+
+  let paneInfo: string;
+
+  if (isFirstContentPane) {
+    // First content pane - split from control pane using sidebar layout
+    paneInfo = setupSidebarLayout(controlPaneId);
+  } else {
+    // Subsequent panes - split intelligently within the content area
+    const targetPane = contentPaneIds[contentPaneIds.length - 1]; // Split from the most recent content pane
+
+    // Create a grid by alternating splits
+    // Odd panes (2nd content pane): split horizontally (side-by-side)
+    // Even panes (3rd content pane): split vertically (top-bottom)
+    const splitDirection = contentPaneIds.length % 2 === 1 ? '-h' : '-v';
+
+    paneInfo = execSync(
+      `tmux split-window ${splitDirection} -t '${targetPane}' -P -F '#{pane_id}'`,
+      { encoding: 'utf-8' }
+    ).trim();
+  }
 
   // Wait for pane creation to settle
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -132,9 +179,13 @@ export async function createPane(
     // Ignore if setting title fails
   }
 
-  // Apply smart layout based on pane count
-  const newPaneCount = paneCount + 1;
-  applySmartLayout(newPaneCount);
+  // Enforce control pane size (don't use global layouts that affect all panes)
+  if (controlPaneId) {
+    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+
+    // Refresh tmux to apply changes
+    execSync('tmux refresh-client', { stdio: 'pipe' });
+  }
 
   // Trigger pane_created hook (after pane created, before worktree)
   await triggerHook('pane_created', projectRoot, undefined, {

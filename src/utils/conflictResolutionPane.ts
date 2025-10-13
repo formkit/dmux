@@ -6,7 +6,7 @@
 
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
-import { applySmartLayout } from './tmux.js';
+import { enforceControlPaneSize } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 
 export interface ConflictResolutionPaneOptions {
@@ -63,9 +63,12 @@ export async function createConflictResolutionPane(
     // Ignore if setting title fails
   }
 
-  // Apply smart layout based on pane count
-  const newPaneCount = paneCount + 1;
-  applySmartLayout(newPaneCount);
+  // Don't apply global layouts - just enforce sidebar width
+  const SIDEBAR_WIDTH = 40;
+  try {
+    const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+  } catch {}
 
   // CD into the target repository (where we'll resolve conflicts)
   try {

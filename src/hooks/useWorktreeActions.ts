@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import { useCallback } from 'react';
 import type { DmuxPane } from '../types.js';
-import { applySmartLayout } from '../utils/tmux.js';
+import { enforceControlPaneSize } from '../utils/tmux.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -38,8 +38,12 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
       await new Promise(r => setTimeout(r, 100));
 
       execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
-      const paneCount = parseInt(execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim());
-      if (paneCount > 1) applySmartLayout(paneCount);
+      // Don't apply global layouts - just enforce sidebar width
+      const SIDEBAR_WIDTH = 40;
+      try {
+        const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+        enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+      } catch {}
 
       const updatedPanes = panes.filter(p => p.id !== pane.id);
       await savePanes(updatedPanes);

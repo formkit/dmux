@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane, ProjectSettings } from '../types.js';
-import { applySmartLayout } from '../utils/tmux.js';
+import { enforceControlPaneSize } from '../utils/tmux.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -135,8 +135,12 @@ export default function usePaneRunner({ panes, savePanes, projectSettings, setSt
     }
     try {
       execSync(`tmux join-pane -h -s '${windowId}'`, { stdio: 'pipe' });
-      const paneCount = parseInt(execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim());
-      applySmartLayout(paneCount);
+      // Don't apply global layouts - just enforce sidebar width
+      const SIDEBAR_WIDTH = 40;
+      try {
+        const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+        enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+      } catch {}
       execSync(`tmux select-pane -t '{last}'`, { stdio: 'pipe' });
       setStatusMessage(`Attached ${type} window`);
       setTimeout(() => setStatusMessage(''), 2000);

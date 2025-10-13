@@ -77,7 +77,9 @@ class Dmux {
         projectRoot: this.projectRoot,
         panes: [],
         settings: {},
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        controlPaneId: undefined,
+        controlPaneSize: 40  // Sidebar width
       };
       await fs.writeFile(this.panesFile, JSON.stringify(initialConfig, null, 2));
     }
@@ -102,7 +104,12 @@ class Dmux {
         // Set pane title for the main dmux pane
         execSync(`tmux select-pane -t ${this.sessionName} -T "dmux-${this.projectName}"`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)
-        const dmuxCommand = isDev ? `cd "${this.projectRoot}" && pnpm dev:watch` : 'dmux';
+        // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
+        let devDirectory = this.projectRoot;
+        if (isDev && this.isWorktree()) {
+          devDirectory = process.cwd();
+        }
+        const dmuxCommand = isDev ? `cd "${devDirectory}" && pnpm dev:watch` : 'dmux';
         execSync(`tmux send-keys -t ${this.sessionName} "${dmuxCommand}" Enter`, { stdio: 'inherit' });
       }
       execSync(`tmux attach-session -t ${this.sessionName}`, { stdio: 'inherit' });
@@ -121,6 +128,38 @@ class Dmux {
       execSync(`tmux select-pane -T "dmux-${this.projectName}"`, { stdio: 'pipe' });
     } catch {
       // Ignore if it fails (might not have permission or tmux version doesn't support it)
+    }
+
+    // Get current pane ID (control pane for left sidebar)
+    let controlPaneId: string | undefined;
+    const SIDEBAR_WIDTH = 40;
+
+    try {
+      // Get control pane ID
+      controlPaneId = execSync('tmux display-message -p "#{pane_id}"', {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      }).trim();
+
+      // Load existing config to check if control pane is already set
+      const configContent = await fs.readFile(this.panesFile, 'utf-8');
+      const config = JSON.parse(configContent);
+
+      // Only set up sidebar if not already configured
+      if (!config.controlPaneId) {
+        // Update config with control pane info
+        config.controlPaneId = controlPaneId;
+        config.controlPaneSize = SIDEBAR_WIDTH;
+        config.lastUpdated = new Date().toISOString();
+
+        await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+      } else {
+        // Use existing config value
+        controlPaneId = config.controlPaneId;
+      }
+    } catch (error) {
+      // Ignore errors in sidebar setup - will work without it
+      console.error('Failed to set up sidebar layout:', error);
     }
 
     // Update state manager with project info
@@ -164,7 +203,8 @@ class Dmux {
       projectRoot: this.projectRoot,
       autoUpdater: this.autoUpdater,
       serverPort: serverInfo.port,
-      server: this.server
+      server: this.server,
+      controlPaneId
     }), {
       exitOnCtrlC: false  // Disable automatic exit on Ctrl+C
     });
@@ -180,6 +220,28 @@ class Dmux {
     try {
       await fs.access(path);
       return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private isWorktree(): boolean {
+    try {
+      // Check if current directory is different from project root
+      const cwd = process.cwd();
+      if (cwd === this.projectRoot) {
+        return false;
+      }
+
+      // Check if we're in a git worktree by checking if .git is a file (not a directory)
+      const gitPath = path.join(cwd, '.git');
+      if (fsSync.existsSync(gitPath)) {
+        const stats = fsSync.statSync(gitPath);
+        // In a worktree, .git is a file, not a directory
+        return stats.isFile();
+      }
+
+      return false;
     } catch {
       return false;
     }

@@ -18,7 +18,7 @@ import usePaneCreation from './hooks/usePaneCreation.js';
 import useActionSystem from './hooks/useActionSystem.js';
 
 // Utils
-import { getPanePositions, applySmartLayout } from './utils/tmux.js';
+import { getPanePositions, enforceControlPaneSize, SIDEBAR_WIDTH } from './utils/tmux.js';
 import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
@@ -51,7 +51,7 @@ import SettingsDialog from './components/SettingsDialog.js';
 import HooksDialog from './components/HooksDialog.js';
 
 
-const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server }) => {
+const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server, controlPaneId }) => {
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
@@ -312,6 +312,69 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     }
   }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
 
+  // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
+  useEffect(() => {
+    if (!controlPaneId) {
+      return; // No sidebar layout configured
+    }
+
+    // Enforce sidebar width immediately on mount
+    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+
+    // Debounce resize handler to prevent infinite loops
+    let resizeTimeout: NodeJS.Timeout | null = null;
+    let isApplyingLayout = false;
+
+    const handleResize = () => {
+      // Skip if we're already applying a layout (prevents loops)
+      if (isApplyingLayout) {
+        return;
+      }
+
+      // Clear any pending resize
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+
+      // Debounce: wait 200ms after last resize event
+      resizeTimeout = setTimeout(() => {
+        // Only enforce if not showing dialogs (to avoid interference)
+        const hasActiveDialog = showNewPaneDialog ||
+          actionSystem.actionState.showConfirmDialog ||
+          actionSystem.actionState.showChoiceDialog ||
+          actionSystem.actionState.showInputDialog ||
+          actionSystem.actionState.showProgressDialog ||
+          !!showCommandPrompt ||
+          showFileCopyPrompt ||
+          showAgentChoiceDialog ||
+          isCreatingPane ||
+          runningCommand ||
+          isUpdating;
+
+        if (!hasActiveDialog) {
+          isApplyingLayout = true;
+          // Only enforce sidebar width when terminal resizes
+          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+
+          // Reset flag after a brief delay
+          setTimeout(() => {
+            isApplyingLayout = false;
+          }, 100);
+        }
+      }, 200);
+    };
+
+    // Listen to stdout resize events
+    process.stdout.on('resize', handleResize);
+
+    return () => {
+      process.stdout.off('resize', handleResize);
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+    };
+  }, [controlPaneId, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
+
   // Update checking moved to useAutoUpdater
 
   // Set default agent choice when detection completes
@@ -435,9 +498,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Ignore if setting title fails
     }
     
-    // Apply smart layout based on pane count
-    const newPaneCount = paneCount + 1;
-    applySmartLayout(newPaneCount);
+    // Don't apply global layouts - let content panes arrange naturally
+    // Only enforce sidebar width
+    try {
+      const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    } catch {}
     
     // Create git worktree and cd into it
     // This MUST happen before launching Claude to ensure we're in the right directory
@@ -1334,6 +1400,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       setShowSettingsDialog(true);
       setSettingsMode('list');
       setSettingsSelectedIndex(0);
+    } else if (input === 'l' && controlPaneId) {
+      // Reset layout to sidebar configuration
+      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+      setStatusMessage('Layout reset');
+      setTimeout(() => setStatusMessage(''), 2000);
     } else if (input === 'q') {
       cleanExit();
     } else if (input === 'r' && server) {
@@ -1576,6 +1647,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         show={!showNewPaneDialog && !showCommandPrompt}
         showRemoteKey={!!server}
         quitConfirmMode={quitConfirmMode}
+        hasSidebarLayout={!!controlPaneId}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined;
           const cols = Math.max(1, Math.floor(terminalWidth / 37));
@@ -1590,6 +1662,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           <Text color="red" bold>Update available: npm i -g dmux@latest </Text>
         )}
         v{packageJson.version}
+        <Text color="magenta" bold> • SIDEBAR-40COL-BUILD</Text>
         {serverPort && serverPort > 0 && (
           <Text dimColor> • <Text color="cyan">http://127.0.0.1:{serverPort}</Text></Text>
         )}

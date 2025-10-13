@@ -6,9 +6,10 @@ interface FooterHelpProps {
   gridInfo?: string;
   showRemoteKey?: boolean;
   quitConfirmMode?: boolean;
+  hasSidebarLayout?: boolean;
 }
 
-const FooterHelp: React.FC<FooterHelpProps> = ({ show, gridInfo, showRemoteKey = false, quitConfirmMode = false }) => {
+const FooterHelp: React.FC<FooterHelpProps> = ({ show, gridInfo, showRemoteKey = false, quitConfirmMode = false, hasSidebarLayout = false }) => {
   if (!show) return null;
 
   if (quitConfirmMode) {
@@ -24,7 +25,7 @@ const FooterHelp: React.FC<FooterHelpProps> = ({ show, gridInfo, showRemoteKey =
   return (
     <Box marginTop={1} flexDirection="column">
       <Text dimColor>
-        Commands: [j]ump • [m]enu • [x]close • [n]ew • [s]ettings{showRemoteKey && ' • [r]emote'} • [q]uit
+        Commands: [j]ump • [m]enu • [x]close • [n]ew • [s]ettings{hasSidebarLayout && ' • [l]ayout'}{showRemoteKey && ' • [r]emote'} • [q]uit
       </Text>
       <Text dimColor>
         Use arrow keys (↑↓←→) for spatial navigation, Enter to select

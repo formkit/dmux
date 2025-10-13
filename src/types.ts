@@ -82,6 +82,17 @@ export interface DmuxAppProps {
   autoUpdater?: any; // AutoUpdater instance
   serverPort?: number;
   server?: any; // DmuxServer instance
+  controlPaneId?: string; // Pane ID running dmux TUI (left sidebar)
+}
+
+export interface DmuxConfig {
+  projectName: string;
+  projectRoot: string;
+  panes: DmuxPane[];
+  settings: DmuxSettings;
+  lastUpdated: string;
+  controlPaneId?: string; // Pane ID running dmux TUI (left sidebar)
+  controlPaneSize?: number; // Fixed sidebar width (40 chars)
 }
 
 // Hook types - re-exported from hooks utility for convenience
