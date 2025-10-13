@@ -32,7 +32,15 @@ export class PaneWorkerManager {
   constructor(messageBus: WorkerMessageBus) {
     this.messageBus = messageBus;
     // Path to compiled worker file
-    this.workerPath = path.join(__dirname, '..', 'workers', 'PaneWorker.js');
+    // In dev mode with tsx, __dirname is src/services, but workers are in dist/
+    // In production, __dirname is dist/services, so relative path works
+    if (process.env.DMUX_DEV === 'true') {
+      // Development: use dist folder relative to project root
+      this.workerPath = path.join(__dirname, '..', '..', 'dist', 'workers', 'PaneWorker.js');
+    } else {
+      // Production: use relative path from dist/services to dist/workers
+      this.workerPath = path.join(__dirname, '..', 'workers', 'PaneWorker.js');
+    }
   }
 
   /**
