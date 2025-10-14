@@ -22,6 +22,8 @@ export interface PopupOptions {
   borderStyle?: string;
   // Offset from left (e.g., to account for sidebar)
   leftOffset?: number;
+  // Offset from top
+  topOffset?: number;
 }
 
 export interface PopupResult<T> {
@@ -51,6 +53,7 @@ export async function launchPopup(
     cwd = process.cwd(),
     borderStyle = 'double',
     leftOffset = 0,
+    topOffset = 0,
   } = options;
 
   // Create a temp file for the result
@@ -72,20 +75,22 @@ export async function launchPopup(
   }
 
   // Position: centered or custom
-  if (centered) {
-    // If leftOffset is provided (e.g., for sidebar), position just to the right of it
-    if (leftOffset > 0) {
-      // Position 1 char to the right of the sidebar
-      args.push('-x', (leftOffset + 1).toString());
-      // Position at top of screen
-      args.push('-y', '0');
-    } else {
-      args.push('-x', 'C');
-      args.push('-y', 'C');
-    }
-  } else if (x !== undefined && y !== undefined) {
+  if (!centered && (leftOffset > 0 || topOffset > 0)) {
+    // Absolute positioning with leftOffset/topOffset
+    args.push('-x', (leftOffset + 1).toString());
+    args.push('-y', topOffset.toString());
+  } else if (!centered && x !== undefined && y !== undefined) {
+    // Absolute positioning with x/y
     args.push('-x', x.toString());
     args.push('-y', y.toString());
+  } else if (centered && leftOffset > 0) {
+    // Centered with sidebar offset
+    args.push('-x', (leftOffset + 1).toString());
+    args.push('-y', topOffset.toString());
+  } else {
+    // Fully centered
+    args.push('-x', 'C');
+    args.push('-y', 'C');
   }
 
   // Title
@@ -154,9 +159,15 @@ export async function launchNodePopup<T = any>(
   // Get the result file path that the script will write to
   const resultFile = path.join(os.tmpdir(), `dmux-popup-${Date.now()}.json`);
 
-  // Build node command
-  const nodeArgs = [scriptPath, resultFile, ...args].map(arg => `"${arg}"`).join(' ');
-  const command = `node ${nodeArgs}`;
+  // Build node command with proper escaping
+  // Escape each argument for shell: replace backslashes, then single quotes
+  const escapedArgs = [scriptPath, resultFile, ...args].map(arg => {
+    // Escape for shell: replace ' with '\''
+    const escaped = arg.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+    return `'${escaped}'`;
+  });
+
+  const command = `node ${escapedArgs.join(' ')}`;
 
   return launchPopup(command, options) as Promise<PopupResult<T>>;
 }

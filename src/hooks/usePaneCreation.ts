@@ -39,9 +39,6 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
   };
 
   const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
-    setIsCreatingPane(true);
-    setStatusMessage('Generating slug...');
-
     // CRITICAL: Force repaint FIRST to prevent blank screen
     if (forceRepaint) {
       forceRepaint();
@@ -73,14 +70,9 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         // This shouldn't happen in the TUI flow since we handle agent choice
         // before calling createNewPane, but just in case
         setStatusMessage('Agent choice is required');
-        setIsCreatingPane(false);
+        setTimeout(() => setStatusMessage(''), 3000);
         return;
       }
-
-      // Update status as we go
-      setStatusMessage(`Creating worktree: ${result.pane.slug}...`);
-      await new Promise(r => setTimeout(r, 500));
-      setStatusMessage(agent ? `Worktree created, launching ${agent === 'opencode' ? 'opencode' : 'Claude'}...` : 'Worktree created.');
 
       // Save the pane
       const updatedPanes = [...panes, result.pane];
@@ -122,8 +114,6 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         execSync('tmux refresh-client', { stdio: 'pipe' });
       } catch {}
 
-      setIsCreatingPane(false);
-      setStatusMessage('');
       setNewPanePrompt('');
       await loadPanes();
 
@@ -134,7 +124,6 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
     } catch (error) {
       console.error('Failed to create pane:', error);
       setStatusMessage(`Failed to create pane: ${error}`);
-      setIsCreatingPane(false);
       setTimeout(() => setStatusMessage(''), 3000);
     }
   };

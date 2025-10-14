@@ -38,7 +38,6 @@ const packageJson = require('../package.json');
 import type { DmuxPane, PanePosition, ProjectSettings, DmuxAppProps } from './types.js';
 import PanesGrid from './components/PanesGrid.js';
 import NewPaneDialog from './components/NewPaneDialog.js';
-import AgentChoiceDialog from './components/AgentChoiceDialog.js';
 import CommandPromptDialog from './components/CommandPromptDialog.js';
 import FileCopyPrompt from './components/FileCopyPrompt.js';
 import LoadingIndicator from './components/LoadingIndicator.js';
@@ -47,13 +46,6 @@ import UpdatingIndicator from './components/UpdatingIndicator.js';
 import CreatingIndicator from './components/CreatingIndicator.js';
 import FooterHelp from './components/FooterHelp.js';
 import QRCode from './components/QRCode.js';
-import KebabMenu from './components/KebabMenu.js';
-import ActionChoiceDialog from './components/ActionChoiceDialog.js';
-import ActionConfirmDialog from './components/ActionConfirmDialog.js';
-import ActionInputDialog from './components/ActionInputDialog.js';
-import ActionProgressDialog from './components/ActionProgressDialog.js';
-import SettingsDialog from './components/SettingsDialog.js';
-import HooksDialog from './components/HooksDialog.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server, controlPaneId }) => {
@@ -69,31 +61,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Settings state
   const [settingsManager] = useState(() => new SettingsManager(projectRoot));
-  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
-  const [settingsMode, setSettingsMode] = useState<'list' | 'edit' | 'scope'>('list');
-  const [settingsSelectedIndex, setSettingsSelectedIndex] = useState(0);
-  const [settingsEditingKey, setSettingsEditingKey] = useState<keyof import('./types.js').DmuxSettings | string | undefined>();
-  const [settingsEditingValueIndex, setSettingsEditingValueIndex] = useState(0);
-  const [settingsScopeIndex, setSettingsScopeIndex] = useState(0);
   // Force repaint trigger - incrementing this causes Ink to re-render
   const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0);
   // Spinner state - shows for a few frames to force render
   const [showRepaintSpinner, setShowRepaintSpinner] = useState(false);
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
-  // Hooks management state
-  const [showHooksDialog, setShowHooksDialog] = useState(false);
-  const [hooksSelectedIndex, setHooksSelectedIndex] = useState(0);
-  const [hooksData, setHooksData] = useState<Array<{name: string; active: boolean}>>([]);
   const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
   const [commandInput, setCommandInput] = useState('');
   const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
   const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
   const [runningCommand, setRunningCommand] = useState(false);
   const [quitConfirmMode, setQuitConfirmMode] = useState(false);
-  const [showKebabMenu, setShowKebabMenu] = useState(false);
-  const [kebabMenuPaneIndex, setKebabMenuPaneIndex] = useState<number | null>(null);
-  const [kebabMenuOption, setKebabMenuOption] = useState(0);
-  const [kebabMenuActions, setKebabMenuActions] = useState<ActionMetadata[]>([]);
   // Debug message state - for temporary logging messages
   const [debugMessage, setDebugMessage] = useState<string>('');
   // Update state handled by hook
@@ -102,9 +80,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Agent selection state
   const { availableAgents } = useAgentDetection();
-  const [showAgentChoiceDialog, setShowAgentChoiceDialog] = useState(false);
   const [agentChoice, setAgentChoice] = useState<'claude' | 'opencode' | null>(null);
-  const [pendingPrompt, setPendingPrompt] = useState('');
 
   // Popup support detection
   const [popupsSupported, setPopupsSupported] = useState(false);
@@ -119,26 +95,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // When a user closes a pane, we add it to this set. If the worker detects
   // the pane is gone (which it will), we check this set first before re-saving.
   const intentionallyClosedPanes = React.useRef<Set<string>>(new Set());
-
-  // Action system
-  const actionSystem = useActionSystem({
-    panes,
-    savePanes,
-    sessionName,
-    projectName,
-    onPaneRemove: (paneId) => {
-      // Mark this pane as intentionally closed
-      intentionallyClosedPanes.current.add(paneId);
-
-      const updated = panes.filter(p => p.id !== paneId);
-      setPanes(updated);
-
-      // Clean up the tracking after a delay (in case of race conditions)
-      setTimeout(() => {
-        intentionallyClosedPanes.current.delete(paneId);
-      }, 5000);
-    },
-  });
 
   // Pane runner
   const { copyNonGitFiles, runCommandInternal, monitorTestOutput, monitorDevOutput, attachBackgroundWindow } = usePaneRunner({
@@ -299,96 +255,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     };
   }, []);
 
-  // Auto-show new pane dialog when starting with no panes
-  useEffect(() => {
-    // Only show the dialog if:
-    // 1. Initial load is complete (!isLoading)
-    // 2. We have no panes
-    // 3. We're not already showing the dialog
-    // 4. We're not showing any other dialogs or prompts
-    if (!isLoading &&
-        panes.length === 0 &&
-        !showNewPaneDialog &&
-        !actionSystem.actionState.showConfirmDialog &&
-        !actionSystem.actionState.showChoiceDialog &&
-        !actionSystem.actionState.showInputDialog &&
-        !actionSystem.actionState.showProgressDialog &&
-        !showCommandPrompt &&
-        !showFileCopyPrompt &&
-        !showAgentChoiceDialog &&
-        !isCreatingPane &&
-        !runningCommand &&
-        !isUpdating) {
-      setShowNewPaneDialog(true);
-    }
-  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
-
-  // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
-  useEffect(() => {
-    if (!controlPaneId) {
-      return; // No sidebar layout configured
-    }
-
-    // Enforce sidebar width immediately on mount
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
-
-    // Debounce resize handler to prevent infinite loops
-    let resizeTimeout: NodeJS.Timeout | null = null;
-    let isApplyingLayout = false;
-
-    const handleResize = () => {
-      // Skip if we're already applying a layout (prevents loops)
-      if (isApplyingLayout) {
-        return;
-      }
-
-      // Clear any pending resize
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
-
-      // Debounce: wait 200ms after last resize event
-      resizeTimeout = setTimeout(() => {
-        // Only enforce if not showing dialogs (to avoid interference)
-        const hasActiveDialog = showNewPaneDialog ||
-          actionSystem.actionState.showConfirmDialog ||
-          actionSystem.actionState.showChoiceDialog ||
-          actionSystem.actionState.showInputDialog ||
-          actionSystem.actionState.showProgressDialog ||
-          !!showCommandPrompt ||
-          showFileCopyPrompt ||
-          showAgentChoiceDialog ||
-          isCreatingPane ||
-          runningCommand ||
-          isUpdating;
-
-        if (!hasActiveDialog) {
-          isApplyingLayout = true;
-          // Only enforce sidebar width when terminal resizes
-          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
-
-          // Force Ink to repaint after resize to prevent blank dmux pane
-          forceRepaint();
-
-          // Reset flag after a brief delay
-          setTimeout(() => {
-            isApplyingLayout = false;
-          }, 100);
-        }
-      }, 200);
-    };
-
-    // Listen to stdout resize events
-    process.stdout.on('resize', handleResize);
-
-    return () => {
-      process.stdout.off('resize', handleResize);
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
-      }
-    };
-  }, [controlPaneId, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, showAgentChoiceDialog, isCreatingPane, runningCommand, isUpdating]);
-
   // Update checking moved to useAutoUpdater
 
   // Set default agent choice when detection completes
@@ -397,26 +263,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       setAgentChoice(availableAgents[0] || 'claude');
     }
   }, [availableAgents]);
-
-  // Monitor agent status across panes (returns a map of pane ID to status)
-  const agentStatuses = useAgentStatus({
-    panes,
-    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || actionSystem.actionState.showProgressDialog || !!showCommandPrompt || showFileCopyPrompt,
-    onPaneRemoved: (paneId: string) => {
-      // Check if this pane was intentionally closed
-      // If so, don't re-save - the close action already handled it
-      if (intentionallyClosedPanes.current.has(paneId)) {
-        return;
-      }
-
-      // Pane was removed unexpectedly (e.g., user killed tmux pane manually)
-      // Remove it from our tracking
-      const updatedPanes = panes.filter(p => p.id !== paneId);
-      savePanes(updatedPanes);
-    },
-  });
-
-
 
   // loadPanes moved to usePanes
 
@@ -478,10 +324,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         } else if (agents.length === 1) {
           await createNewPaneHook(promptValue, agents[0]);
         } else {
-          // Multiple agents available - show agent choice dialog
-          setPendingPrompt(promptValue);
-          setShowAgentChoiceDialog(true);
-          setAgentChoice(agentChoice || 'claude');
+          // Multiple agents available - check for default agent setting first
+          const settings = settingsManager.getSettings();
+          if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
+            // Use the default agent from settings
+            await createNewPaneHook(promptValue, settings.defaultAgent);
+          } else {
+            // No default agent configured or default not available - show agent choice popup
+            const selectedAgent = await launchAgentChoicePopup(promptValue);
+            if (selectedAgent) {
+              await createNewPaneHook(promptValue, selectedAgent);
+            }
+          }
         }
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
@@ -495,6 +349,617 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       setTimeout(() => setStatusMessage(''), 3000);
     }
   };
+
+  const launchKebabMenuPopup = async (paneIndex: number) => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    const selectedPane = panes[paneIndex];
+    if (!selectedPane) {
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'kebabMenuPopup.js');
+
+      // Get available actions for this pane
+      const actions = getAvailableActions(selectedPane, projectSettings);
+      const actionsJson = JSON.stringify(actions);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<string>(
+        popupScriptPath,
+        [selectedPane.slug, actionsJson],
+        {
+          width: 60,
+          height: Math.min(20, actions.length + 5),
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      if (result.success && result.data) {
+        // User selected an action - execute it
+        const actionId = result.data as PaneAction;
+        actionSystem.executeAction(actionId, selectedPane, { mainBranch: getMainBranch() });
+      } else if (result.cancelled) {
+        // User pressed ESC - do nothing
+        return;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchConfirmPopup = async (title: string, message: string, yesLabel?: string, noLabel?: string): Promise<boolean> => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return false;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'confirmPopup.js');
+
+      // Write data to temp file to avoid shell escaping issues
+      const dataFile = `/tmp/dmux-confirm-${Date.now()}.json`;
+      const dataJson = JSON.stringify({ title, message, yesLabel, noLabel });
+      await fs.writeFile(dataFile, dataJson);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<boolean>(
+        popupScriptPath,
+        [dataFile],
+        {
+          width: 60,
+          height: 12,
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch {}
+
+      if (result.success && result.data !== undefined) {
+        return result.data;
+      } else if (result.cancelled) {
+        return false;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+        return false;
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+    return false;
+  };
+
+  const launchAgentChoicePopup = async (prompt: string): Promise<'claude' | 'opencode' | null> => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return null;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'agentChoicePopup.js');
+
+      const agentsJson = JSON.stringify(availableAgents);
+      const defaultAgentArg = agentChoice || availableAgents[0] || 'claude';
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<'claude' | 'opencode'>(
+        popupScriptPath,
+        [agentsJson, defaultAgentArg],
+        {
+          width: 50,
+          height: 10,
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      if (result.success && result.data) {
+        return result.data;
+      } else if (result.cancelled) {
+        return null;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+        return null;
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+    return null;
+  };
+
+  const launchHooksPopup = async () => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'hooksPopup.js');
+
+      // Get hooks data
+      const { hasHook } = await import('./utils/hooks.js');
+      const allHookTypes = [
+        'before_pane_create',
+        'pane_created',
+        'worktree_created',
+        'before_pane_close',
+        'pane_closed',
+        'before_worktree_remove',
+        'worktree_removed',
+        'pre_merge',
+        'post_merge',
+        'run_test',
+        'run_dev',
+      ];
+
+      const hooks = allHookTypes.map(hookName => ({
+        name: hookName,
+        active: hasHook(projectRoot || process.cwd(), hookName as any)
+      }));
+
+      const hooksJson = JSON.stringify(hooks);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      // Height calculation: title(2) + hooks(11) + actions box(8) + help(2) + padding(3) = 26
+      const result = await launchNodePopup<{
+        action?: 'edit' | 'view';
+      }>(
+        popupScriptPath,
+        [hooksJson],
+        {
+          width: 70,
+          height: 26,
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      if (result.success && result.data?.action === 'edit') {
+        // Edit hooks using an agent
+        const prompt = "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit";
+
+        // Choose agent
+        const agents = availableAgents;
+        if (agents.length === 0) {
+          await createNewPaneHook(prompt);
+        } else if (agents.length === 1) {
+          await createNewPaneHook(prompt, agents[0]);
+        } else {
+          // Multiple agents available - check for default agent setting first
+          const settings = settingsManager.getSettings();
+          if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
+            // Use the default agent from settings
+            await createNewPaneHook(prompt, settings.defaultAgent);
+          } else {
+            // No default agent configured or default not available - show agent choice popup
+            const selectedAgent = await launchAgentChoicePopup(prompt);
+            if (selectedAgent) {
+              await createNewPaneHook(prompt, selectedAgent);
+            }
+          }
+        }
+      } else if (result.success && result.data?.action === 'view') {
+        // View hooks file in editor - could implement this later
+        setStatusMessage('View in editor not yet implemented');
+        setTimeout(() => setStatusMessage(''), 2000);
+      } else if (result.cancelled) {
+        // User pressed ESC - do nothing
+        return;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchSettingsPopup = async () => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'settingsPopup.js');
+
+      // Prepare settings data for popup
+      const settingsData = {
+        settingDefinitions: SETTING_DEFINITIONS,
+        settings: settingsManager.getSettings(),
+        globalSettings: settingsManager.getGlobalSettings(),
+        projectSettings: settingsManager.getProjectSettings(),
+      };
+      const settingsJson = JSON.stringify(settingsData);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<any>(
+        popupScriptPath,
+        [settingsJson],
+        {
+          width: 70,
+          height: Math.min(25, SETTING_DEFINITIONS.length + 8),
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      if (result.success) {
+        // Check if this is an action result (action field at top level)
+        if ((result as any).action) {
+          // Action type setting (like 'hooks')
+          if ((result as any).action === 'hooks') {
+            // Launch hooks popup
+            await launchHooksPopup();
+          }
+        } else if (result.data) {
+          // Regular setting change (result.data contains the setting)
+          const { key, value, scope } = result.data as { key: string; value: any; scope: 'global' | 'project' };
+          settingsManager.updateSetting(key as keyof import('./types.js').DmuxSettings, value, scope);
+          setStatusMessage(`Setting saved (${scope})`);
+          setTimeout(() => setStatusMessage(''), 2000);
+        }
+      } else if (result.cancelled) {
+        // User pressed ESC - do nothing
+        return;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchChoicePopup = async (title: string, message: string, options: Array<{id: string, label: string, description?: string, danger?: boolean, default?: boolean}>): Promise<string | null> => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return null;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'choicePopup.js');
+
+      // Write data to temp file to avoid shell escaping issues
+      const dataFile = `/tmp/dmux-choice-${Date.now()}.json`;
+      const dataJson = JSON.stringify({ title, message, options });
+      await fs.writeFile(dataFile, dataJson);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<string>(
+        popupScriptPath,
+        [dataFile],
+        {
+          width: 70,
+          height: Math.min(25, options.length * 3 + 8),
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch {}
+
+      if (result.success && result.data) {
+        return result.data;
+      } else if (result.cancelled) {
+        return null;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+        return null;
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+    return null;
+  };
+
+  const launchInputPopup = async (title: string, message: string, placeholder?: string, defaultValue?: string): Promise<string | null> => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return null;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'inputPopup.js');
+
+      // Write data to temp file to avoid shell escaping issues
+      const dataFile = `/tmp/dmux-input-${Date.now()}.json`;
+      const dataJson = JSON.stringify({ title, message, placeholder, defaultValue });
+      await fs.writeFile(dataFile, dataJson);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<string>(
+        popupScriptPath,
+        [dataFile],
+        {
+          width: 70,
+          height: 15,
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch {}
+
+      if (result.success && result.data !== undefined) {
+        return result.data;
+      } else if (result.cancelled) {
+        return null;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+        return null;
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+    return null;
+  };
+
+  const launchProgressPopup = async (message: string, type: 'info' | 'success' | 'error' = 'info', timeout: number = 2000): Promise<void> => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage(message);
+      setTimeout(() => setStatusMessage(''), timeout);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'progressPopup.js');
+
+      // Write data to temp file to avoid shell escaping issues
+      const dataFile = `/tmp/dmux-progress-${Date.now()}.json`;
+      const dataJson = JSON.stringify({ message, type, timeout });
+      await fs.writeFile(dataFile, dataJson);
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      // Height depends on message length
+      const lines = Math.ceil(message.length / 60) + 3; // Estimate lines needed
+      await launchNodePopup<void>(
+        popupScriptPath,
+        [dataFile],
+        {
+          width: 70,
+          height: Math.min(15, lines + 4),
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch {}
+    } catch (error: any) {
+      // Fallback to inline message
+      setStatusMessage(message);
+      setTimeout(() => setStatusMessage(''), timeout);
+    }
+  };
+
+  // Action system - initialized after popup launchers are defined
+  const actionSystem = useActionSystem({
+    panes,
+    savePanes,
+    sessionName,
+    projectName,
+    onPaneRemove: (paneId) => {
+      // Mark the pane as intentionally closed to prevent race condition with worker
+      intentionallyClosedPanes.current.add(paneId);
+
+      // Remove from panes list
+      const updatedPanes = panes.filter(p => p.paneId !== paneId);
+      savePanes(updatedPanes);
+
+      // Clean up after a delay
+      setTimeout(() => {
+        intentionallyClosedPanes.current.delete(paneId);
+      }, 5000);
+    },
+    forceRepaint,
+    popupLaunchers: popupsSupported ? {
+      launchConfirmPopup,
+      launchChoicePopup,
+      launchInputPopup,
+      launchProgressPopup,
+    } : undefined,
+  });
+
+  // Auto-show new pane dialog when starting with no panes
+  useEffect(() => {
+    // Only show the dialog if:
+    // 1. Initial load is complete (!isLoading)
+    // 2. We have no panes
+    // 3. We're not already showing the dialog
+    // 4. We're not showing any other dialogs or prompts
+    if (!isLoading &&
+        panes.length === 0 &&
+        !showNewPaneDialog &&
+        !actionSystem.actionState.showConfirmDialog &&
+        !actionSystem.actionState.showChoiceDialog &&
+        !actionSystem.actionState.showInputDialog &&
+        !actionSystem.actionState.showProgressDialog &&
+        !showCommandPrompt &&
+        !showFileCopyPrompt &&
+        !isCreatingPane &&
+        !runningCommand &&
+        !isUpdating) {
+      setShowNewPaneDialog(true);
+    }
+  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, isCreatingPane, runningCommand, isUpdating]);
+
+  // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
+  useEffect(() => {
+    if (!controlPaneId) {
+      return; // No sidebar layout configured
+    }
+
+    // Enforce sidebar width immediately on mount
+    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+
+    // Debounce resize handler to prevent infinite loops
+    let resizeTimeout: NodeJS.Timeout | null = null;
+    let isApplyingLayout = false;
+
+    const handleResize = () => {
+      // Skip if we're already applying a layout (prevents loops)
+      if (isApplyingLayout) {
+        return;
+      }
+
+      // Clear any pending resize
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+
+      // Debounce: wait 200ms after last resize event
+      resizeTimeout = setTimeout(() => {
+        // Only enforce if not showing dialogs (to avoid interference)
+        const hasActiveDialog = showNewPaneDialog ||
+          actionSystem.actionState.showConfirmDialog ||
+          actionSystem.actionState.showChoiceDialog ||
+          actionSystem.actionState.showInputDialog ||
+          actionSystem.actionState.showProgressDialog ||
+          !!showCommandPrompt ||
+          showFileCopyPrompt ||
+          isCreatingPane ||
+          runningCommand ||
+          isUpdating;
+
+        if (!hasActiveDialog) {
+          isApplyingLayout = true;
+          // Only enforce sidebar width when terminal resizes
+          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+
+          // Force Ink to repaint after resize to prevent blank dmux pane
+          forceRepaint();
+
+          // Reset flag after a brief delay
+          setTimeout(() => {
+            isApplyingLayout = false;
+          }, 100);
+        }
+      }, 200);
+    };
+
+    // Listen to stdout resize events
+    process.stdout.on('resize', handleResize);
+
+    return () => {
+      process.stdout.off('resize', handleResize);
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+    };
+  }, [controlPaneId, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, isCreatingPane, runningCommand, isUpdating]);
+
+  // Monitor agent status across panes (returns a map of pane ID to status)
+  const agentStatuses = useAgentStatus({
+    panes,
+    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || actionSystem.actionState.showProgressDialog || !!showCommandPrompt || showFileCopyPrompt,
+    onPaneRemoved: (paneId: string) => {
+      // Check if this pane was intentionally closed
+      // If so, don't re-save - the close action already handled it
+      if (intentionallyClosedPanes.current.has(paneId)) {
+        return;
+      }
+
+      // Pane was removed unexpectedly (e.g., user killed tmux pane manually)
+      // Remove it from our tracking
+      const updatedPanes = panes.filter(p => p.id !== paneId);
+      savePanes(updatedPanes);
+    },
+  });
 
   const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
     setIsCreatingPane(true);
@@ -1020,42 +1485,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
-    // Handle kebab menu navigation
-    if (showKebabMenu && kebabMenuPaneIndex !== null) {
-      const currentPane = panes[kebabMenuPaneIndex];
-      const availableActions = kebabMenuActions;
-
-      if (key.escape) {
-        setShowKebabMenu(false);
-        setKebabMenuPaneIndex(null);
-        setKebabMenuOption(0);
-        setKebabMenuActions([]);
-        return;
-      } else if (key.upArrow) {
-        setKebabMenuOption(Math.max(0, kebabMenuOption - 1));
-        return;
-      } else if (key.downArrow) {
-        setKebabMenuOption(Math.min(availableActions.length - 1, kebabMenuOption + 1));
-        return;
-      } else if (key.return) {
-        // Execute the selected menu action
-        setShowKebabMenu(false);
-
-        const selectedAction = availableActions[kebabMenuOption];
-        if (selectedAction) {
-          // Use the action system to execute
-          actionSystem.executeAction(selectedAction.id, currentPane, { mainBranch: getMainBranch() });
-        }
-
-        setKebabMenuPaneIndex(null);
-        setKebabMenuOption(0);
-        setKebabMenuActions([]);
-        return;
-      }
-      // Don't process other inputs while menu is open
-      return;
-    }
-
     // Handle quit confirm mode - ESC cancels it
     if (quitConfirmMode) {
       if (key.escape) {
@@ -1073,265 +1502,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
-    // Handle hooks dialog
-    if (showHooksDialog) {
-      if (key.escape) {
-        setShowHooksDialog(false);
-        setHooksSelectedIndex(0);
-        // Go back to settings dialog
-        setShowSettingsDialog(true);
-        setSettingsMode('list');
-        return;
-      } else if (key.upArrow) {
-        setHooksSelectedIndex(Math.max(0, hooksSelectedIndex - 1));
-        return;
-      } else if (key.downArrow) {
-        setHooksSelectedIndex(Math.min(hooksData.length - 1, hooksSelectedIndex + 1));
-        return;
-      } else if (input === 'e') {
-        // Edit hooks using an agent
-        setShowHooksDialog(false);
-        setHooksSelectedIndex(0);
-        const prompt = "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit";
-        setPendingPrompt(prompt);
-        setNewPanePrompt(prompt);
-
-        // Choose agent
-        const agents = availableAgents;
-        if (agents.length === 0) {
-          createNewPaneHook(prompt);
-        } else if (agents.length === 1) {
-          createNewPaneHook(prompt, agents[0]);
-        } else {
-          setShowAgentChoiceDialog(true);
-          setAgentChoice(agentChoice || 'claude');
-        }
-        return;
-      }
-      return;
-    }
-
-    // Handle settings dialog
-    if (showSettingsDialog) {
-      if (key.escape) {
-        if (settingsMode === 'list') {
-          // Close settings dialog
-          setShowSettingsDialog(false);
-          setSettingsMode('list');
-          setSettingsSelectedIndex(0);
-          setSettingsEditingKey(undefined);
-        } else {
-          // Go back to list
-          setSettingsMode('list');
-          setSettingsEditingKey(undefined);
-          setSettingsEditingValueIndex(0);
-          setSettingsScopeIndex(0);
-        }
-        return;
-      } else if (key.upArrow) {
-        if (settingsMode === 'list') {
-          setSettingsSelectedIndex(Math.max(0, settingsSelectedIndex - 1));
-        } else if (settingsMode === 'edit') {
-          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
-          const maxIndex = currentDef.type === 'boolean' ? 1 : (currentDef.options?.length || 1) - 1;
-          setSettingsEditingValueIndex(Math.max(0, settingsEditingValueIndex - 1));
-        } else if (settingsMode === 'scope') {
-          setSettingsScopeIndex(Math.max(0, settingsScopeIndex - 1));
-        }
-        return;
-      } else if (key.downArrow) {
-        if (settingsMode === 'list') {
-          setSettingsSelectedIndex(Math.min(SETTING_DEFINITIONS.length - 1, settingsSelectedIndex + 1));
-        } else if (settingsMode === 'edit') {
-          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
-          const maxIndex = currentDef.type === 'boolean' ? 1 : (currentDef.options?.length || 1) - 1;
-          setSettingsEditingValueIndex(Math.min(maxIndex, settingsEditingValueIndex + 1));
-        } else if (settingsMode === 'scope') {
-          setSettingsScopeIndex(Math.min(1, settingsScopeIndex + 1));
-        }
-        return;
-      } else if (key.return) {
-        if (settingsMode === 'list') {
-          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
-
-          // Handle action type - trigger the action instead of editing
-          if (currentDef.type === 'action') {
-            if (currentDef.key === 'hooks') {
-              // Show hooks dialog
-              setShowSettingsDialog(false);
-              const { hasHook } = await import('./utils/hooks.js');
-              const allHookTypes = [
-                'before_pane_create',
-                'pane_created',
-                'worktree_created',
-                'before_pane_close',
-                'pane_closed',
-                'before_worktree_remove',
-                'worktree_removed',
-                'pre_merge',
-                'post_merge',
-                'run_test',
-                'run_dev',
-              ];
-
-              const hooks = allHookTypes.map(hookName => ({
-                name: hookName,
-                active: hasHook(projectRoot || process.cwd(), hookName as any)
-              }));
-
-              setHooksData(hooks);
-              setShowHooksDialog(true);
-              setHooksSelectedIndex(0);
-            }
-            return;
-          }
-
-          // Enter edit mode for regular settings
-          setSettingsEditingKey(currentDef.key);
-          setSettingsMode('edit');
-          // Set initial value index based on current setting
-          const currentValue = settingsManager.getSetting(currentDef.key as keyof import('./types.js').DmuxSettings);
-          if (currentDef.type === 'boolean') {
-            setSettingsEditingValueIndex(currentValue ? 0 : 1);
-          } else if (currentDef.type === 'select' && currentDef.options) {
-            const optIndex = currentDef.options.findIndex(o => o.value === currentValue);
-            setSettingsEditingValueIndex(Math.max(0, optIndex));
-          }
-        } else if (settingsMode === 'edit') {
-          // Go to scope selection
-          setSettingsMode('scope');
-          setSettingsScopeIndex(0);
-        } else if (settingsMode === 'scope') {
-          // Save the setting
-          const currentDef = SETTING_DEFINITIONS[settingsSelectedIndex];
-          const scope = settingsScopeIndex === 0 ? 'global' : 'project';
-
-          // Only save if this is not an action type (actions don't have values)
-          if (currentDef.type !== 'action') {
-            // Calculate the new value
-            let newValue: any;
-            if (currentDef.type === 'boolean') {
-              newValue = settingsEditingValueIndex === 0;
-            } else if (currentDef.type === 'select' && currentDef.options) {
-              newValue = currentDef.options[settingsEditingValueIndex]?.value || '';
-            }
-
-            // Update the setting - cast key to proper type since we know it's not an action
-            settingsManager.updateSetting(currentDef.key as keyof import('./types.js').DmuxSettings, newValue, scope);
-          }
-
-          // Reset to list view
-          setSettingsMode('list');
-          setSettingsEditingKey(undefined);
-          setSettingsEditingValueIndex(0);
-          setSettingsScopeIndex(0);
-          setStatusMessage(`Setting saved (${scope})`);
-          setTimeout(() => setStatusMessage(''), 2000);
-        }
-        return;
-      }
-      return;
-    }
-
-    // Handle action system confirm dialog
-    if (actionSystem.actionState.showConfirmDialog) {
-      if (key.escape) {
-        if (actionSystem.actionState.onConfirmNo) {
-          actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
-        } else {
-          actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
-        }
-        return;
-      } else if (key.upArrow) {
-        actionSystem.setActionState(prev => ({
-          ...prev,
-          confirmSelectedIndex: Math.max(0, prev.confirmSelectedIndex - 1)
-        }));
-        return;
-      } else if (key.downArrow) {
-        actionSystem.setActionState(prev => ({
-          ...prev,
-          confirmSelectedIndex: Math.min(1, prev.confirmSelectedIndex + 1)
-        }));
-        return;
-      } else if (key.return) {
-        // Execute based on selected index
-        if (actionSystem.actionState.confirmSelectedIndex === 0) {
-          if (actionSystem.actionState.onConfirmYes) {
-            actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
-          }
-        } else {
-          if (actionSystem.actionState.onConfirmNo) {
-            actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
-          } else {
-            actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
-          }
-        }
-        return;
-      } else if (input === 'y' || input === 'Y') {
-        // Shortcut: yes
-        if (actionSystem.actionState.onConfirmYes) {
-          actionSystem.executeCallback(actionSystem.actionState.onConfirmYes);
-        }
-        return;
-      } else if (input === 'n' || input === 'N') {
-        // Shortcut: no
-        if (actionSystem.actionState.onConfirmNo) {
-          actionSystem.executeCallback(actionSystem.actionState.onConfirmNo);
-        } else {
-          actionSystem.setActionState(prev => ({ ...prev, showConfirmDialog: false }));
-        }
-        return;
-      }
-      return;
-    }
-
-    // Handle action system input dialog
-    if (actionSystem.actionState.showInputDialog) {
-      if (key.escape) {
-        actionSystem.setActionState(prev => ({ ...prev, showInputDialog: false }));
-        return;
-      } else if (key.return) {
-        if (actionSystem.actionState.onInputSubmit) {
-          actionSystem.executeCallback(async () =>
-            actionSystem.actionState.onInputSubmit!(actionSystem.actionState.inputValue)
-          );
-        }
-        return;
-      }
-      // Let CleanTextInput handle all other key events
-      return;
-    }
-
-    // Handle action system choice dialog
-    if (actionSystem.actionState.showChoiceDialog) {
-      if (key.escape) {
-        actionSystem.setActionState(prev => ({ ...prev, showChoiceDialog: false }));
-        return;
-      } else if (key.upArrow) {
-        actionSystem.setActionState(prev => ({
-          ...prev,
-          choiceSelectedIndex: Math.max(0, prev.choiceSelectedIndex - 1)
-        }));
-        return;
-      } else if (key.downArrow) {
-        const maxIndex = actionSystem.actionState.choiceOptions.length - 1;
-        actionSystem.setActionState(prev => ({
-          ...prev,
-          choiceSelectedIndex: Math.min(maxIndex, prev.choiceSelectedIndex + 1)
-        }));
-        return;
-      } else if (key.return) {
-        const selectedOption = actionSystem.actionState.choiceOptions[actionSystem.actionState.choiceSelectedIndex];
-        if (selectedOption && actionSystem.actionState.onChoiceSelect) {
-          actionSystem.executeCallback(async () =>
-            actionSystem.actionState.onChoiceSelect!(selectedOption.id)
-          );
-        }
-        return;
-      }
-      return;
-    }
 
     if (showFileCopyPrompt) {
       if (input === 'y' || input === 'Y') {
@@ -1367,27 +1537,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
         setCurrentCommandType(null);
     }
-     return;
-   }
-   
-   if (showAgentChoiceDialog) {
-     if (key.escape) {
-       setShowAgentChoiceDialog(false);
-       setShowNewPaneDialog(true);
-       setNewPanePrompt(pendingPrompt);
-       setPendingPrompt('');
-     } else if (key.leftArrow || input === '1' || (input && input.toLowerCase() === 'c')) {
-       setAgentChoice('claude');
-     } else if (key.rightArrow || input === '2' || (input && input.toLowerCase() === 'o')) {
-       setAgentChoice('opencode');
-     } else if (key.return) {
-       const chosen = agentChoice || (availableAgents[0] || 'claude');
-       const promptValue = pendingPrompt;
-       setShowAgentChoiceDialog(false);
-       setPendingPrompt('');
-       await createNewPaneHook(promptValue, chosen);
-       setNewPanePrompt('');
-     }
      return;
    }
    
@@ -1460,19 +1609,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
     
-    if ((input === 'm' || key.return) && selectedIndex < panes.length) {
-      // Open kebab menu for selected pane
-      const selectedPane = panes[selectedIndex];
-      const actions = getAvailableActions(selectedPane, projectSettings);
-      setKebabMenuActions(actions);
-      setShowKebabMenu(true);
-      setKebabMenuPaneIndex(selectedIndex);
-      setKebabMenuOption(0);
+    if (input === 'm' && selectedIndex < panes.length) {
+      // Open kebab menu popup for selected pane
+      await launchKebabMenuPopup(selectedIndex);
     } else if (input === 's') {
-      // Open settings dialog
-      setShowSettingsDialog(true);
-      setSettingsMode('list');
-      setSettingsSelectedIndex(0);
+      // Open settings popup
+      await launchSettingsPopup();
     } else if (input === 'l' && controlPaneId) {
       // Reset layout to sidebar configuration
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
@@ -1554,44 +1696,41 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         isLoading={isLoading}
         showNewPaneDialog={showNewPaneDialog}
         agentStatuses={agentStatuses}
-        kebabMenuPaneIndex={kebabMenuPaneIndex ?? undefined}
       />
 
       {/* Loading dialog */}
       {isLoading && (<LoadingIndicator />)}
 
-      {showNewPaneDialog && !showAgentChoiceDialog && (
+      {showNewPaneDialog && (
         <NewPaneDialog
           value={newPanePrompt}
           onChange={setNewPanePrompt}
-          onSubmit={(value) => {
+          onSubmit={async (value) => {
             const promptValue = value;
             const agents = availableAgents;
+            setShowNewPaneDialog(false);
+            setNewPanePrompt('');
+
             if (agents.length === 0) {
-              setShowNewPaneDialog(false);
-              setNewPanePrompt('');
-              createNewPaneHook(promptValue);
+              await createNewPaneHook(promptValue);
             } else if (agents.length === 1) {
-              setShowNewPaneDialog(false);
-              setNewPanePrompt('');
-              createNewPaneHook(promptValue, agents[0]);
+              await createNewPaneHook(promptValue, agents[0]);
             } else {
-              setPendingPrompt(promptValue);
-              setShowNewPaneDialog(false);
-              setNewPanePrompt('');
-              setShowAgentChoiceDialog(true);
-              setAgentChoice(agentChoice || 'claude');
+              // Multiple agents available - check for default agent setting first
+              const settings = settingsManager.getSettings();
+              if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
+                // Use the default agent from settings
+                await createNewPaneHook(promptValue, settings.defaultAgent);
+              } else {
+                // No default agent configured or default not available - show agent choice popup
+                const selectedAgent = await launchAgentChoicePopup(promptValue);
+                if (selectedAgent) {
+                  await createNewPaneHook(promptValue, selectedAgent);
+                }
+              }
             }
           }}
         />
-      )}
-
-      {showAgentChoiceDialog && (
-        <AgentChoiceDialog agentChoice={agentChoice} />
-      )}
-
-       {isCreatingPane && (
-        <CreatingIndicator message={statusMessage} />
       )}
 
       {showCommandPrompt && (
@@ -1600,83 +1739,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       {showFileCopyPrompt && (
         <FileCopyPrompt />
-      )}
-
-      {showKebabMenu && kebabMenuPaneIndex !== null && panes[kebabMenuPaneIndex] && (
-        <KebabMenu
-          selectedOption={kebabMenuOption}
-          actions={kebabMenuActions}
-          paneName={panes[kebabMenuPaneIndex].slug}
-        />
-      )}
-
-      {/* Settings dialog */}
-      {showSettingsDialog && (
-        <SettingsDialog
-          settings={settingsManager.getSettings()}
-          globalSettings={settingsManager.getGlobalSettings()}
-          projectSettings={settingsManager.getProjectSettings()}
-          settingDefinitions={SETTING_DEFINITIONS}
-          selectedIndex={settingsSelectedIndex}
-          mode={settingsMode}
-          editingKey={settingsEditingKey as keyof import('./types.js').DmuxSettings | undefined}
-          editingValueIndex={settingsEditingValueIndex}
-          scopeIndex={settingsScopeIndex}
-        />
-      )}
-
-      {/* Hooks dialog */}
-      {showHooksDialog && (
-        <HooksDialog
-          hooks={hooksData}
-          selectedIndex={hooksSelectedIndex}
-        />
-      )}
-
-      {/* Action system confirm dialog */}
-      {actionSystem.actionState.showConfirmDialog && (
-        <ActionConfirmDialog
-          key="confirm-dialog"
-          title={actionSystem.actionState.confirmTitle}
-          message={actionSystem.actionState.confirmMessage}
-          yesLabel={actionSystem.actionState.confirmYesLabel}
-          noLabel={actionSystem.actionState.confirmNoLabel}
-          selectedIndex={actionSystem.actionState.confirmSelectedIndex}
-        />
-      )}
-
-      {/* Action system choice dialog */}
-      {actionSystem.actionState.showChoiceDialog && (
-        <ActionChoiceDialog
-          key="choice-dialog"
-          title={actionSystem.actionState.choiceTitle}
-          message={actionSystem.actionState.choiceMessage}
-          options={actionSystem.actionState.choiceOptions}
-          selectedIndex={actionSystem.actionState.choiceSelectedIndex}
-        />
-      )}
-
-      {/* Action system input dialog */}
-      {actionSystem.actionState.showInputDialog && (
-        <ActionInputDialog
-          key="input-dialog"
-          title={actionSystem.actionState.inputTitle}
-          message={actionSystem.actionState.inputMessage}
-          placeholder={actionSystem.actionState.inputPlaceholder}
-          value={actionSystem.actionState.inputValue}
-          onValueChange={(value) => {
-            actionSystem.setActionState(prev => ({ ...prev, inputValue: value }));
-          }}
-        />
-      )}
-
-      {/* Action system progress dialog */}
-      {actionSystem.actionState.showProgressDialog && (
-        <ActionProgressDialog
-          key="progress-dialog"
-          message={actionSystem.actionState.progressMessage}
-          percent={actionSystem.actionState.progressPercent}
-        />
       )}
 
       {runningCommand && (

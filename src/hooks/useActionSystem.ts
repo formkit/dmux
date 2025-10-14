@@ -22,6 +22,15 @@ interface UseActionSystemParams {
   projectName: string;
   onPaneUpdate?: (pane: DmuxPane) => void;
   onPaneRemove?: (paneId: string) => void;
+  forceRepaint?: () => void;
+
+  // Popup launchers (optional - falls back to inline dialogs if not provided)
+  popupLaunchers?: {
+    launchConfirmPopup?: (title: string, message: string, yesLabel?: string, noLabel?: string) => Promise<boolean>;
+    launchChoicePopup?: (title: string, message: string, options: Array<{id: string, label: string, description?: string, danger?: boolean, default?: boolean}>) => Promise<string | null>;
+    launchInputPopup?: (title: string, message: string, placeholder?: string, defaultValue?: string) => Promise<string | null>;
+    launchProgressPopup?: (message: string, type: 'info' | 'success' | 'error', timeout: number) => Promise<void>;
+  };
 }
 
 export default function useActionSystem({
@@ -31,6 +40,8 @@ export default function useActionSystem({
   projectName,
   onPaneUpdate,
   onPaneRemove,
+  forceRepaint,
+  popupLaunchers,
 }: UseActionSystemParams) {
   // TUI state for rendering dialogs
   const [actionState, setActionState] = useState<TUIActionState>(createInitialTUIState());
@@ -43,7 +54,8 @@ export default function useActionSystem({
     savePanes,
     onPaneUpdate,
     onPaneRemove,
-  }), [panes, sessionName, projectName, savePanes, onPaneUpdate, onPaneRemove]);
+    forceRepaint,
+  }), [panes, sessionName, projectName, savePanes, onPaneUpdate, onPaneRemove, forceRepaint]);
 
   // Execute an action and handle the result
   const executeActionWithHandling = useCallback(async (
@@ -54,7 +66,58 @@ export default function useActionSystem({
     try {
       const result = await executeAction(actionId, pane, context, params);
 
-      // Convert result to TUI state updates
+      // If popup launchers are available, handle interactive results with popups
+      if (popupLaunchers) {
+        if (result.type === 'confirm' && popupLaunchers.launchConfirmPopup) {
+          const confirmed = await popupLaunchers.launchConfirmPopup(
+            result.title || 'Confirm',
+            result.message,
+            result.confirmLabel,
+            result.cancelLabel
+          );
+
+          if (confirmed && result.onConfirm) {
+            const nextResult = await result.onConfirm();
+            // Recursively handle the next result
+            await handleResultWithPopups(nextResult);
+          } else if (!confirmed && result.onCancel) {
+            const nextResult = await result.onCancel();
+            await handleResultWithPopups(nextResult);
+          }
+          return;
+        }
+
+        if (result.type === 'choice' && popupLaunchers.launchChoicePopup) {
+          const selectedId = await popupLaunchers.launchChoicePopup(
+            result.title || 'Choose',
+            result.message,
+            result.options || []
+          );
+
+          if (selectedId && result.onSelect) {
+            const nextResult = await result.onSelect(selectedId);
+            await handleResultWithPopups(nextResult);
+          }
+          return;
+        }
+
+        if (result.type === 'input' && popupLaunchers.launchInputPopup) {
+          const inputValue = await popupLaunchers.launchInputPopup(
+            result.title || 'Input',
+            result.message,
+            result.placeholder,
+            result.defaultValue
+          );
+
+          if (inputValue !== null && result.onSubmit) {
+            const nextResult = await result.onSubmit(inputValue);
+            await handleResultWithPopups(nextResult);
+          }
+          return;
+        }
+      }
+
+      // Fall back to inline dialogs if popup launchers not available
       handleActionResult(result, actionState, (updates) => {
         setActionState(prev => ({ ...prev, ...updates }));
       });
@@ -66,7 +129,78 @@ export default function useActionSystem({
         statusType: 'error',
       }));
     }
-  }, [context, actionState]);
+
+    // Helper to recursively handle action results with popups
+    async function handleResultWithPopups(result: ActionResult): Promise<void> {
+      if (result.type === 'confirm' && popupLaunchers?.launchConfirmPopup) {
+        const confirmed = await popupLaunchers.launchConfirmPopup(
+          result.title || 'Confirm',
+          result.message,
+          result.confirmLabel,
+          result.cancelLabel
+        );
+
+        if (confirmed && result.onConfirm) {
+          const nextResult = await result.onConfirm();
+          await handleResultWithPopups(nextResult);
+        } else if (!confirmed && result.onCancel) {
+          const nextResult = await result.onCancel();
+          await handleResultWithPopups(nextResult);
+        }
+      } else if (result.type === 'choice' && popupLaunchers?.launchChoicePopup) {
+        const selectedId = await popupLaunchers.launchChoicePopup(
+          result.title || 'Choose',
+          result.message,
+          result.options || []
+        );
+
+        if (selectedId && result.onSelect) {
+          const nextResult = await result.onSelect(selectedId);
+          await handleResultWithPopups(nextResult);
+        }
+      } else if (result.type === 'input' && popupLaunchers?.launchInputPopup) {
+        const inputValue = await popupLaunchers.launchInputPopup(
+          result.title || 'Input',
+          result.message,
+          result.placeholder,
+          result.defaultValue
+        );
+
+        if (inputValue !== null && result.onSubmit) {
+          const nextResult = await result.onSubmit(inputValue);
+          await handleResultWithPopups(nextResult);
+        }
+      } else {
+        // For non-interactive results (success, error, info, etc.)
+        // Use progress popup if available, otherwise fall back to inline status message
+        if (popupLaunchers?.launchProgressPopup) {
+          const type = result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info';
+          await popupLaunchers.launchProgressPopup(result.message, type, 1000);
+
+          // Force repaint after popup dismisses (with a slight delay to avoid layout issues)
+          if (context.forceRepaint) {
+            setTimeout(() => {
+              context.forceRepaint!();
+            }, 300);
+          }
+        } else {
+          setActionState(prev => ({
+            ...prev,
+            statusMessage: result.message,
+            statusType: result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info',
+          }));
+
+          // Auto-clear after 3 seconds
+          setTimeout(() => {
+            setActionState(prev => ({
+              ...prev,
+              statusMessage: '',
+            }));
+          }, 3000);
+        }
+      }
+    }
+  }, [context, actionState, popupLaunchers]);
 
   // Handle callback execution (for multi-step actions)
   const executeCallback = useCallback(async (

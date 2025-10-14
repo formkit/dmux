@@ -176,7 +176,7 @@ async function executeCloseOption(
       await context.savePanes(updatedPanes);
 
       if (context.onPaneRemove) {
-        context.onPaneRemove(pane.id);
+        context.onPaneRemove(pane.paneId); // Pass tmux pane ID, not dmux ID
       }
 
       // Wait a bit for the file save to stabilize
