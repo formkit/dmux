@@ -356,6 +356,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           // Only enforce sidebar width when terminal resizes
           enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
 
+          // Force Ink to repaint after resize to prevent blank dmux pane
+          forceRepaint();
+
           // Reset flag after a brief delay
           setTimeout(() => {
             isApplyingLayout = false;

@@ -109,6 +109,9 @@ export const setupSidebarLayout = (controlPaneId: string): string => {
     // Resize control pane to fixed width
     enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
 
+    // Refresh to ensure panes are painted correctly after layout
+    execSync('tmux refresh-client', { stdio: 'pipe' });
+
     return newPaneId;
   } catch (error) {
     throw new Error(`Failed to setup sidebar layout: ${error}`);

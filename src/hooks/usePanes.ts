@@ -140,6 +140,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         // Apply even-horizontal layout after creating panes
         try {
           execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+          // Refresh to ensure panes are painted correctly after layout change
+          execSync('tmux refresh-client', { stdio: 'pipe' });
         } catch {}
 
         allPaneIds = [];

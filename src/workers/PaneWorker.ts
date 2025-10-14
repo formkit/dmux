@@ -272,6 +272,9 @@ class PaneWorker {
       `tmux resize-pane -t '${this.tmuxPaneId}' ${args.join(' ')}`,
       { stdio: 'pipe', timeout: 1000 }
     );
+
+    // Refresh to ensure pane is painted correctly after resize
+    execSync('tmux refresh-client', { stdio: 'pipe', timeout: 1000 });
   }
 
   private shutdown(): void {
