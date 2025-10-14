@@ -24,7 +24,7 @@ export class DmuxServer {
       this.port = await findAvailablePort([42000, 42001, 42002, 42003, 42004]);
 
       // Setup routes
-      setupRoutes(this.app);
+      setupRoutes(this.app, this);
 
       // Create HTTP server with h3 app
       this.server = createServer(toNodeListener(this.app));

@@ -33,7 +33,7 @@ import {
 
 const stateManager = StateManager.getInstance();
 
-export function setupRoutes(app: App) {
+export function setupRoutes(app: App, server?: any) {
   // CORS middleware for all routes
   app.use('/', eventHandler(async (event) => {
     // Get the origin from the request
@@ -208,6 +208,27 @@ export function setupRoutes(app: App) {
     if (event.node.req.method === 'POST') {
       stateManager.markAllLogsAsRead();
       return { success: true, message: 'All logs marked as read' };
+    }
+
+    event.node.res.statusCode = 405;
+    return { error: 'Method not allowed' };
+  }));
+
+  // POST /api/tunnel - Create tunnel for remote access
+  app.use('/api/tunnel', eventHandler(async (event) => {
+    if (event.node.req.method === 'POST') {
+      if (!server) {
+        event.node.res.statusCode = 500;
+        return { error: 'Server instance not available' };
+      }
+
+      try {
+        const url = await server.startTunnel();
+        return { url };
+      } catch (error: any) {
+        event.node.res.statusCode = 500;
+        return { error: error.message || 'Failed to create tunnel' };
+      }
     }
 
     event.node.res.statusCode = 405;

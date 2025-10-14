@@ -104,7 +104,9 @@
       "mcp__playwright__browser_resize",
       "Bash(git reset:*)",
       "mcp__read-website-fast__read_website",
-      "Read(//Users/andrewboyd/projects/dmux/**)"
+      "Read(//Users/andrewboyd/projects/dmux/**)",
+      "WebFetch(domain:man.openbsd.org)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": [],

@@ -24,10 +24,11 @@ import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
 import { capturePaneContent } from './utils/paneCapture.js';
 import { StateManager } from './shared/StateManager.js';
+import { LogService } from './services/LogService.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
 import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
 import { SettingsManager, SETTING_DEFINITIONS } from './utils/settingsManager.js';
-import { launchNodePopup, supportsPopups } from './utils/popup.js';
+import { launchNodePopup, launchNodePopupNonBlocking, supportsPopups, ensureMouseMode, POPUP_POSITIONING, type PopupHandle } from './utils/popup.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -45,7 +46,6 @@ import RunningIndicator from './components/RunningIndicator.js';
 import UpdatingIndicator from './components/UpdatingIndicator.js';
 import CreatingIndicator from './components/CreatingIndicator.js';
 import FooterHelp from './components/FooterHelp.js';
-import QRCode from './components/QRCode.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server, controlPaneId }) => {
@@ -58,9 +58,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [newPanePrompt, setNewPanePrompt] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [isCreatingPane, setIsCreatingPane] = useState(false);
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
-  const [isCreatingTunnel, setIsCreatingTunnel] = useState(false);
 
   // Settings state
   const [settingsManager] = useState(() => new SettingsManager(projectRoot));
@@ -77,12 +74,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [quitConfirmMode, setQuitConfirmMode] = useState(false);
   // Debug message state - for temporary logging messages
   const [debugMessage, setDebugMessage] = useState<string>('');
+  // Current git branch state (for dev builds)
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   // Update state handled by hook
   const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
 
   // Flag to ignore input temporarily after popup closes (prevents buffered keys)
   const [ignoreInput, setIgnoreInput] = useState(false);
+
+  // Active popup tracking for click-outside-to-close
+  // Use ref instead of state to avoid closure issues in useInput
+  const activePopupRef = React.useRef<PopupHandle<any> | null>(null);
 
   // Agent selection state
   const { availableAgents } = useAgentDetection();
@@ -94,22 +97,31 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Track terminal dimensions for responsive layout
   const terminalWidth = useTerminalWidth();
 
-  // Track unread error count for logs badge
+  // Track unread error and warning counts for logs badge
   const [unreadErrorCount, setUnreadErrorCount] = useState(0);
+  const [unreadWarningCount, setUnreadWarningCount] = useState(0);
 
-  // Subscribe to StateManager for unread error count updates
+  // Tunnel state
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [tunnelCreating, setTunnelCreating] = useState(false);
+  const [tunnelSpinnerFrame, setTunnelSpinnerFrame] = useState(0);
+  const [localIp, setLocalIp] = useState<string>('127.0.0.1');
+  const [tunnelCopied, setTunnelCopied] = useState(false);
+
+  // Subscribe to StateManager for unread error/warning count updates
   useEffect(() => {
     const stateManager = StateManager.getInstance();
 
-    const updateErrorCount = () => {
+    const updateCounts = () => {
       setUnreadErrorCount(stateManager.getUnreadErrorCount());
+      setUnreadWarningCount(stateManager.getUnreadWarningCount());
     };
 
     // Initial count
-    updateErrorCount();
+    updateCounts();
 
     // Subscribe to changes
-    const unsubscribe = stateManager.subscribe(updateErrorCount);
+    const unsubscribe = stateManager.subscribe(updateCounts);
 
     return () => {
       unsubscribe();
@@ -153,6 +165,80 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return () => clearTimeout(timer);
     }
   }, [forceRepaintTrigger]);
+
+  // Get local network IP on mount
+  useEffect(() => {
+    try {
+      // Get local IP address (not 127.0.0.1)
+      const result = execSync(`hostname -I 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      }).trim();
+      if (result) {
+        setLocalIp(result.split(' ')[0]); // Take first IP if multiple
+      }
+    } catch {
+      // Fallback to 127.0.0.1
+      setLocalIp('127.0.0.1');
+    }
+  }, []);
+
+  // Enable mouse tracking for click-outside-to-close popups
+  useEffect(() => {
+    const logService = LogService.getInstance();
+
+    // Check current tmux mouse mode
+    try {
+      const mouseMode = execSync('tmux show -g mouse', { encoding: 'utf-8' }).trim();
+      logService.info(`Current tmux mouse mode: ${mouseMode}`, 'MouseTracking');
+    } catch (err) {
+      logService.warn('Failed to check tmux mouse mode', 'MouseTracking');
+    }
+
+    // Enable mouse tracking mode (all mouse events)
+    process.stdout.write('\x1b[?1003h');
+    logService.info('Sent mouse tracking enable escape code: \\x1b[?1003h', 'MouseTracking');
+
+    // Also try button event tracking as fallback
+    process.stdout.write('\x1b[?1002h');
+    logService.info('Sent button tracking enable escape code: \\x1b[?1002h', 'MouseTracking');
+
+    return () => {
+      // Disable mouse tracking on unmount
+      process.stdout.write('\x1b[?1003l');
+      process.stdout.write('\x1b[?1002l');
+      logService.info('Mouse tracking disabled', 'MouseTracking');
+    };
+  }, []);
+
+  // Spinner animation for tunnel creation
+  useEffect(() => {
+    if (!tunnelCreating) return;
+
+    const spinnerInterval = setInterval(() => {
+      setTunnelSpinnerFrame((prev) => (prev + 1) % 10);
+    }, 80); // Update every 80ms
+
+    return () => clearInterval(spinnerInterval);
+  }, [tunnelCreating]);
+
+  // Get current git branch on mount (only for dev builds)
+  useEffect(() => {
+    const isDev = process.env.DMUX_DEV === 'true' || __dirname.includes('dist') === false;
+    if (isDev) {
+      try {
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          cwd: projectRoot
+        }).trim();
+        setCurrentBranch(branch);
+      } catch {
+        // Not in a git repo or git not available
+        setCurrentBranch(null);
+      }
+    }
+  }, [projectRoot]);
 
   // Pane creation
   const { createNewPane: createNewPaneHook } = usePaneCreation({
@@ -269,8 +355,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     };
     process.on('SIGTERM', handleTermination);
 
-    // Check if tmux supports popups (3.2+)
-    setPopupsSupported(supportsPopups());
+    // Check if tmux supports popups (3.2+) and enable mouse mode for click-outside-to-close
+    const popupSupport = supportsPopups();
+    setPopupsSupported(popupSupport);
+    if (popupSupport) {
+      // Enable mouse mode only for this dmux session (not global)
+      ensureMouseMode(sessionName);
+    }
 
     // Test debug message on mount
     StateManager.getInstance().setDebugMessage('Debug logging initialized - watching for AI activity...');
@@ -328,19 +419,28 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'newPanePopup.js');
 
-      // Launch the popup and wait for result
-      // Center over content area (accounting for 40-char sidebar)
-      const result = await launchNodePopup<string>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<string>(
         popupScriptPath,
         [],
         {
+          ...POPUP_POSITIONING.centeredWithSidebar(SIDEBAR_WIDTH),
           width: 90,
           height: 18,
-          title: '  ✨ dmux - Create New Pane  ',
-          centered: true,
-          leftOffset: SIDEBAR_WIDTH  // Account for sidebar when centering
+          title: '  ✨ dmux - Create New Pane  '
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      LogService.getInstance().info(`Popup created - PID: ${popupHandle.pid}, bounds: ${JSON.stringify(popupHandle.bounds)}`, 'PopupTracking');
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      LogService.getInstance().info('Popup closed, clearing tracking', 'PopupTracking');
+      activePopupRef.current = null;
 
       // Ignore input briefly after popup closes to prevent buffered keys
       setIgnoreInput(true);
@@ -407,19 +507,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const actions = getAvailableActions(selectedPane, projectSettings);
       const actionsJson = JSON.stringify(actions);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      const result = await launchNodePopup<string>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<string>(
         popupScriptPath,
         [selectedPane.slug, actionsJson],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 60,
           height: Math.min(20, actions.length + 5),
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: `Menu: ${selectedPane.slug}`
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       if (result.success && result.data) {
         // User selected an action - execute it
@@ -459,19 +566,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const dataJson = JSON.stringify({ title, message, yesLabel, noLabel });
       await fs.writeFile(dataFile, dataJson);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      const result = await launchNodePopup<boolean>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<boolean>(
         popupScriptPath,
         [dataFile],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 60,
           height: 12,
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: title || 'Confirm'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -513,19 +627,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const agentsJson = JSON.stringify(availableAgents);
       const defaultAgentArg = agentChoice || availableAgents[0] || 'claude';
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      const result = await launchNodePopup<'claude' | 'opencode'>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<'claude' | 'opencode'>(
         popupScriptPath,
         [agentsJson, defaultAgentArg],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 50,
           height: 10,
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: 'Select Agent'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       if (result.success && result.data) {
         return result.data;
@@ -582,22 +703,28 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       const hooksJson = JSON.stringify(hooks);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      // Height calculation: hooks(11) + actions box(8) + help(2) + padding(3) = 24
-      const result = await launchNodePopup<{
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<{
         action?: 'edit' | 'view';
       }>(
         popupScriptPath,
         [hooksJson],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: 24,
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: '🪝 Manage Hooks'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       if (result.success && result.data?.action === 'edit') {
         // Edit hooks using an agent
@@ -667,26 +794,29 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const dataJson = JSON.stringify(logsData);
       await fs.writeFile(dataFile, dataJson);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      // Use 90% of terminal height and most of remaining width
+      // Launch the popup with large positioning
       // Get tmux client dimensions (not process.stdout which is just the sidebar)
       const tmuxDims = execSync('tmux display-message -p "#{client_width},#{client_height}"', { encoding: 'utf-8' }).trim();
       const [termWidth, termHeight] = tmuxDims.split(',').map(Number);
-      const popupHeight = Math.floor(termHeight * 0.9);
-      const popupWidth = Math.min(termWidth - SIDEBAR_WIDTH - 2, 100);
 
-      const result = await launchNodePopup<void>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<void>(
         popupScriptPath,
         [dataFile],
         {
-          width: popupWidth,
-          height: popupHeight,
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
+          ...POPUP_POSITIONING.large(SIDEBAR_WIDTH, termWidth, termHeight),
           title: '🪵 dmux Logs'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -698,6 +828,149 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Popup closed - mark all logs as read
       if (result.success) {
         stateManager.markAllLogsAsRead();
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchShortcutsPopup = async () => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'shortcutsPopup.js');
+
+      // Prepare data for shortcuts popup
+      const shortcutsData = {
+        hasSidebarLayout: !!controlPaneId,
+        showRemoteKey: !!server
+      };
+
+      // Write data to temp file
+      const dataFile = `/tmp/dmux-shortcuts-${Date.now()}.json`;
+      const dataJson = JSON.stringify(shortcutsData);
+      await fs.writeFile(dataFile, dataJson);
+
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<void>(
+        popupScriptPath,
+        [dataFile],
+        {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
+          width: 50,
+          height: 20,
+          title: '⌨️  Keyboard Shortcuts'
+        }
+      );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
+
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch (err) {
+        // Ignore cleanup errors
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchRemotePopup = async () => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    // Check if server is available and tunnel URL exists
+    if (!server || !serverPort || !tunnelUrl) {
+      setStatusMessage('Tunnel not ready');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'remotePopup.js');
+
+      // Prepare status file with existing tunnel URL
+      const tunnelStatusFile = `/tmp/dmux-tunnel-status-${Date.now()}.json`;
+      await fs.writeFile(tunnelStatusFile, JSON.stringify({ url: tunnelUrl }));
+
+      // Prepare data for remote popup
+      const remoteData = {
+        loading: false,
+        serverPort: serverPort,
+        statusFile: tunnelStatusFile
+      };
+
+      // Write data to temp file
+      const dataFile = `/tmp/dmux-remote-${Date.now()}.json`;
+      await fs.writeFile(dataFile, JSON.stringify(remoteData));
+
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<{ closed: boolean; copied: boolean }>(
+        popupScriptPath,
+        [dataFile],
+        {
+          ...POPUP_POSITIONING.centeredWithSidebar(SIDEBAR_WIDTH),
+          width: 60,
+          height: 30,
+          title: '🌐 Remote Access'
+        }
+      );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
+
+      // Show "Copied!" message if URL was copied
+      // Note: result is the parsed JSON directly, not wrapped in PopupResult.data
+      if (result && (result as any).copied) {
+        setTunnelCopied(true);
+        setTimeout(() => setTunnelCopied(false), 2000);
+      }
+
+      // Clean up temp files
+      try {
+        await fs.unlink(dataFile);
+      } catch (err) {
+        // Ignore cleanup errors
+      }
+      try {
+        await fs.unlink(tunnelStatusFile);
+      } catch (err) {
+        // Ignore cleanup errors (file might not exist yet)
       }
     } catch (error: any) {
       setStatusMessage(`Failed to launch popup: ${error.message}`);
@@ -730,19 +1003,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       };
       const settingsJson = JSON.stringify(settingsData);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      const result = await launchNodePopup<any>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<any>(
         popupScriptPath,
         [settingsJson],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: Math.min(25, SETTING_DEFINITIONS.length + 8),
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: '⚙️  Settings'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       if (result.success) {
         // Check if this is an action result (action field at top level)
@@ -793,19 +1073,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const dataJson = JSON.stringify({ title, message, options });
       await fs.writeFile(dataFile, dataJson);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      const result = await launchNodePopup<string>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<string>(
         popupScriptPath,
         [dataFile],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: Math.min(25, options.length * 3 + 8),
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: title || 'Choose Option'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -849,19 +1136,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const dataJson = JSON.stringify({ title, message, placeholder, defaultValue });
       await fs.writeFile(dataFile, dataJson);
 
-      // Launch the popup - position at top, 1 char right of sidebar
-      const result = await launchNodePopup<string>(
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<string>(
         popupScriptPath,
         [dataFile],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: 15,
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: title || 'Input'
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -911,18 +1205,27 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const titleText = type === 'success' ? '✓ Success' :
                         type === 'error' ? '✗ Error' :
                         type === 'info' ? 'ℹ Info' : 'Progress';
-      await launchNodePopup<void>(
+
+      // Launch the popup non-blocking and track it
+      const popupHandle = launchNodePopupNonBlocking<void>(
         popupScriptPath,
         [dataFile],
         {
+          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: Math.min(15, lines + 4),
-          centered: false,
-          leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0,
           title: titleText
         }
       );
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -1379,7 +1682,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     
     // Re-set the title for the dmux pane
     try {
-      execSync(`tmux select-pane -t '${originalPaneId}' -T "dmux-${projectName}"`, { stdio: 'pipe' });
+      execSync(`tmux select-pane -t '${originalPaneId}' -T "dmux v${packageJson.version} - ${projectName}"`, { stdio: 'pipe' });
     } catch {
       // Ignore if setting title fails
     }
@@ -1572,6 +1875,77 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   };
 
   useInput(async (input: string, key: any) => {
+    const logService = LogService.getInstance();
+    const activePopup = activePopupRef.current;
+
+    // Log all input for debugging (only first 50 chars to avoid spam)
+    const inputPreview = input.length > 50 ? input.substring(0, 50) + '...' : input;
+    logService.info(`Input: "${inputPreview}", popup: ${!!activePopup}`, 'InputDebug');
+
+    // Manual mouse sequence parser
+    // Format: ESC[M<button><x><y> where button, x, y are encoded as characters
+    // Button codes: ' ' (32) = left press, '#' (35) = left release, 'a' (97) = left drag
+    // '@' (64) = left button down with modifiers
+    // Coordinates: ASCII value - 32 = actual coordinate
+    const mouseSeqMatch = input.match(/^\[M(.)(.)(.)/);
+
+    if (mouseSeqMatch && activePopup) {
+      const buttonChar = mouseSeqMatch[1];
+      const xChar = mouseSeqMatch[2];
+      const yChar = mouseSeqMatch[3];
+
+      // Decode coordinates (ASCII value - 32)
+      const x = xChar.charCodeAt(0) - 32;
+      const y = yChar.charCodeAt(0) - 32;
+      const buttonCode = buttonChar.charCodeAt(0);
+
+      // Button codes:
+      // 32 (' ') = left button press
+      // 35 ('#') = left button release
+      // 64-67 (@, A, B, C) = drag/move events
+      // 96-99 (`, a, b, c) = drag continuation
+
+      const isLeftClick = buttonCode === 32; // Space = left button press
+      const isLeftRelease = buttonCode === 35; // # = left button release
+
+      logService.info(`Parsed mouse: button=${buttonCode} (${buttonChar}), x=${x}, y=${y}, isClick=${isLeftClick}, isRelease=${isLeftRelease}`, 'MouseParser');
+
+      // Only handle left button PRESS events (not drag or release)
+      if (isLeftClick) {
+        const { bounds } = activePopup;
+
+        logService.info(`Popup bounds: x=${bounds.x}, y=${bounds.y}, w=${bounds.width}, h=${bounds.height}`, 'MouseParser');
+
+        // Check if click is outside popup bounds
+        const clickedOutside =
+          x < bounds.x ||
+          x >= bounds.x + bounds.width ||
+          y < bounds.y ||
+          y >= bounds.y + bounds.height;
+
+        logService.info(`Click check - clickedOutside: ${clickedOutside}, bounds: [${bounds.x}-${bounds.x + bounds.width}] x [${bounds.y}-${bounds.y + bounds.height}], click: (${x}, ${y})`, 'MouseParser');
+
+        if (clickedOutside) {
+          logService.info('✓ Closing popup - click detected outside bounds', 'MouseParser');
+          // Kill the popup process
+          activePopup.kill();
+          activePopupRef.current = null;
+
+          // Set ignore input flag briefly to prevent buffered keys
+          setIgnoreInput(true);
+          setTimeout(() => setIgnoreInput(false), 100);
+          return; // Don't process this input further
+        } else {
+          logService.info('Click inside popup bounds - not closing', 'MouseParser');
+        }
+      }
+    }
+
+    // Log Ink's mouse parsing for comparison (will always be false but keeping for reference)
+    if (key.mouse) {
+      logService.info(`Ink parsed mouse event: ${JSON.stringify(key.mouse)}`, 'MouseEvent');
+    }
+
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
       return;
@@ -1593,7 +1967,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       return;
     }
 
-    if (isCreatingPane || runningCommand || isUpdating || isLoading || isCreatingTunnel) {
+    if (isCreatingPane || runningCommand || isUpdating || isLoading) {
       // Disable input while performing operations or loading
       return;
     }
@@ -1605,14 +1979,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         return;
       }
       // Allow other inputs to continue (don't return early)
-    }
-
-    // Handle QR code view
-    if (showQRCode) {
-      if (key.escape) {
-        setShowQRCode(false);
-      }
-      return;
     }
 
 
@@ -1731,6 +2097,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     } else if (input === 'l') {
       // Open logs popup
       await launchLogsPopup();
+    } else if (input === '?') {
+      // Open keyboard shortcuts popup
+      await launchShortcutsPopup();
     } else if (input === 'L' && controlPaneId) {
       // Reset layout to sidebar configuration (Shift+L)
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
@@ -1739,25 +2108,27 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     } else if (input === 'q') {
       cleanExit();
     } else if (input === 'r' && server) {
-      // Create tunnel if not already created, then show QR code
-      if (!tunnelUrl) {
-        setIsCreatingTunnel(true);
-        setStatusMessage('Creating tunnel...');
-        try {
-          const url = await server.startTunnel();
-          setTunnelUrl(url);
-          setStatusMessage('');
-          setShowQRCode(true);
-        } catch (error) {
-          setStatusMessage('Failed to create tunnel');
-          setTimeout(() => setStatusMessage(''), 3000);
-        } finally {
-          setIsCreatingTunnel(false);
-        }
-      } else {
-        // Tunnel already exists, just show the QR code
-        setShowQRCode(true);
+      // Handle remote tunnel
+      if (tunnelUrl) {
+        // Tunnel exists - open popup with QR code
+        await launchRemotePopup();
+      } else if (!tunnelCreating) {
+        // Start tunnel creation
+        setTunnelCreating(true);
+        (async () => {
+          try {
+            const url = await server.startTunnel();
+            setTunnelUrl(url);
+          } catch (error: any) {
+            setStatusMessage(`Failed to create tunnel: ${error.message}`);
+            setTimeout(() => setStatusMessage(''), 3000);
+          } finally {
+            setTunnelCreating(false);
+          }
+        })();
       }
+      // If tunnelCreating is true, do nothing (already creating)
+      return;
     } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
       // Launch popup modal for new pane
       await launchNewPanePopup();
@@ -1780,29 +2151,38 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     }
   });
 
-  // If showing QR code, render only that
-  if (showQRCode && tunnelUrl) {
-    return (
-      <Box flexDirection="column">
-        <Box marginBottom={1}>
-          <Text bold color="cyan">
-            dmux - Remote Access
-          </Text>
-        </Box>
-        <QRCode url={tunnelUrl} />
-        <Box marginTop={1}>
-          <Text dimColor>Press ESC to return to pane list</Text>
-        </Box>
-      </Box>
-    );
-  }
 
   // Calculate available height for content (terminal height - footer lines)
-  const footerLines = 4; // FooterHelp + version info
+  // Footer height varies based on state:
+  // - Quit confirm mode: 2 lines (marginTop + 1 text line)
+  // - Normal mode calculation:
+  //   - Base: 4 lines (marginTop + logs divider + logs line + keyboard shortcuts)
+  //   - Network section: +4 lines (divider, local IP, remote tunnel, divider) if serverPort exists
+  //   - Debug info: +1 line if DEBUG_DMUX
+  //   - Status line: +1 line if updateAvailable/currentBranch/debugMessage
+  let footerLines = 2;
+  if (quitConfirmMode) {
+    footerLines = 2;
+  } else {
+    // Base footer (logs divider + logs + shortcuts - always shown)
+    footerLines = 4; // marginTop + logs divider + logs + shortcuts
+    // Add network section (now 2 lines for local IP + remote tunnel, plus 2 dividers)
+    if (serverPort && serverPort > 0) {
+      footerLines += 4;
+    }
+    // Add debug info
+    if (process.env.DEBUG_DMUX) {
+      footerLines += 1;
+    }
+    // Add status line
+    if (updateAvailable || currentBranch || debugMessage) {
+      footerLines += 1;
+    }
+  }
   const contentHeight = Math.max(terminalHeight - footerLines, 10);
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={terminalHeight}>
       {/* CRITICAL: Hidden spinner that forces re-render when shown */}
       {showRepaintSpinner && (
         <Box marginTop={-10} marginLeft={-100}>
@@ -1810,8 +2190,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         </Box>
       )}
 
-      {/* Main content area - fixed height to push footer down */}
-      <Box flexDirection="column" height={contentHeight}>
+      {/* Main content area */}
+      <Box flexDirection="column">
         <PanesGrid
           panes={panes}
           selectedIndex={selectedIndex}
@@ -1871,15 +2251,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         <UpdatingIndicator />
       )}
 
-      {isCreatingTunnel && (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1} marginTop={1}>
-          <Text bold color="cyan">Creating tunnel...</Text>
-          <Box marginTop={1}>
-            <Text dimColor>This may take a few moments...</Text>
-          </Box>
-        </Box>
-      )}
-
       {statusMessage && (
         <Box marginTop={1}>
           <Text color="green">{statusMessage}</Text>
@@ -1900,12 +2271,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       )}
       </Box>
 
+      {/* Spacer to push footer to bottom */}
+      <Box flexGrow={1} />
+
       {/* Footer - always at bottom */}
       <FooterHelp
         show={!showNewPaneDialog && !showCommandPrompt}
         showRemoteKey={!!server}
         quitConfirmMode={quitConfirmMode}
         hasSidebarLayout={!!controlPaneId}
+        serverPort={serverPort}
+        unreadErrorCount={unreadErrorCount}
+        unreadWarningCount={unreadWarningCount}
+        localIp={localIp}
+        tunnelUrl={tunnelUrl}
+        tunnelCreating={tunnelCreating}
+        tunnelCopied={tunnelCopied}
+        tunnelSpinner={(() => {
+          const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+          return spinnerFrames[tunnelSpinnerFrame];
+        })()}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined;
           const cols = Math.max(1, Math.floor(terminalWidth / 37));
@@ -1915,22 +2300,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         })()}
       />
 
-      <Text dimColor>
-        {updateAvailable && updateInfo && (
-          <Text color="red" bold>Update available: npm i -g dmux@latest </Text>
-        )}
-        v{packageJson.version}
-        <Text color="magenta" bold> • SIDEBAR-40COL-BUILD</Text>
-        {serverPort && serverPort > 0 && (
-          <Text dimColor> • <Text color="cyan">http://127.0.0.1:{serverPort}</Text></Text>
-        )}
-        {unreadErrorCount > 0 && (
-          <Text> • <Text color="red" bold>🪵 Logs ({unreadErrorCount})</Text></Text>
-        )}
-        {debugMessage && (
-          <Text dimColor> • {debugMessage}</Text>
-        )}
-      </Text>
+      {/* Status line - only for updates, branch info, and debug messages */}
+      {(updateAvailable || currentBranch || debugMessage) && (
+        <Text dimColor>
+          {updateAvailable && updateInfo && (
+            <Text color="red" bold>Update available: npm i -g dmux@latest </Text>
+          )}
+          {currentBranch && (
+            <Text color="magenta" bold>branch: {currentBranch}</Text>
+          )}
+          {debugMessage && (
+            <Text dimColor> • {debugMessage}</Text>
+          )}
+        </Text>
+      )}
     </Box>
   );
 };

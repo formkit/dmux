@@ -13,6 +13,9 @@ import React, { useState, useMemo } from 'react';
 import { render, Box, Text, useInput, useStdout } from 'ink';
 import type { LogEntry, LogLevel } from '../types.js';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { execSync } from 'child_process';
 
 type FilterMode = 'all' | 'errors' | 'warnings' | 'pane';
 
@@ -37,6 +40,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedPane, setSelectedPane] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Calculate line count for each log entry
   const getLogLineCount = (log: LogEntry): number => {
@@ -109,6 +113,86 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
       const result = { success: true };
       fs.writeFileSync(resultFile, JSON.stringify(result));
       process.exit(0);
+    }
+
+    // Copy visible logs to clipboard
+    if (input === 'c') {
+      // Format visible logs as text
+      const logsText = filteredLogs.map(log => {
+        const date = new Date(log.timestamp);
+        const timestamp = date.toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        const level = log.level.toUpperCase();
+        const source = log.source || 'unknown';
+        let text = `${timestamp} [${source}] ${level}: ${log.message}`;
+        if (log.paneId) {
+          text += ` (pane: ${log.paneId})`;
+        }
+        if (log.stack) {
+          text += `\n  Stack: ${log.stack}`;
+        }
+        return text;
+      }).join('\n');
+
+      try {
+        // Try pbcopy (macOS)
+        execSync(`pbcopy`, { input: logsText, stdio: 'pipe' });
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        try {
+          // Try xclip (Linux)
+          execSync(`xclip -selection clipboard`, { input: logsText, stdio: 'pipe' });
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch {
+          // Clipboard not available
+        }
+      }
+      return;
+    }
+
+    // Open logs in text editor
+    if (input === 'o') {
+      // Format visible logs as text
+      const logsText = filteredLogs.map(log => {
+        const date = new Date(log.timestamp);
+        const timestamp = date.toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        const level = log.level.toUpperCase();
+        const source = log.source || 'unknown';
+        let text = `${timestamp} [${source}] ${level}: ${log.message}`;
+        if (log.paneId) {
+          text += ` (pane: ${log.paneId})`;
+        }
+        if (log.stack) {
+          text += `\n  Stack: ${log.stack}`;
+        }
+        return text;
+      }).join('\n');
+
+      // Write to temp file
+      const tempFile = path.join(os.tmpdir(), `dmux-logs-${Date.now()}.txt`);
+      fs.writeFileSync(tempFile, logsText);
+
+      // Open in editor (same pattern as openInEditor action)
+      const editor = process.env.EDITOR || 'code';
+      try {
+        execSync(`${editor} "${tempFile}"`, { stdio: 'pipe' });
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        // Editor failed, file still exists for manual opening
+      }
+      return;
     }
 
     // Filter mode selection
@@ -311,10 +395,12 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
           {filterMode === 'pane' && availablePanes.length > 0 && (
             <Text dimColor> • ←→: {selectedPane || 'All Panes'}</Text>
           )}
+          {' • [c]: Copy • [o]: Open in editor'}
           {' • ESC: Close'}
           {filteredLogs.length > availableLogLines && (
             <Text dimColor> • Showing {scrollOffset + 1}-{Math.min(scrollOffset + availableLogLines, filteredLogs.length)} of {filteredLogs.length}</Text>
           )}
+          {copied && <Text color="green"> • ✓ Copied!</Text>}
         </Text>
       </Box>
     </Box>

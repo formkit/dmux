@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { render } from 'ink';
 import React from 'react';
 import { createHash } from 'crypto';
+import { createRequire } from 'module';
 import DmuxApp from './DmuxApp.js';
 import { AutoUpdater } from './AutoUpdater.js';
 import readline from 'readline';
@@ -17,6 +18,8 @@ import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json');
 
 class Dmux {
   private panesFile: string;
@@ -103,7 +106,7 @@ class Dmux {
         // Enable pane borders to show titles
         execSync(`tmux set-option -t ${this.sessionName} pane-border-status top`, { stdio: 'inherit' });
         // Set pane title for the main dmux pane
-        execSync(`tmux select-pane -t ${this.sessionName} -T "dmux-${this.projectName}"`, { stdio: 'inherit' });
+        execSync(`tmux select-pane -t ${this.sessionName} -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)
         // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
         let devDirectory = this.projectRoot;
@@ -126,7 +129,7 @@ class Dmux {
 
     // Set pane title for the current pane running dmux
     try {
-      execSync(`tmux select-pane -T "dmux-${this.projectName}"`, { stdio: 'pipe' });
+      execSync(`tmux select-pane -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'pipe' });
     } catch {
       // Ignore if it fails (might not have permission or tmux version doesn't support it)
     }
@@ -160,7 +163,7 @@ class Dmux {
       }
     } catch (error) {
       // Ignore errors in sidebar setup - will work without it
-      console.error('Failed to set up sidebar layout:', error);
+      LogService.getInstance().error('Failed to set up sidebar layout', 'Setup', undefined, error instanceof Error ? error : undefined);
     }
 
     // Update state manager with project info
@@ -174,7 +177,7 @@ class Dmux {
       this.stateManager.updateServerInfo(serverInfo.port, serverInfo.url);
       // Don't log the local URL - tunnel will be created on demand when "r" is pressed
     } catch (err) {
-      console.error('Failed to start HTTP server:', err);
+      LogService.getInstance().error('Failed to start HTTP server', 'Setup', undefined, err instanceof Error ? err : undefined);
       // Continue without server - not critical for main functionality
     }
 

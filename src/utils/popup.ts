@@ -3,7 +3,7 @@
  * Requires tmux 3.2+
  */
 
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -31,6 +31,65 @@ export interface PopupResult<T> {
   data?: T;
   cancelled?: boolean;
   error?: string;
+}
+
+export interface PopupHandle<T> {
+  pid: number;
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  resultPromise: Promise<PopupResult<T>>;
+  kill: () => void;
+}
+
+/**
+ * Calculate actual popup bounds based on tmux terminal dimensions
+ */
+function calculatePopupBounds(options: PopupOptions): { x: number; y: number; width: number; height: number } {
+  const {
+    width = 80,
+    height = 20,
+    centered = true,
+    x,
+    y,
+    leftOffset = 0,
+    topOffset = 0,
+  } = options;
+
+  try {
+    // Get tmux client dimensions
+    const dims = execSync('tmux display-message -p "#{client_width},#{client_height}"', {
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    }).trim();
+    const [clientWidth, clientHeight] = dims.split(',').map(Number);
+
+    let posX: number;
+    let posY: number;
+
+    if (!centered && (leftOffset > 0 || topOffset > 0)) {
+      posX = leftOffset;
+      posY = topOffset;
+    } else if (!centered && x !== undefined && y !== undefined) {
+      posX = x;
+      posY = y;
+    } else if (centered && leftOffset > 0) {
+      posX = Math.floor((clientWidth - width) / 2) + leftOffset;
+      posY = Math.floor((clientHeight - height) / 2) + topOffset;
+    } else {
+      // Fully centered
+      posX = Math.floor((clientWidth - width) / 2);
+      posY = Math.floor((clientHeight - height) / 2);
+    }
+
+    return { x: posX, y: posY, width, height };
+  } catch {
+    // Fallback to defaults if we can't get tmux dimensions
+    return { x: leftOffset || 0, y: topOffset || 0, width, height };
+  }
 }
 
 /**
@@ -103,46 +162,56 @@ export async function launchPopup(
 
   const fullCommand = `tmux ${args.join(' ')} '${escapedCommand}'`;
 
-  try {
-    // Launch popup and wait for it to close
-    execSync(fullCommand, {
-      stdio: 'pipe',
-      encoding: 'utf-8',
+  return new Promise((resolve) => {
+    // Launch popup with spawn (non-blocking)
+    const child = spawn('sh', ['-c', fullCommand], {
+      stdio: 'inherit',
     });
 
-    // Read result from temp file
-    if (fs.existsSync(resultFile)) {
-      const resultData = fs.readFileSync(resultFile, 'utf-8');
-      fs.unlinkSync(resultFile); // Clean up
+    child.on('close', () => {
+      // Read result from temp file
+      if (fs.existsSync(resultFile)) {
+        try {
+          const resultData = fs.readFileSync(resultFile, 'utf-8');
+          fs.unlinkSync(resultFile); // Clean up
 
-      try {
-        const result = JSON.parse(resultData);
-        return result;
-      } catch {
-        // Not JSON, treat as plain text
-        return {
-          success: true,
-          data: resultData,
-        };
+          try {
+            const result = JSON.parse(resultData);
+            resolve(result);
+          } catch {
+            // Not JSON, treat as plain text
+            resolve({
+              success: true,
+              data: resultData,
+            });
+          }
+        } catch (error: any) {
+          resolve({
+            success: false,
+            error: error.message,
+          });
+        }
+      } else {
+        // No result file = cancelled
+        resolve({
+          success: false,
+          cancelled: true,
+        });
       }
-    }
+    });
 
-    // No result file = cancelled
-    return {
-      success: false,
-      cancelled: true,
-    };
-  } catch (error: any) {
-    // Clean up temp file if it exists
-    if (fs.existsSync(resultFile)) {
-      fs.unlinkSync(resultFile);
-    }
+    child.on('error', (error) => {
+      // Clean up temp file if it exists
+      if (fs.existsSync(resultFile)) {
+        fs.unlinkSync(resultFile);
+      }
 
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
+      resolve({
+        success: false,
+        error: error.message,
+      });
+    });
+  });
 }
 
 /**
@@ -173,6 +242,189 @@ export async function launchNodePopup<T = any>(
 }
 
 /**
+ * Launch a popup non-blocking (returns handle immediately)
+ * @param command - Command to run in the popup
+ * @param options - Popup display options
+ * @returns Handle with PID, bounds, and result promise
+ */
+export function launchPopupNonBlocking(
+  command: string,
+  options: PopupOptions = {}
+): PopupHandle<string> {
+  const {
+    width = 80,
+    height = 20,
+    title,
+    centered = true,
+    x,
+    y,
+    cwd = process.cwd(),
+    borderStyle = 'double',
+    leftOffset = 0,
+    topOffset = 0,
+  } = options;
+
+  // Calculate popup bounds
+  const bounds = calculatePopupBounds(options);
+
+  // Create a temp file for the result
+  const resultFile = path.join(os.tmpdir(), `dmux-popup-${Date.now()}.json`);
+
+  // Build tmux popup command
+  const args: string[] = [
+    'display-popup',
+    '-E', // Close on command exit
+    '-w', width.toString(),
+    '-h', height.toString(),
+    '-d', `"${cwd}"`,
+  ];
+
+  // Add border style if supported (tmux 3.2+)
+  if (borderStyle && borderStyle !== 'none') {
+    args.push('-b', borderStyle);
+  }
+
+  // Position: centered or custom
+  if (!centered && (leftOffset > 0 || topOffset > 0)) {
+    args.push('-x', leftOffset.toString());
+    args.push('-y', topOffset.toString());
+  } else if (!centered && x !== undefined && y !== undefined) {
+    args.push('-x', x.toString());
+    args.push('-y', y.toString());
+  } else if (centered && leftOffset > 0) {
+    args.push('-x', leftOffset.toString());
+    args.push('-y', topOffset.toString());
+  } else {
+    args.push('-x', 'C');
+    args.push('-y', 'C');
+  }
+
+  // Title
+  if (title) {
+    args.push('-T', `"${title}"`);
+  }
+
+  // Escape the command for tmux
+  const escapedCommand = command.replace(/'/g, "'\\''");
+  const fullCommand = `tmux ${args.join(' ')} '${escapedCommand}'`;
+
+  // Launch popup with spawn (non-blocking)
+  const child = spawn('sh', ['-c', fullCommand], {
+    stdio: 'inherit',
+  });
+
+  const resultPromise = new Promise<PopupResult<string>>((resolve) => {
+    child.on('close', () => {
+      // Read result from temp file
+      if (fs.existsSync(resultFile)) {
+        try {
+          const resultData = fs.readFileSync(resultFile, 'utf-8');
+          fs.unlinkSync(resultFile); // Clean up
+
+          try {
+            const result = JSON.parse(resultData);
+            resolve(result);
+          } catch {
+            // Not JSON, treat as plain text
+            resolve({
+              success: true,
+              data: resultData,
+            });
+          }
+        } catch (error: any) {
+          resolve({
+            success: false,
+            error: error.message,
+          });
+        }
+      } else {
+        // No result file = cancelled
+        resolve({
+          success: false,
+          cancelled: true,
+        });
+      }
+    });
+
+    child.on('error', (error) => {
+      // Clean up temp file if it exists
+      if (fs.existsSync(resultFile)) {
+        fs.unlinkSync(resultFile);
+      }
+
+      resolve({
+        success: false,
+        error: error.message,
+      });
+    });
+  });
+
+  return {
+    pid: child.pid!,
+    bounds,
+    resultPromise,
+    kill: () => {
+      try {
+        child.kill('SIGTERM');
+        // Clean up temp file
+        if (fs.existsSync(resultFile)) {
+          fs.unlinkSync(resultFile);
+        }
+      } catch {
+        // Ignore errors if process already dead
+      }
+    },
+  };
+}
+
+/**
+ * Launch a Node.js popup non-blocking (returns handle immediately)
+ * @param scriptPath - Path to the compiled JS script
+ * @param args - Arguments to pass to the script
+ * @param options - Popup display options
+ * @returns Handle with PID, bounds, and result promise
+ */
+export function launchNodePopupNonBlocking<T = any>(
+  scriptPath: string,
+  args: string[] = [],
+  options: PopupOptions = {}
+): PopupHandle<T> {
+  // Get the result file path that the script will write to
+  const resultFile = path.join(os.tmpdir(), `dmux-popup-${Date.now()}.json`);
+
+  // Build node command with proper escaping
+  const escapedArgs = [scriptPath, resultFile, ...args].map(arg => {
+    const escaped = arg.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+    return `'${escaped}'`;
+  });
+
+  const command = `node ${escapedArgs.join(' ')}`;
+
+  return launchPopupNonBlocking(command, options) as PopupHandle<T>;
+}
+
+/**
+ * Enable tmux mouse mode for click-outside-to-close popup behavior (session-specific)
+ * @param sessionName - The tmux session name to enable mouse mode for
+ */
+export function ensureMouseMode(sessionName: string): void {
+  try {
+    // Check if mouse mode is already enabled for this session
+    const mouseStatus = execSync(`tmux show -t ${sessionName} mouse`, {
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    }).trim();
+
+    // If mouse is off, enable it for this session only (not global)
+    if (mouseStatus.includes('off')) {
+      execSync(`tmux set -t ${sessionName} mouse on`, { stdio: 'pipe' });
+    }
+  } catch {
+    // Ignore errors - might not be in tmux session or session doesn't exist yet
+  }
+}
+
+/**
  * Check if tmux supports popups (3.2+)
  */
 export function supportsPopups(): boolean {
@@ -189,3 +441,55 @@ export function supportsPopups(): boolean {
     return false;
   }
 }
+
+/**
+ * Standard popup positioning presets for consistent UX
+ */
+export const POPUP_POSITIONING = {
+  /**
+   * Standard position: top-left corner, offset from sidebar
+   * Use this for most popups (menus, dialogs, forms)
+   */
+  standard(sidebarWidth: number): Partial<PopupOptions> {
+    return {
+      centered: false,
+      leftOffset: sidebarWidth + 1,
+      topOffset: 0,
+    };
+  },
+
+  /**
+   * Centered with sidebar offset
+   * Use for important dialogs like new pane creation
+   */
+  centeredWithSidebar(sidebarWidth: number): Partial<PopupOptions> {
+    return {
+      centered: true,
+      leftOffset: sidebarWidth,
+    };
+  },
+
+  /**
+   * Fully centered (no sidebar consideration)
+   * Use only when sidebar doesn't exist or doesn't matter
+   */
+  fullyCentered(): Partial<PopupOptions> {
+    return {
+      centered: true,
+    };
+  },
+
+  /**
+   * Large popup that takes up most of the available space
+   * Use for logs viewer and other content-heavy popups
+   */
+  large(sidebarWidth: number, terminalWidth: number, terminalHeight: number): Partial<PopupOptions> {
+    return {
+      centered: false,
+      leftOffset: sidebarWidth + 1,
+      topOffset: 0,
+      width: Math.min(terminalWidth - sidebarWidth - 2, 100),
+      height: Math.floor(terminalHeight * 0.9),
+    };
+  },
+};
