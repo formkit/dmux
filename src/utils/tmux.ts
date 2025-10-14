@@ -5,6 +5,7 @@ import type { PanePosition } from '../types.js';
 export const SIDEBAR_WIDTH = 40;
 export const MIN_COMFORTABLE_WIDTH = 60;  // Minimum chars for comfortable code viewing
 export const MAX_COMFORTABLE_WIDTH = 120; // Maximum chars before too wide for comfort
+export const MIN_COMFORTABLE_HEIGHT = 15; // Minimum lines for comfortable pane viewing
 
 /**
  * Calculate tmux layout checksum
@@ -244,6 +245,66 @@ const generateSidebarGridLayout = (
 };
 
 /**
+ * Calculates optimal number of columns for pane layout based on dimensions
+ * @param numPanes Number of panes to arrange
+ * @param contentWidth Available width for content panes
+ * @param contentHeight Available height for content panes
+ * @returns Optimal number of columns
+ */
+export const calculateOptimalColumns = (
+  numPanes: number,
+  contentWidth: number,
+  contentHeight: number
+): number => {
+  // Try different numbers of columns to find optimal layout
+  let bestCols = 1;
+  let bestScore = -1;
+
+  for (let cols = 1; cols <= numPanes; cols++) {
+    // Calculate width for this column count
+    const bordersWidth = cols - 1;
+    const paneWidth = Math.floor((contentWidth - bordersWidth) / cols);
+
+    // Calculate height for this column count
+    const rows = Math.ceil(numPanes / cols);
+    const bordersHeight = rows - 1;
+    const paneHeight = Math.floor((contentHeight - bordersHeight) / rows);
+
+    // Skip if width or height is too small
+    if (paneWidth < MIN_COMFORTABLE_WIDTH || paneHeight < MIN_COMFORTABLE_HEIGHT) {
+      continue;
+    }
+
+    // Score this configuration (prefer balanced layouts)
+    // Heavily penalize heights below comfortable threshold
+    const widthScore = paneWidth <= MAX_COMFORTABLE_WIDTH ? 1 : 0.5;
+    const heightScore = paneHeight >= MIN_COMFORTABLE_HEIGHT * 1.5 ? 1 : 0.7;
+    const score = widthScore * heightScore;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCols = cols;
+    }
+  }
+
+  // If no valid layout found, fall back to what gives best height
+  if (bestScore === -1) {
+    // Find column count that maximizes height while keeping width above minimum
+    for (let cols = numPanes; cols >= 1; cols--) {
+      const bordersWidth = cols - 1;
+      const paneWidth = Math.floor((contentWidth - bordersWidth) / cols);
+
+      if (paneWidth >= MIN_COMFORTABLE_WIDTH * 0.8) { // Allow slightly narrower
+        bestCols = cols;
+        break;
+      }
+    }
+  }
+
+  return bestCols;
+};
+
+/**
  * Enforces left sidebar layout: 40-char wide sidebar on left, content panes in grid on right
  * This maintains the structure: [Sidebar (40 chars, full height) | Content Grid Area]
  */
@@ -297,42 +358,12 @@ export const enforceControlPaneSize = (
           execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
         }
       } else {
-        // 3+ panes: calculate optimal layout based on comfortable reading widths
+        // 3+ panes: calculate optimal layout based on comfortable reading widths AND heights
         const dimensions = getWindowDimensions();
         const contentWidth = dimensions.width - width - 1;
+        const contentHeight = dimensions.height;
 
-        // Try different numbers of columns to find optimal layout
-        let bestCols = 1;
-        let singleColumnWidth = contentWidth; // Check if single column is too wide
-
-        for (let cols = 1; cols <= numContentPanes; cols++) {
-          const bordersWidth = cols - 1;
-          const paneWidth = Math.floor((contentWidth - bordersWidth) / cols);
-
-          // If this arrangement gives comfortable width, use it
-          if (paneWidth >= MIN_COMFORTABLE_WIDTH && paneWidth <= MAX_COMFORTABLE_WIDTH) {
-            bestCols = cols;
-            break;
-          }
-
-          // If we're below minimum, more columns won't help
-          if (paneWidth < MIN_COMFORTABLE_WIDTH) {
-            break;
-          }
-        }
-
-        // If single column is too wide and we're still at bestCols=1, force multi-column
-        if (bestCols === 1 && singleColumnWidth > MAX_COMFORTABLE_WIDTH) {
-          // Find the column count that gets closest to comfortable width
-          for (let cols = 2; cols <= numContentPanes; cols++) {
-            const bordersWidth = cols - 1;
-            const paneWidth = Math.floor((contentWidth - bordersWidth) / cols);
-            if (paneWidth <= MAX_COMFORTABLE_WIDTH) {
-              bestCols = cols;
-              break;
-            }
-          }
-        }
+        const bestCols = calculateOptimalColumns(numContentPanes, contentWidth, contentHeight);
 
         // Apply layout based on best column count
         if (bestCols === 1) {
