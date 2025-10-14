@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
@@ -49,6 +49,9 @@ import QRCode from './components/QRCode.js';
 
 
 const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server, controlPaneId }) => {
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows || 40;
+
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
@@ -1794,6 +1797,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     );
   }
 
+  // Calculate available height for content (terminal height - footer lines)
+  const footerLines = 4; // FooterHelp + version info
+  const contentHeight = Math.max(terminalHeight - footerLines, 10);
+
   return (
     <Box flexDirection="column">
       {/* CRITICAL: Hidden spinner that forces re-render when shown */}
@@ -1803,13 +1810,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         </Box>
       )}
 
-      <PanesGrid
-        panes={panes}
-        selectedIndex={selectedIndex}
-        isLoading={isLoading}
-        showNewPaneDialog={showNewPaneDialog}
-        agentStatuses={agentStatuses}
-      />
+      {/* Main content area - fixed height to push footer down */}
+      <Box flexDirection="column" height={contentHeight}>
+        <PanesGrid
+          panes={panes}
+          selectedIndex={selectedIndex}
+          isLoading={isLoading}
+          showNewPaneDialog={showNewPaneDialog}
+          agentStatuses={agentStatuses}
+        />
 
       {/* Loading dialog */}
       {isLoading && (<LoadingIndicator />)}
@@ -1889,7 +1898,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           </Text>
         </Box>
       )}
+      </Box>
 
+      {/* Footer - always at bottom */}
       <FooterHelp
         show={!showNewPaneDialog && !showCommandPrompt}
         showRemoteKey={!!server}
