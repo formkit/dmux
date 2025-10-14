@@ -20,7 +20,7 @@ const PanesGrid: React.FC<PanesGridProps> = ({
   agentStatuses
 }) => {
   return (
-    <Box flexDirection="row" flexWrap="wrap" gap={1}>
+    <Box flexDirection="column">
       {panes.map((pane, index) => {
         // Apply the runtime status to the pane
         const paneWithStatus = {
@@ -37,19 +37,14 @@ const PanesGrid: React.FC<PanesGridProps> = ({
       })}
 
       {!isLoading && !showNewPaneDialog && (
-        <Box
-          paddingX={0}
-          paddingY={0}
-          borderStyle="single"
-          borderColor={selectedIndex === panes.length ? 'green' : 'gray'}
-          width={35}
-          flexShrink={0}
-        >
-          <Box paddingX={1}>
-            <Text color={selectedIndex === panes.length ? 'green' : 'white'}>
-              + New dmux pane
-            </Text>
-          </Box>
+        <Box>
+          <Text color={selectedIndex === panes.length ? 'cyan' : 'gray'}>
+            {selectedIndex === panes.length ? '▸' : ' '}
+          </Text>
+          <Text color={selectedIndex === panes.length ? 'green' : 'gray'}>+ </Text>
+          <Text color={selectedIndex === panes.length ? 'cyan' : 'white'} bold={selectedIndex === panes.length}>
+            New dmux pane
+          </Text>
         </Box>
       )}
     </Box>

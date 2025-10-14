@@ -45,15 +45,8 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
       forceRepaint();
     }
 
-    // Clear the screen before creating pane
+    // Minimal clearing to avoid layout shifts
     process.stdout.write('\x1b[2J\x1b[H');
-    process.stdout.write('\n'.repeat(100));
-    try {
-      execSync('tmux clear-history', { stdio: 'pipe' });
-      execSync('tmux send-keys C-l', { stdio: 'pipe' });
-    } catch {}
-    await new Promise(r => setTimeout(r, 100));
-    try { execSync('tmux refresh-client', { stdio: 'pipe' }); } catch {}
 
     try {
       // Use the shared pane creation utility

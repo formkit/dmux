@@ -43,6 +43,13 @@ export class LogService extends EventEmitter {
   private suppressConsole = false;
 
   /**
+   * Suppress console output (prevents logs from appearing in terminal)
+   */
+  setSuppressConsole(suppress: boolean): void {
+    this.suppressConsole = suppress;
+  }
+
+  /**
    * Add a log entry
    */
   private addLog(level: LogLevel, message: string, source?: string, paneId?: string, stack?: string): void {

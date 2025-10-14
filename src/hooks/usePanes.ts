@@ -131,7 +131,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           execSync(`tmux send-keys -t '${newPaneId}' "cd ${missingPane.worktreePath || process.cwd()}" Enter`, { stdio: 'pipe' });
         } catch (error) {
           // If we can't create the pane, skip it
-          console.error(`Failed to recreate pane ${missingPane.slug}:`, error);
+          // console.error(`Failed to recreate pane ${missingPane.slug}:`, error);
         }
       }
 
@@ -189,11 +189,12 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       // For initial load (when panes is empty AND we haven't loaded before), set the loaded panes
       if (panes.length === 0 && activePanes.length > 0 && !initialLoadComplete) {
         // Initial load - set pane titles and update state
-        activePanes.forEach(pane => {
-          try {
-            execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-          } catch {}
-        });
+        // NOTE: Title updates disabled to prevent UI shifts
+        // activePanes.forEach(pane => {
+        //   try {
+        //     execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+        //   } catch {}
+        // });
         setPanes(activePanes);
         setInitialLoadComplete(true);
         return; // Exit early for initial load
@@ -211,13 +212,14 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
       if (currentPaneIds !== newPaneIds) {
         // Update pane titles in tmux
-        activePanes.forEach(pane => {
-          if (allPaneIds.includes(pane.paneId)) {
-            try {
-              execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-            } catch {}
-          }
-        });
+        // NOTE: Title updates disabled to prevent UI shifts during polling
+        // activePanes.forEach(pane => {
+        //   if (allPaneIds.includes(pane.paneId)) {
+        //     try {
+        //       execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+        //     } catch {}
+        //   }
+        // });
 
         setPanes(activePanes);
 
@@ -303,9 +305,11 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
   useEffect(() => {
     loadPanes();
+    // Re-enabled: polling helps correct any layout shifts by triggering re-renders
+    // Increased to 5 seconds to reduce frequency
     const interval = setInterval(() => {
       if (!skipLoading) loadPanes();
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [skipLoading, panesFile]);
 

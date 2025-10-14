@@ -155,8 +155,8 @@ export async function triggerHook(
 
   // Log hook execution
   const startMsg = `Executing ${hookName} hook: ${hookPath}`;
-  console.error('[Hooks]', startMsg);
-  LogService.getInstance().info(startMsg, 'hooks');
+  // console.error('[Hooks]', startMsg);
+  LogService.getInstance().debug(startMsg, 'hooks');
 
   try {
     // Spawn hook process in background
@@ -174,23 +174,23 @@ export async function triggerHook(
     child.on('exit', (code) => {
       if (code === 0) {
         const msg = `${hookName} completed successfully`;
-        console.error('[Hooks]', msg);
-        LogService.getInstance().info(msg, 'hooks');
+        // console.error('[Hooks]', msg);
+        LogService.getInstance().debug(msg, 'hooks');
       } else if (code !== null) {
         const msg = `${hookName} exited with code ${code}`;
-        console.error('[Hooks]', msg);
+        // console.error('[Hooks]', msg);
         LogService.getInstance().error(msg, 'hooks');
       }
     });
 
     child.on('error', (error) => {
       const msg = `${hookName} failed to start: ${error.message}`;
-      console.error('[Hooks]', msg);
+      // console.error('[Hooks]', msg);
       LogService.getInstance().error(msg, 'hooks', undefined, error instanceof Error ? error : undefined);
     });
   } catch (error) {
     const msg = `Failed to execute ${hookName}`;
-    console.error('[Hooks]', msg, error);
+    // console.error('[Hooks]', msg, error);
     LogService.getInstance().error(msg, 'hooks', undefined, error instanceof Error ? error : undefined);
   }
 }
@@ -217,8 +217,8 @@ export async function triggerHookSync(
   const env = await buildHookEnvironment(projectRoot, pane, extraData);
 
   const startMsg = `Executing ${hookName} hook (sync): ${hookPath}`;
-  console.error('[Hooks]', startMsg);
-  LogService.getInstance().info(startMsg, 'hooks');
+  // console.error('[Hooks]', startMsg);
+  LogService.getInstance().debug(startMsg, 'hooks');
 
   try {
     const output = execSync(hookPath, {
@@ -230,13 +230,13 @@ export async function triggerHookSync(
     });
 
     const successMsg = `${hookName} completed successfully`;
-    console.error('[Hooks]', successMsg);
-    LogService.getInstance().info(successMsg, 'hooks');
+    // console.error('[Hooks]', successMsg);
+    LogService.getInstance().debug(successMsg, 'hooks');
     return { success: true, output };
   } catch (error: any) {
     const errorMsg = error.message || String(error);
     const msg = `${hookName} failed: ${errorMsg}`;
-    console.error('[Hooks]', msg);
+    // console.error('[Hooks]', msg);
     LogService.getInstance().error(msg, 'hooks', undefined, error instanceof Error ? error : undefined);
     return {
       success: false,
@@ -287,8 +287,8 @@ export function initializeHooksDirectory(projectRoot: string): void {
   }
 
   const initMsg = 'Initializing .dmux-hooks/ directory...';
-  console.error('[Hooks]', initMsg);
-  LogService.getInstance().info(initMsg, 'hooks');
+  // console.error('[Hooks]', initMsg);
+  LogService.getInstance().debug(initMsg, 'hooks');
 
   // Create main hooks directory
   if (!existsSync(hooksDir)) {
@@ -337,8 +337,8 @@ export function initializeHooksDirectory(projectRoot: string): void {
 
   const completeMsg = '✅ Initialized .dmux-hooks/ with documentation and examples';
   const readmeMsg = '📝 Read AGENTS.md or CLAUDE.md to get started';
-  console.error('[Hooks]', completeMsg);
-  console.error('[Hooks]', readmeMsg);
-  LogService.getInstance().info(completeMsg, 'hooks');
-  LogService.getInstance().info(readmeMsg, 'hooks');
+  // console.error('[Hooks]', completeMsg);
+  // console.error('[Hooks]', readmeMsg);
+  LogService.getInstance().debug(completeMsg, 'hooks');
+  LogService.getInstance().debug(readmeMsg, 'hooks');
 }

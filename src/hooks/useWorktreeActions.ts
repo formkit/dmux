@@ -28,14 +28,8 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
         forceRepaint();
       }
 
+      // Minimal clearing to avoid layout shifts
       process.stdout.write('\x1b[2J\x1b[H');
-      process.stdout.write('\n'.repeat(100));
-      try {
-        execSync('tmux clear-history', { stdio: 'pipe' });
-        execSync('tmux send-keys C-l', { stdio: 'pipe' });
-      } catch {}
-      try { execSync('tmux refresh-client', { stdio: 'pipe' }); } catch {}
-      await new Promise(r => setTimeout(r, 100));
 
       execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
       // Don't apply global layouts - just enforce sidebar width

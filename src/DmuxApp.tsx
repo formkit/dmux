@@ -166,6 +166,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     }
   }, [forceRepaintTrigger]);
 
+
   // Get local network IP on mount
   useEffect(() => {
     try {
@@ -190,24 +191,24 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     // Check current tmux mouse mode
     try {
       const mouseMode = execSync('tmux show -g mouse', { encoding: 'utf-8' }).trim();
-      logService.info(`Current tmux mouse mode: ${mouseMode}`, 'MouseTracking');
+      logService.debug(`Current tmux mouse mode: ${mouseMode}`, 'MouseTracking');
     } catch (err) {
-      logService.warn('Failed to check tmux mouse mode', 'MouseTracking');
+      logService.debug('Failed to check tmux mouse mode', 'MouseTracking');
     }
 
     // Enable mouse tracking mode (all mouse events)
     process.stdout.write('\x1b[?1003h');
-    logService.info('Sent mouse tracking enable escape code: \\x1b[?1003h', 'MouseTracking');
+    logService.debug('Sent mouse tracking enable escape code: \\x1b[?1003h', 'MouseTracking');
 
     // Also try button event tracking as fallback
     process.stdout.write('\x1b[?1002h');
-    logService.info('Sent button tracking enable escape code: \\x1b[?1002h', 'MouseTracking');
+    logService.debug('Sent button tracking enable escape code: \\x1b[?1002h', 'MouseTracking');
 
     return () => {
       // Disable mouse tracking on unmount
       process.stdout.write('\x1b[?1003l');
       process.stdout.write('\x1b[?1002l');
-      logService.info('Mouse tracking disabled', 'MouseTracking');
+      logService.debug('Mouse tracking disabled', 'MouseTracking');
     };
   }, []);
 
@@ -363,12 +364,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       ensureMouseMode(sessionName);
     }
 
-    // Test debug message on mount
-    StateManager.getInstance().setDebugMessage('Debug logging initialized - watching for AI activity...');
-    setTimeout(() => {
-      StateManager.getInstance().setDebugMessage('');
-    }, 3000);
-
     return () => {
       process.removeListener('SIGTERM', handleTermination);
     };
@@ -432,14 +427,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       );
 
       // Track the active popup for click-outside-to-close
-      LogService.getInstance().info(`Popup created - PID: ${popupHandle.pid}, bounds: ${JSON.stringify(popupHandle.bounds)}`, 'PopupTracking');
+      LogService.getInstance().debug(`Popup created - PID: ${popupHandle.pid}, bounds: ${JSON.stringify(popupHandle.bounds)}`, 'PopupTracking');
       activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      LogService.getInstance().info('Popup closed, clearing tracking', 'PopupTracking');
+      LogService.getInstance().debug('Popup closed, clearing tracking', 'PopupTracking');
       activePopupRef.current = null;
 
       // Ignore input briefly after popup closes to prevent buffered keys
@@ -529,19 +524,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       activePopupRef.current = null;
 
       // Log the entire result for debugging
-      LogService.getInstance().info(`Kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
+      LogService.getInstance().debug(`Kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
 
       if (result.success && result.data) {
         // User selected an action
         const actionId = result.data as PaneAction;
-        LogService.getInstance().info(`Action selected: ${actionId}`, 'KebabMenu');
+        LogService.getInstance().debug(`Action selected: ${actionId}`, 'KebabMenu');
 
         // Handle merge action with dedicated popup
         if (actionId === PaneAction.MERGE) {
-          LogService.getInstance().info(`Merge action selected for pane: ${selectedPane.slug}`, 'MergeAction');
+          LogService.getInstance().debug(`Merge action selected for pane: ${selectedPane.slug}`, 'MergeAction');
           try {
             await launchMergePopup(selectedPane);
-            LogService.getInstance().info('Merge popup completed', 'MergeAction');
+            LogService.getInstance().debug('Merge popup completed', 'MergeAction');
           } catch (error) {
             LogService.getInstance().error('Merge popup error', 'MergeAction', selectedPane.id, error instanceof Error ? error : undefined);
             setStatusMessage(`Merge popup failed: ${error}`);
@@ -553,7 +548,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
-        LogService.getInstance().info('Kebab menu cancelled', 'KebabMenu');
+        LogService.getInstance().debug('Kebab menu cancelled', 'KebabMenu');
         return;
       } else if (result.error) {
         LogService.getInstance().error(`Kebab menu error: ${result.error}`, 'KebabMenu');
@@ -1076,7 +1071,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   };
 
   const launchMergePopup = async (pane: DmuxPane): Promise<void> => {
-    LogService.getInstance().info(`launchMergePopup called for pane: ${pane.slug}`, 'MergePopup');
+    LogService.getInstance().debug(`launchMergePopup called for pane: ${pane.slug}`, 'MergePopup');
 
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
@@ -1100,12 +1095,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         : path.resolve(__dirname, '..'); // If in src/, go up one level
 
       const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'mergePopup.js');
-      LogService.getInstance().info(`Popup script path: ${popupScriptPath}`, 'MergePopup');
+      LogService.getInstance().debug(`Popup script path: ${popupScriptPath}`, 'MergePopup');
 
       // Check if popup script exists
       try {
         await fs.access(popupScriptPath);
-        LogService.getInstance().info('Popup script exists', 'MergePopup');
+        LogService.getInstance().debug('Popup script exists', 'MergePopup');
       } catch {
         LogService.getInstance().error(`Popup script NOT found at: ${popupScriptPath}`, 'MergePopup');
         setStatusMessage(`Merge popup script not found: ${popupScriptPath}`);
@@ -1125,11 +1120,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Write data to temp file
       const dataFile = `/tmp/dmux-merge-${Date.now()}.json`;
       await fs.writeFile(dataFile, JSON.stringify(mergeData));
-      LogService.getInstance().info(`Merge data written to: ${dataFile}`, 'MergePopup');
-      LogService.getInstance().info(`Merge data: ${JSON.stringify(mergeData)}`, 'MergePopup');
+      LogService.getInstance().debug(`Merge data written to: ${dataFile}`, 'MergePopup');
+      LogService.getInstance().debug(`Merge data: ${JSON.stringify(mergeData)}`, 'MergePopup');
 
       // Launch the popup non-blocking and track it
-      LogService.getInstance().info('Launching merge popup...', 'MergePopup');
+      LogService.getInstance().debug('Launching merge popup...', 'MergePopup');
       const popupHandle = launchNodePopupNonBlocking<{
         merged: boolean;
         closedPane?: boolean;
@@ -1144,7 +1139,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           title: `🔀 Merge: ${pane.slug}`
         }
       );
-      LogService.getInstance().info(`Popup launched, PID: ${popupHandle.pid}`, 'MergePopup');
+      LogService.getInstance().debug(`Popup launched, PID: ${popupHandle.pid}`, 'MergePopup');
 
       // Track the active popup for click-outside-to-close
       activePopupRef.current = popupHandle;
@@ -1528,26 +1523,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     // Get the original pane ID (where dmux is running) before clearing
     const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
     
-    // Multiple clearing strategies to prevent artifacts
-    // 1. Clear screen with ANSI codes
+    // Minimal clearing to avoid layout shifts
     process.stdout.write('\x1b[2J\x1b[H');
-    
-    // 2. Fill with blank lines to push content off screen
-    process.stdout.write('\n'.repeat(100));
-    
-    // 3. Clear tmux history and send clear command
-    try {
-      execSync('tmux clear-history', { stdio: 'pipe' });
-      execSync('tmux send-keys C-l', { stdio: 'pipe' });
-    } catch {}
-    
-    // Wait a bit for clearing to settle
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // 4. Force tmux to refresh the display
-    try {
-      execSync('tmux refresh-client', { stdio: 'pipe' });
-    } catch {}
     
     // Get current pane count to determine layout
     const paneCount = parseInt(
@@ -2010,7 +1987,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
     // Log all input for debugging (only first 50 chars to avoid spam)
     const inputPreview = input.length > 50 ? input.substring(0, 50) + '...' : input;
-    logService.info(`Input: "${inputPreview}", popup: ${!!activePopup}`, 'InputDebug');
+    logService.debug(`Input: "${inputPreview}", popup: ${!!activePopup}`, 'InputDebug');
 
     // Manual mouse sequence parser
     // Format: ESC[M<button><x><y> where button, x, y are encoded as characters
@@ -2282,7 +2259,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   });
 
 
-  // Calculate available height for content (terminal height - footer lines)
+  // Calculate available height for content (terminal height - footer lines - active status messages)
   // Footer height varies based on state:
   // - Quit confirm mode: 2 lines (marginTop + 1 text line)
   // - Normal mode calculation:
@@ -2290,6 +2267,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   //   - Network section: +4 lines (divider, local IP, remote tunnel, divider) if serverPort exists
   //   - Debug info: +1 line if DEBUG_DMUX
   //   - Status line: +1 line if updateAvailable/currentBranch/debugMessage
+  //   - Status messages: +1 line per active message
   let footerLines = 2;
   if (quitConfirmMode) {
     footerLines = 2;
@@ -2308,6 +2286,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     if (updateAvailable || currentBranch || debugMessage) {
       footerLines += 1;
     }
+    // Add line for each active status message
+    if (statusMessage) {
+      footerLines += 1;
+    }
+    if (actionSystem.actionState.statusMessage) {
+      footerLines += 1;
+    }
   }
   const contentHeight = Math.max(terminalHeight - footerLines, 10);
 
@@ -2320,8 +2305,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         </Box>
       )}
 
-      {/* Main content area */}
-      <Box flexDirection="column">
+      {/* Main content area - height dynamically adjusts for status messages */}
+      <Box flexDirection="column" height={contentHeight} overflow="hidden">
         <PanesGrid
           panes={panes}
           selectedIndex={selectedIndex}
@@ -2380,16 +2365,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {isUpdating && (
         <UpdatingIndicator />
       )}
+      </Box>
 
+      {/* Status messages - only render when present */}
       {statusMessage && (
-        <Box marginTop={1}>
+        <Box>
           <Text color="green">{statusMessage}</Text>
         </Box>
       )}
-
-      {/* Action system status messages */}
       {actionSystem.actionState.statusMessage && (
-        <Box marginTop={1}>
+        <Box>
           <Text color={
             actionSystem.actionState.statusType === 'error' ? 'red' :
             actionSystem.actionState.statusType === 'success' ? 'green' :
@@ -2399,10 +2384,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           </Text>
         </Box>
       )}
-      </Box>
-
-      {/* Spacer to push footer to bottom */}
-      <Box flexGrow={1} />
 
       {/* Footer - always at bottom */}
       <FooterHelp

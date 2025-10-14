@@ -121,18 +121,20 @@ class Dmux {
     }
 
     // Enable pane borders to show titles
-    try {
-      execSync(`tmux set-option pane-border-status top`, { stdio: 'pipe' });
-    } catch {
-      // Ignore if it fails
-    }
+    // NOTE: Temporarily disabled to test if border updates cause UI shifts
+    // try {
+    //   execSync(`tmux set-option pane-border-status top`, { stdio: 'pipe' });
+    // } catch {
+    //   // Ignore if it fails
+    // }
 
     // Set pane title for the current pane running dmux
-    try {
-      execSync(`tmux select-pane -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'pipe' });
-    } catch {
-      // Ignore if it fails (might not have permission or tmux version doesn't support it)
-    }
+    // NOTE: Temporarily disabled to test if title updates cause UI shifts
+    // try {
+    //   execSync(`tmux select-pane -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'pipe' });
+    // } catch {
+    //   // Ignore if it fails (might not have permission or tmux version doesn't support it)
+    // }
 
     // Get current pane ID (control pane for left sidebar)
     let controlPaneId: string | undefined;
@@ -183,33 +185,29 @@ class Dmux {
 
     // Add test logs to verify logging system functionality
     const logService = LogService.getInstance();
-    logService.info(`dmux started for project: ${this.projectName}`, 'startup');
-    logService.info(`Project root: ${this.projectRoot}`, 'startup');
-    logService.info(`HTTP server running on port ${serverInfo.port}`, 'startup');
+    logService.debug(`dmux started for project: ${this.projectName}`, 'startup');
+    logService.debug(`Project root: ${this.projectRoot}`, 'startup');
+    logService.debug(`HTTP server running on port ${serverInfo.port}`, 'startup');
     logService.debug('Debug log: System initialized successfully', 'startup');
 
     // Add a sample warning and error for testing
     if (process.env.DMUX_DEV === 'true') {
-      logService.warn('Development mode enabled - this is a test warning', 'startup');
-      logService.info('Press [l] to view logs, [L] to reset layout', 'startup');
+      logService.debug('Development mode enabled - this is a test warning', 'startup');
+      logService.debug('Press [l] to view logs, [L] to reset layout', 'startup');
     }
 
-    // Clear screen before launching Ink to prevent artifacts
+    // Suppress console output from LogService to prevent interference with Ink UI
+    LogService.getInstance().setSuppressConsole(true);
+
+    // Clear screen before launching Ink - minimal clearing to avoid artifacts
+    // Don't use \x1b[3J as it can cause layout shifts
     process.stdout.write('\x1b[2J\x1b[H');  // Clear screen and move cursor to home
-    process.stdout.write('\x1b[3J');  // Clear scrollback buffer
 
-    // Clear tmux history
-    try {
-      execSync('tmux clear-history', { stdio: 'pipe' });
-    } catch {}
+    // Ensure cursor is truly at home position and scrollback is clear
+    process.stdout.write('\x1b[1;1H');  // Force cursor to row 1, column 1
 
-    // Force tmux to refresh before Ink renders
-    try {
-      execSync('tmux refresh-client', { stdio: 'pipe' });
-    } catch {}
-
-    // Small delay to let the clear take effect before Ink renders
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Small delay to let terminal settle
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     // Launch the Ink app
     const app = render(React.createElement(DmuxApp, {
