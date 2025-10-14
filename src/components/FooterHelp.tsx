@@ -25,7 +25,7 @@ const FooterHelp: React.FC<FooterHelpProps> = ({ show, gridInfo, showRemoteKey =
   return (
     <Box marginTop={1} flexDirection="column">
       <Text dimColor>
-        Commands: [j]ump • [m]enu • [x]close • [n]ew • [s]ettings{hasSidebarLayout && ' • [l]ayout'}{showRemoteKey && ' • [r]emote'} • [q]uit
+        Commands: [j]ump • [m]enu • [x]close • [n]ew • [l]ogs • [s]ettings{hasSidebarLayout && ' • [L]ayout'}{showRemoteKey && ' • [r]emote'} • [q]uit
       </Text>
       <Text dimColor>
         Use arrow keys (↑↓←→) for spatial navigation, Enter to select

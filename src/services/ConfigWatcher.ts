@@ -2,6 +2,7 @@ import { watch, type FSWatcher } from 'chokidar';
 import { EventEmitter } from 'events';
 import { readFile } from 'fs/promises';
 import type { DmuxPane } from '../types.js';
+import { LogService } from './LogService.js';
 
 export interface ConfigData {
   panes: DmuxPane[];
@@ -65,7 +66,9 @@ export class ConfigWatcher extends EventEmitter {
     });
 
     this.watcher.on('error', (error) => {
-      console.error('Config watcher error:', error);
+      const msg = 'Config watcher error';
+      console.error(msg, error);
+      LogService.getInstance().error(msg, 'ConfigWatcher', undefined, error instanceof Error ? error : undefined);
     });
   }
 
@@ -86,11 +89,15 @@ export class ConfigWatcher extends EventEmitter {
           const config: ConfigData = JSON.parse(newContent);
           this.emit('change', config);
         } catch (parseErr) {
-          console.error('Failed to parse config file:', parseErr);
+          const msg = 'Failed to parse config file';
+          console.error(msg, parseErr);
+          LogService.getInstance().error(msg, 'ConfigWatcher', undefined, parseErr instanceof Error ? parseErr : undefined);
         }
       }
     } catch (err) {
-      console.error('Failed to read config file:', err);
+      const msg = 'Failed to read config file';
+      console.error(msg, err);
+      LogService.getInstance().error(msg, 'ConfigWatcher', undefined, err instanceof Error ? err : undefined);
     }
   }
 

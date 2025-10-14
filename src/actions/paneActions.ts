@@ -10,6 +10,7 @@ import type { DmuxPane } from '../types.js';
 import type { ActionResult, ActionContext, ActionOption } from './types.js';
 import { StateManager } from '../shared/StateManager.js';
 import { triggerHook } from '../utils/hooks.js';
+import { LogService } from '../services/LogService.js';
 
 /**
  * Generate commit message with timeout and error handling
@@ -32,11 +33,14 @@ async function generateCommitMessageSafe(
 
     if (!result) {
       StateManager.getInstance().setDebugMessage('[AI] Commit message generation returned null');
+      LogService.getInstance().warn('AI commit message generation returned null', 'aiMerge');
     }
 
     return result;
   } catch (error) {
-    StateManager.getInstance().setDebugMessage(`[AI] Commit message generation error: ${error}`);
+    const errorMsg = `AI commit message generation error: ${error}`;
+    StateManager.getInstance().setDebugMessage(`[AI] ${errorMsg}`);
+    LogService.getInstance().error(errorMsg, 'aiMerge', undefined, error instanceof Error ? error : undefined);
     return null;
   }
 }
@@ -132,11 +136,38 @@ async function executeCloseOption(
     StateManager.getInstance().pauseConfigWatcher();
 
     try {
-      // Kill the tmux pane
+      // Kill the tmux pane - use a more robust approach
       try {
+        // First, try to kill any running process in the pane (like Claude)
+        try {
+          execSync(`tmux send-keys -t '${pane.paneId}' C-c`, { stdio: 'pipe' });
+          // Wait a moment for the process to exit
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch {
+          // Process might not be running
+        }
+
+        // Now kill the pane
         execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
-      } catch {
-        // Pane might already be dead
+
+        // Verify the pane is actually gone
+        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          // Check if pane still exists
+          const paneList = execSync('tmux list-panes -F "#{pane_id}"', { encoding: 'utf-8', stdio: 'pipe' });
+          if (paneList.includes(pane.paneId)) {
+            const msg = `Pane ${pane.paneId} still exists after kill attempt`;
+            console.error(`Warning: ${msg}`);
+            LogService.getInstance().warn(msg, 'paneActions', pane.id);
+          }
+        } catch {
+          // Error listing panes is fine
+        }
+      } catch (killError) {
+        // Pane might already be dead, which is fine
+        const msg = `Error killing pane ${pane.paneId}`;
+        console.error(msg, killError);
+        LogService.getInstance().error(msg, 'paneActions', pane.id, killError instanceof Error ? killError : undefined);
       }
 
       // Handle worktree cleanup based on option

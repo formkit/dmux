@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
-import type { DmuxPane, ProjectSettings } from '../types.js';
+import type { DmuxPane, ProjectSettings, LogEntry } from '../types.js';
 import { ConfigWatcher } from '../services/ConfigWatcher.js';
+import { LogService } from '../services/LogService.js';
 
 export interface DmuxState {
   panes: DmuxPane[];
@@ -11,6 +12,9 @@ export interface DmuxState {
   serverPort?: number;
   serverUrl?: string;
   panesFile?: string;
+  logs: LogEntry[];
+  unreadErrorCount: number;
+  unreadWarningCount: number;
 }
 
 export class StateManager extends EventEmitter {
@@ -19,16 +23,38 @@ export class StateManager extends EventEmitter {
   private updateCallbacks: Set<(state: DmuxState) => void> = new Set();
   private configWatcher: ConfigWatcher | null = null;
   private debugMessageCallback: ((message: string) => void) | undefined;
+  private logService: LogService;
 
   private constructor() {
     super();
+    this.logService = LogService.getInstance();
     this.state = {
       panes: [],
       projectName: '',
       sessionName: '',
       projectRoot: '',
-      settings: {}
+      settings: {},
+      logs: [],
+      unreadErrorCount: 0,
+      unreadWarningCount: 0,
     };
+
+    // Listen to log events and sync state
+    this.logService.on('log-added', () => {
+      this.syncLogsFromService();
+    });
+
+    this.logService.on('logs-marked-read', () => {
+      this.syncLogsFromService();
+    });
+
+    this.logService.on('all-logs-marked-read', () => {
+      this.syncLogsFromService();
+    });
+
+    this.logService.on('logs-cleared', () => {
+      this.syncLogsFromService();
+    });
   }
 
   static getInstance(): StateManager {
@@ -143,6 +169,83 @@ export class StateManager extends EventEmitter {
     }
   }
 
+  /**
+   * Sync logs from LogService to state
+   */
+  private syncLogsFromService(): void {
+    const logs = this.logService.getLogs();
+    const stats = this.logService.getStats();
+
+    this.state.logs = logs;
+    this.state.unreadErrorCount = stats.unreadErrors;
+    this.state.unreadWarningCount = stats.unreadWarnings;
+
+    this.notifyListeners();
+  }
+
+  /**
+   * Get logs from service with optional filtering
+   */
+  getLogs(filter?: Parameters<typeof this.logService.getLogs>[0]): LogEntry[] {
+    return this.logService.getLogs(filter);
+  }
+
+  /**
+   * Get unread error count
+   */
+  getUnreadErrorCount(): number {
+    return this.logService.getUnreadErrorCount();
+  }
+
+  /**
+   * Get unread warning count
+   */
+  getUnreadWarningCount(): number {
+    return this.logService.getUnreadWarningCount();
+  }
+
+  /**
+   * Mark specific logs as read
+   */
+  markLogsAsRead(logIds: string[]): void {
+    this.logService.markAsRead(logIds);
+  }
+
+  /**
+   * Mark all logs as read
+   */
+  markAllLogsAsRead(): void {
+    this.logService.markAllAsRead();
+  }
+
+  /**
+   * Mark all logs of a specific level as read
+   */
+  markLogLevelAsRead(level: 'debug' | 'info' | 'warn' | 'error'): void {
+    this.logService.markLevelAsRead(level);
+  }
+
+  /**
+   * Clear all logs
+   */
+  clearAllLogs(): void {
+    this.logService.clearAll();
+  }
+
+  /**
+   * Clear logs for a specific pane
+   */
+  clearLogsForPane(paneId: string): void {
+    this.logService.clearForPane(paneId);
+  }
+
+  /**
+   * Get log statistics
+   */
+  getLogStats(): ReturnType<typeof this.logService.getStats> {
+    return this.logService.getStats();
+  }
+
   reset(): void {
     // Stop file watcher
     if (this.configWatcher) {
@@ -155,11 +258,17 @@ export class StateManager extends EventEmitter {
       projectName: '',
       sessionName: '',
       projectRoot: '',
-      settings: {}
+      settings: {},
+      logs: [],
+      unreadErrorCount: 0,
+      unreadWarningCount: 0,
     };
     this.updateCallbacks.clear();
     this.removeAllListeners();
     this.debugMessageCallback = undefined;
+
+    // Also reset log service
+    this.logService.reset();
   }
 }
 

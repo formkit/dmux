@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import path from 'path';
 import type { DmuxPane } from '../types.js';
 import { createPane } from '../utils/paneCreation.js';
+import { LogService } from '../services/LogService.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -88,11 +89,15 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         const paneExists = savedPanes.some((p: DmuxPane) => p.id === result.pane.id);
 
         if (!paneExists) {
-          console.error('Warning: Pane not found in config after save, retrying...');
+          const msg = 'Pane not found in config after save, retrying...';
+          console.error('Warning:', msg);
+          LogService.getInstance().warn(msg, 'usePaneCreation', result.pane.id);
           await savePanes(updatedPanes);
         }
       } catch (error) {
-        console.error('Warning: Could not validate pane save:', error);
+        const msg = 'Could not validate pane save';
+        console.error('Warning:', msg, error);
+        LogService.getInstance().warn(msg, 'usePaneCreation', result.pane.id);
       }
 
       // CRITICAL: Force repaint FIRST before clearing
@@ -122,7 +127,9 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         forceRepaint();
       }
     } catch (error) {
-      console.error('Failed to create pane:', error);
+      const msg = 'Failed to create pane';
+      console.error(msg, error);
+      LogService.getInstance().error(msg, 'usePaneCreation', undefined, error instanceof Error ? error : undefined);
       setStatusMessage(`Failed to create pane: ${error}`);
       setTimeout(() => setStatusMessage(''), 3000);
     }

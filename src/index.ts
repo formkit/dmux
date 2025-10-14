@@ -14,6 +14,7 @@ import { AutoUpdater } from './AutoUpdater.js';
 import readline from 'readline';
 import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
+import { LogService } from './services/LogService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -175,6 +176,19 @@ class Dmux {
     } catch (err) {
       console.error('Failed to start HTTP server:', err);
       // Continue without server - not critical for main functionality
+    }
+
+    // Add test logs to verify logging system functionality
+    const logService = LogService.getInstance();
+    logService.info(`dmux started for project: ${this.projectName}`, 'startup');
+    logService.info(`Project root: ${this.projectRoot}`, 'startup');
+    logService.info(`HTTP server running on port ${serverInfo.port}`, 'startup');
+    logService.debug('Debug log: System initialized successfully', 'startup');
+
+    // Add a sample warning and error for testing
+    if (process.env.DMUX_DEV === 'true') {
+      logService.warn('Development mode enabled - this is a test warning', 'startup');
+      logService.info('Press [l] to view logs, [L] to reset layout', 'startup');
     }
 
     // Clear screen before launching Ink to prevent artifacts

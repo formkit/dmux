@@ -88,6 +88,28 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // Track terminal dimensions for responsive layout
   const terminalWidth = useTerminalWidth();
 
+  // Track unread error count for logs badge
+  const [unreadErrorCount, setUnreadErrorCount] = useState(0);
+
+  // Subscribe to StateManager for unread error count updates
+  useEffect(() => {
+    const stateManager = StateManager.getInstance();
+
+    const updateErrorCount = () => {
+      setUnreadErrorCount(stateManager.getUnreadErrorCount());
+    };
+
+    // Initial count
+    updateErrorCount();
+
+    // Subscribe to changes
+    const unsubscribe = stateManager.subscribe(updateErrorCount);
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
   const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, false);
 
@@ -598,6 +620,43 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         setStatusMessage(`Popup error: ${result.error}`);
         setTimeout(() => setStatusMessage(''), 3000);
       }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchLogsPopup = async () => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'logsPopup.js');
+
+      // Launch the popup - position at top, 1 char right of sidebar
+      const result = await launchNodePopup<void>(
+        popupScriptPath,
+        [],
+        {
+          width: 70,
+          height: 25,
+          centered: false,
+          leftOffset: SIDEBAR_WIDTH + 1,
+          topOffset: 0
+        }
+      );
+
+      // Popup closed (user pressed ESC or finished viewing)
+      // Logs are automatically marked as read when popup opens
     } catch (error: any) {
       setStatusMessage(`Failed to launch popup: ${error.message}`);
       setTimeout(() => setStatusMessage(''), 3000);
@@ -1615,8 +1674,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     } else if (input === 's') {
       // Open settings popup
       await launchSettingsPopup();
-    } else if (input === 'l' && controlPaneId) {
-      // Reset layout to sidebar configuration
+    } else if (input === 'l') {
+      // Open logs popup
+      await launchLogsPopup();
+    } else if (input === 'L' && controlPaneId) {
+      // Reset layout to sidebar configuration (Shift+L)
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
       setStatusMessage('Layout reset');
       setTimeout(() => setStatusMessage(''), 2000);
@@ -1799,6 +1861,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         <Text color="magenta" bold> • SIDEBAR-40COL-BUILD</Text>
         {serverPort && serverPort > 0 && (
           <Text dimColor> • <Text color="cyan">http://127.0.0.1:{serverPort}</Text></Text>
+        )}
+        {unreadErrorCount > 0 && (
+          <Text> • <Text color="red" bold>🪵 Logs ({unreadErrorCount})</Text></Text>
         )}
         {debugMessage && (
           <Text dimColor> • {debugMessage}</Text>

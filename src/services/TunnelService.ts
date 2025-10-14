@@ -1,4 +1,5 @@
 import { startTunnel } from 'untun';
+import { LogService } from './LogService.js';
 
 export class TunnelService {
   private tunnel: any = null;
@@ -6,7 +7,9 @@ export class TunnelService {
 
   async start(port: number): Promise<string> {
     try {
-      console.error('[TunnelService] Starting tunnel for port', port);
+      const msg = `Starting tunnel for port ${port}`;
+      console.error('[TunnelService]', msg);
+      LogService.getInstance().info(msg, 'TunnelService');
 
       // Start tunnel with timeout and better error handling
       const tunnelPromise = startTunnel({
@@ -21,7 +24,9 @@ export class TunnelService {
 
       this.tunnel = await Promise.race([tunnelPromise, timeoutPromise]);
 
-      console.error('[TunnelService] Tunnel created, getting URL...');
+      const msg1 = 'Tunnel created, getting URL...';
+      console.error('[TunnelService]', msg1);
+      LogService.getInstance().info(msg1, 'TunnelService');
 
       // Get URL with timeout
       const urlPromise = this.tunnel.getURL();
@@ -35,10 +40,14 @@ export class TunnelService {
         throw new Error('Tunnel URL is null');
       }
 
-      console.error('[TunnelService] Tunnel URL:', this.tunnelUrl);
+      const msg2 = `Tunnel URL: ${this.tunnelUrl}`;
+      console.error('[TunnelService]', msg2);
+      LogService.getInstance().info(msg2, 'TunnelService');
       return this.tunnelUrl;
     } catch (error: any) {
-      console.error('[TunnelService] Failed to start tunnel:', error.message);
+      const msg = 'Failed to start tunnel';
+      console.error('[TunnelService]', msg, error.message);
+      LogService.getInstance().error(msg, 'TunnelService', undefined, error instanceof Error ? error : undefined);
       // Clean up on failure
       if (this.tunnel) {
         try {

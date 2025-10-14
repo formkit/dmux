@@ -100,3 +100,9 @@ export type {
   HookType,
   HookEnvironment,
 } from './utils/hooks.js';
+
+// Log types - re-exported from LogService for convenience
+export type {
+  LogLevel,
+  LogEntry,
+} from './services/LogService.js';

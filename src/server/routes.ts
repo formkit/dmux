@@ -11,6 +11,7 @@ import {
 import { StateManager } from '../shared/StateManager.js';
 import type { DmuxPane } from '../types.js';
 import { getEmbeddedAsset } from './embedded-assets.js';
+import { LogService } from '../services/LogService.js';
 
 function serveEmbeddedAsset(filename: string): string {
   const asset = getEmbeddedAsset(filename);
@@ -122,7 +123,9 @@ export function setupRoutes(app: App) {
           message: `Setting "${key}" updated at ${scope} level`
         };
       } catch (err: any) {
-        console.error('Failed to update setting:', err);
+        const msg = 'Failed to update setting';
+        console.error(msg, err);
+        LogService.getInstance().error(msg, 'routes', undefined, err instanceof Error ? err : undefined);
         event.node.res.statusCode = 500;
         return { error: 'Failed to update setting', details: err.message };
       }
@@ -165,6 +168,46 @@ export function setupRoutes(app: App) {
         activeCount: hooks.filter(h => h.active).length,
         totalCount: hooks.length
       };
+    }
+
+    event.node.res.statusCode = 405;
+    return { error: 'Method not allowed' };
+  }));
+
+  // GET /api/logs - Get logs with optional filtering
+  app.use('/api/logs', eventHandler(async (event) => {
+    if (event.node.req.method === 'GET') {
+      const url = new URL(event.node.req.url || '', `http://${event.node.req.headers.host}`);
+      const level = url.searchParams.get('level');
+      const source = url.searchParams.get('source');
+      const paneId = url.searchParams.get('paneId');
+      const unreadOnly = url.searchParams.get('unreadOnly') === 'true';
+
+      const filter: any = {};
+      if (level) filter.level = level;
+      if (source) filter.source = source;
+      if (paneId) filter.paneId = paneId;
+      if (unreadOnly) filter.unreadOnly = true;
+
+      const logs = stateManager.getLogs(filter);
+      const stats = stateManager.getLogStats();
+
+      return {
+        logs,
+        stats,
+        timestamp: Date.now()
+      };
+    }
+
+    event.node.res.statusCode = 405;
+    return { error: 'Method not allowed' };
+  }));
+
+  // POST /api/logs/mark-read - Mark all logs as read
+  app.use('/api/logs/mark-read', eventHandler(async (event) => {
+    if (event.node.req.method === 'POST') {
+      stateManager.markAllLogsAsRead();
+      return { success: true, message: 'All logs marked as read' };
     }
 
     event.node.res.statusCode = 405;
@@ -402,7 +445,9 @@ export function setupRoutes(app: App) {
         message: `Test status updated to ${status}`,
       };
     } catch (err: any) {
-      console.error('Failed to update test status:', err);
+      const msg = 'Failed to update test status';
+      console.error(msg, err);
+      LogService.getInstance().error(msg, 'routes', pane.id, err instanceof Error ? err : undefined);
       event.node.res.statusCode = 500;
       return { error: 'Failed to update test status', details: err.message };
     }
@@ -462,7 +507,9 @@ export function setupRoutes(app: App) {
         message: `Dev server ${status === 'running' ? 'started' : 'stopped'}${url ? ` at ${url}` : ''}`,
       };
     } catch (err: any) {
-      console.error('Failed to update dev status:', err);
+      const msg = 'Failed to update dev status';
+      console.error(msg, err);
+      LogService.getInstance().error(msg, 'routes', pane.id, err instanceof Error ? err : undefined);
       event.node.res.statusCode = 500;
       return { error: 'Failed to update dev status', details: err.message };
     }
@@ -704,7 +751,9 @@ export function setupRoutes(app: App) {
         message: 'Pane created successfully',
       };
     } catch (err: any) {
-      console.error('Failed to create pane:', err);
+      const msg = 'Failed to create pane via API';
+      console.error(msg, err);
+      LogService.getInstance().error(msg, 'routes', undefined, err instanceof Error ? err : undefined);
       event.node.res.statusCode = 500;
       return { error: 'Failed to create pane', details: err.message };
     }
@@ -880,7 +929,9 @@ export function setupRoutes(app: App) {
 
       return { success: true, key: tmuxKey };
     } catch (error: any) {
-      console.error('Failed to send keys to pane:', error);
+      const msg = 'Failed to send keys to pane';
+      console.error(msg, error);
+      LogService.getInstance().error(msg, 'routes', pane.id, error instanceof Error ? error : undefined);
       event.node.res.statusCode = 500;
       return { error: 'Failed to send keys', details: error.message };
     }

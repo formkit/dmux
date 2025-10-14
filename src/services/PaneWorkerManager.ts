@@ -9,6 +9,7 @@ import type {
   OutboundMessage,
   WorkerConfig
 } from '../workers/WorkerMessages.js';
+import { LogService } from './LogService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -79,21 +80,27 @@ export class PaneWorkerManager {
 
       // Handle worker errors
       worker.on('error', (error) => {
-        console.error(`Worker ${pane.id} error:`, error);
+        const msg = `Worker ${pane.id} error`;
+        console.error(msg, error);
+        LogService.getInstance().error(msg, 'PaneWorkerManager', pane.id, error);
         this.handleWorkerError(pane.id, error);
       });
 
       // Handle worker exit
       worker.on('exit', (code) => {
         if (code !== 0 && !this.isShuttingDown) {
-          console.error(`Worker ${pane.id} exited with code ${code}`);
+          const msg = `Worker ${pane.id} exited with code ${code}`;
+          console.error(msg);
+          LogService.getInstance().error(msg, 'PaneWorkerManager', pane.id);
           this.handleWorkerExit(pane.id);
         }
       });
 
       this.workers.set(pane.id, workerInfo);
     } catch (error) {
-      console.error(`Failed to create worker for pane ${pane.id}:`, error);
+      const msg = `Failed to create worker for pane ${pane.id}`;
+      console.error(msg, error);
+      LogService.getInstance().error(msg, 'PaneWorkerManager', pane.id, error instanceof Error ? error : undefined);
     }
   }
 
@@ -134,7 +141,9 @@ export class PaneWorkerManager {
   ): void {
     const workerInfo = this.workers.get(paneId);
     if (!workerInfo) {
-      console.error(`No worker found for pane ${paneId}`);
+      const msg = `No worker found for pane ${paneId}`;
+      console.error(msg);
+      LogService.getInstance().warn(msg, 'PaneWorkerManager', paneId);
       return;
     }
 
@@ -147,7 +156,9 @@ export class PaneWorkerManager {
     try {
       workerInfo.worker.postMessage(fullMessage);
     } catch (error) {
-      console.error(`Failed to notify worker ${paneId}:`, error);
+      const msg = `Failed to notify worker ${paneId}`;
+      console.error(msg, error);
+      LogService.getInstance().error(msg, 'PaneWorkerManager', paneId, error instanceof Error ? error : undefined);
     }
   }
 
@@ -164,7 +175,9 @@ export class PaneWorkerManager {
         };
         workerInfo.worker.postMessage(fullMessage);
       } catch (error) {
-        console.error(`Failed to broadcast to worker ${paneId}:`, error);
+        const msg = `Failed to broadcast to worker ${paneId}`;
+        console.error(msg, error);
+        LogService.getInstance().error(msg, 'PaneWorkerManager', paneId, error instanceof Error ? error : undefined);
       }
     });
   }
@@ -189,7 +202,9 @@ export class PaneWorkerManager {
       // Force terminate if still running
       await workerInfo.worker.terminate();
     } catch (error) {
-      console.error(`Error destroying worker ${paneId}:`, error);
+      const msg = `Error destroying worker ${paneId}`;
+      console.error(msg, error);
+      LogService.getInstance().error(msg, 'PaneWorkerManager', paneId, error instanceof Error ? error : undefined);
     } finally {
       this.workers.delete(paneId);
     }
@@ -246,7 +261,9 @@ export class PaneWorkerManager {
     if (workerInfo.restartCount < 3) {
       this.restartWorker(paneId);
     } else {
-      console.error(`Worker ${paneId} failed too many times, not restarting`);
+      const msg = `Worker ${paneId} failed too many times, not restarting`;
+      console.error(msg);
+      LogService.getInstance().error(msg, 'PaneWorkerManager', paneId);
       this.workers.delete(paneId);
     }
   }

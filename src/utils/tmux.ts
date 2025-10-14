@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import type { PanePosition } from '../types.js';
+import { LogService } from '../services/LogService.js';
 
 // Layout configuration - adjust these to change layout behavior
 export const SIDEBAR_WIDTH = 40;
@@ -420,7 +421,9 @@ export const enforceControlPaneSize = (
     execSync('tmux refresh-client', { stdio: 'pipe' });
   } catch (error) {
     // Log error for debugging but don't crash
-    console.error('Layout enforcement failed:', error);
+    const msg = 'Layout enforcement failed';
+    console.error(msg, error);
+    LogService.getInstance().error(msg, 'tmux', undefined, error instanceof Error ? error : undefined);
   }
 };
 
