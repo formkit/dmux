@@ -315,35 +315,39 @@ export function launchPopupNonBlocking(
 
   const resultPromise = new Promise<PopupResult<string>>((resolve) => {
     child.on('close', () => {
-      // Read result from temp file
-      if (fs.existsSync(resultFile)) {
-        try {
-          const resultData = fs.readFileSync(resultFile, 'utf-8');
-          fs.unlinkSync(resultFile); // Clean up
-
+      // Small delay to ensure file is written
+      setTimeout(() => {
+        // Read result from temp file
+        if (fs.existsSync(resultFile)) {
           try {
-            const result = JSON.parse(resultData);
-            resolve(result);
-          } catch {
-            // Not JSON, treat as plain text
+            const resultData = fs.readFileSync(resultFile, 'utf-8');
+            fs.unlinkSync(resultFile); // Clean up
+
+            try {
+              const result = JSON.parse(resultData);
+              resolve(result);
+            } catch {
+              // Not JSON, treat as plain text
+              resolve({
+                success: true,
+                data: resultData,
+              });
+            }
+          } catch (error: any) {
             resolve({
-              success: true,
-              data: resultData,
+              success: false,
+              error: error.message,
             });
           }
-        } catch (error: any) {
+        } else {
+          // No result file = cancelled
+          console.error(`[popup] Result file not found: ${resultFile}`);
           resolve({
             success: false,
-            error: error.message,
+            cancelled: true,
           });
         }
-      } else {
-        // No result file = cancelled
-        resolve({
-          success: false,
-          cancelled: true,
-        });
-      }
+      }, 100); // Wait 100ms for file to be written
     });
 
     child.on('error', (error) => {

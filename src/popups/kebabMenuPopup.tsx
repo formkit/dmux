@@ -5,7 +5,7 @@
  * Runs in a tmux popup modal and writes result to a file
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
 import type { ActionMetadata } from '../actions/types.js';
@@ -26,9 +26,22 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { exit } = useApp();
 
+  // Log that we mounted
+  useEffect(() => {
+    const logFile = '/tmp/dmux-kebab-debug.log';
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] Kebab menu mounted with ${actions.length} actions\n`);
+    return () => {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Kebab menu unmounting\n`);
+    };
+  }, []);
+
   useInput((input, key) => {
+    const logFile = '/tmp/dmux-kebab-debug.log';
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] Input: "${input}", escape: ${key.escape}, return: ${key.return}\n`);
+
     if (key.escape) {
       // User cancelled
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] ESC pressed, cancelling\n`);
       const result: PopupResult = {
         success: false,
         cancelled: true,
@@ -42,6 +55,7 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
     } else if (key.return) {
       // User selected an action
       const selectedAction = actions[selectedIndex];
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] ENTER pressed, selected: ${selectedAction.id}\n`);
       const result: PopupResult = {
         success: true,
         data: selectedAction.id,

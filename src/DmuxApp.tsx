@@ -528,16 +528,39 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Clear active popup tracking
       activePopupRef.current = null;
 
+      // Log the entire result for debugging
+      LogService.getInstance().info(`Kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
+
       if (result.success && result.data) {
-        // User selected an action - execute it
+        // User selected an action
         const actionId = result.data as PaneAction;
-        actionSystem.executeAction(actionId, selectedPane, { mainBranch: getMainBranch() });
+        LogService.getInstance().info(`Action selected: ${actionId}`, 'KebabMenu');
+
+        // Handle merge action with dedicated popup
+        if (actionId === PaneAction.MERGE) {
+          LogService.getInstance().info(`Merge action selected for pane: ${selectedPane.slug}`, 'MergeAction');
+          try {
+            await launchMergePopup(selectedPane);
+            LogService.getInstance().info('Merge popup completed', 'MergeAction');
+          } catch (error) {
+            LogService.getInstance().error('Merge popup error', 'MergeAction', selectedPane.id, error instanceof Error ? error : undefined);
+            setStatusMessage(`Merge popup failed: ${error}`);
+            setTimeout(() => setStatusMessage(''), 3000);
+          }
+        } else {
+          // Execute other actions through action system
+          await actionSystem.executeAction(actionId, selectedPane, { mainBranch: getMainBranch() });
+        }
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
+        LogService.getInstance().info('Kebab menu cancelled', 'KebabMenu');
         return;
       } else if (result.error) {
+        LogService.getInstance().error(`Kebab menu error: ${result.error}`, 'KebabMenu');
         setStatusMessage(`Popup error: ${result.error}`);
         setTimeout(() => setStatusMessage(''), 3000);
+      } else {
+        LogService.getInstance().warn(`Unexpected kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
       }
     } catch (error: any) {
       setStatusMessage(`Failed to launch popup: ${error.message}`);
@@ -1048,6 +1071,113 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       }
     } catch (error: any) {
       setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
+
+  const launchMergePopup = async (pane: DmuxPane): Promise<void> => {
+    LogService.getInstance().info(`launchMergePopup called for pane: ${pane.slug}`, 'MergePopup');
+
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      LogService.getInstance().warn('Popups not supported', 'MergePopup');
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    if (!pane.worktreePath) {
+      LogService.getInstance().warn('No worktree path for pane', 'MergePopup', pane.id);
+      setStatusMessage('This pane has no worktree to merge');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'mergePopup.js');
+      LogService.getInstance().info(`Popup script path: ${popupScriptPath}`, 'MergePopup');
+
+      // Check if popup script exists
+      try {
+        await fs.access(popupScriptPath);
+        LogService.getInstance().info('Popup script exists', 'MergePopup');
+      } catch {
+        LogService.getInstance().error(`Popup script NOT found at: ${popupScriptPath}`, 'MergePopup');
+        setStatusMessage(`Merge popup script not found: ${popupScriptPath}`);
+        setTimeout(() => setStatusMessage(''), 5000);
+        return;
+      }
+
+      // Prepare merge data
+      const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+      const mergeData = {
+        paneSlug: pane.slug,
+        worktreePath: pane.worktreePath,
+        mainRepoPath,
+        mainBranch: getMainBranch(),
+      };
+
+      // Write data to temp file
+      const dataFile = `/tmp/dmux-merge-${Date.now()}.json`;
+      await fs.writeFile(dataFile, JSON.stringify(mergeData));
+      LogService.getInstance().info(`Merge data written to: ${dataFile}`, 'MergePopup');
+      LogService.getInstance().info(`Merge data: ${JSON.stringify(mergeData)}`, 'MergePopup');
+
+      // Launch the popup non-blocking and track it
+      LogService.getInstance().info('Launching merge popup...', 'MergePopup');
+      const popupHandle = launchNodePopupNonBlocking<{
+        merged: boolean;
+        closedPane?: boolean;
+        error?: string;
+      }>(
+        popupScriptPath,
+        [dataFile],
+        {
+          ...POPUP_POSITIONING.large(SIDEBAR_WIDTH, terminalWidth, terminalHeight),
+          width: 80,
+          height: 30,
+          title: `🔀 Merge: ${pane.slug}`
+        }
+      );
+      LogService.getInstance().info(`Popup launched, PID: ${popupHandle.pid}`, 'MergePopup');
+
+      // Track the active popup for click-outside-to-close
+      activePopupRef.current = popupHandle;
+
+      // Wait for the popup to close
+      const result = await popupHandle.resultPromise;
+
+      // Clear active popup tracking
+      activePopupRef.current = null;
+
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch {}
+
+      if (result.success && result.data?.merged) {
+        if (result.data.closedPane) {
+          // Pane was closed during merge, refresh pane list
+          await loadPanes();
+          setStatusMessage('Merge complete, pane closed');
+        } else {
+          setStatusMessage('Merge complete');
+        }
+        setTimeout(() => setStatusMessage(''), 3000);
+      } else if (result.cancelled) {
+        // User cancelled
+        return;
+      } else if (result.error) {
+        setStatusMessage(`Merge error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch merge popup: ${error.message}`);
       setTimeout(() => setStatusMessage(''), 3000);
     }
   };
