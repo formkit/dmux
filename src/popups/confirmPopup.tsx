@@ -75,13 +75,6 @@ const ConfirmPopupApp: React.FC<ConfirmPopupProps> = ({
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          {title}
-        </Text>
-      </Box>
-
       {/* Message */}
       <Box marginBottom={1}>
         <Text>{message}</Text>

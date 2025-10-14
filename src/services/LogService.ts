@@ -40,6 +40,8 @@ export class LogService extends EventEmitter {
     return LogService.instance;
   }
 
+  private suppressConsole = false;
+
   /**
    * Add a log entry
    */
@@ -66,7 +68,7 @@ export class LogService extends EventEmitter {
     this.emit('log-added', entry);
 
     // Also log to console for development (can be disabled in production)
-    if (process.env.NODE_ENV !== 'production' || level === 'error') {
+    if (!this.suppressConsole && (process.env.NODE_ENV !== 'production' || level === 'error')) {
       const prefix = `[${source || 'dmux'}]`;
       switch (level) {
         case 'error':
@@ -147,8 +149,8 @@ export class LogService extends EventEmitter {
       }
     }
 
-    // Return newest first
-    return filtered.reverse();
+    // Return oldest first (newest at bottom)
+    return filtered;
   }
 
   /**
@@ -250,6 +252,54 @@ export class LogService extends EventEmitter {
     this.logs = [];
     this.logCounter = 0;
     this.removeAllListeners();
+  }
+
+  /**
+   * Generate test logs for UI development
+   */
+  generateTestLogs(count: number = 100): void {
+    // Suppress console output while generating test logs
+    this.suppressConsole = true;
+
+    const sources = ['startup', 'git', 'tmux', 'paneActions', 'api', 'server'];
+    const messages = [
+      'Press [L] to view logs, [L] to reset layout',
+      'Development mode enabled - this is a test warning',
+      'Debug log: System initialized successfully',
+      'HTTP server running on port 42001',
+      'Project root: /Volumes/StudioExternal/Primary/projects/dmux',
+      'dmux started for project: dmux',
+      'Pane created successfully',
+      'Git worktree initialized',
+      'Branch merged into main',
+      'File change detected. Starting incremental compilation...',
+      'Found 0 errors. Watching for file changes',
+      'Agent launched with prompt: Add user authentication',
+      'Connection established',
+      'Database connection failed: timeout after 5s',
+      'API request completed in 245ms',
+      'Cache cleared successfully',
+      'Session expired, redirecting to login',
+      'Build completed successfully',
+      'Tests passed: 42/42',
+      'Memory usage: 456MB / 2GB',
+    ];
+    const levels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+    for (let i = 0; i < count; i++) {
+      const level = levels[Math.floor(Math.random() * levels.length)];
+      const source = sources[Math.floor(Math.random() * sources.length)];
+      const message = messages[Math.floor(Math.random() * messages.length)];
+      const paneId = Math.random() > 0.7 ? `dmux-${Math.floor(Math.random() * 5)}` : undefined;
+
+      this.addLog(level, `${message} (${i + 1})`, source, paneId);
+
+      // Space out timestamps slightly
+      this.logCounter++;
+    }
+
+    // Re-enable console output
+    this.suppressConsole = false;
   }
 }
 

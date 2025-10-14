@@ -78,6 +78,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
   const { exit } = useApp();
 
+  // Flag to ignore input temporarily after popup closes (prevents buffered keys)
+  const [ignoreInput, setIgnoreInput] = useState(false);
+
   // Agent selection state
   const { availableAgents } = useAgentDetection();
   const [agentChoice, setAgentChoice] = useState<'claude' | 'opencode' | null>(null);
@@ -336,6 +339,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
+      // Ignore input briefly after popup closes to prevent buffered keys
+      setIgnoreInput(true);
+      setTimeout(() => setIgnoreInput(false), 100);
+
       if (result.success && result.data) {
         // User entered a prompt - now decide which agent to use
         const promptValue = result.data;
@@ -406,7 +413,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: Math.min(20, actions.length + 5),
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: `Menu: ${selectedPane.slug}`
         }
       );
 
@@ -457,7 +465,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: 12,
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: title || 'Confirm'
         }
       );
 
@@ -510,7 +519,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: 10,
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: 'Select Agent'
         }
       );
 
@@ -570,7 +580,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       const hooksJson = JSON.stringify(hooks);
 
       // Launch the popup - position at top, 1 char right of sidebar
-      // Height calculation: title(2) + hooks(11) + actions box(8) + help(2) + padding(3) = 26
+      // Height calculation: hooks(11) + actions box(8) + help(2) + padding(3) = 24
       const result = await launchNodePopup<{
         action?: 'edit' | 'view';
       }>(
@@ -578,10 +588,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         [hooksJson],
         {
           width: 70,
-          height: 26,
+          height: 24,
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: '🪝 Manage Hooks'
         }
       );
 
@@ -642,21 +653,49 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'logsPopup.js');
 
+      // Get logs from StateManager and write to temp file
+      const stateManager = StateManager.getInstance();
+      const allLogs = stateManager.getLogs();
+      const stats = stateManager.getLogStats();
+      const logsData = { logs: allLogs, stats };
+
+      // Write data to temp file to avoid shell escaping issues with complex JSON
+      const dataFile = `/tmp/dmux-logs-${Date.now()}.json`;
+      const dataJson = JSON.stringify(logsData);
+      await fs.writeFile(dataFile, dataJson);
+
       // Launch the popup - position at top, 1 char right of sidebar
+      // Use 90% of terminal height and most of remaining width
+      // Get tmux client dimensions (not process.stdout which is just the sidebar)
+      const tmuxDims = execSync('tmux display-message -p "#{client_width},#{client_height}"', { encoding: 'utf-8' }).trim();
+      const [termWidth, termHeight] = tmuxDims.split(',').map(Number);
+      const popupHeight = Math.floor(termHeight * 0.9);
+      const popupWidth = Math.min(termWidth - SIDEBAR_WIDTH - 2, 100);
+
       const result = await launchNodePopup<void>(
         popupScriptPath,
-        [],
+        [dataFile],
         {
-          width: 70,
-          height: 25,
+          width: popupWidth,
+          height: popupHeight,
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: '🪵 dmux Logs'
         }
       );
 
-      // Popup closed (user pressed ESC or finished viewing)
-      // Logs are automatically marked as read when popup opens
+      // Clean up temp file
+      try {
+        await fs.unlink(dataFile);
+      } catch (err) {
+        // Ignore cleanup errors
+      }
+
+      // Popup closed - mark all logs as read
+      if (result.success) {
+        stateManager.markAllLogsAsRead();
+      }
     } catch (error: any) {
       setStatusMessage(`Failed to launch popup: ${error.message}`);
       setTimeout(() => setStatusMessage(''), 3000);
@@ -697,7 +736,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: Math.min(25, SETTING_DEFINITIONS.length + 8),
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: '⚙️  Settings'
         }
       );
 
@@ -759,7 +799,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: Math.min(25, options.length * 3 + 8),
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: title || 'Choose Option'
         }
       );
 
@@ -814,7 +855,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: 15,
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: title || 'Input'
         }
       );
 
@@ -863,6 +905,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Launch the popup - position at top, 1 char right of sidebar
       // Height depends on message length
       const lines = Math.ceil(message.length / 60) + 3; // Estimate lines needed
+      const titleText = type === 'success' ? '✓ Success' :
+                        type === 'error' ? '✗ Error' :
+                        type === 'info' ? 'ℹ Info' : 'Progress';
       await launchNodePopup<void>(
         popupScriptPath,
         [dataFile],
@@ -871,7 +916,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           height: Math.min(15, lines + 4),
           centered: false,
           leftOffset: SIDEBAR_WIDTH + 1,
-          topOffset: 0
+          topOffset: 0,
+          title: titleText
         }
       );
 
@@ -1523,6 +1569,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   };
 
   useInput(async (input: string, key: any) => {
+    // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
+    if (ignoreInput) {
+      return;
+    }
+
     // Handle Ctrl+C for quit confirmation (must be first, before any other checks)
     if (key.ctrl && input === 'c') {
       if (quitConfirmMode) {

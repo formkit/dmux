@@ -71,13 +71,13 @@ export async function launchPopup(
   // Add border style if supported (tmux 3.2+)
   // Skip if borderStyle is 'none' (we want no tmux border)
   if (borderStyle && borderStyle !== 'none') {
-    args.push('-s', borderStyle);
+    args.push('-b', borderStyle);
   }
 
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
     // Absolute positioning with leftOffset/topOffset
-    args.push('-x', (leftOffset + 1).toString());
+    args.push('-x', leftOffset.toString());
     args.push('-y', topOffset.toString());
   } else if (!centered && x !== undefined && y !== undefined) {
     // Absolute positioning with x/y
@@ -85,7 +85,7 @@ export async function launchPopup(
     args.push('-y', y.toString());
   } else if (centered && leftOffset > 0) {
     // Centered with sidebar offset
-    args.push('-x', (leftOffset + 1).toString());
+    args.push('-x', leftOffset.toString());
     args.push('-y', topOffset.toString());
   } else {
     // Fully centered

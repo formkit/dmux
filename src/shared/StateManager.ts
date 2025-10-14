@@ -240,6 +240,13 @@ export class StateManager extends EventEmitter {
   }
 
   /**
+   * Generate test logs for development
+   */
+  generateTestLogs(count: number = 100): void {
+    this.logService.generateTestLogs(count);
+  }
+
+  /**
    * Get log statistics
    */
   getLogStats(): ReturnType<typeof this.logService.getStats> {

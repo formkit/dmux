@@ -9,109 +9,163 @@
  * - By pane
  */
 
-import React, { useState, useEffect } from 'react';
-import { render, Box, Text, useInput } from 'ink';
-import { StateManager } from '../shared/StateManager.js';
+import React, { useState, useMemo } from 'react';
+import { render, Box, Text, useInput, useStdout } from 'ink';
 import type { LogEntry, LogLevel } from '../types.js';
+import * as fs from 'fs';
 
 type FilterMode = 'all' | 'errors' | 'warnings' | 'pane';
 
-const LogsPopup: React.FC = () => {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+interface LogsPopupProps {
+  allLogs: LogEntry[];
+  stats: {
+    total: number;
+    errors: number;
+    warnings: number;
+    unreadErrors: number;
+    unreadWarnings: number;
+  };
+}
+
+interface LogsPopupAppProps extends LogsPopupProps {
+  resultFile: string;
+}
+
+const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile }) => {
+  const { stdout } = useStdout();
+  const terminalHeight = stdout?.rows || 50;
+
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedPane, setSelectedPane] = useState<string | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [availablePanes, setAvailablePanes] = useState<string[]>([]);
 
-  // Load logs on mount and subscribe to updates
-  useEffect(() => {
-    const stateManager = StateManager.getInstance();
+  // Calculate line count for each log entry
+  const getLogLineCount = (log: LogEntry): number => {
+    let lines = 1; // Main message line
+    if (log.paneId) lines++; // Pane attribution line
+    if (log.stack) lines++; // Stack trace line
+    return lines;
+  };
 
-    const loadLogs = () => {
-      let filter: any = {};
+  // Calculate initial scroll offset to start at bottom
+  const headerFooterLines = 8;
+  const availableLogLines = Math.max(terminalHeight - headerFooterLines, 10);
 
-      switch (filterMode) {
-        case 'errors':
-          filter.level = 'error';
-          break;
-        case 'warnings':
-          filter.level = 'warn';
-          break;
-        case 'pane':
-          if (selectedPane) {
-            filter.paneId = selectedPane;
-          }
-          break;
-        default:
-          // Show all
-          break;
+  const initialTotalLines = allLogs.reduce((sum, log) => sum + getLogLineCount(log), 0);
+  const initialScrollOffset = Math.max(0, initialTotalLines - availableLogLines);
+
+  const [scrollOffset, setScrollOffset] = useState(initialScrollOffset);
+
+  // Extract available panes
+  const availablePanes = useMemo(() => {
+    const paneIds = new Set<string>();
+    allLogs.forEach(log => {
+      if (log.paneId) {
+        paneIds.add(log.paneId);
       }
-
-      const filteredLogs = stateManager.getLogs(filter);
-      setLogs(filteredLogs);
-
-      // Extract unique pane IDs for filter
-      const paneIds = new Set<string>();
-      const allLogs = stateManager.getLogs();
-      allLogs.forEach(log => {
-        if (log.paneId) {
-          paneIds.add(log.paneId);
-        }
-      });
-      setAvailablePanes(Array.from(paneIds));
-    };
-
-    loadLogs();
-
-    // Subscribe to state changes
-    const unsubscribe = stateManager.subscribe(() => {
-      loadLogs();
     });
+    return Array.from(paneIds);
+  }, [allLogs]);
 
-    return () => {
-      unsubscribe();
-    };
-  }, [filterMode, selectedPane]);
+  // Filter logs based on current filter mode
+  const filteredLogs = useMemo(() => {
+    let filtered = [...allLogs];
 
-  // Mark all logs as read on mount
-  useEffect(() => {
-    const stateManager = StateManager.getInstance();
-    stateManager.markAllLogsAsRead();
-  }, []);
+    switch (filterMode) {
+      case 'errors':
+        filtered = filtered.filter(log => log.level === 'error');
+        break;
+      case 'warnings':
+        filtered = filtered.filter(log => log.level === 'warn');
+        break;
+      case 'pane':
+        // When in pane mode, only show logs with pane IDs
+        if (selectedPane) {
+          filtered = filtered.filter(log => log.paneId === selectedPane);
+        } else {
+          // No specific pane selected - show only logs with pane IDs
+          filtered = filtered.filter(log => log.paneId);
+        }
+        break;
+      default:
+        // Show all
+        break;
+    }
+
+    return filtered;
+  }, [allLogs, filterMode, selectedPane]);
+
+  // Update scroll offset when filter changes to show bottom
+  React.useEffect(() => {
+    const totalLines = filteredLogs.reduce((sum, log) => sum + getLogLineCount(log), 0);
+    const maxScroll = Math.max(0, totalLines - availableLogLines);
+    setScrollOffset(maxScroll);
+  }, [filterMode, filteredLogs, availableLogLines]);
+
+  const halfPageSize = Math.floor(availableLogLines / 2);
 
   useInput((input, key) => {
     if (key.escape) {
+      // Write success result before exiting
+      const result = { success: true };
+      fs.writeFileSync(resultFile, JSON.stringify(result));
       process.exit(0);
     }
 
     // Filter mode selection
     if (input === '1') {
       setFilterMode('all');
-      setSelectedIndex(0);
+      setSelectedPane(null);
     } else if (input === '2') {
       setFilterMode('errors');
-      setSelectedIndex(0);
+      setSelectedPane(null);
     } else if (input === '3') {
       setFilterMode('warnings');
-      setSelectedIndex(0);
+      setSelectedPane(null);
     } else if (input === '4') {
       setFilterMode('pane');
-      setSelectedIndex(0);
+      // Start with first pane if available
+      if (availablePanes.length > 0 && !selectedPane) {
+        setSelectedPane(availablePanes[0]);
+      }
     }
 
-    // Navigation
-    if (key.upArrow && selectedIndex > 0) {
-      setSelectedIndex(selectedIndex - 1);
+    // Left/right arrow keys to cycle through panes when in pane mode
+    if (filterMode === 'pane' && availablePanes.length > 0) {
+      if (key.leftArrow) {
+        const currentIndex = selectedPane ? availablePanes.indexOf(selectedPane) : 0;
+        const newIndex = currentIndex > 0 ? currentIndex - 1 : availablePanes.length - 1;
+        setSelectedPane(availablePanes[newIndex]);
+        return; // Don't scroll
+      }
+      if (key.rightArrow) {
+        const currentIndex = selectedPane ? availablePanes.indexOf(selectedPane) : 0;
+        const newIndex = currentIndex < availablePanes.length - 1 ? currentIndex + 1 : 0;
+        setSelectedPane(availablePanes[newIndex]);
+        return; // Don't scroll
+      }
     }
 
-    if (key.downArrow && selectedIndex < logs.length - 1) {
-      setSelectedIndex(selectedIndex + 1);
+    // Calculate max scroll based on total line count
+    const totalLines = filteredLogs.reduce((sum, log) => sum + getLogLineCount(log), 0);
+    const maxScroll = Math.max(0, totalLines - availableLogLines);
+
+    // Half-page scrolling with arrow keys
+    if (key.upArrow) {
+      setScrollOffset(Math.max(0, scrollOffset - halfPageSize));
     }
 
-    // Clear logs
-    if (input === 'c' || input === 'C') {
-      const stateManager = StateManager.getInstance();
-      stateManager.clearAllLogs();
+    if (key.downArrow) {
+      setScrollOffset(Math.min(maxScroll, scrollOffset + halfPageSize));
+    }
+
+    // Mouse wheel scrolling (tmux sends these as escape sequences)
+    // Scroll up: ESC[64;row;colM or button 4
+    // Scroll down: ESC[65;row;colM or button 5
+    if (input.includes('[64;') || input.includes('ScrollUp')) {
+      setScrollOffset(Math.max(0, scrollOffset - halfPageSize));
+    }
+    if (input.includes('[65;') || input.includes('ScrollDown')) {
+      setScrollOffset(Math.min(maxScroll, scrollOffset + halfPageSize));
     }
   });
 
@@ -136,15 +190,6 @@ const LogsPopup: React.FC = () => {
     }
   };
 
-  // Get emoji for log level
-  const getLevelEmoji = (level: LogLevel): string => {
-    switch (level) {
-      case 'error': return '🔴';
-      case 'warn': return '🟡';
-      case 'info': return '🔵';
-      case 'debug': return '⚪';
-    }
-  };
 
   // Filter tabs
   const renderFilterTabs = () => {
@@ -152,7 +197,7 @@ const LogsPopup: React.FC = () => {
       { key: '1', label: 'All', mode: 'all' as FilterMode },
       { key: '2', label: 'Errors', mode: 'errors' as FilterMode },
       { key: '3', label: 'Warnings', mode: 'warnings' as FilterMode },
-      { key: '4', label: 'By Pane', mode: 'pane' as FilterMode },
+      { key: '4', label: filterMode === 'pane' && selectedPane ? `Pane: ${selectedPane}` : 'By Pane', mode: 'pane' as FilterMode },
     ];
 
     return (
@@ -171,35 +216,27 @@ const LogsPopup: React.FC = () => {
   };
 
   // Render log entry
-  const renderLogEntry = (log: LogEntry, index: number) => {
-    const isSelected = index === selectedIndex;
+  const renderLogEntry = (log: LogEntry) => {
     const time = formatTime(log.timestamp);
-    const emoji = getLevelEmoji(log.level);
     const color = getLevelColor(log.level);
 
-    // Truncate long messages
-    const maxLen = 60;
-    const message = log.message.length > maxLen
-      ? log.message.substring(0, maxLen) + '...'
-      : log.message;
-
     return (
-      <Box key={log.id} flexDirection="column">
-        <Box>
-          <Text color={isSelected ? 'cyan' : color}>
-            {isSelected ? '❯ ' : '  '}
-            {emoji} {time} [{log.source || 'dmux'}] {message}
+      <Box key={log.id} flexDirection="column" marginBottom={0}>
+        <Text>
+          <Text color={color}>
+            {time}
           </Text>
-        </Box>
+          <Text color={color}> [{log.source || 'dmux'}] {log.message}</Text>
+        </Text>
         {log.paneId && (
-          <Box marginLeft={4}>
+          <Box marginLeft={2}>
             <Text dimColor>
               └─ Pane: {log.paneId}
             </Text>
           </Box>
         )}
-        {isSelected && log.stack && (
-          <Box marginLeft={4}>
+        {log.stack && (
+          <Box marginLeft={2}>
             <Text dimColor>
               Stack: {log.stack.split('\n')[0]}
             </Text>
@@ -209,43 +246,102 @@ const LogsPopup: React.FC = () => {
     );
   };
 
-  const stats = StateManager.getInstance().getLogStats();
+  // Calculate which logs fit in the viewport considering multi-line entries
+  const getVisibleLogs = () => {
+    const visible: LogEntry[] = [];
+    let totalLines = 0;
+    let startIndex = 0;
+
+    // Calculate starting index based on scroll offset
+    let skippedLines = 0;
+    for (let i = 0; i < filteredLogs.length; i++) {
+      const lineCount = getLogLineCount(filteredLogs[i]);
+      if (skippedLines + lineCount > scrollOffset) {
+        startIndex = i;
+        break;
+      }
+      skippedLines += lineCount;
+    }
+
+    // Add logs until we fill the viewport
+    for (let i = startIndex; i < filteredLogs.length; i++) {
+      const lineCount = getLogLineCount(filteredLogs[i]);
+      if (totalLines + lineCount > availableLogLines) break;
+      visible.push(filteredLogs[i]);
+      totalLines += lineCount;
+    }
+
+    return visible;
+  };
+
+  const visibleLogs = getVisibleLogs();
+
+  // Calculate total line count for scroll calculations
+  const totalLines = filteredLogs.reduce((sum, log) => sum + getLogLineCount(log), 0);
+  const canScrollUp = scrollOffset > 0;
+  const hasMore = scrollOffset < totalLines - availableLogLines;
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          🪵 dmux Logs
-        </Text>
-        <Text dimColor> - {stats.total} total, {stats.errors} errors, {stats.warnings} warnings</Text>
+    <Box flexDirection="column">
+      {/* Header - Stats and filters */}
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+        <Box>
+          <Text dimColor>{stats.total} total • {stats.errors} errors • {stats.warnings} warnings</Text>
+        </Box>
+        <Box marginTop={1}>
+          {renderFilterTabs()}
+        </Box>
       </Box>
 
-      {/* Filter tabs */}
-      <Box marginBottom={1}>
-        {renderFilterTabs()}
-      </Box>
-
-      {/* Logs list */}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        {logs.length === 0 ? (
+      {/* Logs list - fixed height */}
+      <Box flexDirection="column" height={availableLogLines} paddingX={1} paddingY={1}>
+        {filteredLogs.length === 0 ? (
           <Box>
             <Text dimColor>No logs to display</Text>
           </Box>
         ) : (
-          logs.slice(0, 15).map((log, index) => renderLogEntry(log, index))
+          visibleLogs.map((log) => renderLogEntry(log))
         )}
       </Box>
 
-      {/* Footer */}
-      <Box marginTop={1}>
+      {/* Footer - always at bottom */}
+      <Box borderStyle="single" borderColor="gray" paddingX={1}>
         <Text dimColor>
-          ↑↓: Navigate • 1-4: Filter • c: Clear • ESC: Close
+          ↑↓: Scroll • 1-4: Filter
+          {filterMode === 'pane' && availablePanes.length > 0 && (
+            <Text dimColor> • ←→: {selectedPane || 'All Panes'}</Text>
+          )}
+          {' • ESC: Close'}
+          {filteredLogs.length > availableLogLines && (
+            <Text dimColor> • Showing {scrollOffset + 1}-{Math.min(scrollOffset + availableLogLines, filteredLogs.length)} of {filteredLogs.length}</Text>
+          )}
         </Text>
       </Box>
     </Box>
   );
 };
 
-// Render the popup
-render(<LogsPopup />);
+// Entry point
+function main() {
+  const resultFile = process.argv[2];
+  const dataFile = process.argv[3];
+
+  if (!resultFile || !dataFile) {
+    console.error('Error: Result file and data file paths required');
+    console.error(`Got: resultFile=${resultFile}, dataFile=${dataFile}`);
+    process.exit(1);
+  }
+
+  let logsData: { logs: LogEntry[]; stats: any };
+  try {
+    const dataJson = fs.readFileSync(dataFile, 'utf-8');
+    logsData = JSON.parse(dataJson);
+  } catch (error) {
+    console.error('Error: Failed to read or parse logs data file:', error);
+    process.exit(1);
+  }
+
+  render(<LogsPopupApp allLogs={logsData.logs} stats={logsData.stats} resultFile={resultFile} />);
+}
+
+main();

@@ -57,20 +57,13 @@ const InputPopupApp: React.FC<InputPopupProps> = ({
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          {title}
-        </Text>
-      </Box>
-
       {/* Message */}
       <Box marginBottom={1}>
         <Text>{message}</Text>
       </Box>
 
       {/* Input */}
-      <Box marginBottom={1} borderStyle="round" borderColor="yellow" paddingX={1} paddingY={0}>
+      <Box marginBottom={1} borderStyle="bold" borderColor="yellow" paddingX={1} paddingY={0}>
         <CleanTextInput
           value={value}
           onChange={setValue}

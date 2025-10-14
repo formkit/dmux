@@ -43,13 +43,6 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Create New Pane
-        </Text>
-      </Box>
-
       {/* Instructions */}
       <Box marginBottom={1}>
         <Text dimColor>
@@ -59,7 +52,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
       </Box>
 
       {/* Input area with border */}
-      <Box marginBottom={1} borderStyle="round" borderColor="yellow" paddingX={1} paddingY={0}>
+      <Box marginBottom={1} borderStyle="bold" borderColor="yellow" paddingX={1} paddingY={0}>
         <CleanTextInput
           value={prompt}
           onChange={setPrompt}

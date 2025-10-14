@@ -39,37 +39,8 @@ const ProgressPopupApp: React.FC<ProgressPopupProps> = ({
     }
   }, [timeout, resultFile, exit]);
 
-  const getTitle = () => {
-    switch (type) {
-      case 'success':
-        return '✓ Success';
-      case 'error':
-        return '✗ Error';
-      default:
-        return 'Please Wait...';
-    }
-  };
-
-  const getTitleColor = () => {
-    switch (type) {
-      case 'success':
-        return 'green';
-      case 'error':
-        return 'red';
-      default:
-        return 'cyan';
-    }
-  };
-
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color={getTitleColor()}>
-          {getTitle()}
-        </Text>
-      </Box>
-
       {/* Message */}
       <Box>
         <Text>{message}</Text>

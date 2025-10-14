@@ -53,13 +53,6 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Menu: {paneName}
-        </Text>
-      </Box>
-
       {/* Action list */}
       {actions.map((action, index) => (
         <Box key={action.id}>

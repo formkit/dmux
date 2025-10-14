@@ -71,13 +71,6 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Choose Agent
-        </Text>
-      </Box>
-
       {/* Options */}
       <Box flexDirection="column" marginBottom={1}>
         {availableAgents.map((agent, index) => {

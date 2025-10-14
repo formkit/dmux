@@ -69,13 +69,6 @@ const HooksPopupApp: React.FC<HooksPopupProps> = ({ resultFile, hooks }) => {
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Manage Hooks
-        </Text>
-      </Box>
-
       {/* Hooks list */}
       <Box flexDirection="column" marginBottom={1}>
         {hooks.map((hook, index) => {
@@ -92,7 +85,7 @@ const HooksPopupApp: React.FC<HooksPopupProps> = ({ resultFile, hooks }) => {
       </Box>
 
       {/* Actions */}
-      <Box marginTop={1} marginBottom={1} paddingY={1} borderStyle="single" borderColor="gray">
+      <Box marginTop={1} marginBottom={1} paddingY={1} borderStyle="bold" borderColor="gray">
         <Box flexDirection="column" paddingX={1}>
           <Text color="cyan" bold>
             Actions:

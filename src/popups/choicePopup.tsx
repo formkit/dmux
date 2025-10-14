@@ -68,13 +68,6 @@ const ChoicePopupApp: React.FC<ChoicePopupProps> = ({
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          {title}
-        </Text>
-      </Box>
-
       {/* Message */}
       {message && (
         <Box marginBottom={1}>

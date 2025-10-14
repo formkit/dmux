@@ -143,13 +143,6 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
 
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Title */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Settings
-        </Text>
-      </Box>
-
       {mode === 'list' && (
         <>
           {settingDefinitions.map((def, index) => {
