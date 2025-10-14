@@ -27,7 +27,12 @@ import { StateManager } from './shared/StateManager.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
 import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
 import { SettingsManager, SETTING_DEFINITIONS } from './utils/settingsManager.js';
+import { launchNodePopup, supportsPopups } from './utils/popup.js';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
 import type { DmuxPane, PanePosition, ProjectSettings, DmuxAppProps } from './types.js';
@@ -100,6 +105,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const [showAgentChoiceDialog, setShowAgentChoiceDialog] = useState(false);
   const [agentChoice, setAgentChoice] = useState<'claude' | 'opencode' | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState('');
+
+  // Popup support detection
+  const [popupsSupported, setPopupsSupported] = useState(false);
 
   // Track terminal dimensions for responsive layout
   const terminalWidth = useTerminalWidth();
@@ -277,6 +285,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     };
     process.on('SIGTERM', handleTermination);
 
+    // Check if tmux supports popups (3.2+)
+    setPopupsSupported(supportsPopups());
+
     // Test debug message on mount
     StateManager.getInstance().setDebugMessage('Debug logging initialized - watching for AI activity...');
     setTimeout(() => {
@@ -425,6 +436,65 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
 
 
+
+  const launchNewPanePopup = async () => {
+    // Only launch popup if tmux supports it
+    if (!popupsSupported) {
+      setStatusMessage('Popups require tmux 3.2+');
+      setTimeout(() => setStatusMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Resolve the popup script path from the project root
+      // This handles both dev (tsx running from src) and prod (compiled to dist)
+      const projectRootForPopup = __dirname.includes('/dist')
+        ? path.resolve(__dirname, '..') // If in dist/, go up one level
+        : path.resolve(__dirname, '..'); // If in src/, go up one level
+
+      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'newPanePopup.js');
+
+      // Launch the popup and wait for result
+      // Center over content area (accounting for 40-char sidebar)
+      const result = await launchNodePopup<string>(
+        popupScriptPath,
+        [],
+        {
+          width: 90,
+          height: 18,
+          title: '  ✨ dmux - Create New Pane  ',
+          centered: true,
+          leftOffset: SIDEBAR_WIDTH  // Account for sidebar when centering
+        }
+      );
+
+      if (result.success && result.data) {
+        // User entered a prompt - now decide which agent to use
+        const promptValue = result.data;
+        const agents = availableAgents;
+
+        if (agents.length === 0) {
+          await createNewPaneHook(promptValue);
+        } else if (agents.length === 1) {
+          await createNewPaneHook(promptValue, agents[0]);
+        } else {
+          // Multiple agents available - show agent choice dialog
+          setPendingPrompt(promptValue);
+          setShowAgentChoiceDialog(true);
+          setAgentChoice(agentChoice || 'claude');
+        }
+      } else if (result.cancelled) {
+        // User pressed ESC - do nothing
+        return;
+      } else if (result.error) {
+        setStatusMessage(`Popup error: ${result.error}`);
+        setTimeout(() => setStatusMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to launch popup: ${error.message}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+    }
+  };
 
   const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
     setIsCreatingPane(true);
@@ -1431,10 +1501,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         setShowQRCode(true);
       }
     } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
-      // Clear the prompt and show dialog in next tick to prevent 'n' bleeding through
-      setNewPanePrompt('');
-      setShowNewPaneDialog(true);
-      return; // Consume the 'n' keystroke so it doesn't propagate
+      // Launch popup modal for new pane
+      await launchNewPanePopup();
+      return;
     } else if (input === 'j' && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
       StateManager.getInstance().setDebugMessage(`Jumping to pane: ${panes[selectedIndex].slug}`);
