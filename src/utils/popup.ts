@@ -393,7 +393,24 @@ export function launchNodePopupNonBlocking<T = any>(
   args: string[] = [],
   options: PopupOptions = {}
 ): PopupHandle<T> {
+  const {
+    width = 80,
+    height = 20,
+    title,
+    centered = true,
+    x,
+    y,
+    cwd = process.cwd(),
+    borderStyle = 'double',
+    leftOffset = 0,
+    topOffset = 0,
+  } = options;
+
+  // Calculate popup bounds
+  const bounds = calculatePopupBounds(options);
+
   // Get the result file path that the script will write to
+  // IMPORTANT: Only create this ONCE - do NOT create it again in child.on('close')
   const resultFile = path.join(os.tmpdir(), `dmux-popup-${Date.now()}.json`);
 
   // Build node command with proper escaping
@@ -404,7 +421,115 @@ export function launchNodePopupNonBlocking<T = any>(
 
   const command = `node ${escapedArgs.join(' ')}`;
 
-  return launchPopupNonBlocking(command, options) as PopupHandle<T>;
+  // Build tmux popup command
+  const tmuxArgs: string[] = [
+    'display-popup',
+    '-E', // Close on command exit
+    '-w', width.toString(),
+    '-h', height.toString(),
+    '-d', `"${cwd}"`,
+  ];
+
+  // Add border style if supported (tmux 3.2+)
+  if (borderStyle && borderStyle !== 'none') {
+    tmuxArgs.push('-b', borderStyle);
+  }
+
+  // Position: centered or custom
+  if (!centered && (leftOffset > 0 || topOffset > 0)) {
+    tmuxArgs.push('-x', leftOffset.toString());
+    tmuxArgs.push('-y', topOffset.toString());
+  } else if (!centered && x !== undefined && y !== undefined) {
+    tmuxArgs.push('-x', x.toString());
+    tmuxArgs.push('-y', y.toString());
+  } else if (centered && leftOffset > 0) {
+    tmuxArgs.push('-x', leftOffset.toString());
+    tmuxArgs.push('-y', topOffset.toString());
+  } else {
+    tmuxArgs.push('-x', 'C');
+    tmuxArgs.push('-y', 'C');
+  }
+
+  // Title
+  if (title) {
+    tmuxArgs.push('-T', `"${title}"`);
+  }
+
+  // Escape the command for tmux
+  const escapedCommand = command.replace(/'/g, "'\\''");
+  const fullCommand = `tmux ${tmuxArgs.join(' ')} '${escapedCommand}'`;
+
+  // Launch popup with spawn (non-blocking)
+  const child = spawn('sh', ['-c', fullCommand], {
+    stdio: 'inherit',
+  });
+
+  const resultPromise = new Promise<PopupResult<T>>((resolve) => {
+    child.on('close', () => {
+      // Small delay to ensure file is written
+      setTimeout(() => {
+        // Read result from temp file using the SAME resultFile path we passed to the script
+        if (fs.existsSync(resultFile)) {
+          try {
+            const resultData = fs.readFileSync(resultFile, 'utf-8');
+            fs.unlinkSync(resultFile); // Clean up
+
+            try {
+              const result = JSON.parse(resultData);
+              resolve(result);
+            } catch {
+              // Not JSON, treat as plain text
+              resolve({
+                success: true,
+                data: resultData,
+              } as any);
+            }
+          } catch (error: any) {
+            resolve({
+              success: false,
+              error: error.message,
+            });
+          }
+        } else {
+          // No result file = cancelled
+          console.error(`[popup] Result file not found: ${resultFile}`);
+          resolve({
+            success: false,
+            cancelled: true,
+          });
+        }
+      }, 100); // Wait 100ms for file to be written
+    });
+
+    child.on('error', (error) => {
+      // Clean up temp file if it exists
+      if (fs.existsSync(resultFile)) {
+        fs.unlinkSync(resultFile);
+      }
+
+      resolve({
+        success: false,
+        error: error.message,
+      });
+    });
+  });
+
+  return {
+    pid: child.pid!,
+    bounds,
+    resultPromise,
+    kill: () => {
+      try {
+        child.kill('SIGTERM');
+        // Clean up temp file
+        if (fs.existsSync(resultFile)) {
+          fs.unlinkSync(resultFile);
+        }
+      } catch {
+        // Ignore errors if process already dead
+      }
+    },
+  };
 }
 
 /**
