@@ -6,6 +6,8 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
+import { PopupWrapper } from './components/index.js';
+import { POPUP_CONFIG } from './config.js';
 
 interface ShortcutsPopupAppProps {
   resultFile: string;
@@ -44,24 +46,26 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   ];
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1}>
-        <Text bold color="cyan">Keyboard Shortcuts</Text>
-      </Box>
-
-      {shortcuts.map((shortcut, index) => (
-        <Box key={index} marginBottom={0}>
-          <Box width={12}>
-            <Text color="yellow" bold>[{shortcut.key}]</Text>
-          </Box>
-          <Text>{shortcut.description}</Text>
+    <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+      <Box flexDirection="column" padding={1}>
+        <Box marginBottom={1}>
+          <Text bold color={POPUP_CONFIG.titleColor}>Keyboard Shortcuts</Text>
         </Box>
-      ))}
 
-      <Box marginTop={1}>
-        <Text dimColor>Press Esc or ? to close</Text>
+        {shortcuts.map((shortcut, index) => (
+          <Box key={index} marginBottom={0}>
+            <Box width={12}>
+              <Text color="yellow" bold>[{shortcut.key}]</Text>
+            </Box>
+            <Text>{shortcut.description}</Text>
+          </Box>
+        ))}
+
+        <Box marginTop={1}>
+          <Text dimColor>Press Esc or ? to close</Text>
+        </Box>
       </Box>
-    </Box>
+    </PopupWrapper>
   );
 };
 

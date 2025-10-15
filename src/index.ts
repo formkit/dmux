@@ -17,6 +17,7 @@ import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
 import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
+import { TMUX_COLORS } from './theme/colors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -106,6 +107,14 @@ class Dmux {
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
         // Enable pane borders to show titles
         execSync(`tmux set-option -t ${this.sessionName} pane-border-status top`, { stdio: 'inherit' });
+        // Set border colors with warm gray backgrounds (light orange for active, gray for inactive)
+        execSync(`tmux set-option -t ${this.sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder},bg=colour${TMUX_COLORS.background}"`, { stdio: 'inherit' });
+        execSync(`tmux set-option -t ${this.sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder},bg=colour${TMUX_COLORS.background}"`, { stdio: 'inherit' });
+        // Set pane border format background color
+        execSync(`tmux set-option -t ${this.sessionName} pane-border-format " #{pane_title} "`, { stdio: 'inherit' });
+        // Set warm gray background colors for panes
+        execSync(`tmux set-option -t ${this.sessionName} window-style "bg=colour${TMUX_COLORS.background}"`, { stdio: 'inherit' });
+        execSync(`tmux set-option -t ${this.sessionName} window-active-style "bg=colour${TMUX_COLORS.activeBackground}"`, { stdio: 'inherit' });
         // Set pane title for the main dmux pane
         execSync(`tmux select-pane -t ${this.sessionName} -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)

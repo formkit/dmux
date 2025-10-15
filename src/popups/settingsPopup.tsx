@@ -7,19 +7,13 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import * as fs from 'fs';
 import type { SettingDefinition, DmuxSettings } from '../types.js';
-
-interface PopupResult {
-  success: boolean;
-  data?: {
-    key: string;
-    value: any;
-    scope: 'global' | 'project';
-  };
-  action?: string; // For action-type settings like 'hooks'
-  cancelled?: boolean;
-}
+import { POPUP_CONFIG } from './config.js';
+import {
+  PopupWrapper,
+  writeSuccessAndExit,
+  writeCancelAndExit,
+} from './components/index.js';
 
 interface SettingsPopupProps {
   resultFile: string;
@@ -48,13 +42,8 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
   useInput((input, key) => {
     if (key.escape) {
       if (mode === 'list') {
-        // Exit the popup
-        const result: PopupResult = {
-          success: false,
-          cancelled: true,
-        };
-        fs.writeFileSync(resultFile, JSON.stringify(result));
-        exit();
+        // Exit the popup - helper handles result writing
+        writeCancelAndExit(resultFile, exit);
       } else {
         // Go back to list
         setMode('list');
@@ -88,12 +77,7 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
 
         // Handle action type - return action name
         if (currentDef.type === 'action') {
-          const result: PopupResult = {
-            success: true,
-            action: currentDef.key,
-          };
-          fs.writeFileSync(resultFile, JSON.stringify(result));
-          exit();
+          writeSuccessAndExit(resultFile, { action: currentDef.key }, exit);
           return;
         }
 
@@ -126,26 +110,22 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
             newValue = currentDef.options[editingValueIndex]?.value || '';
           }
 
-          const result: PopupResult = {
-            success: true,
-            data: {
-              key: currentDef.key,
-              value: newValue,
-              scope,
-            },
-          };
-          fs.writeFileSync(resultFile, JSON.stringify(result));
-          exit();
+          writeSuccessAndExit(resultFile, {
+            key: currentDef.key,
+            value: newValue,
+            scope,
+          }, exit);
         }
       }
     }
   });
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {mode === 'list' && (
-        <>
-          {settingDefinitions.map((def, index) => {
+    <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+      <Box flexDirection="column" paddingX={2} paddingY={1}>
+        {mode === 'list' && (
+          <>
+            {settingDefinitions.map((def, index) => {
             const isSelected = index === selectedIndex;
 
             // Handle action type differently - no value display
@@ -188,11 +168,11 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
 
             return (
               <Box key={def.key}>
-                <Text color={isSelected ? 'cyan' : 'white'} bold={isSelected}>
+                <Text color={isSelected ? POPUP_CONFIG.titleColor : 'white'} bold={isSelected}>
                   {isSelected ? '▶ ' : '  '}
                   {def.label}
                 </Text>
-                <Text color={isSelected ? 'cyan' : 'gray'} dimColor={!isSelected}>
+                <Text color={isSelected ? POPUP_CONFIG.titleColor : 'gray'} dimColor={!isSelected}>
                   {' '}({displayValue}{scopeLabel})
                 </Text>
               </Box>
@@ -216,12 +196,12 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
           {currentDef.type === 'boolean' && (
             <>
               <Box>
-                <Text color={editingValueIndex === 0 ? 'cyan' : 'white'} bold={editingValueIndex === 0}>
+                <Text color={editingValueIndex === 0 ? POPUP_CONFIG.titleColor : 'white'} bold={editingValueIndex === 0}>
                   {editingValueIndex === 0 ? '▶ ' : '  '}Enable
                 </Text>
               </Box>
               <Box>
-                <Text color={editingValueIndex === 1 ? 'cyan' : 'white'} bold={editingValueIndex === 1}>
+                <Text color={editingValueIndex === 1 ? POPUP_CONFIG.titleColor : 'white'} bold={editingValueIndex === 1}>
                   {editingValueIndex === 1 ? '▶ ' : '  '}Disable
                 </Text>
               </Box>
@@ -232,7 +212,7 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
             <>
               {currentDef.options.map((option, index) => (
                 <Box key={option.value}>
-                  <Text color={editingValueIndex === index ? 'cyan' : 'white'} bold={editingValueIndex === index}>
+                  <Text color={editingValueIndex === index ? POPUP_CONFIG.titleColor : 'white'} bold={editingValueIndex === index}>
                     {editingValueIndex === index ? '▶ ' : '  '}{option.label}
                   </Text>
                 </Box>
@@ -253,12 +233,12 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
           </Box>
 
           <Box>
-            <Text color={scopeIndex === 0 ? 'cyan' : 'white'} bold={scopeIndex === 0}>
+            <Text color={scopeIndex === 0 ? POPUP_CONFIG.titleColor : 'white'} bold={scopeIndex === 0}>
               {scopeIndex === 0 ? '▶ ' : '  '}Global (all projects)
             </Text>
           </Box>
           <Box>
-            <Text color={scopeIndex === 1 ? 'cyan' : 'white'} bold={scopeIndex === 1}>
+            <Text color={scopeIndex === 1 ? POPUP_CONFIG.titleColor : 'white'} bold={scopeIndex === 1}>
               {scopeIndex === 1 ? '▶ ' : '  '}Project only
             </Text>
           </Box>
@@ -268,7 +248,8 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
           </Box>
         </>
       )}
-    </Box>
+      </Box>
+    </PopupWrapper>
   );
 };
 

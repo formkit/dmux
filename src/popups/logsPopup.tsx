@@ -10,12 +10,14 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { render, Box, Text, useInput, useStdout } from 'ink';
+import { render, Box, Text, useInput, useStdout, useApp } from 'ink';
 import type { LogEntry, LogLevel } from '../types.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execSync } from 'child_process';
+import { POPUP_CONFIG } from './config.js';
+import { PopupWrapper, writeSuccessAndExit } from './components/index.js';
 
 type FilterMode = 'all' | 'errors' | 'warnings' | 'pane';
 
@@ -36,6 +38,7 @@ interface LogsPopupAppProps extends LogsPopupProps {
 
 const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile }) => {
   const { stdout } = useStdout();
+  const { exit } = useApp();
   const terminalHeight = stdout?.rows || 50;
 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -109,10 +112,8 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
 
   useInput((input, key) => {
     if (key.escape) {
-      // Write success result before exiting
-      const result = { success: true };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      process.exit(0);
+      writeSuccessAndExit(resultFile, {}, exit);
+      return;
     }
 
     // Copy visible logs to clipboard
@@ -289,7 +290,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
         {tabs.map(tab => (
           <Text
             key={tab.key}
-            color={filterMode === tab.mode ? 'cyan' : 'gray'}
+            color={filterMode === tab.mode ? POPUP_CONFIG.titleColor : 'gray'}
             bold={filterMode === tab.mode}
           >
             [{tab.key}] {tab.label}
@@ -366,44 +367,46 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
   const hasMore = scrollOffset < totalLines - availableLogLines;
 
   return (
-    <Box flexDirection="column">
-      {/* Header - Stats and filters */}
-      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-        <Box>
-          <Text dimColor>{stats.total} total • {stats.errors} errors • {stats.warnings} warnings</Text>
-        </Box>
-        <Box marginTop={1}>
-          {renderFilterTabs()}
-        </Box>
-      </Box>
-
-      {/* Logs list - fixed height */}
-      <Box flexDirection="column" height={availableLogLines} paddingX={1} paddingY={1}>
-        {filteredLogs.length === 0 ? (
+    <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+      <Box flexDirection="column">
+        {/* Header - Stats and filters */}
+        <Box flexDirection="column" borderStyle="single" borderColor={POPUP_CONFIG.borderColor} paddingX={1}>
           <Box>
-            <Text dimColor>No logs to display</Text>
+            <Text dimColor>{stats.total} total • {stats.errors} errors • {stats.warnings} warnings</Text>
           </Box>
-        ) : (
-          visibleLogs.map((log) => renderLogEntry(log))
-        )}
-      </Box>
+          <Box marginTop={1}>
+            {renderFilterTabs()}
+          </Box>
+        </Box>
 
-      {/* Footer - always at bottom */}
-      <Box borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text dimColor>
-          ↑↓: Scroll • 1-4: Filter
-          {filterMode === 'pane' && availablePanes.length > 0 && (
-            <Text dimColor> • ←→: {selectedPane || 'All Panes'}</Text>
+        {/* Logs list - fixed height */}
+        <Box flexDirection="column" height={availableLogLines} paddingX={1} paddingY={1}>
+          {filteredLogs.length === 0 ? (
+            <Box>
+              <Text dimColor>No logs to display</Text>
+            </Box>
+          ) : (
+            visibleLogs.map((log) => renderLogEntry(log))
           )}
-          {' • [c]: Copy • [o]: Open in editor'}
-          {' • ESC: Close'}
-          {filteredLogs.length > availableLogLines && (
-            <Text dimColor> • Showing {scrollOffset + 1}-{Math.min(scrollOffset + availableLogLines, filteredLogs.length)} of {filteredLogs.length}</Text>
-          )}
-          {copied && <Text color="green"> • ✓ Copied!</Text>}
-        </Text>
+        </Box>
+
+        {/* Footer - always at bottom */}
+        <Box borderStyle="single" borderColor={POPUP_CONFIG.borderColor} paddingX={1}>
+          <Text dimColor>
+            ↑↓: Scroll • 1-4: Filter
+            {filterMode === 'pane' && availablePanes.length > 0 && (
+              <Text dimColor> • ←→: {selectedPane || 'All Panes'}</Text>
+            )}
+            {' • [c]: Copy • [o]: Open in editor'}
+            {' • ESC: Close'}
+            {filteredLogs.length > availableLogLines && (
+              <Text dimColor> • Showing {scrollOffset + 1}-{Math.min(scrollOffset + availableLogLines, filteredLogs.length)} of {filteredLogs.length}</Text>
+            )}
+            {copied && <Text color="green"> • ✓ Copied!</Text>}
+          </Text>
+        </Box>
       </Box>
-    </Box>
+    </PopupWrapper>
   );
 };
 

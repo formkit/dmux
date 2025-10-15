@@ -9,6 +9,8 @@ import * as fs from 'fs';
 import { execSync } from 'child_process';
 // @ts-ignore - No types available for qrcode-terminal
 import qrcode from 'qrcode-terminal';
+import { PopupWrapper } from './components/index.js';
+import { POPUP_CONFIG } from './config.js';
 
 interface RemotePopupAppProps {
   resultFile: string;
@@ -28,10 +30,14 @@ const RemotePopupApp: React.FC<RemotePopupAppProps> = ({
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [copied, setCopied] = useState(false);
 
+  const closePopup = (wasCopied: boolean) => {
+    fs.writeFileSync(resultFile, JSON.stringify({ closed: true, copied: wasCopied }));
+    exit();
+  };
+
   useInput((input, key) => {
     if (key.escape || input === 'q') {
-      fs.writeFileSync(resultFile, JSON.stringify({ closed: true, copied: false }));
-      exit();
+      closePopup(false);
     } else if (input === 'c' && tunnelUrl) {
       // Copy URL to clipboard
       try {
@@ -46,8 +52,7 @@ const RemotePopupApp: React.FC<RemotePopupAppProps> = ({
         }
       }
       // Close popup after copying, mark as copied
-      fs.writeFileSync(resultFile, JSON.stringify({ closed: true, copied: true }));
-      exit();
+      closePopup(true);
     }
   });
 
@@ -103,73 +108,81 @@ const RemotePopupApp: React.FC<RemotePopupAppProps> = ({
 
   if (isCreating) {
     return (
-      <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1}>
-          <Text bold color="cyan">Remote Access</Text>
+      <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+        <Box flexDirection="column" padding={1}>
+          <Box marginBottom={1}>
+            <Text bold color={POPUP_CONFIG.titleColor}>Remote Access</Text>
+          </Box>
+          <Box marginBottom={1}>
+            <Text color="yellow">{currentSpinner} Creating tunnel...</Text>
+          </Box>
+          <Box marginBottom={1}>
+            <Text dimColor>This may take up to 30 seconds</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Press Esc to close</Text>
+          </Box>
         </Box>
-        <Box marginBottom={1}>
-          <Text color="yellow">{currentSpinner} Creating tunnel...</Text>
-        </Box>
-        <Box marginBottom={1}>
-          <Text dimColor>This may take up to 30 seconds</Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>Press Esc to close</Text>
-        </Box>
-      </Box>
+      </PopupWrapper>
     );
   }
 
   if (error) {
     return (
-      <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1}>
-          <Text bold color="cyan">Remote Access</Text>
+      <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+        <Box flexDirection="column" padding={1}>
+          <Box marginBottom={1}>
+            <Text bold color={POPUP_CONFIG.titleColor}>Remote Access</Text>
+          </Box>
+          <Text color="red">{error}</Text>
+          <Box marginTop={1}>
+            <Text dimColor>Press Esc to close</Text>
+          </Box>
         </Box>
-        <Text color="red">{error}</Text>
-        <Box marginTop={1}>
-          <Text dimColor>Press Esc to close</Text>
-        </Box>
-      </Box>
+      </PopupWrapper>
     );
   }
 
   if (!tunnelUrl) {
     return (
-      <Box flexDirection="column" padding={1}>
-        <Box marginBottom={1}>
-          <Text bold color="cyan">Remote Access</Text>
+      <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+        <Box flexDirection="column" padding={1}>
+          <Box marginBottom={1}>
+            <Text bold color={POPUP_CONFIG.titleColor}>Remote Access</Text>
+          </Box>
+          <Text color="red">No tunnel URL available</Text>
+          <Box marginTop={1}>
+            <Text dimColor>Press Esc to close</Text>
+          </Box>
         </Box>
-        <Text color="red">No tunnel URL available</Text>
-        <Box marginTop={1}>
-          <Text dimColor>Press Esc to close</Text>
-        </Box>
-      </Box>
+      </PopupWrapper>
     );
   }
 
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1}>
-        <Text bold color="cyan">Remote Access</Text>
-      </Box>
-
-      <Box flexDirection="column" marginBottom={1}>
-        <Text dimColor>Scan to access dashboard:</Text>
-        <Text>{qrString}</Text>
-        <Text dimColor>{tunnelUrl}</Text>
-      </Box>
-
-      {copied && (
-        <Box marginTop={1} marginBottom={1}>
-          <Text color="green">✓ Copied to clipboard!</Text>
+    <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+      <Box flexDirection="column" padding={1}>
+        <Box marginBottom={1}>
+          <Text bold color={POPUP_CONFIG.titleColor}>Remote Access</Text>
         </Box>
-      )}
 
-      <Box marginTop={1}>
-        <Text dimColor>Press [c] to copy URL • [Esc] to close</Text>
+        <Box flexDirection="column" marginBottom={1}>
+          <Text dimColor>Scan to access dashboard:</Text>
+          <Text>{qrString}</Text>
+          <Text dimColor>{tunnelUrl}</Text>
+        </Box>
+
+        {copied && (
+          <Box marginTop={1} marginBottom={1}>
+            <Text color="green">✓ Copied to clipboard!</Text>
+          </Box>
+        )}
+
+        <Box marginTop={1}>
+          <Text dimColor>Press [c] to copy URL • [Esc] to close</Text>
+        </Box>
       </Box>
-    </Box>
+    </PopupWrapper>
   );
 };
 

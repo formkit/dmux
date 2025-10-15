@@ -7,13 +7,8 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import * as fs from 'fs';
-
-interface PopupResult {
-  success: boolean;
-  data?: 'claude' | 'opencode';
-  cancelled?: boolean;
-}
+import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface AgentChoicePopupProps {
   resultFile: string;
@@ -35,15 +30,7 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
   const selectedAgent = availableAgents[selectedIndex];
 
   useInput((input, key) => {
-    if (key.escape) {
-      // User cancelled
-      const result: PopupResult = {
-        success: false,
-        cancelled: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
-    } else if (key.upArrow) {
+    if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(availableAgents.length - 1, selectedIndex + 1));
@@ -57,44 +44,33 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
       if (opencodeIdx >= 0) setSelectedIndex(opencodeIdx);
     } else if (key.return) {
       // User confirmed choice
-      const result: PopupResult = {
-        success: true,
-        data: selectedAgent,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, selectedAgent, exit);
     }
   });
 
-  const claudeAvailable = availableAgents.includes('claude');
-  const opencodeAvailable = availableAgents.includes('opencode');
-
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Options */}
-      <Box flexDirection="column" marginBottom={1}>
-        {availableAgents.map((agent, index) => {
-          const isSelected = index === selectedIndex;
-          const label = agent === 'claude' ? 'Claude Code' : 'opencode';
-          return (
-            <Box key={agent} marginBottom={index < availableAgents.length - 1 ? 1 : 0}>
-              <Text
-                color={isSelected ? 'cyan' : 'white'}
-                bold={isSelected}
-              >
-                {isSelected ? '▶ ' : '  '}
-                {index + 1}. {label}
-              </Text>
-            </Box>
-          );
-        })}
-      </Box>
-
-      {/* Help text */}
-      <Box>
-        <Text dimColor>↑↓ to navigate • Enter to confirm • ESC to cancel</Text>
-      </Box>
-    </Box>
+    <PopupWrapper resultFile={resultFile}>
+      <PopupContainer footer={PopupFooters.choice()}>
+        {/* Options */}
+        <Box flexDirection="column">
+          {availableAgents.map((agent, index) => {
+            const isSelected = index === selectedIndex;
+            const label = agent === 'claude' ? 'Claude Code' : 'opencode';
+            return (
+              <Box key={agent} marginBottom={index < availableAgents.length - 1 ? 1 : 0}>
+                <Text
+                  color={isSelected ? POPUP_CONFIG.titleColor : 'white'}
+                  bold={isSelected}
+                >
+                  {isSelected ? '▶ ' : '  '}
+                  {index + 1}. {label}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      </PopupContainer>
+    </PopupWrapper>
   );
 };
 

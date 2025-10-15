@@ -7,6 +7,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import CleanTextInput from '../CleanTextInput.js';
+import { COLORS } from '../theme/colors.js';
 import chalk from 'chalk';
 
 interface ActionInputDialogProps {
@@ -59,12 +60,12 @@ const ActionInputDialog: React.FC<ActionInputDialogProps> = ({
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="cyan"
+      borderColor={COLORS.accent}
       paddingX={1}
       marginTop={1}
     >
       <Box marginBottom={1}>
-        <Text bold color="cyan">{title}</Text>
+        <Text bold color={COLORS.accent}>{title}</Text>
       </Box>
 
       <Box marginBottom={1}>

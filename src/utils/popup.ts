@@ -7,6 +7,7 @@ import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { POPUP_CONFIG } from '../popups/config.js';
 
 export interface PopupOptions {
   width?: number;
@@ -132,6 +133,9 @@ export async function launchPopup(
   if (borderStyle && borderStyle !== 'none') {
     args.push('-b', borderStyle);
   }
+
+  // Add popup background and border colors (darker background, orange border)
+  args.push('-s', `'bg=colour${POPUP_CONFIG.tmuxBackground},border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
 
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
@@ -284,6 +288,9 @@ export function launchPopupNonBlocking(
     args.push('-b', borderStyle);
   }
 
+  // Add popup background and border colors (darker background, orange border)
+  args.push('-s', `'bg=colour${POPUP_CONFIG.tmuxBackground},border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
+
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
     args.push('-x', leftOffset.toString());
@@ -435,6 +442,9 @@ export function launchNodePopupNonBlocking<T = any>(
     tmuxArgs.push('-b', borderStyle);
   }
 
+  // Add popup background and border colors (darker background, orange border)
+  tmuxArgs.push('-s', `'bg=colour${POPUP_CONFIG.tmuxBackground},border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
+
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
     tmuxArgs.push('-x', leftOffset.toString());
@@ -458,6 +468,11 @@ export function launchNodePopupNonBlocking<T = any>(
   // Escape the command for tmux
   const escapedCommand = command.replace(/'/g, "'\\''");
   const fullCommand = `tmux ${tmuxArgs.join(' ')} '${escapedCommand}'`;
+
+  // DEBUG: Log the actual tmux command
+  console.error('[DEBUG popup.ts launchNodePopupNonBlocking] Full tmux command:', fullCommand);
+  console.error('[DEBUG popup.ts] tmuxBackground:', POPUP_CONFIG.tmuxBackground);
+  console.error('[DEBUG popup.ts] tmuxBorderColor:', POPUP_CONFIG.tmuxBorderColor);
 
   // Launch popup with spawn (non-blocking)
   const child = spawn('sh', ['-c', fullCommand], {

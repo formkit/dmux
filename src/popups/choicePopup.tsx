@@ -8,12 +8,8 @@
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
-
-interface PopupResult {
-  success: boolean;
-  data?: string; // Selected option ID
-  cancelled?: boolean;
-}
+import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface ChoiceOption {
   id: string;
@@ -42,69 +38,53 @@ const ChoicePopupApp: React.FC<ChoicePopupProps> = ({
   const { exit } = useApp();
 
   useInput((input, key) => {
-    if (key.escape) {
-      // User cancelled
-      const result: PopupResult = {
-        success: false,
-        cancelled: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
-    } else if (key.upArrow) {
+    if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(options.length - 1, selectedIndex + 1));
     } else if (key.return) {
       // User selected an option
       const selectedOption = options[selectedIndex];
-      const result: PopupResult = {
-        success: true,
-        data: selectedOption.id,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, selectedOption.id, exit);
     }
   });
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Message */}
-      {message && (
-        <Box marginBottom={1}>
-          <Text>{message}</Text>
-        </Box>
-      )}
+    <PopupWrapper resultFile={resultFile}>
+      <PopupContainer footer={PopupFooters.choice()}>
+        {/* Message */}
+        {message && (
+          <Box marginBottom={1}>
+            <Text>{message}</Text>
+          </Box>
+        )}
 
-      {/* Options */}
-      <Box flexDirection="column" marginBottom={1}>
-        {options.map((option, index) => {
-          const isSelected = index === selectedIndex;
-          return (
-            <Box key={option.id} marginBottom={index < options.length - 1 ? 1 : 0}>
-              <Box flexDirection="column">
-                <Text
-                  color={isSelected ? 'cyan' : option.danger ? 'red' : 'white'}
-                  bold={isSelected}
-                >
-                  {isSelected ? '▶ ' : '  '}
-                  {option.label}
-                </Text>
-                {option.description && (
-                  <Box marginLeft={3}>
-                    <Text dimColor>{option.description}</Text>
-                  </Box>
-                )}
+        {/* Options */}
+        <Box flexDirection="column">
+          {options.map((option, index) => {
+            const isSelected = index === selectedIndex;
+            return (
+              <Box key={option.id} marginBottom={index < options.length - 1 ? 1 : 0}>
+                <Box flexDirection="column">
+                  <Text
+                    color={isSelected ? POPUP_CONFIG.titleColor : option.danger ? POPUP_CONFIG.errorColor : 'white'}
+                    bold={isSelected}
+                  >
+                    {isSelected ? '▶ ' : '  '}
+                    {option.label}
+                  </Text>
+                  {option.description && (
+                    <Box marginLeft={3}>
+                      <Text dimColor>{option.description}</Text>
+                    </Box>
+                  )}
+                </Box>
               </Box>
-            </Box>
-          );
-        })}
-      </Box>
-
-      {/* Help text */}
-      <Box>
-        <Text dimColor>↑↓ to navigate • Enter to select • ESC to cancel</Text>
-      </Box>
-    </Box>
+            );
+          })}
+        </Box>
+      </PopupContainer>
+    </PopupWrapper>
   );
 };
 

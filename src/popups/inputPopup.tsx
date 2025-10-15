@@ -6,15 +6,11 @@
  */
 
 import React, { useState } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
+import { render, Box, Text, useApp } from 'ink';
 import * as fs from 'fs';
 import CleanTextInput from '../CleanTextInput.js';
-
-interface PopupResult {
-  success: boolean;
-  data?: string; // User input value
-  cancelled?: boolean;
-}
+import { PopupContainer, PopupInputBox, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupFooters } from './config.js';
 
 interface InputPopupProps {
   resultFile: string;
@@ -34,49 +30,36 @@ const InputPopupApp: React.FC<InputPopupProps> = ({
   const [value, setValue] = useState(defaultValue);
   const { exit } = useApp();
 
-  useInput((input, key) => {
-    if (key.escape) {
-      // User cancelled
-      const result: PopupResult = {
-        success: false,
-        cancelled: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
-    }
-  });
-
   const handleSubmit = (submittedValue?: string) => {
-    const result: PopupResult = {
-      success: true,
-      data: submittedValue || value,
-    };
-    fs.writeFileSync(resultFile, JSON.stringify(result));
-    exit();
+    writeSuccessAndExit(resultFile, submittedValue || value, exit);
   };
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Message */}
-      <Box marginBottom={1}>
-        <Text>{message}</Text>
-      </Box>
+    <PopupWrapper resultFile={resultFile}>
+      <PopupContainer footer={PopupFooters.input()}>
+        {/* Message */}
+        <Box marginBottom={1}>
+          <Text>{message}</Text>
+        </Box>
 
-      {/* Input */}
-      <Box marginBottom={1} borderStyle="bold" borderColor="yellow" paddingX={1} paddingY={0}>
-        <CleanTextInput
-          value={value}
-          onChange={setValue}
-          onSubmit={handleSubmit}
-          placeholder={placeholder}
-        />
-      </Box>
+        {/* Input with themed border */}
+        <Box marginBottom={1}>
+          <PopupInputBox>
+            <CleanTextInput
+              value={value}
+              onChange={setValue}
+              onSubmit={handleSubmit}
+              placeholder={placeholder}
+            />
+          </PopupInputBox>
+        </Box>
 
-      {/* Help text */}
-      <Box>
-        <Text dimColor>Enter to submit • ESC to cancel • Shift+Enter for multi-line</Text>
-      </Box>
-    </Box>
+        {/* Help text */}
+        <Box>
+          <Text dimColor italic>💡 Tip: Shift+Enter for multi-line</Text>
+        </Box>
+      </PopupContainer>
+    </PopupWrapper>
   );
 };
 

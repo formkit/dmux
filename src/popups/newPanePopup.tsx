@@ -6,68 +6,49 @@
  */
 
 import React, { useState } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
-import * as fs from 'fs';
+import { render, Box, Text, useApp } from 'ink';
 import CleanTextInput from '../CleanTextInput.js';
-
-interface PopupResult {
-  success: boolean;
-  data?: string;
-  cancelled?: boolean;
-}
+import { PopupContainer, PopupInputBox, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupFooters } from './config.js';
 
 const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   const [prompt, setPrompt] = useState('');
   const { exit } = useApp();
 
-  useInput((input, key) => {
-    if (key.escape) {
-      // User cancelled
-      const result: PopupResult = {
-        success: false,
-        cancelled: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
-    }
-  });
-
   const handleSubmit = (value?: string) => {
-    const result: PopupResult = {
-      success: true,
-      data: value || prompt,
-    };
-    fs.writeFileSync(resultFile, JSON.stringify(result));
-    exit();
+    writeSuccessAndExit(resultFile, value || prompt, exit);
   };
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Instructions */}
-      <Box marginBottom={1}>
-        <Text dimColor>
-          Enter a prompt for your AI agent. Press <Text color="green">Enter</Text> to create,{' '}
-          <Text color="red">ESC</Text> to cancel.
-        </Text>
-      </Box>
+    <PopupWrapper resultFile={resultFile}>
+      <PopupContainer footer={PopupFooters.input()}>
+        {/* Instructions */}
+        <Box marginBottom={1}>
+          <Text dimColor>
+            Enter a prompt for your AI agent.
+          </Text>
+        </Box>
 
-      {/* Input area with border */}
-      <Box marginBottom={1} borderStyle="bold" borderColor="yellow" paddingX={1} paddingY={0}>
-        <CleanTextInput
-          value={prompt}
-          onChange={setPrompt}
-          onSubmit={handleSubmit}
-          placeholder="e.g., Add user authentication with JWT"
-        />
-      </Box>
+        {/* Input area with themed border */}
+        <Box marginBottom={1}>
+          <PopupInputBox>
+            <CleanTextInput
+              value={prompt}
+              onChange={setPrompt}
+              onSubmit={handleSubmit}
+              placeholder="e.g., Add user authentication with JWT"
+            />
+          </PopupInputBox>
+        </Box>
 
-      {/* Footer hint */}
-      <Box>
-        <Text dimColor italic>
-          💡 Tip: Use Shift+Enter for multi-line prompts
-        </Text>
-      </Box>
-    </Box>
+        {/* Tip */}
+        <Box>
+          <Text dimColor italic>
+            💡 Tip: Use Shift+Enter for multi-line prompts
+          </Text>
+        </Box>
+      </PopupContainer>
+    </PopupWrapper>
   );
 };
 

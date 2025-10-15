@@ -9,12 +9,8 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
 import type { ActionMetadata } from '../actions/types.js';
-
-interface PopupResult {
-  success: boolean;
-  data?: string; // Action ID
-  cancelled?: boolean;
-}
+import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface KebabMenuPopupProps {
   resultFile: string;
@@ -39,16 +35,7 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
     const logFile = '/tmp/dmux-kebab-debug.log';
     fs.appendFileSync(logFile, `[${new Date().toISOString()}] Input: "${input}", escape: ${key.escape}, return: ${key.return}\n`);
 
-    if (key.escape) {
-      // User cancelled
-      fs.appendFileSync(logFile, `[${new Date().toISOString()}] ESC pressed, cancelling\n`);
-      const result: PopupResult = {
-        success: false,
-        cancelled: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
-    } else if (key.upArrow) {
+    if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(actions.length - 1, selectedIndex + 1));
@@ -56,32 +43,24 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
       // User selected an action
       const selectedAction = actions[selectedIndex];
       fs.appendFileSync(logFile, `[${new Date().toISOString()}] ENTER pressed, selected: ${selectedAction.id}\n`);
-      const result: PopupResult = {
-        success: true,
-        data: selectedAction.id,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, selectedAction.id, exit);
     }
   });
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Action list */}
-      {actions.map((action, index) => (
-        <Box key={action.id}>
-          <Text color={selectedIndex === index ? 'cyan' : 'white'} bold={selectedIndex === index}>
-            {selectedIndex === index ? '▶ ' : '  '}
-            {action.label}
-          </Text>
-        </Box>
-      ))}
-
-      {/* Footer hint */}
-      <Box marginTop={1}>
-        <Text dimColor>↑↓ to navigate • Enter to select • ESC to cancel</Text>
-      </Box>
-    </Box>
+    <PopupWrapper resultFile={resultFile}>
+      <PopupContainer footer={PopupFooters.choice()}>
+        {/* Action list */}
+        {actions.map((action, index) => (
+          <Box key={action.id}>
+            <Text color={selectedIndex === index ? POPUP_CONFIG.titleColor : 'white'} bold={selectedIndex === index}>
+              {selectedIndex === index ? '▶ ' : '  '}
+              {action.label}
+            </Text>
+          </Box>
+        ))}
+      </PopupContainer>
+    </PopupWrapper>
   );
 };
 

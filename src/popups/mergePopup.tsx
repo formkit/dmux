@@ -10,17 +10,14 @@ import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
-
-interface PopupResult {
-  success: boolean;
-  data?: {
-    merged: boolean;
-    closedPane?: boolean;
-    error?: string;
-  };
-  cancelled?: boolean;
-  error?: string;
-}
+import { POPUP_CONFIG } from './config.js';
+import {
+  PopupWrapper,
+  writeSuccessAndExit,
+  writeCancelAndExit,
+  writeErrorAndExit,
+  type PopupResult
+} from './components/index.js';
 
 interface MergeIssue {
   type: string;
@@ -189,12 +186,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
   useInput((input, key) => {
     if (key.escape && step !== 'merging' && step !== 'generating_commit') {
       // User cancelled
-      const result: PopupResult = {
-        success: false,
-        cancelled: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeCancelAndExit(resultFile, exit);
       return;
     }
 
@@ -203,12 +195,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
       if (input === 'y' || input === 'Y' || key.return) {
         executeMerge();
       } else if (input === 'n' || input === 'N') {
-        const result: PopupResult = {
-          success: false,
-          cancelled: true,
-        };
-        fs.writeFileSync(resultFile, JSON.stringify(result));
-        exit();
+        writeCancelAndExit(resultFile, exit);
       }
     } else if (step === 'main_dirty' || step === 'worktree_uncommitted') {
       const options = ['AI commit (auto)', 'AI commit (editable)', 'Manual commit', 'Cancel'];
@@ -247,12 +234,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
             setStatusMessage('Enter commit message:');
             break;
           case 3: // Cancel
-            const result: PopupResult = {
-              success: false,
-              cancelled: true,
-            };
-            fs.writeFileSync(resultFile, JSON.stringify(result));
-            exit();
+            writeCancelAndExit(resultFile, exit);
             break;
         }
       }
@@ -264,12 +246,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
             const { cleanupAfterMerge } = await import('../utils/mergeExecution.js');
             cleanupAfterMerge(mainRepoPath, worktreePath, paneSlug);
 
-            const result: PopupResult = {
-              success: true,
-              data: { merged: true, closedPane: true },
-            };
-            fs.writeFileSync(resultFile, JSON.stringify(result));
-            exit();
+            writeSuccessAndExit(resultFile, { merged: true, closedPane: true }, exit);
           } catch (error) {
             setStep('error');
             setErrorMessage(`Cleanup failed: ${error}`);
@@ -277,168 +254,160 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
         })();
       } else if (input === 'n' || input === 'N') {
         // Just mark as merged, don't close
-        const result: PopupResult = {
-          success: true,
-          data: { merged: true, closedPane: false },
-        };
-        fs.writeFileSync(resultFile, JSON.stringify(result));
-        exit();
+        writeSuccessAndExit(resultFile, { merged: true, closedPane: false }, exit);
       }
     } else if (step === 'error') {
       // Any key exits on error
-      const result: PopupResult = {
-        success: false,
-        error: errorMessage,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeErrorAndExit(resultFile, errorMessage, exit);
     }
   });
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Box marginBottom={1}>
-        <Text bold color="cyan">
-          🔀 Merge: {paneSlug} → {mainBranch}
-        </Text>
-      </Box>
-
-      {/* Status message */}
-      <Box marginBottom={1}>
-        <Text>{statusMessage}</Text>
-      </Box>
-
-      {/* Step-specific UI */}
-      {step === 'validating' && (
-        <Box>
-          <Text dimColor>Checking repository status...</Text>
+    <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+      <Box flexDirection="column" paddingX={2} paddingY={1}>
+        <Box marginBottom={1}>
+          <Text bold color={POPUP_CONFIG.titleColor}>
+            🔀 Merge: {paneSlug} → {mainBranch}
+          </Text>
         </Box>
-      )}
 
-      {step === 'confirm' && (
-        <Box flexDirection="column">
-          <Box marginBottom={1}>
-            <Text>Proceed with merge?</Text>
-          </Box>
+        {/* Status message */}
+        <Box marginBottom={1}>
+          <Text>{statusMessage}</Text>
+        </Box>
+
+        {/* Step-specific UI */}
+        {step === 'validating' && (
           <Box>
-            <Text dimColor>Y to confirm • N to cancel • ESC to exit</Text>
+            <Text dimColor>Checking repository status...</Text>
           </Box>
-        </Box>
-      )}
+        )}
 
-      {(step === 'main_dirty' || step === 'worktree_uncommitted') && (
-        <Box flexDirection="column">
-          {validation?.issues
-            .filter(i => i.type === step)
-            .map((issue, idx) => (
-              <Box key={idx} marginBottom={1} flexDirection="column">
-                <Text>{issue.message}</Text>
-                {issue.files && issue.files.length > 0 && (
-                  <Box marginLeft={2} flexDirection="column">
-                    {issue.files.slice(0, 5).map((file, i) => (
-                      <Text key={i} dimColor>
-                        • {file}
-                      </Text>
-                    ))}
-                    {issue.files.length > 5 && (
-                      <Text dimColor>... and {issue.files.length - 5} more</Text>
-                    )}
-                  </Box>
-                )}
-              </Box>
-            ))}
-
-          <Box flexDirection="column" marginTop={1} marginBottom={1}>
-            {['AI commit (auto)', 'AI commit (editable)', 'Manual commit', 'Cancel'].map(
-              (option, idx) => (
-                <Box key={idx}>
-                  <Text color={selectedIndex === idx ? 'cyan' : 'white'} bold={selectedIndex === idx}>
-                    {selectedIndex === idx ? '▶ ' : '  '}
-                    {option}
-                  </Text>
-                </Box>
-              )
-            )}
-          </Box>
-
-          <Box>
-            <Text dimColor>↑↓ to navigate • Enter to select • ESC to cancel</Text>
-          </Box>
-        </Box>
-      )}
-
-      {step === 'generating_commit' && (
-        <Box>
-          <Text dimColor>⏳ Generating commit message with AI...</Text>
-        </Box>
-      )}
-
-      {step === 'commit_input' && (
-        <Box flexDirection="column">
-          {generatedMessage && (
+        {step === 'confirm' && (
+          <Box flexDirection="column">
             <Box marginBottom={1}>
-              <Text dimColor>Generated: {generatedMessage.split('\n')[0]}</Text>
+              <Text>Proceed with merge?</Text>
             </Box>
-          )}
+            <Box>
+              <Text dimColor>Y to confirm • N to cancel • ESC to exit</Text>
+            </Box>
+          </Box>
+        )}
+
+        {(step === 'main_dirty' || step === 'worktree_uncommitted') && (
+          <Box flexDirection="column">
+            {validation?.issues
+              .filter(i => i.type === step)
+              .map((issue, idx) => (
+                <Box key={idx} marginBottom={1} flexDirection="column">
+                  <Text>{issue.message}</Text>
+                  {issue.files && issue.files.length > 0 && (
+                    <Box marginLeft={2} flexDirection="column">
+                      {issue.files.slice(0, 5).map((file, i) => (
+                        <Text key={i} dimColor>
+                          • {file}
+                        </Text>
+                      ))}
+                      {issue.files.length > 5 && (
+                        <Text dimColor>... and {issue.files.length - 5} more</Text>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              ))}
+
+            <Box flexDirection="column" marginTop={1} marginBottom={1}>
+              {['AI commit (auto)', 'AI commit (editable)', 'Manual commit', 'Cancel'].map(
+                (option, idx) => (
+                  <Box key={idx}>
+                    <Text color={selectedIndex === idx ? POPUP_CONFIG.titleColor : 'white'} bold={selectedIndex === idx}>
+                      {selectedIndex === idx ? '▶ ' : '  '}
+                      {option}
+                    </Text>
+                  </Box>
+                )
+              )}
+            </Box>
+
+            <Box>
+              <Text dimColor>↑↓ to navigate • Enter to select • ESC to cancel</Text>
+            </Box>
+          </Box>
+        )}
+
+        {step === 'generating_commit' && (
           <Box>
-            <Text>Message: </Text>
-            <TextInput
-              value={commitMessage}
-              onChange={setCommitMessage}
-              onSubmit={async (value) => {
-                if (value.trim()) {
-                  if (await commitChanges(targetRepo, value)) {
-                    // Re-validate
-                    setStep('validating');
-                    setTimeout(() => {
-                      setStep('confirm');
-                      setStatusMessage('Ready to merge');
-                    }, 500);
+            <Text dimColor>⏳ Generating commit message with AI...</Text>
+          </Box>
+        )}
+
+        {step === 'commit_input' && (
+          <Box flexDirection="column">
+            {generatedMessage && (
+              <Box marginBottom={1}>
+                <Text dimColor>Generated: {generatedMessage.split('\n')[0]}</Text>
+              </Box>
+            )}
+            <Box>
+              <Text>Message: </Text>
+              <TextInput
+                value={commitMessage}
+                onChange={setCommitMessage}
+                onSubmit={async (value) => {
+                  if (value.trim()) {
+                    if (await commitChanges(targetRepo, value)) {
+                      // Re-validate
+                      setStep('validating');
+                      setTimeout(() => {
+                        setStep('confirm');
+                        setStatusMessage('Ready to merge');
+                      }, 500);
+                    }
                   }
-                }
-              }}
-            />
+                }}
+              />
+            </Box>
+            <Box marginTop={1}>
+              <Text dimColor>Enter to submit • ESC to cancel</Text>
+            </Box>
           </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Enter to submit • ESC to cancel</Text>
-          </Box>
-        </Box>
-      )}
+        )}
 
-      {step === 'merging' && (
-        <Box>
-          <Text dimColor>⏳ Merging branches...</Text>
-        </Box>
-      )}
-
-      {step === 'cleanup_confirm' && (
-        <Box flexDirection="column">
-          <Box marginBottom={1}>
-            <Text color="green">✓ Merge successful!</Text>
-          </Box>
-          <Box marginBottom={1}>
-            <Text>Close pane and cleanup worktree?</Text>
-          </Box>
+        {step === 'merging' && (
           <Box>
-            <Text dimColor>Y to cleanup • N to keep pane • ESC to exit</Text>
+            <Text dimColor>⏳ Merging branches...</Text>
           </Box>
-        </Box>
-      )}
+        )}
 
-      {step === 'error' && (
-        <Box flexDirection="column">
-          <Box marginBottom={1}>
-            <Text color="red">✗ Error</Text>
+        {step === 'cleanup_confirm' && (
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <Text color={POPUP_CONFIG.successColor}>✓ Merge successful!</Text>
+            </Box>
+            <Box marginBottom={1}>
+              <Text>Close pane and cleanup worktree?</Text>
+            </Box>
+            <Box>
+              <Text dimColor>Y to cleanup • N to keep pane • ESC to exit</Text>
+            </Box>
           </Box>
-          <Box marginBottom={1}>
-            <Text>{errorMessage}</Text>
+        )}
+
+        {step === 'error' && (
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <Text color={POPUP_CONFIG.errorColor}>✗ Error</Text>
+            </Box>
+            <Box marginBottom={1}>
+              <Text>{errorMessage}</Text>
+            </Box>
+            <Box>
+              <Text dimColor>Press any key to close</Text>
+            </Box>
           </Box>
-          <Box>
-            <Text dimColor>Press any key to close</Text>
-          </Box>
-        </Box>
-      )}
-    </Box>
+        )}
+      </Box>
+    </PopupWrapper>
   );
 };
 

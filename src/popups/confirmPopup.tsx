@@ -8,12 +8,8 @@
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
-
-interface PopupResult {
-  success: boolean;
-  data?: boolean; // true = yes, false = no
-  cancelled?: boolean;
-}
+import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface ConfirmPopupProps {
   resultFile: string;
@@ -36,77 +32,54 @@ const ConfirmPopupApp: React.FC<ConfirmPopupProps> = ({
   useInput((input, key) => {
     if (key.escape) {
       // User cancelled - treat as "No"
-      const result: PopupResult = {
-        success: true,
-        data: false,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, false, exit);
     } else if (key.upArrow) {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(1, selectedIndex + 1));
     } else if (key.return) {
       // User confirmed choice
-      const result: PopupResult = {
-        success: true,
-        data: selectedIndex === 0, // 0 = yes, 1 = no
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, selectedIndex === 0, exit); // 0 = yes, 1 = no
     } else if (input === 'y' || input === 'Y') {
       // Shortcut: yes
-      const result: PopupResult = {
-        success: true,
-        data: true,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, true, exit);
     } else if (input === 'n' || input === 'N') {
       // Shortcut: no
-      const result: PopupResult = {
-        success: true,
-        data: false,
-      };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
-      exit();
+      writeSuccessAndExit(resultFile, false, exit);
     }
   });
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
-      {/* Message */}
-      <Box marginBottom={1}>
-        <Text>{message}</Text>
-      </Box>
-
-      {/* Options */}
-      <Box flexDirection="column" marginBottom={1}>
+    <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
+      <PopupContainer footer={PopupFooters.confirm('y', 'n')}>
+        {/* Message */}
         <Box marginBottom={1}>
-          <Text
-            color={selectedIndex === 0 ? 'cyan' : 'white'}
-            bold={selectedIndex === 0}
-          >
-            {selectedIndex === 0 ? '▶ ' : '  '}
-            {yesLabel}
-          </Text>
+          <Text>{message}</Text>
         </Box>
-        <Box>
-          <Text
-            color={selectedIndex === 1 ? 'cyan' : 'white'}
-            bold={selectedIndex === 1}
-          >
-            {selectedIndex === 1 ? '▶ ' : '  '}
-            {noLabel}
-          </Text>
-        </Box>
-      </Box>
 
-      {/* Help text */}
-      <Box>
-        <Text dimColor>↑↓ to navigate • y/n shortcuts • Enter to confirm • ESC to cancel</Text>
-      </Box>
-    </Box>
+        {/* Options */}
+        <Box flexDirection="column">
+          <Box marginBottom={1}>
+            <Text
+              color={selectedIndex === 0 ? POPUP_CONFIG.titleColor : 'white'}
+              bold={selectedIndex === 0}
+            >
+              {selectedIndex === 0 ? '▶ ' : '  '}
+              {yesLabel}
+            </Text>
+          </Box>
+          <Box>
+            <Text
+              color={selectedIndex === 1 ? POPUP_CONFIG.titleColor : 'white'}
+              bold={selectedIndex === 1}
+            >
+              {selectedIndex === 1 ? '▶ ' : '  '}
+              {noLabel}
+            </Text>
+          </Box>
+        </Box>
+      </PopupContainer>
+    </PopupWrapper>
   );
 };
 
