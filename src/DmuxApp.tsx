@@ -18,7 +18,8 @@ import usePaneCreation from './hooks/usePaneCreation.js';
 import useActionSystem from './hooks/useActionSystem.js';
 
 // Utils
-import { getPanePositions, enforceControlPaneSize, SIDEBAR_WIDTH } from './utils/tmux.js';
+import { getPanePositions, enforceControlPaneSize } from './utils/tmux.js';
+import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
@@ -1445,7 +1446,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         clearTimeout(resizeTimeout);
       }
 
-      // Debounce: wait 200ms after last resize event
+      // Debounce: wait 500ms after last resize event (prevents excessive recalculations)
       resizeTimeout = setTimeout(() => {
         // Only enforce if not showing dialogs (to avoid interference)
         const hasActiveDialog = showNewPaneDialog ||
@@ -1472,14 +1473,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
             isApplyingLayout = false;
           }, 100);
         }
-      }, 200);
+      }, 500);
     };
 
     // Listen to stdout resize events
     process.stdout.on('resize', handleResize);
 
+    // Also listen for SIGWINCH and SIGUSR1 (tmux hook sends USR1)
+    process.on('SIGWINCH', handleResize);
+    process.on('SIGUSR1', handleResize);
+
     return () => {
       process.stdout.off('resize', handleResize);
+      process.off('SIGWINCH', handleResize);
+      process.off('SIGUSR1', handleResize);
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
       }

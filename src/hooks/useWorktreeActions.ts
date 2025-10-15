@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import { useCallback } from 'react';
 import type { DmuxPane } from '../types.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
+import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -33,7 +34,6 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
 
       execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
       // Don't apply global layouts - just enforce sidebar width
-      const SIDEBAR_WIDTH = 40;
       try {
         const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
         enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);

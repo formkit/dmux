@@ -212,6 +212,28 @@ async function executeCloseOption(
         context.onPaneRemove(pane.paneId); // Pass tmux pane ID, not dmux ID
       }
 
+      // Recalculate layout for remaining panes
+      try {
+        const config: DmuxConfig = JSON.parse(fs.readFileSync(path.join(projectRoot, '.dmux', 'dmux.config.json'), 'utf-8'));
+        if (config.controlPaneId && updatedPanes.length > 0) {
+          const { recalculateAndApplyLayout } = await import('../utils/layoutManager.js');
+          const { getTerminalDimensions } = await import('../utils/tmux.js');
+          const dimensions = getTerminalDimensions();
+
+          recalculateAndApplyLayout(
+            config.controlPaneId,
+            updatedPanes.map(p => p.paneId),
+            dimensions.width,
+            dimensions.height
+          );
+
+          LogService.getInstance().debug(`Recalculated layout after closing pane: ${updatedPanes.length} panes remaining`, 'paneActions');
+        }
+      } catch (error) {
+        // Log but don't fail - layout recalc is non-critical
+        LogService.getInstance().debug('Failed to recalculate layout after pane close', 'paneActions');
+      }
+
       // Wait a bit for the file save to stabilize
       await new Promise(resolve => setTimeout(resolve, 200));
 

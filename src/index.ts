@@ -18,6 +18,7 @@ import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
 import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
 import { TMUX_COLORS } from './theme/colors.js';
+import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -69,6 +70,11 @@ class Dmux {
   async init() {
     // Set up global signal handlers for clean exit
     this.setupGlobalSignalHandlers();
+
+    // Set up resize hook for this session (if in tmux)
+    if (process.env.TMUX) {
+      this.setupResizeHook();
+    }
 
     // Ensure .dmux directory exists and is in .gitignore
     await this.ensureDmuxDirectory();
@@ -145,7 +151,6 @@ class Dmux {
 
     // Get current pane ID (control pane for left sidebar)
     let controlPaneId: string | undefined;
-    const SIDEBAR_WIDTH = 40;
 
     try {
       // Get current pane ID
@@ -182,13 +187,26 @@ class Dmux {
       const { welcomePaneExists } = await import('./utils/welcomePane.js');
       const hasValidWelcomePane = config.welcomePaneId && welcomePaneExists(config.welcomePaneId);
 
-      if (controlPaneId && config.panes && config.panes.length === 0 && !hasValidWelcomePane) {
-        const welcomePaneId = await createWelcomePane(controlPaneId);
-        if (welcomePaneId) {
-          config.welcomePaneId = welcomePaneId;
-          config.lastUpdated = new Date().toISOString();
-          await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
-          LogService.getInstance().debug(`Created welcome pane: ${welcomePaneId}`, 'Setup');
+      if (controlPaneId && config.panes && config.panes.length === 0) {
+        if (!hasValidWelcomePane) {
+          // Create new welcome pane
+          const welcomePaneId = await createWelcomePane(controlPaneId);
+          if (welcomePaneId) {
+            config.welcomePaneId = welcomePaneId;
+            config.lastUpdated = new Date().toISOString();
+            await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+            LogService.getInstance().debug(`Created welcome pane: ${welcomePaneId}`, 'Setup');
+          }
+        } else {
+          // Welcome pane exists from previous session - fix the layout
+          LogService.getInstance().debug('Welcome pane exists, applying correct layout', 'Setup');
+
+          // Apply correct layout: sidebar (40) | welcome pane (rest)
+          // Use "latest" mode so window auto-follows terminal size
+          execSync(`tmux set-window-option window-size latest`, { stdio: 'pipe' });
+          execSync(`tmux set-window-option main-pane-width ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
+          execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
+          execSync(`tmux refresh-client`, { stdio: 'pipe' });
         }
       }
     } catch (error) {
@@ -510,8 +528,35 @@ class Dmux {
     return this.autoUpdater;
   }
 
+  private setupResizeHook() {
+    try {
+      // Set up session-specific hook that sends SIGUSR1 to dmux process on resize
+      // This works inside tmux where normal SIGWINCH may not propagate
+      const pid = process.pid;
+      execSync(`tmux set-hook -t '${this.sessionName}' client-resized 'run-shell "kill -USR1 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
+      LogService.getInstance().debug(`Set up resize hook for session ${this.sessionName}`, 'Setup');
+    } catch (error) {
+      LogService.getInstance().debug('Failed to set up resize hook', 'Setup');
+    }
+  }
+
+  private cleanupResizeHook() {
+    try {
+      // Remove session-specific hook
+      execSync(`tmux set-hook -u -t '${this.sessionName}' client-resized`, { stdio: 'pipe' });
+      LogService.getInstance().debug('Cleaned up resize hook', 'Setup');
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
   private setupGlobalSignalHandlers() {
     const cleanTerminalExit = () => {
+      // Clean up resize hook
+      if (process.env.TMUX) {
+        this.cleanupResizeHook();
+      }
+
       // Clear screen multiple times to ensure no artifacts
       process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move to home
       process.stdout.write('\x1b[3J'); // Clear scrollback buffer

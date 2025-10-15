@@ -3,6 +3,8 @@ import path from 'path';
 import type { DmuxConfig } from '../types.js';
 import { createWelcomePane, welcomePaneExists, destroyWelcomePane } from './welcomePane.js';
 import { LogService } from '../services/LogService.js';
+import { recalculateAndApplyLayout } from './layoutManager.js';
+import { getTerminalDimensions } from './tmux.js';
 
 // Global lock to prevent concurrent welcome pane operations
 let creationLock = false;
@@ -71,6 +73,23 @@ export function destroyWelcomePaneCoordinated(projectRoot: string): boolean {
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
       logService.debug('Welcome pane destroyed and cleared from config', 'WelcomePaneManager');
+
+      // Recalculate layout for remaining content panes (if any)
+      if (config.panes && config.panes.length > 0 && config.controlPaneId) {
+        try {
+          const dimensions = getTerminalDimensions();
+          const contentPaneIds = config.panes.map(p => p.paneId);
+          recalculateAndApplyLayout(
+            config.controlPaneId,
+            contentPaneIds,
+            dimensions.width,
+            dimensions.height
+          );
+          logService.debug(`Recalculated layout for ${contentPaneIds.length} content panes`, 'WelcomePaneManager');
+        } catch (error) {
+          logService.debug('Failed to recalculate layout after welcome pane destruction', 'WelcomePaneManager');
+        }
+      }
     }
 
     return true;

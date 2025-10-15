@@ -1,6 +1,8 @@
 import { execSync } from 'child_process';
 import { renderAsciiArt } from './asciiArt.js';
 import { LogService } from '../services/LogService.js';
+import { getTerminalDimensions } from './tmux.js';
+import { SIDEBAR_WIDTH } from './layoutManager.js';
 
 /**
  * Creates a welcome pane in the tmux session
@@ -47,6 +49,23 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
 
     // Give the script time to start
     await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Welcome pane uses full terminal dimensions
+    // CRITICAL: Use main-vertical layout to lock sidebar at fixed width
+    try {
+      const dimensions = getTerminalDimensions();
+
+      // Apply main-vertical layout FIRST (this locks sidebar width)
+      execSync(`tmux set-window-option main-pane-width ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
+      execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
+
+      // Refresh to apply layout changes
+      execSync(`tmux refresh-client`, { stdio: 'pipe' });
+
+      logService.debug(`Set welcome pane layout: sidebar=${SIDEBAR_WIDTH}, window=${dimensions.width}x${dimensions.height}`, 'WelcomePane');
+    } catch (error) {
+      logService.debug('Failed to set welcome pane layout', 'WelcomePane');
+    }
 
     // Switch focus back to the control pane (dmux sidebar)
     try {

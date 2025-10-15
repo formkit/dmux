@@ -8,6 +8,7 @@ import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import { enforceControlPaneSize } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
+import { SIDEBAR_WIDTH } from './layoutManager.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
@@ -64,7 +65,6 @@ export async function createConflictResolutionPane(
   }
 
   // Don't apply global layouts - just enforce sidebar width
-  const SIDEBAR_WIDTH = 40;
   try {
     const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
     enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);

@@ -81,7 +81,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
             const lines = output.split('\n');
             for (const line of lines) {
               const [id, title] = line.split('::');
-              if (id && id.startsWith('%')) {
+              // Filter out dmux internal panes (spacer, control pane, etc.)
+              if (id && id.startsWith('%') && title !== 'dmux-spacer') {
                 allPaneIds.push(id);
                 if (title) titleToId.set(title.trim(), id);
               }
@@ -159,7 +160,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
             const lines = output.split('\n');
             for (const line of lines) {
               const [id, title] = line.split('::');
-              if (id && id.startsWith('%')) {
+              // Filter out dmux internal panes (spacer, control pane, etc.)
+              if (id && id.startsWith('%') && title !== 'dmux-spacer') {
                 allPaneIds.push(id);
                 if (title) titleToId.set(title.trim(), id);
               }
@@ -268,7 +270,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         if (out) {
           out.split('\n').forEach(line => {
             const [id, title] = line.split('::');
-            if (id && id.startsWith('%') && title) {
+            // Filter out dmux internal panes (spacer, control pane, etc.)
+            if (id && id.startsWith('%') && title && title !== 'dmux-spacer') {
               titleToId.set(title.trim(), id);
             }
           });

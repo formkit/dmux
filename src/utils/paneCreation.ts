@@ -5,8 +5,9 @@ import type { DmuxPane, DmuxConfig } from '../types.js';
 import {
   setupSidebarLayout,
   getContentPaneIds,
-  enforceControlPaneSize,
+  getTerminalDimensions,
 } from './tmux.js';
+import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
 import { triggerHook } from './hooks.js';
@@ -109,7 +110,6 @@ export async function createPane(
 
   // Load config to get control pane info
   const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
-  const SIDEBAR_WIDTH = 40;
   let controlPaneId: string | undefined;
 
   try {
@@ -157,18 +157,14 @@ export async function createPane(
     // Wait for pane creation to settle
     await new Promise((resolve) => setTimeout(resolve, 300));
   } else {
-    // Subsequent panes - split intelligently within the content area
+    // Subsequent panes - always split horizontally, let layout manager organize
     // Get actual dmux pane IDs (not welcome pane) from existingPanes
     const dmuxPaneIds = existingPanes.map(p => p.paneId);
     const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
-    // Create a grid by alternating splits
-    // Odd panes (2nd content pane): split horizontally (side-by-side)
-    // Even panes (3rd content pane): split vertically (top-bottom)
-    const splitDirection = dmuxPaneIds.length % 2 === 1 ? '-h' : '-v';
-
+    // Always split horizontally - the layout manager will organize panes optimally
     paneInfo = execSync(
-      `tmux split-window ${splitDirection} -t '${targetPane}' -P -F '#{pane_id}'`,
+      `tmux split-window -h -t '${targetPane}' -P -F '#{pane_id}'`,
       { encoding: 'utf-8' }
     ).trim();
   }
@@ -185,9 +181,17 @@ export async function createPane(
     // Ignore if setting title fails
   }
 
-  // Enforce control pane size (don't use global layouts that affect all panes)
+  // Apply optimal layout using the layout manager
   if (controlPaneId) {
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    const dimensions = getTerminalDimensions();
+    const allContentPaneIds = [...existingPanes.map(p => p.paneId), paneInfo];
+
+    recalculateAndApplyLayout(
+      controlPaneId,
+      allContentPaneIds,
+      dimensions.width,
+      dimensions.height
+    );
 
     // Refresh tmux to apply changes
     execSync('tmux refresh-client', { stdio: 'pipe' });
