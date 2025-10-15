@@ -1,0 +1,120 @@
+import { execSync } from 'child_process';
+import { renderAsciiArt } from './asciiArt.js';
+import { LogService } from '../services/LogService.js';
+
+/**
+ * Creates a welcome pane in the tmux session
+ * This pane displays ASCII art and has no command prompt
+ *
+ * @param controlPaneId - The ID of the control (sidebar) pane
+ * @returns The pane ID of the created welcome pane, or undefined if creation failed
+ */
+export async function createWelcomePane(controlPaneId: string): Promise<string | undefined> {
+  const logService = LogService.getInstance();
+
+  try {
+    // Split horizontally to the right of the control pane
+    // This creates a new pane that takes up the rest of the horizontal space
+    const result = execSync(
+      `tmux split-window -h -t '${controlPaneId}' -P -F '#{pane_id}'`,
+      { encoding: 'utf-8', stdio: 'pipe' }
+    ).trim();
+
+    const welcomePaneId = result;
+
+    if (!welcomePaneId) {
+      logService.error('Failed to create welcome pane: no pane ID returned', 'WelcomePane');
+      return undefined;
+    }
+
+    logService.debug(`Created welcome pane: ${welcomePaneId}`, 'WelcomePane');
+
+    // Set pane title
+    try {
+      execSync(`tmux select-pane -t '${welcomePaneId}' -T "Welcome"`, { stdio: 'pipe' });
+    } catch {
+      // Ignore title errors
+    }
+
+    // Wait for the shell to initialize in the new pane
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Render the ASCII art in the pane
+    await renderAsciiArt({
+      paneId: welcomePaneId,
+      art: [], // Uses default from decorative-pane.js
+    });
+
+    // Give the script time to start
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Switch focus back to the control pane (dmux sidebar)
+    try {
+      execSync(`tmux select-pane -t '${controlPaneId}'`, { stdio: 'pipe' });
+    } catch {
+      // Ignore if focus switch fails
+    }
+
+    return welcomePaneId;
+  } catch (error) {
+    logService.error('Failed to create welcome pane', 'WelcomePane', undefined, error instanceof Error ? error : undefined);
+    return undefined;
+  }
+}
+
+/**
+ * Destroys the welcome pane if it exists
+ *
+ * @param welcomePaneId - The pane ID of the welcome pane to destroy
+ */
+export function destroyWelcomePane(welcomePaneId: string | undefined): void {
+  if (!welcomePaneId) {
+    return;
+  }
+
+  const logService = LogService.getInstance();
+
+  try {
+    // Check if the pane still exists before trying to kill it
+    const paneExists = execSync(`tmux display-message -t '${welcomePaneId}' -p '#{pane_id}'`, {
+      stdio: 'pipe',
+      encoding: 'utf-8'
+    }).trim();
+
+    logService.debug(`Found welcome pane ${paneExists}, destroying it`, 'WelcomePane');
+
+    // Kill the pane
+    execSync(`tmux kill-pane -t '${welcomePaneId}'`, { stdio: 'pipe' });
+
+    logService.debug(`Destroyed welcome pane: ${welcomePaneId}`, 'WelcomePane');
+  } catch (error) {
+    // Pane doesn't exist or already killed - that's fine
+    logService.debug(`Welcome pane ${welcomePaneId} already gone or couldn't be destroyed`, 'WelcomePane');
+  }
+}
+
+/**
+ * Checks if a welcome pane exists and is still alive
+ *
+ * @param welcomePaneId - The pane ID to check
+ * @returns true if the pane exists, false otherwise
+ */
+export function welcomePaneExists(welcomePaneId: string | undefined): boolean {
+  if (!welcomePaneId) {
+    return false;
+  }
+
+  try {
+    // Use list-panes to check if the pane actually exists
+    // This is more reliable than display-message which sometimes succeeds for non-existent panes
+    const paneList = execSync('tmux list-panes -a -F "#{pane_id}"', {
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    }).trim();
+
+    const panes = paneList.split('\n');
+    return panes.includes(welcomePaneId);
+  } catch {
+    return false;
+  }
+}

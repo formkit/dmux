@@ -16,6 +16,7 @@ import readline from 'readline';
 import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
+import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -168,6 +169,21 @@ class Dmux {
       } else {
         // Use existing config value
         controlPaneId = config.controlPaneId;
+      }
+
+      // Create welcome pane if there are no dmux panes and no existing welcome pane
+      // Check if welcome pane actually exists, not just if it's in config (handles tmux restarts)
+      const { welcomePaneExists } = await import('./utils/welcomePane.js');
+      const hasValidWelcomePane = config.welcomePaneId && welcomePaneExists(config.welcomePaneId);
+
+      if (controlPaneId && config.panes && config.panes.length === 0 && !hasValidWelcomePane) {
+        const welcomePaneId = await createWelcomePane(controlPaneId);
+        if (welcomePaneId) {
+          config.welcomePaneId = welcomePaneId;
+          config.lastUpdated = new Date().toISOString();
+          await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+          LogService.getInstance().debug(`Created welcome pane: ${welcomePaneId}`, 'Setup');
+        }
       }
     } catch (error) {
       // Ignore errors in sidebar setup - will work without it

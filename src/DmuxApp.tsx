@@ -378,6 +378,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     }
   }, [availableAgents]);
 
+  // Welcome pane is now fully event-based:
+  // - Created at startup (in src/index.ts)
+  // - Destroyed when first pane is created (in paneCreation.ts)
+  // - Recreated when last pane is closed (in paneActions.ts)
+  // No polling needed!
+
   // loadPanes moved to usePanes
 
   // getPanePositions moved to utils/tmux
@@ -1392,27 +1398,28 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   });
 
   // Auto-show new pane dialog when starting with no panes
-  useEffect(() => {
-    // Only show the dialog if:
-    // 1. Initial load is complete (!isLoading)
-    // 2. We have no panes
-    // 3. We're not already showing the dialog
-    // 4. We're not showing any other dialogs or prompts
-    if (!isLoading &&
-        panes.length === 0 &&
-        !showNewPaneDialog &&
-        !actionSystem.actionState.showConfirmDialog &&
-        !actionSystem.actionState.showChoiceDialog &&
-        !actionSystem.actionState.showInputDialog &&
-        !actionSystem.actionState.showProgressDialog &&
-        !showCommandPrompt &&
-        !showFileCopyPrompt &&
-        !isCreatingPane &&
-        !runningCommand &&
-        !isUpdating) {
-      setShowNewPaneDialog(true);
-    }
-  }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, isCreatingPane, runningCommand, isUpdating]);
+  // Removed automatic new pane dialog on startup - users can press 'n' to create panes
+  // useEffect(() => {
+  //   // Only show the dialog if:
+  //   // 1. Initial load is complete (!isLoading)
+  //   // 2. We have no panes
+  //   // 3. We're not already showing the dialog
+  //   // 4. We're not showing any other dialogs or prompts
+  //   if (!isLoading &&
+  //       panes.length === 0 &&
+  //       !showNewPaneDialog &&
+  //       !actionSystem.actionState.showConfirmDialog &&
+  //       !actionSystem.actionState.showChoiceDialog &&
+  //       !actionSystem.actionState.showInputDialog &&
+  //       !actionSystem.actionState.showProgressDialog &&
+  //       !showCommandPrompt &&
+  //       !showFileCopyPrompt &&
+  //       !isCreatingPane &&
+  //       !runningCommand &&
+  //       !isUpdating) {
+  //     setShowNewPaneDialog(true);
+  //   }
+  // }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, isCreatingPane, runningCommand, isUpdating]);
 
   // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
   useEffect(() => {

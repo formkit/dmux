@@ -93,6 +93,7 @@ export interface DmuxConfig {
   lastUpdated: string;
   controlPaneId?: string; // Pane ID running dmux TUI (left sidebar)
   controlPaneSize?: number; // Fixed sidebar width (40 chars)
+  welcomePaneId?: string; // Pane ID for the welcome/placeholder pane
 }
 
 // Hook types - re-exported from hooks utility for convenience

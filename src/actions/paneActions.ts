@@ -6,11 +6,13 @@
  */
 
 import { execSync } from 'child_process';
-import type { DmuxPane } from '../types.js';
+import type { DmuxPane, DmuxConfig } from '../types.js';
 import type { ActionResult, ActionContext, ActionOption } from './types.js';
 import { StateManager } from '../shared/StateManager.js';
 import { triggerHook } from '../utils/hooks.js';
 import { LogService } from '../services/LogService.js';
+import * as fs from 'fs';
+import path from 'path';
 
 /**
  * Generate commit message with timeout and error handling
@@ -228,6 +230,26 @@ async function executeCloseOption(
 
       // Trigger pane_closed hook (after everything is cleaned up)
       await triggerHook('pane_closed', projectRoot, pane);
+
+      // If we just closed the last pane, recreate the welcome pane using coordinated function
+      if (updatedPanes.length === 0) {
+        try {
+          const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
+          const configContent = fs.readFileSync(configPath, 'utf-8');
+          const config: DmuxConfig = JSON.parse(configContent);
+
+          if (config.controlPaneId) {
+            const { createWelcomePaneCoordinated } = await import('../utils/welcomePaneManager.js');
+            const created = await createWelcomePaneCoordinated(projectRoot, config.controlPaneId);
+            if (created) {
+              LogService.getInstance().debug('Recreated welcome pane after closing last pane', 'paneActions');
+            }
+          }
+        } catch (error) {
+          // Log but don't fail - welcome pane is nice-to-have
+          LogService.getInstance().error('Failed to recreate welcome pane', 'paneActions', undefined, error instanceof Error ? error : undefined);
+        }
+      }
 
       return {
         type: 'success',

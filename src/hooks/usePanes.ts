@@ -126,8 +126,11 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           missingPane.paneId = newPaneId;
 
           // Send a message to the pane indicating it was restored
-          execSync(`tmux send-keys -t '${newPaneId}' "# Pane restored: ${missingPane.slug}" Enter`, { stdio: 'pipe' });
-          execSync(`tmux send-keys -t '${newPaneId}' "# Original prompt: ${missingPane.prompt?.substring(0, 50)}..." Enter`, { stdio: 'pipe' });
+          // Use echo to properly display messages (avoid "command not found: #" errors)
+          const slug = missingPane.slug.replace(/'/g, "'\\''");
+          const promptPreview = (missingPane.prompt?.substring(0, 50) || '').replace(/'/g, "'\\''");
+          execSync(`tmux send-keys -t '${newPaneId}' "echo '# Pane restored: ${slug}'" Enter`, { stdio: 'pipe' });
+          execSync(`tmux send-keys -t '${newPaneId}' "echo '# Original prompt: ${promptPreview}...'" Enter`, { stdio: 'pipe' });
           execSync(`tmux send-keys -t '${newPaneId}' "cd ${missingPane.worktreePath || process.cwd()}" Enter`, { stdio: 'pipe' });
         } catch (error) {
           // If we can't create the pane, skip it

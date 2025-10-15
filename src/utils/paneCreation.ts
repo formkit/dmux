@@ -144,22 +144,28 @@ export async function createPane(
   }
 
   // Determine if this is the first content pane
-  const contentPaneIds = getContentPaneIds(controlPaneId);
-  const isFirstContentPane = contentPaneIds.length === 0;
+  // Check existingPanes instead of contentPaneIds, because contentPaneIds includes the welcome pane
+  const isFirstContentPane = existingPanes.length === 0;
 
   let paneInfo: string;
 
   if (isFirstContentPane) {
-    // First content pane - split from control pane using sidebar layout
+    // First, create the tmux pane but DON'T destroy welcome pane yet
+    // This way we can save the pane to config first, THEN destroy welcome pane
     paneInfo = setupSidebarLayout(controlPaneId);
+
+    // Wait for pane creation to settle
+    await new Promise((resolve) => setTimeout(resolve, 300));
   } else {
     // Subsequent panes - split intelligently within the content area
-    const targetPane = contentPaneIds[contentPaneIds.length - 1]; // Split from the most recent content pane
+    // Get actual dmux pane IDs (not welcome pane) from existingPanes
+    const dmuxPaneIds = existingPanes.map(p => p.paneId);
+    const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
     // Create a grid by alternating splits
     // Odd panes (2nd content pane): split horizontally (side-by-side)
     // Even panes (3rd content pane): split vertically (top-bottom)
-    const splitDirection = contentPaneIds.length % 2 === 1 ? '-h' : '-v';
+    const splitDirection = dmuxPaneIds.length % 2 === 1 ? '-h' : '-v';
 
     paneInfo = execSync(
       `tmux split-window ${splitDirection} -t '${targetPane}' -P -F '#{pane_id}'`,
@@ -307,6 +313,26 @@ export async function createPane(
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
     autopilot: settings.enableAutopilotByDefault ?? false,
   };
+
+  // CRITICAL: Save the pane to config IMMEDIATELY before destroying welcome pane
+  // This is the event that triggers welcome pane destruction (event-based, no polling)
+  if (isFirstContentPane) {
+    try {
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      const config: DmuxConfig = JSON.parse(configContent);
+
+      // Add the new pane to the config (panesCount becomes 1)
+      config.panes = [...existingPanes, newPane];
+      config.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+      // NOW destroy the welcome pane (event-based destruction)
+      const { destroyWelcomePaneCoordinated } = await import('./welcomePaneManager.js');
+      destroyWelcomePaneCoordinated(projectRoot);
+    } catch (error) {
+      // Log but don't fail - welcome pane cleanup is not critical
+    }
+  }
 
   // Trigger worktree_created hook (after full pane setup)
   await triggerHook('worktree_created', projectRoot, newPane);
