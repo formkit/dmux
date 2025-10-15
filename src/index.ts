@@ -141,7 +141,7 @@ class Dmux {
     const SIDEBAR_WIDTH = 40;
 
     try {
-      // Get control pane ID
+      // Get current pane ID
       controlPaneId = execSync('tmux display-message -p "#{pane_id}"', {
         encoding: 'utf-8',
         stdio: 'pipe',
@@ -151,13 +151,19 @@ class Dmux {
       const configContent = await fs.readFile(this.panesFile, 'utf-8');
       const config = JSON.parse(configContent);
 
-      // Only set up sidebar if not already configured
+      // If this is initial load (no controlPaneId in config), set up the sidebar width
       if (!config.controlPaneId) {
-        // Update config with control pane info
+        // Resize control pane to sidebar width
+        // The rest of the terminal will be empty space until content panes are created
+        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
+
+        // Refresh client
+        execSync('tmux refresh-client', { stdio: 'pipe' });
+
+        // Save control pane to config
         config.controlPaneId = controlPaneId;
         config.controlPaneSize = SIDEBAR_WIDTH;
         config.lastUpdated = new Date().toISOString();
-
         await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
       } else {
         // Use existing config value
