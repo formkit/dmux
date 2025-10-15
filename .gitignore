@@ -3,6 +3,7 @@ dist/
 .DS_Store
 *.log
 CLAUDE.local.md
+settings.local.json
 .dmux/test-output/
 .dmux/
 # Note: .dmux-hooks/ is version controlled (not ignored)
