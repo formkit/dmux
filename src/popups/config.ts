@@ -15,8 +15,7 @@ export const POPUP_CONFIG = {
   errorColor: COLORS.error,            // Red for error states
   dimColor: 'gray' as const,           // Gray for hints/secondary text
 
-  // Tmux popup background (used in popup.ts)
-  tmuxBackground: TMUX_COLORS.popupBackground,  // colour232
+  // Tmux popup styling (used in popup.ts) - foreground only
   tmuxBorderColor: TMUX_COLORS.activeBorder,    // colour214
 
   // Default dimensions

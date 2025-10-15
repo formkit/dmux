@@ -134,8 +134,8 @@ export async function launchPopup(
     args.push('-b', borderStyle);
   }
 
-  // Add popup background and border colors (darker background, orange border)
-  args.push('-s', `'bg=colour${POPUP_CONFIG.tmuxBackground},border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
+  // Add popup border color (foreground only - respects user's terminal background)
+  args.push('-s', `'border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
 
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
@@ -288,8 +288,8 @@ export function launchPopupNonBlocking(
     args.push('-b', borderStyle);
   }
 
-  // Add popup background and border colors (darker background, orange border)
-  args.push('-s', `'bg=colour${POPUP_CONFIG.tmuxBackground},border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
+  // Add popup border color (foreground only - respects user's terminal background)
+  args.push('-s', `'border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
 
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
@@ -442,8 +442,8 @@ export function launchNodePopupNonBlocking<T = any>(
     tmuxArgs.push('-b', borderStyle);
   }
 
-  // Add popup background and border colors (darker background, orange border)
-  tmuxArgs.push('-s', `'bg=colour${POPUP_CONFIG.tmuxBackground},border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
+  // Add popup border color (foreground only - respects user's terminal background)
+  tmuxArgs.push('-s', `'border-fg=colour${POPUP_CONFIG.tmuxBorderColor}'`);
 
   // Position: centered or custom
   if (!centered && (leftOffset > 0 || topOffset > 0)) {
@@ -471,7 +471,6 @@ export function launchNodePopupNonBlocking<T = any>(
 
   // DEBUG: Log the actual tmux command
   console.error('[DEBUG popup.ts launchNodePopupNonBlocking] Full tmux command:', fullCommand);
-  console.error('[DEBUG popup.ts] tmuxBackground:', POPUP_CONFIG.tmuxBackground);
   console.error('[DEBUG popup.ts] tmuxBorderColor:', POPUP_CONFIG.tmuxBorderColor);
 
   // Launch popup with spawn (non-blocking)

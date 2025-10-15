@@ -1,6 +1,5 @@
 import React from 'react';
-import { Box, Text } from 'ink';
-import chalk from 'chalk';
+import { Box } from 'ink';
 
 interface DialogBoxProps {
   children: React.ReactNode;
@@ -12,9 +11,8 @@ interface DialogBoxProps {
 }
 
 /**
- * DialogBox - A dialog container with a dark background
- * IMPORTANT: Only use this for dialogs in the main panel area, NOT in the sidebar
- * Ink doesn't support setting Box backgrounds, so we use a full-width dark background Text
+ * DialogBox - A simple dialog container
+ * Respects user's terminal background settings
  */
 const DialogBox: React.FC<DialogBoxProps> = ({
   children,
@@ -24,35 +22,17 @@ const DialogBox: React.FC<DialogBoxProps> = ({
   paddingY = 0,
   marginTop = 1,
 }) => {
-  // Very dark gray background for the dialog area
-  const darkBg = chalk.bgHex('#080808');
-
   return (
     <Box marginTop={marginTop} flexDirection="column">
-      {/* Full-width dark background bar above dialog */}
-      <Text>{darkBg(''.padEnd(100, ' '))}</Text>
-
-      <Box flexDirection="row">
-        {/* Left dark background padding */}
-        <Text>{darkBg(' ')}</Text>
-
-        {/* Dialog content with border */}
-        <Box
-          flexDirection="column"
-          borderStyle={borderStyle}
-          borderColor={borderColor}
-          paddingX={paddingX}
-          paddingY={paddingY}
-        >
-          {children}
-        </Box>
-
-        {/* Right dark background padding */}
-        <Text>{darkBg(' ')}</Text>
+      <Box
+        flexDirection="column"
+        borderStyle={borderStyle}
+        borderColor={borderColor}
+        paddingX={paddingX}
+        paddingY={paddingY}
+      >
+        {children}
       </Box>
-
-      {/* Full-width dark background bar below dialog */}
-      <Text>{darkBg(''.padEnd(100, ' '))}</Text>
     </Box>
   );
 };
