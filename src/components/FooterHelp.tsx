@@ -73,7 +73,7 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
       </Box>
 
       {/* Network section with dividers - always show if server is running */}
-      {serverPort && serverPort > 0 && (
+      {(serverPort ?? 0) > 0 && (
         <>
           <Divider />
           {/* Local network IP */}
