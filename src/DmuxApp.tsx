@@ -1,154 +1,202 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useApp, useStdout } from 'ink';
-import { execSync } from 'child_process';
-import fs from 'fs/promises';
-import path from 'path';
-import { createRequire } from 'module';
+import React, { useState, useEffect } from "react"
+import { Box, Text, useInput, useApp, useStdout } from "ink"
+import { execSync } from "child_process"
+import fs from "fs/promises"
+import path from "path"
+import { createRequire } from "module"
 
 // Hooks
-import usePanes from './hooks/usePanes.js';
-import useProjectSettings from './hooks/useProjectSettings.js';
-import useTerminalWidth from './hooks/useTerminalWidth.js';
-import useNavigation from './hooks/useNavigation.js';
-import useAutoUpdater from './hooks/useAutoUpdater.js';
-import useAgentDetection from './hooks/useAgentDetection.js';
-import useAgentStatus from './hooks/useAgentStatus.js';
-import usePaneRunner from './hooks/usePaneRunner.js';
-import usePaneCreation from './hooks/usePaneCreation.js';
-import useActionSystem from './hooks/useActionSystem.js';
+import usePanes from "./hooks/usePanes.js"
+import useProjectSettings from "./hooks/useProjectSettings.js"
+import useTerminalWidth from "./hooks/useTerminalWidth.js"
+import useNavigation from "./hooks/useNavigation.js"
+import useAutoUpdater from "./hooks/useAutoUpdater.js"
+import useAgentDetection from "./hooks/useAgentDetection.js"
+import useAgentStatus from "./hooks/useAgentStatus.js"
+import usePaneRunner from "./hooks/usePaneRunner.js"
+import usePaneCreation from "./hooks/usePaneCreation.js"
+import useActionSystem from "./hooks/useActionSystem.js"
 
 // Utils
-import { getPanePositions, enforceControlPaneSize } from './utils/tmux.js';
-import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
-import { suggestCommand } from './utils/commands.js';
-import { generateSlug } from './utils/slug.js';
-import { getMainBranch } from './utils/git.js';
-import { capturePaneContent } from './utils/paneCapture.js';
-import { supportsPopups, launchNodePopupNonBlocking, POPUP_POSITIONING } from './utils/popup.js';
-import { StateManager } from './shared/StateManager.js';
-import { LogService } from './services/LogService.js';
-import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
-import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
-import { SettingsManager, SETTING_DEFINITIONS } from './utils/settingsManager.js';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { getPanePositions, enforceControlPaneSize } from "./utils/tmux.js"
+import { SIDEBAR_WIDTH } from "./utils/layoutManager.js"
+import { suggestCommand } from "./utils/commands.js"
+import { generateSlug } from "./utils/slug.js"
+import { getMainBranch } from "./utils/git.js"
+import { capturePaneContent } from "./utils/paneCapture.js"
+import {
+  supportsPopups,
+  launchNodePopupNonBlocking,
+  POPUP_POSITIONING,
+} from "./utils/popup.js"
+import { StateManager } from "./shared/StateManager.js"
+import { LogService } from "./services/LogService.js"
+import {
+  getStatusDetector,
+  type StatusUpdateEvent,
+} from "./services/StatusDetector.js"
+import {
+  PaneAction,
+  getAvailableActions,
+  type ActionMetadata,
+} from "./actions/index.js"
+import {
+  SettingsManager,
+  SETTING_DEFINITIONS,
+} from "./utils/settingsManager.js"
+import { fileURLToPath } from "url"
+import { dirname } from "path"
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const require = createRequire(import.meta.url);
-const packageJson = require('../package.json');
-import type { DmuxPane, PanePosition, ProjectSettings, DmuxAppProps } from './types.js';
-import PanesGrid from './components/PanesGrid.js';
-import NewPaneDialog from './components/NewPaneDialog.js';
-import CommandPromptDialog from './components/CommandPromptDialog.js';
-import FileCopyPrompt from './components/FileCopyPrompt.js';
-import LoadingIndicator from './components/LoadingIndicator.js';
-import RunningIndicator from './components/RunningIndicator.js';
-import UpdatingIndicator from './components/UpdatingIndicator.js';
-import CreatingIndicator from './components/CreatingIndicator.js';
-import FooterHelp from './components/FooterHelp.js';
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const require = createRequire(import.meta.url)
+const packageJson = require("../package.json")
+import type {
+  DmuxPane,
+  PanePosition,
+  ProjectSettings,
+  DmuxAppProps,
+} from "./types.js"
+import PanesGrid from "./components/PanesGrid.js"
+import CommandPromptDialog from "./components/CommandPromptDialog.js"
+import FileCopyPrompt from "./components/FileCopyPrompt.js"
+import LoadingIndicator from "./components/LoadingIndicator.js"
+import RunningIndicator from "./components/RunningIndicator.js"
+import UpdatingIndicator from "./components/UpdatingIndicator.js"
+import CreatingIndicator from "./components/CreatingIndicator.js"
+import FooterHelp from "./components/FooterHelp.js"
 
-
-const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, settingsFile, projectRoot, autoUpdater, serverPort, server, controlPaneId }) => {
-  const { stdout } = useStdout();
-  const terminalHeight = stdout?.rows || 40;
+const DmuxApp: React.FC<DmuxAppProps> = ({
+  panesFile,
+  projectName,
+  sessionName,
+  settingsFile,
+  projectRoot,
+  autoUpdater,
+  serverPort,
+  server,
+  controlPaneId,
+}) => {
+  const { stdout } = useStdout()
+  const terminalHeight = stdout?.rows || 40
 
   /* panes state moved to usePanes */
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [showNewPaneDialog, setShowNewPaneDialog] = useState(false);
-  const [newPanePrompt, setNewPanePrompt] = useState('');
-  const [statusMessage, setStatusMessage] = useState('');
-  const [isCreatingPane, setIsCreatingPane] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [statusMessage, setStatusMessage] = useState("")
+  const [isCreatingPane, setIsCreatingPane] = useState(false)
 
   // Settings state
-  const [settingsManager] = useState(() => new SettingsManager(projectRoot));
+  const [settingsManager] = useState(() => new SettingsManager(projectRoot))
   // Force repaint trigger - incrementing this causes Ink to re-render
-  const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0);
+  const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0)
   // Spinner state - shows for a few frames to force render
-  const [showRepaintSpinner, setShowRepaintSpinner] = useState(false);
-  const { projectSettings, saveSettings } = useProjectSettings(settingsFile);
-  const [showCommandPrompt, setShowCommandPrompt] = useState<'test' | 'dev' | null>(null);
-  const [commandInput, setCommandInput] = useState('');
-  const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false);
-  const [currentCommandType, setCurrentCommandType] = useState<'test' | 'dev' | null>(null);
-  const [runningCommand, setRunningCommand] = useState(false);
-  const [quitConfirmMode, setQuitConfirmMode] = useState(false);
+  const [showRepaintSpinner, setShowRepaintSpinner] = useState(false)
+  const { projectSettings, saveSettings } = useProjectSettings(settingsFile)
+  const [showCommandPrompt, setShowCommandPrompt] = useState<
+    "test" | "dev" | null
+  >(null)
+  const [commandInput, setCommandInput] = useState("")
+  const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false)
+  const [currentCommandType, setCurrentCommandType] = useState<
+    "test" | "dev" | null
+  >(null)
+  const [runningCommand, setRunningCommand] = useState(false)
+  const [quitConfirmMode, setQuitConfirmMode] = useState(false)
   // Debug message state - for temporary logging messages
-  const [debugMessage, setDebugMessage] = useState<string>('');
+  const [debugMessage, setDebugMessage] = useState<string>("")
   // Current git branch state (for dev builds)
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null)
   // Update state handled by hook
-  const { updateInfo, showUpdateDialog, isUpdating, performUpdate, skipUpdate, dismissUpdate, updateAvailable } = useAutoUpdater(autoUpdater, setStatusMessage);
-  const { exit } = useApp();
+  const {
+    updateInfo,
+    showUpdateDialog,
+    isUpdating,
+    performUpdate,
+    skipUpdate,
+    dismissUpdate,
+    updateAvailable,
+  } = useAutoUpdater(autoUpdater, setStatusMessage)
+  const { exit } = useApp()
 
   // Flag to ignore input temporarily after popup closes (prevents buffered keys)
-  const [ignoreInput, setIgnoreInput] = useState(false);
+  const [ignoreInput, setIgnoreInput] = useState(false)
 
   // Agent selection state
-  const { availableAgents } = useAgentDetection();
-  const [agentChoice, setAgentChoice] = useState<'claude' | 'opencode' | null>(null);
+  const { availableAgents } = useAgentDetection()
+  const [agentChoice, setAgentChoice] = useState<"claude" | "opencode" | null>(
+    null
+  )
 
   // Popup support detection
-  const [popupsSupported, setPopupsSupported] = useState(false);
+  const [popupsSupported, setPopupsSupported] = useState(false)
 
   // Track terminal dimensions for responsive layout
-  const terminalWidth = useTerminalWidth();
+  const terminalWidth = useTerminalWidth()
 
   // Track unread error and warning counts for logs badge
-  const [unreadErrorCount, setUnreadErrorCount] = useState(0);
-  const [unreadWarningCount, setUnreadWarningCount] = useState(0);
+  const [unreadErrorCount, setUnreadErrorCount] = useState(0)
+  const [unreadWarningCount, setUnreadWarningCount] = useState(0)
 
   // Tunnel state
-  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
-  const [tunnelCreating, setTunnelCreating] = useState(false);
-  const [tunnelSpinnerFrame, setTunnelSpinnerFrame] = useState(0);
-  const [localIp, setLocalIp] = useState<string>('127.0.0.1');
-  const [tunnelCopied, setTunnelCopied] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null)
+  const [tunnelCreating, setTunnelCreating] = useState(false)
+  const [tunnelSpinnerFrame, setTunnelSpinnerFrame] = useState(0)
+  const [localIp, setLocalIp] = useState<string>("127.0.0.1")
+  const [tunnelCopied, setTunnelCopied] = useState(false)
 
   // Subscribe to StateManager for unread error/warning count updates
   useEffect(() => {
-    const stateManager = StateManager.getInstance();
+    const stateManager = StateManager.getInstance()
 
     const updateCounts = () => {
-      setUnreadErrorCount(stateManager.getUnreadErrorCount());
-      setUnreadWarningCount(stateManager.getUnreadWarningCount());
-    };
+      setUnreadErrorCount(stateManager.getUnreadErrorCount())
+      setUnreadWarningCount(stateManager.getUnreadWarningCount())
+    }
 
     // Initial count
-    updateCounts();
+    updateCounts()
 
     // Subscribe to changes
-    const unsubscribe = stateManager.subscribe(updateCounts);
+    const unsubscribe = stateManager.subscribe(updateCounts)
 
     return () => {
-      unsubscribe();
-    };
-  }, []);
+      unsubscribe()
+    }
+  }, [])
 
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
-  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(panesFile, false);
+  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(
+    panesFile,
+    false
+  )
 
   // Track intentionally closed panes to prevent race condition
   // When a user closes a pane, we add it to this set. If the worker detects
   // the pane is gone (which it will), we check this set first before re-saving.
-  const intentionallyClosedPanes = React.useRef<Set<string>>(new Set());
+  const intentionallyClosedPanes = React.useRef<Set<string>>(new Set())
 
   // Pane runner
-  const { copyNonGitFiles, runCommandInternal, monitorTestOutput, monitorDevOutput, attachBackgroundWindow } = usePaneRunner({
+  const {
+    copyNonGitFiles,
+    runCommandInternal,
+    monitorTestOutput,
+    monitorDevOutput,
+    attachBackgroundWindow,
+  } = usePaneRunner({
     panes,
     savePanes,
     projectSettings,
     setStatusMessage,
     setRunningCommand,
-  });
+  })
 
   // Force repaint helper - shows spinner for a few frames to force full re-render
   const forceRepaint = () => {
-    setForceRepaintTrigger(prev => prev + 1);
-    setShowRepaintSpinner(true);
+    setForceRepaintTrigger((prev) => prev + 1)
+    setShowRepaintSpinner(true)
     // Hide spinner after a few frames (enough to trigger multiple renders)
-    setTimeout(() => setShowRepaintSpinner(false), 100);
-  };
+    setTimeout(() => setShowRepaintSpinner(false), 100)
+  }
 
   // Force repaint effect - ensures Ink re-renders when trigger changes
   useEffect(() => {
@@ -156,60 +204,62 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       // Small delay to ensure terminal is ready
       const timer = setTimeout(() => {
         try {
-          execSync('tmux refresh-client', { stdio: 'pipe' });
+          execSync("tmux refresh-client", { stdio: "pipe" })
         } catch {}
-      }, 50);
-      return () => clearTimeout(timer);
+      }, 50)
+      return () => clearTimeout(timer)
     }
-  }, [forceRepaintTrigger]);
-
+  }, [forceRepaintTrigger])
 
   // Get local network IP on mount
   useEffect(() => {
     try {
       // Get local IP address (not 127.0.0.1)
-      const result = execSync(`hostname -I 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      }).trim();
+      const result = execSync(
+        `hostname -I 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1`,
+        {
+          encoding: "utf-8",
+          stdio: "pipe",
+        }
+      ).trim()
       if (result) {
-        setLocalIp(result.split(' ')[0]); // Take first IP if multiple
+        setLocalIp(result.split(" ")[0]) // Take first IP if multiple
       }
     } catch {
       // Fallback to 127.0.0.1
-      setLocalIp('127.0.0.1');
+      setLocalIp("127.0.0.1")
     }
-  }, []);
-
+  }, [])
 
   // Spinner animation for tunnel creation
   useEffect(() => {
-    if (!tunnelCreating) return;
+    if (!tunnelCreating) return
 
     const spinnerInterval = setInterval(() => {
-      setTunnelSpinnerFrame((prev) => (prev + 1) % 10);
-    }, 80); // Update every 80ms
+      setTunnelSpinnerFrame((prev) => (prev + 1) % 10)
+    }, 80) // Update every 80ms
 
-    return () => clearInterval(spinnerInterval);
-  }, [tunnelCreating]);
+    return () => clearInterval(spinnerInterval)
+  }, [tunnelCreating])
 
   // Get current git branch on mount (only for dev builds)
   useEffect(() => {
-    const isDev = process.env.DMUX_DEV === 'true' || __dirname.includes('dist') === false;
+    const isDev =
+      process.env.DMUX_DEV === "true" || __dirname.includes("dist") === false
     if (isDev) {
       try {
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-          encoding: 'utf-8',
-          stdio: 'pipe',
-          cwd: projectRoot
-        }).trim();
-        setCurrentBranch(branch);
+        const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+          encoding: "utf-8",
+          stdio: "pipe",
+          cwd: projectRoot,
+        }).trim()
+        setCurrentBranch(branch)
       } catch {
         // Not in a git repo or git not available
-        setCurrentBranch(null);
+        setCurrentBranch(null)
       }
     }
-  }, [projectRoot]);
+  }, [projectRoot])
 
   // Pane creation
   const { createNewPane: createNewPaneHook } = usePaneCreation({
@@ -218,86 +268,88 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     projectName,
     setIsCreatingPane,
     setStatusMessage,
-    setNewPanePrompt,
     loadPanes,
     panesFile,
     availableAgents,
     forceRepaint,
-  });
-  
+  })
+
   // Listen for status updates with analysis data and merge into panes
   useEffect(() => {
-    const statusDetector = getStatusDetector();
+    const statusDetector = getStatusDetector()
 
     const handleStatusUpdate = (event: StatusUpdateEvent) => {
-      setPanes(prevPanes => {
-        const updatedPanes = prevPanes.map(pane => {
+      setPanes((prevPanes) => {
+        const updatedPanes = prevPanes.map((pane) => {
           if (pane.id === event.paneId) {
             const updated: DmuxPane = {
               ...pane,
               agentStatus: event.status,
-            };
+            }
 
             // Only update analysis fields if they're present in the event (not undefined)
             // This prevents simple status changes from overwriting PaneAnalyzer results
             if (event.optionsQuestion !== undefined) {
-              updated.optionsQuestion = event.optionsQuestion;
+              updated.optionsQuestion = event.optionsQuestion
             }
             if (event.options !== undefined) {
-              updated.options = event.options;
+              updated.options = event.options
             }
             if (event.potentialHarm !== undefined) {
-              updated.potentialHarm = event.potentialHarm;
+              updated.potentialHarm = event.potentialHarm
             }
             if (event.summary !== undefined) {
-              updated.agentSummary = event.summary;
+              updated.agentSummary = event.summary
             }
             if (event.analyzerError !== undefined) {
-              updated.analyzerError = event.analyzerError;
+              updated.analyzerError = event.analyzerError
             }
 
             // Clear option dialog data when transitioning away from 'waiting' state
-            if (event.status !== 'waiting' && pane.agentStatus === 'waiting') {
-              updated.optionsQuestion = undefined;
-              updated.options = undefined;
-              updated.potentialHarm = undefined;
+            if (event.status !== "waiting" && pane.agentStatus === "waiting") {
+              updated.optionsQuestion = undefined
+              updated.options = undefined
+              updated.potentialHarm = undefined
             }
 
             // Clear summary when transitioning away from 'idle' state
-            if (event.status !== 'idle' && pane.agentStatus === 'idle') {
-              updated.agentSummary = undefined;
+            if (event.status !== "idle" && pane.agentStatus === "idle") {
+              updated.agentSummary = undefined
             }
 
             // Clear analyzer error when successfully getting a new analysis
             // or when transitioning to 'working' status
-            if (event.status === 'working') {
-              updated.analyzerError = undefined;
-            } else if (event.status === 'waiting' || event.status === 'idle') {
-              if (event.analyzerError === undefined && (event.optionsQuestion || event.summary)) {
-                updated.analyzerError = undefined;
+            if (event.status === "working") {
+              updated.analyzerError = undefined
+            } else if (event.status === "waiting" || event.status === "idle") {
+              if (
+                event.analyzerError === undefined &&
+                (event.optionsQuestion || event.summary)
+              ) {
+                updated.analyzerError = undefined
               }
             }
 
-            return updated;
+            return updated
           }
-          return pane;
-        });
+          return pane
+        })
 
         // Persist to disk - ConfigWatcher will handle syncing to StateManager
-        savePanes(updatedPanes).catch(err => {
-          console.error('Failed to save panes after status update:', err);
-        });
+        savePanes(updatedPanes).catch((err) => {
+          console.error("Failed to save panes after status update:", err)
+        })
 
-        return updatedPanes;
-      });
-    };
+        return updatedPanes
+      })
+    }
 
-    statusDetector.on('status-updated', handleStatusUpdate);
+    statusDetector.on("status-updated", handleStatusUpdate)
 
     return () => {
-      statusDetector.off('status-updated', handleStatusUpdate);
-    };
-  }, [setPanes, savePanes]);
+      statusDetector.off("status-updated", handleStatusUpdate)
+    }
+  }, [setPanes, savePanes])
 
   // Note: No need to sync panes with StateManager here.
   // The ConfigWatcher automatically updates StateManager when the config file changes.
@@ -305,47 +357,47 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Sync settings with StateManager
   useEffect(() => {
-    const stateManager = StateManager.getInstance();
-    stateManager.updateSettings(projectSettings);
-  }, [projectSettings]);
+    const stateManager = StateManager.getInstance()
+    stateManager.updateSettings(projectSettings)
+  }, [projectSettings])
 
   // Expose debug message setter via StateManager
   useEffect(() => {
-    const stateManager = StateManager.getInstance();
-    stateManager.setDebugMessageCallback(setDebugMessage);
+    const stateManager = StateManager.getInstance()
+    stateManager.setDebugMessageCallback(setDebugMessage)
     return () => {
-      stateManager.setDebugMessageCallback(undefined);
-    };
-  }, []);
+      stateManager.setDebugMessageCallback(undefined)
+    }
+  }, [])
 
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
     // SIGTERM should quit immediately (for process management)
     const handleTermination = () => {
-      cleanExit();
-    };
-    process.on('SIGTERM', handleTermination);
+      cleanExit()
+    }
+    process.on("SIGTERM", handleTermination)
 
     // Check if tmux supports popups (3.2+) and enable mouse mode for click-outside-to-close
-    const popupSupport = supportsPopups();
-    setPopupsSupported(popupSupport);
+    const popupSupport = supportsPopups()
+    setPopupsSupported(popupSupport)
     if (popupSupport) {
       // Enable mouse mode only for this dmux session (not global)
     }
 
     return () => {
-      process.removeListener('SIGTERM', handleTermination);
-    };
-  }, []);
+      process.removeListener("SIGTERM", handleTermination)
+    }
+  }, [])
 
   // Update checking moved to useAutoUpdater
 
   // Set default agent choice when detection completes
   useEffect(() => {
     if (agentChoice == null && availableAgents.length > 0) {
-      setAgentChoice(availableAgents[0] || 'claude');
+      setAgentChoice(availableAgents[0] || "claude")
     }
-  }, [availableAgents]);
+  }, [availableAgents])
 
   // Welcome pane is now fully event-based:
   // - Created at startup (in src/index.ts)
@@ -358,36 +410,39 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   // getPanePositions moved to utils/tmux
 
   // Navigation logic moved to hook
-  const { getCardGridPosition, findCardInDirection } = useNavigation(terminalWidth, panes.length, isLoading);
+  const { getCardGridPosition, findCardInDirection } = useNavigation(
+    terminalWidth,
+    panes.length,
+    isLoading
+  )
 
   // findCardInDirection provided by useNavigation
-
 
   // savePanes moved to usePanes
 
   // applySmartLayout moved to utils/tmux
 
-
-
-
-
-
   const launchNewPanePopup = async () => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path from the project root
       // This handles both dev (tsx running from src) and prod (compiled to dist)
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'newPanePopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "newPanePopup.js"
+      )
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<string>(
@@ -396,83 +451,96 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         {
           ...POPUP_POSITIONING.centeredWithSidebar(SIDEBAR_WIDTH),
           width: 90,
-          height: 18,
-          title: '  ✨ dmux - Create New Pane  '
+          height: 22,
+          title: "  ✨ dmux - Create New Pane  ",
         }
-      );
+      )
 
-      LogService.getInstance().debug(`Popup created - PID: ${popupHandle.pid}, bounds: ${JSON.stringify(popupHandle.bounds)}`, 'PopupTracking');
+      LogService.getInstance().debug(
+        `Popup created - PID: ${popupHandle.pid}, bounds: ${JSON.stringify(
+          popupHandle.bounds
+        )}`,
+        "PopupTracking"
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
-      LogService.getInstance().debug('Popup closed, clearing tracking', 'PopupTracking');
+      LogService.getInstance().debug(
+        "Popup closed, clearing tracking",
+        "PopupTracking"
+      )
 
       // Ignore input briefly after popup closes to prevent buffered keys
-      setIgnoreInput(true);
-      setTimeout(() => setIgnoreInput(false), 100);
+      setIgnoreInput(true)
+      setTimeout(() => setIgnoreInput(false), 100)
 
       if (result.success && result.data) {
         // User entered a prompt - now decide which agent to use
-        const promptValue = result.data;
-        const agents = availableAgents;
+        const promptValue = result.data
+        const agents = availableAgents
 
         if (agents.length === 0) {
-          await createNewPaneHook(promptValue);
+          await createNewPaneHook(promptValue)
         } else if (agents.length === 1) {
-          await createNewPaneHook(promptValue, agents[0]);
+          await createNewPaneHook(promptValue, agents[0])
         } else {
           // Multiple agents available - check for default agent setting first
-          const settings = settingsManager.getSettings();
+          const settings = settingsManager.getSettings()
           if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
             // Use the default agent from settings
-            await createNewPaneHook(promptValue, settings.defaultAgent);
+            await createNewPaneHook(promptValue, settings.defaultAgent)
           } else {
             // No default agent configured or default not available - show agent choice popup
-            const selectedAgent = await launchAgentChoicePopup(promptValue);
+            const selectedAgent = await launchAgentChoicePopup(promptValue)
             if (selectedAgent) {
-              await createNewPaneHook(promptValue, selectedAgent);
+              await createNewPaneHook(promptValue, selectedAgent)
             }
           }
         }
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
-        return;
+        return
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
   const launchKebabMenuPopup = async (paneIndex: number) => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
-    const selectedPane = panes[paneIndex];
+    const selectedPane = panes[paneIndex]
     if (!selectedPane) {
-      return;
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'kebabMenuPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "kebabMenuPopup.js"
+      )
 
       // Get available actions for this pane
-      const actions = getAvailableActions(selectedPane, projectSettings);
-      const actionsJson = JSON.stringify(actions);
+      const actions = getAvailableActions(selectedPane, projectSettings)
+      const actionsJson = JSON.stringify(actions)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<string>(
@@ -482,76 +550,110 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 60,
           height: Math.min(20, actions.length + 5),
-          title: `Menu: ${selectedPane.slug}`
+          title: `Menu: ${selectedPane.slug}`,
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Log the entire result for debugging
-      LogService.getInstance().debug(`Kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
+      LogService.getInstance().debug(
+        `Kebab menu result: ${JSON.stringify(result)}`,
+        "KebabMenu"
+      )
 
       if (result.success && result.data) {
         // User selected an action
-        const actionId = result.data as PaneAction;
-        LogService.getInstance().debug(`Action selected: ${actionId}`, 'KebabMenu');
+        const actionId = result.data as PaneAction
+        LogService.getInstance().debug(
+          `Action selected: ${actionId}`,
+          "KebabMenu"
+        )
 
         // Handle merge action with dedicated popup
         if (actionId === PaneAction.MERGE) {
-          LogService.getInstance().debug(`Merge action selected for pane: ${selectedPane.slug}`, 'MergeAction');
+          LogService.getInstance().debug(
+            `Merge action selected for pane: ${selectedPane.slug}`,
+            "MergeAction"
+          )
           try {
-            await launchMergePopup(selectedPane);
-            LogService.getInstance().debug('Merge popup completed', 'MergeAction');
+            await launchMergePopup(selectedPane)
+            LogService.getInstance().debug(
+              "Merge popup completed",
+              "MergeAction"
+            )
           } catch (error) {
-            LogService.getInstance().error('Merge popup error', 'MergeAction', selectedPane.id, error instanceof Error ? error : undefined);
-            setStatusMessage(`Merge popup failed: ${error}`);
-            setTimeout(() => setStatusMessage(''), 3000);
+            LogService.getInstance().error(
+              "Merge popup error",
+              "MergeAction",
+              selectedPane.id,
+              error instanceof Error ? error : undefined
+            )
+            setStatusMessage(`Merge popup failed: ${error}`)
+            setTimeout(() => setStatusMessage(""), 3000)
           }
         } else {
           // Execute other actions through action system
-          await actionSystem.executeAction(actionId, selectedPane, { mainBranch: getMainBranch() });
+          await actionSystem.executeAction(actionId, selectedPane, {
+            mainBranch: getMainBranch(),
+          })
         }
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
-        LogService.getInstance().debug('Kebab menu cancelled', 'KebabMenu');
-        return;
+        LogService.getInstance().debug("Kebab menu cancelled", "KebabMenu")
+        return
       } else if (result.error) {
-        LogService.getInstance().error(`Kebab menu error: ${result.error}`, 'KebabMenu');
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
+        LogService.getInstance().error(
+          `Kebab menu error: ${result.error}`,
+          "KebabMenu"
+        )
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
       } else {
-        LogService.getInstance().warn(`Unexpected kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
+        LogService.getInstance().warn(
+          `Unexpected kebab menu result: ${JSON.stringify(result)}`,
+          "KebabMenu"
+        )
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
-  const launchConfirmPopup = async (title: string, message: string, yesLabel?: string, noLabel?: string): Promise<boolean> => {
+  const launchConfirmPopup = async (
+    title: string,
+    message: string,
+    yesLabel?: string,
+    noLabel?: string
+  ): Promise<boolean> => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return false;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return false
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'confirmPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "confirmPopup.js"
+      )
 
       // Write data to temp file to avoid shell escaping issues
-      const dataFile = `/tmp/dmux-confirm-${Date.now()}.json`;
-      const dataJson = JSON.stringify({ title, message, yesLabel, noLabel });
-      await fs.writeFile(dataFile, dataJson);
+      const dataFile = `/tmp/dmux-confirm-${Date.now()}.json`
+      const dataJson = JSON.stringify({ title, message, yesLabel, noLabel })
+      await fs.writeFile(dataFile, dataJson)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<boolean>(
@@ -561,221 +663,235 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 60,
           height: 12,
-          title: title || 'Confirm'
+          title: title || "Confirm",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch {}
 
       if (result.success && result.data !== undefined) {
-        return result.data;
+        return result.data
       } else if (result.cancelled) {
-        return false;
+        return false
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
-        return false;
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
+        return false
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-    return false;
-  };
+    return false
+  }
 
-  const launchAgentChoicePopup = async (prompt: string): Promise<'claude' | 'opencode' | null> => {
+  const launchAgentChoicePopup = async (
+    prompt: string
+  ): Promise<"claude" | "opencode" | null> => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return null;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return null
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'agentChoicePopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "agentChoicePopup.js"
+      )
 
-      const agentsJson = JSON.stringify(availableAgents);
-      const defaultAgentArg = agentChoice || availableAgents[0] || 'claude';
+      const agentsJson = JSON.stringify(availableAgents)
+      const defaultAgentArg = agentChoice || availableAgents[0] || "claude"
 
       // Launch the popup non-blocking and track it
-      const popupHandle = launchNodePopupNonBlocking<'claude' | 'opencode'>(
+      const popupHandle = launchNodePopupNonBlocking<"claude" | "opencode">(
         popupScriptPath,
         [agentsJson, defaultAgentArg],
         {
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 50,
           height: 10,
-          title: 'Select Agent'
+          title: "Select Agent",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       if (result.success && result.data) {
-        return result.data;
+        return result.data
       } else if (result.cancelled) {
-        return null;
+        return null
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
-        return null;
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
+        return null
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-    return null;
-  };
+    return null
+  }
 
   const launchHooksPopup = async () => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'hooksPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "hooksPopup.js"
+      )
 
       // Get hooks data
-      const { hasHook } = await import('./utils/hooks.js');
+      const { hasHook } = await import("./utils/hooks.js")
       const allHookTypes = [
-        'before_pane_create',
-        'pane_created',
-        'worktree_created',
-        'before_pane_close',
-        'pane_closed',
-        'before_worktree_remove',
-        'worktree_removed',
-        'pre_merge',
-        'post_merge',
-        'run_test',
-        'run_dev',
-      ];
+        "before_pane_create",
+        "pane_created",
+        "worktree_created",
+        "before_pane_close",
+        "pane_closed",
+        "before_worktree_remove",
+        "worktree_removed",
+        "pre_merge",
+        "post_merge",
+        "run_test",
+        "run_dev",
+      ]
 
-      const hooks = allHookTypes.map(hookName => ({
+      const hooks = allHookTypes.map((hookName) => ({
         name: hookName,
-        active: hasHook(projectRoot || process.cwd(), hookName as any)
-      }));
+        active: hasHook(projectRoot || process.cwd(), hookName as any),
+      }))
 
-      const hooksJson = JSON.stringify(hooks);
+      const hooksJson = JSON.stringify(hooks)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<{
-        action?: 'edit' | 'view';
-      }>(
-        popupScriptPath,
-        [hooksJson],
-        {
-          ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
-          width: 70,
-          height: 24,
-          title: '🪝 Manage Hooks'
-        }
-      );
-
+        action?: "edit" | "view"
+      }>(popupScriptPath, [hooksJson], {
+        ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
+        width: 70,
+        height: 24,
+        title: "🪝 Manage Hooks",
+      })
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
-      if (result.success && result.data?.action === 'edit') {
+      if (result.success && result.data?.action === "edit") {
         // Edit hooks using an agent
-        const prompt = "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit";
+        const prompt =
+          "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit"
 
         // Choose agent
-        const agents = availableAgents;
+        const agents = availableAgents
         if (agents.length === 0) {
-          await createNewPaneHook(prompt);
+          await createNewPaneHook(prompt)
         } else if (agents.length === 1) {
-          await createNewPaneHook(prompt, agents[0]);
+          await createNewPaneHook(prompt, agents[0])
         } else {
           // Multiple agents available - check for default agent setting first
-          const settings = settingsManager.getSettings();
+          const settings = settingsManager.getSettings()
           if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
             // Use the default agent from settings
-            await createNewPaneHook(prompt, settings.defaultAgent);
+            await createNewPaneHook(prompt, settings.defaultAgent)
           } else {
             // No default agent configured or default not available - show agent choice popup
-            const selectedAgent = await launchAgentChoicePopup(prompt);
+            const selectedAgent = await launchAgentChoicePopup(prompt)
             if (selectedAgent) {
-              await createNewPaneHook(prompt, selectedAgent);
+              await createNewPaneHook(prompt, selectedAgent)
             }
           }
         }
-      } else if (result.success && result.data?.action === 'view') {
+      } else if (result.success && result.data?.action === "view") {
         // View hooks file in editor - could implement this later
-        setStatusMessage('View in editor not yet implemented');
-        setTimeout(() => setStatusMessage(''), 2000);
+        setStatusMessage("View in editor not yet implemented")
+        setTimeout(() => setStatusMessage(""), 2000)
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
-        return;
+        return
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
   const launchLogsPopup = async () => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'logsPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "logsPopup.js"
+      )
 
       // Get logs from StateManager and write to temp file
-      const stateManager = StateManager.getInstance();
-      const allLogs = stateManager.getLogs();
-      const stats = stateManager.getLogStats();
-      const logsData = { logs: allLogs, stats };
+      const stateManager = StateManager.getInstance()
+      const allLogs = stateManager.getLogs()
+      const stats = stateManager.getLogStats()
+      const logsData = { logs: allLogs, stats }
 
       // Write data to temp file to avoid shell escaping issues with complex JSON
-      const dataFile = `/tmp/dmux-logs-${Date.now()}.json`;
-      const dataJson = JSON.stringify(logsData);
-      await fs.writeFile(dataFile, dataJson);
+      const dataFile = `/tmp/dmux-logs-${Date.now()}.json`
+      const dataJson = JSON.stringify(logsData)
+      await fs.writeFile(dataFile, dataJson)
 
       // Launch the popup with large positioning
       // Get tmux client dimensions (not process.stdout which is just the sidebar)
-      const tmuxDims = execSync('tmux display-message -p "#{client_width},#{client_height}"', { encoding: 'utf-8' }).trim();
-      const [termWidth, termHeight] = tmuxDims.split(',').map(Number);
+      const tmuxDims = execSync(
+        'tmux display-message -p "#{client_width},#{client_height}"',
+        { encoding: "utf-8" }
+      ).trim()
+      const [termWidth, termHeight] = tmuxDims.split(",").map(Number)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<void>(
@@ -783,59 +899,63 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         [dataFile],
         {
           ...POPUP_POSITIONING.large(SIDEBAR_WIDTH, termWidth, termHeight),
-          title: '🪵 dmux Logs'
+          title: "🪵 dmux Logs",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch (err) {
         // Ignore cleanup errors
       }
 
       // Popup closed - mark all logs as read
       if (result.success) {
-        stateManager.markAllLogsAsRead();
+        stateManager.markAllLogsAsRead()
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
   const launchShortcutsPopup = async () => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'shortcutsPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "shortcutsPopup.js"
+      )
 
       // Prepare data for shortcuts popup
       const shortcutsData = {
         hasSidebarLayout: !!controlPaneId,
-        showRemoteKey: !!server
-      };
+        showRemoteKey: !!server,
+      }
 
       // Write data to temp file
-      const dataFile = `/tmp/dmux-shortcuts-${Date.now()}.json`;
-      const dataJson = JSON.stringify(shortcutsData);
-      await fs.writeFile(dataFile, dataJson);
+      const dataFile = `/tmp/dmux-shortcuts-${Date.now()}.json`
+      const dataJson = JSON.stringify(shortcutsData)
+      await fs.writeFile(dataFile, dataJson)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<void>(
@@ -845,123 +965,130 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 50,
           height: 20,
-          title: '⌨️  Keyboard Shortcuts'
+          title: "⌨️  Keyboard Shortcuts",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch (err) {
         // Ignore cleanup errors
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
   const launchRemotePopup = async () => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     // Check if server is available and tunnel URL exists
     if (!server || !serverPort || !tunnelUrl) {
-      setStatusMessage('Tunnel not ready');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Tunnel not ready")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'remotePopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "remotePopup.js"
+      )
 
       // Prepare status file with existing tunnel URL
-      const tunnelStatusFile = `/tmp/dmux-tunnel-status-${Date.now()}.json`;
-      await fs.writeFile(tunnelStatusFile, JSON.stringify({ url: tunnelUrl }));
+      const tunnelStatusFile = `/tmp/dmux-tunnel-status-${Date.now()}.json`
+      await fs.writeFile(tunnelStatusFile, JSON.stringify({ url: tunnelUrl }))
 
       // Prepare data for remote popup
       const remoteData = {
         loading: false,
         serverPort: serverPort,
-        statusFile: tunnelStatusFile
-      };
+        statusFile: tunnelStatusFile,
+      }
 
       // Write data to temp file
-      const dataFile = `/tmp/dmux-remote-${Date.now()}.json`;
-      await fs.writeFile(dataFile, JSON.stringify(remoteData));
+      const dataFile = `/tmp/dmux-remote-${Date.now()}.json`
+      await fs.writeFile(dataFile, JSON.stringify(remoteData))
 
       // Launch the popup non-blocking and track it
-      const popupHandle = launchNodePopupNonBlocking<{ closed: boolean; copied: boolean }>(
-        popupScriptPath,
-        [dataFile],
-        {
-          ...POPUP_POSITIONING.centeredWithSidebar(SIDEBAR_WIDTH),
-          width: 60,
-          height: 30,
-          title: '🌐 Remote Access'
-        }
-      );
-
+      const popupHandle = launchNodePopupNonBlocking<{
+        closed: boolean
+        copied: boolean
+      }>(popupScriptPath, [dataFile], {
+        ...POPUP_POSITIONING.centeredWithSidebar(SIDEBAR_WIDTH),
+        width: 60,
+        height: 30,
+        title: "🌐 Remote Access",
+      })
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Show "Copied!" message if URL was copied
       // Note: result is the parsed JSON directly, not wrapped in PopupResult.data
       if (result && (result as any).copied) {
-        setTunnelCopied(true);
-        setTimeout(() => setTunnelCopied(false), 2000);
+        setTunnelCopied(true)
+        setTimeout(() => setTunnelCopied(false), 2000)
       }
 
       // Clean up temp files
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch (err) {
         // Ignore cleanup errors
       }
       try {
-        await fs.unlink(tunnelStatusFile);
+        await fs.unlink(tunnelStatusFile)
       } catch (err) {
         // Ignore cleanup errors (file might not exist yet)
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
   const launchSettingsPopup = async () => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'settingsPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "settingsPopup.js"
+      )
 
       // Prepare settings data for popup
       const settingsData = {
@@ -969,8 +1096,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         settings: settingsManager.getSettings(),
         globalSettings: settingsManager.getGlobalSettings(),
         projectSettings: settingsManager.getProjectSettings(),
-      };
-      const settingsJson = JSON.stringify(settingsData);
+      }
+      const settingsJson = JSON.stringify(settingsData)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<any>(
@@ -980,13 +1107,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: Math.min(25, SETTING_DEFINITIONS.length + 8),
-          title: '⚙️  Settings'
+          title: "⚙️  Settings",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
@@ -994,154 +1120,206 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         // Check if this is an action result (action field at top level)
         if ((result as any).action) {
           // Action type setting (like 'hooks')
-          if ((result as any).action === 'hooks') {
+          if ((result as any).action === "hooks") {
             // Launch hooks popup
-            await launchHooksPopup();
+            await launchHooksPopup()
           }
         } else if (result.data) {
           // Regular setting change (result.data contains the setting)
-          const { key, value, scope } = result.data as { key: string; value: any; scope: 'global' | 'project' };
-          settingsManager.updateSetting(key as keyof import('./types.js').DmuxSettings, value, scope);
-          setStatusMessage(`Setting saved (${scope})`);
-          setTimeout(() => setStatusMessage(''), 2000);
+          const { key, value, scope } = result.data as {
+            key: string
+            value: any
+            scope: "global" | "project"
+          }
+          settingsManager.updateSetting(
+            key as keyof import("./types.js").DmuxSettings,
+            value,
+            scope
+          )
+          setStatusMessage(`Setting saved (${scope})`)
+          setTimeout(() => setStatusMessage(""), 2000)
         }
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
-        return;
+        return
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
   const launchMergePopup = async (pane: DmuxPane): Promise<void> => {
-    LogService.getInstance().debug(`launchMergePopup called for pane: ${pane.slug}`, 'MergePopup');
+    LogService.getInstance().debug(
+      `launchMergePopup called for pane: ${pane.slug}`,
+      "MergePopup"
+    )
 
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      LogService.getInstance().warn('Popups not supported', 'MergePopup');
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      LogService.getInstance().warn("Popups not supported", "MergePopup")
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     if (!pane.worktreePath) {
-      LogService.getInstance().warn('No worktree path for pane', 'MergePopup', pane.id);
-      setStatusMessage('This pane has no worktree to merge');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return;
+      LogService.getInstance().warn(
+        "No worktree path for pane",
+        "MergePopup",
+        pane.id
+      )
+      setStatusMessage("This pane has no worktree to merge")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'mergePopup.js');
-      LogService.getInstance().debug(`Popup script path: ${popupScriptPath}`, 'MergePopup');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "mergePopup.js"
+      )
+      LogService.getInstance().debug(
+        `Popup script path: ${popupScriptPath}`,
+        "MergePopup"
+      )
 
       // Check if popup script exists
       try {
-        await fs.access(popupScriptPath);
-        LogService.getInstance().debug('Popup script exists', 'MergePopup');
+        await fs.access(popupScriptPath)
+        LogService.getInstance().debug("Popup script exists", "MergePopup")
       } catch {
-        LogService.getInstance().error(`Popup script NOT found at: ${popupScriptPath}`, 'MergePopup');
-        setStatusMessage(`Merge popup script not found: ${popupScriptPath}`);
-        setTimeout(() => setStatusMessage(''), 5000);
-        return;
+        LogService.getInstance().error(
+          `Popup script NOT found at: ${popupScriptPath}`,
+          "MergePopup"
+        )
+        setStatusMessage(`Merge popup script not found: ${popupScriptPath}`)
+        setTimeout(() => setStatusMessage(""), 5000)
+        return
       }
 
       // Prepare merge data
-      const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+      const mainRepoPath = pane.worktreePath.replace(
+        /\/\.dmux\/worktrees\/[^/]+$/,
+        ""
+      )
       const mergeData = {
         paneSlug: pane.slug,
         worktreePath: pane.worktreePath,
         mainRepoPath,
         mainBranch: getMainBranch(),
-      };
+      }
 
       // Write data to temp file
-      const dataFile = `/tmp/dmux-merge-${Date.now()}.json`;
-      await fs.writeFile(dataFile, JSON.stringify(mergeData));
-      LogService.getInstance().debug(`Merge data written to: ${dataFile}`, 'MergePopup');
-      LogService.getInstance().debug(`Merge data: ${JSON.stringify(mergeData)}`, 'MergePopup');
+      const dataFile = `/tmp/dmux-merge-${Date.now()}.json`
+      await fs.writeFile(dataFile, JSON.stringify(mergeData))
+      LogService.getInstance().debug(
+        `Merge data written to: ${dataFile}`,
+        "MergePopup"
+      )
+      LogService.getInstance().debug(
+        `Merge data: ${JSON.stringify(mergeData)}`,
+        "MergePopup"
+      )
 
       // Launch the popup non-blocking and track it
-      LogService.getInstance().debug('Launching merge popup...', 'MergePopup');
+      LogService.getInstance().debug("Launching merge popup...", "MergePopup")
       const popupHandle = launchNodePopupNonBlocking<{
-        merged: boolean;
-        closedPane?: boolean;
-        error?: string;
-      }>(
-        popupScriptPath,
-        [dataFile],
-        {
-          ...POPUP_POSITIONING.large(SIDEBAR_WIDTH, terminalWidth, terminalHeight),
-          width: 80,
-          height: 30,
-          title: `🔀 Merge: ${pane.slug}`
-        }
-      );
-      LogService.getInstance().debug(`Popup launched, PID: ${popupHandle.pid}`, 'MergePopup');
-
+        merged: boolean
+        closedPane?: boolean
+        error?: string
+      }>(popupScriptPath, [dataFile], {
+        ...POPUP_POSITIONING.large(
+          SIDEBAR_WIDTH,
+          terminalWidth,
+          terminalHeight
+        ),
+        width: 80,
+        height: 30,
+        title: `🔀 Merge: ${pane.slug}`,
+      })
+      LogService.getInstance().debug(
+        `Popup launched, PID: ${popupHandle.pid}`,
+        "MergePopup"
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch {}
 
       if (result.success && result.data?.merged) {
         if (result.data.closedPane) {
           // Pane was closed during merge, refresh pane list
-          await loadPanes();
-          setStatusMessage('Merge complete, pane closed');
+          await loadPanes()
+          setStatusMessage("Merge complete, pane closed")
         } else {
-          setStatusMessage('Merge complete');
+          setStatusMessage("Merge complete")
         }
-        setTimeout(() => setStatusMessage(''), 3000);
+        setTimeout(() => setStatusMessage(""), 3000)
       } else if (result.cancelled) {
         // User cancelled
-        return;
+        return
       } else if (result.error) {
-        setStatusMessage(`Merge error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
+        setStatusMessage(`Merge error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch merge popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch merge popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
+  }
 
-  const launchChoicePopup = async (title: string, message: string, options: Array<{id: string, label: string, description?: string, danger?: boolean, default?: boolean}>): Promise<string | null> => {
+  const launchChoicePopup = async (
+    title: string,
+    message: string,
+    options: Array<{
+      id: string
+      label: string
+      description?: string
+      danger?: boolean
+      default?: boolean
+    }>
+  ): Promise<string | null> => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return null;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return null
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'choicePopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "choicePopup.js"
+      )
 
       // Write data to temp file to avoid shell escaping issues
-      const dataFile = `/tmp/dmux-choice-${Date.now()}.json`;
-      const dataJson = JSON.stringify({ title, message, options });
-      await fs.writeFile(dataFile, dataJson);
+      const dataFile = `/tmp/dmux-choice-${Date.now()}.json`
+      const dataJson = JSON.stringify({ title, message, options })
+      await fs.writeFile(dataFile, dataJson)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<string>(
@@ -1151,57 +1329,71 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: Math.min(25, options.length * 3 + 8),
-          title: title || 'Choose Option'
+          title: title || "Choose Option",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch {}
 
       if (result.success && result.data) {
-        return result.data;
+        return result.data
       } else if (result.cancelled) {
-        return null;
+        return null
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
-        return null;
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
+        return null
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-    return null;
-  };
+    return null
+  }
 
-  const launchInputPopup = async (title: string, message: string, placeholder?: string, defaultValue?: string): Promise<string | null> => {
+  const launchInputPopup = async (
+    title: string,
+    message: string,
+    placeholder?: string,
+    defaultValue?: string
+  ): Promise<string | null> => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage('Popups require tmux 3.2+');
-      setTimeout(() => setStatusMessage(''), 3000);
-      return null;
+      setStatusMessage("Popups require tmux 3.2+")
+      setTimeout(() => setStatusMessage(""), 3000)
+      return null
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'inputPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "inputPopup.js"
+      )
 
       // Write data to temp file to avoid shell escaping issues
-      const dataFile = `/tmp/dmux-input-${Date.now()}.json`;
-      const dataJson = JSON.stringify({ title, message, placeholder, defaultValue });
-      await fs.writeFile(dataFile, dataJson);
+      const dataFile = `/tmp/dmux-input-${Date.now()}.json`
+      const dataJson = JSON.stringify({
+        title,
+        message,
+        placeholder,
+        defaultValue,
+      })
+      await fs.writeFile(dataFile, dataJson)
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<string>(
@@ -1211,64 +1403,77 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: 15,
-          title: title || 'Input'
+          title: title || "Input",
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      const result = await popupHandle.resultPromise;
+      const result = await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch {}
 
       if (result.success && result.data !== undefined) {
-        return result.data;
+        return result.data
       } else if (result.cancelled) {
-        return null;
+        return null
       } else if (result.error) {
-        setStatusMessage(`Popup error: ${result.error}`);
-        setTimeout(() => setStatusMessage(''), 3000);
-        return null;
+        setStatusMessage(`Popup error: ${result.error}`)
+        setTimeout(() => setStatusMessage(""), 3000)
+        return null
       }
     } catch (error: any) {
-      setStatusMessage(`Failed to launch popup: ${error.message}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setStatusMessage(`Failed to launch popup: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-    return null;
-  };
+    return null
+  }
 
-  const launchProgressPopup = async (message: string, type: 'info' | 'success' | 'error' = 'info', timeout: number = 2000): Promise<void> => {
+  const launchProgressPopup = async (
+    message: string,
+    type: "info" | "success" | "error" = "info",
+    timeout: number = 2000
+  ): Promise<void> => {
     // Only launch popup if tmux supports it
     if (!popupsSupported) {
-      setStatusMessage(message);
-      setTimeout(() => setStatusMessage(''), timeout);
-      return;
+      setStatusMessage(message)
+      setTimeout(() => setStatusMessage(""), timeout)
+      return
     }
 
     try {
       // Resolve the popup script path
-      const projectRootForPopup = __dirname.includes('/dist')
-        ? path.resolve(__dirname, '..') // If in dist/, go up one level
-        : path.resolve(__dirname, '..'); // If in src/, go up one level
+      const projectRootForPopup = __dirname.includes("/dist")
+        ? path.resolve(__dirname, "..") // If in dist/, go up one level
+        : path.resolve(__dirname, "..") // If in src/, go up one level
 
-      const popupScriptPath = path.join(projectRootForPopup, 'dist', 'popups', 'progressPopup.js');
+      const popupScriptPath = path.join(
+        projectRootForPopup,
+        "dist",
+        "popups",
+        "progressPopup.js"
+      )
 
       // Write data to temp file to avoid shell escaping issues
-      const dataFile = `/tmp/dmux-progress-${Date.now()}.json`;
-      const dataJson = JSON.stringify({ message, type, timeout });
-      await fs.writeFile(dataFile, dataJson);
+      const dataFile = `/tmp/dmux-progress-${Date.now()}.json`
+      const dataJson = JSON.stringify({ message, type, timeout })
+      await fs.writeFile(dataFile, dataJson)
 
       // Launch the popup - position at top, 1 char right of sidebar
       // Height depends on message length
-      const lines = Math.ceil(message.length / 60) + 3; // Estimate lines needed
-      const titleText = type === 'success' ? '✓ Success' :
-                        type === 'error' ? '✗ Error' :
-                        type === 'info' ? 'ℹ Info' : 'Progress';
+      const lines = Math.ceil(message.length / 60) + 3 // Estimate lines needed
+      const titleText =
+        type === "success"
+          ? "✓ Success"
+          : type === "error"
+          ? "✗ Error"
+          : type === "info"
+          ? "ℹ Info"
+          : "Progress"
 
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<void>(
@@ -1278,26 +1483,25 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           ...POPUP_POSITIONING.standard(SIDEBAR_WIDTH),
           width: 70,
           height: Math.min(15, lines + 4),
-          title: titleText
+          title: titleText,
         }
-      );
-
+      )
 
       // Wait for the popup to close
-      await popupHandle.resultPromise;
+      await popupHandle.resultPromise
 
       // Clear active popup tracking
 
       // Clean up temp file
       try {
-        await fs.unlink(dataFile);
+        await fs.unlink(dataFile)
       } catch {}
     } catch (error: any) {
       // Fallback to inline message
-      setStatusMessage(message);
-      setTimeout(() => setStatusMessage(''), timeout);
+      setStatusMessage(message)
+      setTimeout(() => setStatusMessage(""), timeout)
     }
-  };
+  }
 
   // Action system - initialized after popup launchers are defined
   const actionSystem = useActionSystem({
@@ -1307,78 +1511,58 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     projectName,
     onPaneRemove: (paneId) => {
       // Mark the pane as intentionally closed to prevent race condition with worker
-      intentionallyClosedPanes.current.add(paneId);
+      intentionallyClosedPanes.current.add(paneId)
 
       // Remove from panes list
-      const updatedPanes = panes.filter(p => p.paneId !== paneId);
-      savePanes(updatedPanes);
+      const updatedPanes = panes.filter((p) => p.paneId !== paneId)
+      savePanes(updatedPanes)
 
       // Clean up after a delay
       setTimeout(() => {
-        intentionallyClosedPanes.current.delete(paneId);
-      }, 5000);
+        intentionallyClosedPanes.current.delete(paneId)
+      }, 5000)
     },
     forceRepaint,
-    popupLaunchers: popupsSupported ? {
-      launchConfirmPopup,
-      launchChoicePopup,
-      launchInputPopup,
-      launchProgressPopup,
-    } : undefined,
-  });
+    popupLaunchers: popupsSupported
+      ? {
+          launchConfirmPopup,
+          launchChoicePopup,
+          launchInputPopup,
+          launchProgressPopup,
+        }
+      : undefined,
+  })
 
-  // Auto-show new pane dialog when starting with no panes
-  // Removed automatic new pane dialog on startup - users can press 'n' to create panes
-  // useEffect(() => {
-  //   // Only show the dialog if:
-  //   // 1. Initial load is complete (!isLoading)
-  //   // 2. We have no panes
-  //   // 3. We're not already showing the dialog
-  //   // 4. We're not showing any other dialogs or prompts
-  //   if (!isLoading &&
-  //       panes.length === 0 &&
-  //       !showNewPaneDialog &&
-  //       !actionSystem.actionState.showConfirmDialog &&
-  //       !actionSystem.actionState.showChoiceDialog &&
-  //       !actionSystem.actionState.showInputDialog &&
-  //       !actionSystem.actionState.showProgressDialog &&
-  //       !showCommandPrompt &&
-  //       !showFileCopyPrompt &&
-  //       !isCreatingPane &&
-  //       !runningCommand &&
-  //       !isUpdating) {
-  //     setShowNewPaneDialog(true);
-  //   }
-  // }, [isLoading, panes.length, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, isCreatingPane, runningCommand, isUpdating]);
+  // Auto-show new pane dialog removed - users can press 'n' to create panes via popup
 
   // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
   useEffect(() => {
     if (!controlPaneId) {
-      return; // No sidebar layout configured
+      return // No sidebar layout configured
     }
 
     // Enforce sidebar width immediately on mount
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
 
     // Debounce resize handler to prevent infinite loops
-    let resizeTimeout: NodeJS.Timeout | null = null;
-    let isApplyingLayout = false;
+    let resizeTimeout: NodeJS.Timeout | null = null
+    let isApplyingLayout = false
 
     const handleResize = () => {
       // Skip if we're already applying a layout (prevents loops)
       if (isApplyingLayout) {
-        return;
+        return
       }
 
       // Clear any pending resize
       if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
+        clearTimeout(resizeTimeout)
       }
 
       // Debounce: wait 500ms after last resize event (prevents excessive recalculations)
       resizeTimeout = setTimeout(() => {
         // Only enforce if not showing dialogs (to avoid interference)
-        const hasActiveDialog = showNewPaneDialog ||
+        const hasActiveDialog =
           actionSystem.actionState.showConfirmDialog ||
           actionSystem.actionState.showChoiceDialog ||
           actionSystem.actionState.showInputDialog ||
@@ -1387,487 +1571,566 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           showFileCopyPrompt ||
           isCreatingPane ||
           runningCommand ||
-          isUpdating;
+          isUpdating
 
         if (!hasActiveDialog) {
-          isApplyingLayout = true;
+          isApplyingLayout = true
           // Only enforce sidebar width when terminal resizes
-          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
 
           // Force Ink to repaint after resize to prevent blank dmux pane
-          forceRepaint();
+          forceRepaint()
 
           // Reset flag after a brief delay
           setTimeout(() => {
-            isApplyingLayout = false;
-          }, 100);
+            isApplyingLayout = false
+          }, 100)
         }
-      }, 500);
-    };
+      }, 500)
+    }
 
     // Listen to stdout resize events
-    process.stdout.on('resize', handleResize);
+    process.stdout.on("resize", handleResize)
 
     // Also listen for SIGWINCH and SIGUSR1 (tmux hook sends USR1)
-    process.on('SIGWINCH', handleResize);
-    process.on('SIGUSR1', handleResize);
+    process.on("SIGWINCH", handleResize)
+    process.on("SIGUSR1", handleResize)
 
     return () => {
-      process.stdout.off('resize', handleResize);
-      process.off('SIGWINCH', handleResize);
-      process.off('SIGUSR1', handleResize);
+      process.stdout.off("resize", handleResize)
+      process.off("SIGWINCH", handleResize)
+      process.off("SIGUSR1", handleResize)
       if (resizeTimeout) {
-        clearTimeout(resizeTimeout);
+        clearTimeout(resizeTimeout)
       }
-    };
-  }, [controlPaneId, showNewPaneDialog, actionSystem.actionState.showConfirmDialog, actionSystem.actionState.showChoiceDialog, actionSystem.actionState.showInputDialog, actionSystem.actionState.showProgressDialog, showCommandPrompt, showFileCopyPrompt, isCreatingPane, runningCommand, isUpdating]);
+    }
+  }, [
+    controlPaneId,
+    actionSystem.actionState.showConfirmDialog,
+    actionSystem.actionState.showChoiceDialog,
+    actionSystem.actionState.showInputDialog,
+    actionSystem.actionState.showProgressDialog,
+    showCommandPrompt,
+    showFileCopyPrompt,
+    isCreatingPane,
+    runningCommand,
+    isUpdating,
+  ])
 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
     panes,
-    suspend: showNewPaneDialog || actionSystem.actionState.showConfirmDialog || actionSystem.actionState.showChoiceDialog || actionSystem.actionState.showInputDialog || actionSystem.actionState.showProgressDialog || !!showCommandPrompt || showFileCopyPrompt,
+    suspend:
+      actionSystem.actionState.showConfirmDialog ||
+      actionSystem.actionState.showChoiceDialog ||
+      actionSystem.actionState.showInputDialog ||
+      actionSystem.actionState.showProgressDialog ||
+      !!showCommandPrompt ||
+      showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
       // Check if this pane was intentionally closed
       // If so, don't re-save - the close action already handled it
       if (intentionallyClosedPanes.current.has(paneId)) {
-        return;
+        return
       }
 
       // Pane was removed unexpectedly (e.g., user killed tmux pane manually)
       // Remove it from our tracking
-      const updatedPanes = panes.filter(p => p.id !== paneId);
-      savePanes(updatedPanes);
+      const updatedPanes = panes.filter((p) => p.id !== paneId)
+      savePanes(updatedPanes)
     },
-  });
+  })
 
-  const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
-    setIsCreatingPane(true);
-    setStatusMessage('Generating slug...');
-    
-    const slug = await generateSlug(prompt);
-    
-    setStatusMessage(`Creating worktree: ${slug}...`);
-    
+  const createNewPane = async (
+    prompt: string,
+    agent?: "claude" | "opencode"
+  ) => {
+    setIsCreatingPane(true)
+    setStatusMessage("Generating slug...")
+
+    const slug = await generateSlug(prompt)
+
+    setStatusMessage(`Creating worktree: ${slug}...`)
+
     // Get git root directory for consistent worktree placement
-    let projectRoot: string;
+    let projectRoot: string
     try {
-      projectRoot = execSync('git rev-parse --show-toplevel', { 
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      }).trim();
+      projectRoot = execSync("git rev-parse --show-toplevel", {
+        encoding: "utf-8",
+        stdio: "pipe",
+      }).trim()
     } catch {
       // Fallback to current directory if not in a git repo
-      projectRoot = process.cwd();
+      projectRoot = process.cwd()
     }
-    
+
     // Create worktree path inside .dmux/worktrees directory
-    const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
-    
+    const worktreePath = path.join(projectRoot, ".dmux", "worktrees", slug)
+
     // Get the original pane ID (where dmux is running) before clearing
-    const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
-    
+    const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', {
+      encoding: "utf-8",
+    }).trim()
+
     // Minimal clearing to avoid layout shifts
-    process.stdout.write('\x1b[2J\x1b[H');
-    
+    process.stdout.write("\x1b[2J\x1b[H")
+
     // Get current pane count to determine layout
     const paneCount = parseInt(
-      execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
-    );
-    
+      execSync("tmux list-panes | wc -l", { encoding: "utf-8" }).trim()
+    )
+
     // Enable pane borders to show titles
     try {
-      execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+      execSync(`tmux set-option -g pane-border-status top`, { stdio: "pipe" })
     } catch {
       // Ignore if already set or fails
     }
-    
+
     // Create new pane
-    const paneInfo = execSync(
-      `tmux split-window -h -P -F '#{pane_id}'`,
-      { encoding: 'utf-8' }
-    ).trim();
-    
+    const paneInfo = execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
+      encoding: "utf-8",
+    }).trim()
+
     // Wait for pane creation to settle
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
     // Set pane title to match the slug
     try {
-      execSync(`tmux select-pane -t '${paneInfo}' -T "${slug}"`, { stdio: 'pipe' });
+      execSync(`tmux select-pane -t '${paneInfo}' -T "${slug}"`, {
+        stdio: "pipe",
+      })
     } catch {
       // Ignore if setting title fails
     }
-    
+
     // Don't apply global layouts - let content panes arrange naturally
     // Only enforce sidebar width
     try {
-      const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
-      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+      const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', {
+        encoding: "utf-8",
+      }).trim()
+      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
     } catch {}
-    
+
     // Create git worktree and cd into it
     // This MUST happen before launching Claude to ensure we're in the right directory
     try {
       // First, create the worktree and cd into it as a single command
       // Use ; instead of && to ensure cd runs even if worktree already exists
-      const worktreeCmd = `git worktree add "${worktreePath}" -b ${slug} 2>/dev/null ; cd "${worktreePath}"`;
-      execSync(`tmux send-keys -t '${paneInfo}' '${worktreeCmd}' Enter`, { stdio: 'pipe' });
-      
+      const worktreeCmd = `git worktree add "${worktreePath}" -b ${slug} 2>/dev/null ; cd "${worktreePath}"`
+      execSync(`tmux send-keys -t '${paneInfo}' '${worktreeCmd}' Enter`, {
+        stdio: "pipe",
+      })
+
       // Wait longer for worktree creation and cd to complete
       // This is critical - if we don't wait long enough, Claude will start in the wrong directory
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      
-      // Verify we're in the worktree directory by sending pwd command  
-      execSync(`tmux send-keys -t '${paneInfo}' 'echo "Worktree created at:" && pwd' Enter`, { stdio: 'pipe' });
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setStatusMessage(agent ? `Worktree created, launching ${agent === 'opencode' ? 'opencode' : 'Claude'}...` : 'Worktree created.');
+      await new Promise((resolve) => setTimeout(resolve, 2500))
+
+      // Verify we're in the worktree directory by sending pwd command
+      execSync(
+        `tmux send-keys -t '${paneInfo}' 'echo "Worktree created at:" && pwd' Enter`,
+        { stdio: "pipe" }
+      )
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      setStatusMessage(
+        agent
+          ? `Worktree created, launching ${
+              agent === "opencode" ? "opencode" : "Claude"
+            }...`
+          : "Worktree created."
+      )
     } catch (error) {
       // Log error but continue - worktree creation is essential
-      setStatusMessage(`Warning: Worktree issue: ${error}`);
+      setStatusMessage(`Warning: Worktree issue: ${error}`)
       // Even if worktree creation failed, try to cd to the directory in case it exists
-      execSync(`tmux send-keys -t '${paneInfo}' 'cd "${worktreePath}" 2>/dev/null || (echo "ERROR: Failed to create/enter worktree ${slug}" && pwd)' Enter`, { stdio: 'pipe' });
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      execSync(
+        `tmux send-keys -t '${paneInfo}' 'cd "${worktreePath}" 2>/dev/null || (echo "ERROR: Failed to create/enter worktree ${slug}" && pwd)' Enter`,
+        { stdio: "pipe" }
+      )
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
-    
+
     // Prepare and send the agent command
-    let escapedCmd = '';
-    if (agent === 'claude') {
+    let escapedCmd = ""
+    if (agent === "claude") {
       // Claude should always be launched AFTER we're in the worktree directory
-      let claudeCmd: string;
+      let claudeCmd: string
       if (prompt && prompt.trim()) {
         const escapedPrompt = prompt
-          .replace(/\\/g, '\\\\')
+          .replace(/\\/g, "\\\\")
           .replace(/"/g, '\\"')
-          .replace(/`/g, '\\`')
-          .replace(/\$/g, '\\$');
-        claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
+          .replace(/`/g, "\\`")
+          .replace(/\$/g, "\\$")
+        claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`
       } else {
-        claudeCmd = `claude --permission-mode=acceptEdits`;
+        claudeCmd = `claude --permission-mode=acceptEdits`
       }
       // Send Claude command to new pane
-      escapedCmd = claudeCmd.replace(/'/g, "'\\''");
-      execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
-    } else if (agent === 'opencode') {
+      escapedCmd = claudeCmd.replace(/'/g, "'\\''")
+      execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, {
+        stdio: "pipe",
+      })
+      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: "pipe" })
+    } else if (agent === "opencode") {
       // opencode: start the TUI, then paste the prompt and submit
-      const openCoderCmd = `opencode`;
-      const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\''");
-      execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+      const openCoderCmd = `opencode`
+      const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\''")
+      execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, {
+        stdio: "pipe",
+      })
+      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: "pipe" })
       if (prompt && prompt.trim()) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const bufName = `dmux_prompt_${Date.now()}`;
-        const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-        execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, { stdio: 'pipe' });
-        execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}'`, { stdio: 'pipe' });
-        await new Promise(resolve => setTimeout(resolve, 200));
-        execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: 'pipe' });
-        execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        const bufName = `dmux_prompt_${Date.now()}`
+        const promptEsc = prompt.replace(/\\/g, "\\\\").replace(/'/g, "'\\''")
+        execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, {
+          stdio: "pipe",
+        })
+        execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}'`, {
+          stdio: "pipe",
+        })
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: "pipe" })
+        execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: "pipe" })
       }
     }
-    
-    if (agent === 'claude') {
+
+    if (agent === "claude") {
       // Monitor for Claude Code trust prompt and auto-respond
-    const autoApproveTrust = async () => {
-      // Wait for Claude to start up before checking for prompts
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const autoApproveTrust = async () => {
+        // Wait for Claude to start up before checking for prompts
+        await new Promise((resolve) => setTimeout(resolve, 800))
 
-      const maxChecks = 100; // 100 checks * 100ms = 10 seconds total
-      const checkInterval = 100; // Check every 100ms
-      let lastContent = '';
-      let stableContentCount = 0;
-      let promptHandled = false;
-      
-      // More comprehensive trust prompt patterns
-      const trustPromptPatterns = [
-        /Do you trust the files in this folder\?/i,
-        /Trust the files in this workspace\?/i,
-        /Do you trust the authors of the files/i,
-        /Do you want to trust this workspace\?/i,
-        /trust.*files.*folder/i,
-        /trust.*workspace/i,
-        /Do you trust/i,
-        /Trust this folder/i,
-        /trust.*directory/i,
-        /permission.*grant/i,
-        /allow.*access/i,
-        /workspace.*trust/i,
-        /accept.*edits/i,  // Claude's accept edits prompt
-        /permission.*mode/i,  // Permission mode prompt
-        /allow.*claude/i,  // Allow Claude prompt
-        /\[y\/n\]/i, // Common yes/no prompt pattern
-        /\(y\/n\)/i,
-        /Yes\/No/i,
-        /\[Y\/n\]/i,  // Default yes pattern
-        /press.*enter.*accept/i,  // Press enter to accept
-        /press.*enter.*continue/i,  // Press enter to continue
-        /❯\s*1\.\s*Yes,\s*proceed/i,  // New Claude numbered menu format
-        /Enter to confirm.*Esc to exit/i,  // New Claude confirmation format
-        /1\.\s*Yes,\s*proceed/i,  // Yes proceed option
-        /2\.\s*No,\s*exit/i  // No exit option
-      ];
-      
-      for (let i = 0; i < maxChecks; i++) {
-        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        const maxChecks = 100 // 100 checks * 100ms = 10 seconds total
+        const checkInterval = 100 // Check every 100ms
+        let lastContent = ""
+        let stableContentCount = 0
+        let promptHandled = false
 
-        try {
-          // Capture the pane content
-          const paneContent = capturePaneContent(paneInfo, 30);
+        // More comprehensive trust prompt patterns
+        const trustPromptPatterns = [
+          /Do you trust the files in this folder\?/i,
+          /Trust the files in this workspace\?/i,
+          /Do you trust the authors of the files/i,
+          /Do you want to trust this workspace\?/i,
+          /trust.*files.*folder/i,
+          /trust.*workspace/i,
+          /Do you trust/i,
+          /Trust this folder/i,
+          /trust.*directory/i,
+          /permission.*grant/i,
+          /allow.*access/i,
+          /workspace.*trust/i,
+          /accept.*edits/i, // Claude's accept edits prompt
+          /permission.*mode/i, // Permission mode prompt
+          /allow.*claude/i, // Allow Claude prompt
+          /\[y\/n\]/i, // Common yes/no prompt pattern
+          /\(y\/n\)/i,
+          /Yes\/No/i,
+          /\[Y\/n\]/i, // Default yes pattern
+          /press.*enter.*accept/i, // Press enter to accept
+          /press.*enter.*continue/i, // Press enter to continue
+          /❯\s*1\.\s*Yes,\s*proceed/i, // New Claude numbered menu format
+          /Enter to confirm.*Esc to exit/i, // New Claude confirmation format
+          /1\.\s*Yes,\s*proceed/i, // Yes proceed option
+          /2\.\s*No,\s*exit/i, // No exit option
+        ]
 
-          if (i % 10 === 0) {  // Log every 10 checks (every second)
-          }
-          
-          // Check if content has stabilized (same for 3 checks = prompt is waiting)
-          if (paneContent === lastContent) {
-            stableContentCount++;
-          } else {
-            stableContentCount = 0;
-            lastContent = paneContent;
-          }
-          
-          // Look for trust prompt in the current content
-          const hasTrustPrompt = trustPromptPatterns.some(pattern => 
-            pattern.test(paneContent)
-          );
-          
-          // Also check if we see specific Claude permission text
-          const hasClaudePermissionPrompt = 
-            paneContent.includes('Do you trust') ||
-            paneContent.includes('trust the files') ||
-            paneContent.includes('permission') ||
-            paneContent.includes('allow') ||
-            (paneContent.includes('folder') && paneContent.includes('?'));
-          
-          if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
+        for (let i = 0; i < maxChecks; i++) {
+          await new Promise((resolve) => setTimeout(resolve, checkInterval))
 
-            // Content is stable and we found a prompt
-            if (stableContentCount >= 2) {
+          try {
+            // Capture the pane content
+            const paneContent = capturePaneContent(paneInfo, 30)
 
-              // Check if this is the new Claude numbered menu format
-              const isNewClaudeFormat = /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
-                                      /Enter to confirm.*Esc to exit/i.test(paneContent);
+            if (i % 10 === 0) {
+              // Log every 10 checks (every second)
+            }
 
-              if (isNewClaudeFormat) {
-                // For new Claude format, just press Enter to confirm default "Yes, proceed"
-                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
-              } else {
-                // Try multiple response methods for older formats
+            // Check if content has stabilized (same for 3 checks = prompt is waiting)
+            if (paneContent === lastContent) {
+              stableContentCount++
+            } else {
+              stableContentCount = 0
+              lastContent = paneContent
+            }
 
-                // Method 1: Send 'y' followed by Enter (most explicit)
-                execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
-                await new Promise(resolve => setTimeout(resolve, 50));
-                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+            // Look for trust prompt in the current content
+            const hasTrustPrompt = trustPromptPatterns.some((pattern) =>
+              pattern.test(paneContent)
+            )
 
-                // Method 2: Just Enter (if it's a yes/no with default yes)
-                await new Promise(resolve => setTimeout(resolve, 100));
-                execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
-              }
-              
-              // Mark as handled to avoid duplicate responses
-              promptHandled = true;
-              
-              // Wait and check if prompt is gone
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // Verify the prompt is gone
-              const updatedContent = capturePaneContent(paneInfo, 10);
-              
-              // If trust prompt is gone, check if we need to resend the Claude command
-              const promptGone = !trustPromptPatterns.some(p => p.test(updatedContent));
-              
-              if (promptGone) {
-                // Check if Claude is running or if we need to restart it
-                const claudeRunning =
-                  updatedContent.includes('Claude') ||
-                  updatedContent.includes('claude') ||
-                  updatedContent.includes('Assistant') ||
-                  (prompt && updatedContent.includes(prompt.substring(0, Math.min(20, prompt.length))));
+            // Also check if we see specific Claude permission text
+            const hasClaudePermissionPrompt =
+              paneContent.includes("Do you trust") ||
+              paneContent.includes("trust the files") ||
+              paneContent.includes("permission") ||
+              paneContent.includes("allow") ||
+              (paneContent.includes("folder") && paneContent.includes("?"))
 
+            if (
+              (hasTrustPrompt || hasClaudePermissionPrompt) &&
+              !promptHandled
+            ) {
+              // Content is stable and we found a prompt
+              if (stableContentCount >= 2) {
+                // Check if this is the new Claude numbered menu format
+                const isNewClaudeFormat =
+                  /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
+                  /Enter to confirm.*Esc to exit/i.test(paneContent)
 
-                if (!claudeRunning && !updatedContent.includes('$')) {
-                  await new Promise(resolve => setTimeout(resolve, 300));
-                  execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, { stdio: 'pipe' });
-                  execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+                if (isNewClaudeFormat) {
+                  // For new Claude format, just press Enter to confirm default "Yes, proceed"
+                  execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
+                    stdio: "pipe",
+                  })
+                } else {
+                  // Try multiple response methods for older formats
+
+                  // Method 1: Send 'y' followed by Enter (most explicit)
+                  execSync(`tmux send-keys -t '${paneInfo}' 'y'`, {
+                    stdio: "pipe",
+                  })
+                  await new Promise((resolve) => setTimeout(resolve, 50))
+                  execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
+                    stdio: "pipe",
+                  })
+
+                  // Method 2: Just Enter (if it's a yes/no with default yes)
+                  await new Promise((resolve) => setTimeout(resolve, 100))
+                  execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
+                    stdio: "pipe",
+                  })
                 }
 
-                break;
+                // Mark as handled to avoid duplicate responses
+                promptHandled = true
+
+                // Wait and check if prompt is gone
+                await new Promise((resolve) => setTimeout(resolve, 500))
+
+                // Verify the prompt is gone
+                const updatedContent = capturePaneContent(paneInfo, 10)
+
+                // If trust prompt is gone, check if we need to resend the Claude command
+                const promptGone = !trustPromptPatterns.some((p) =>
+                  p.test(updatedContent)
+                )
+
+                if (promptGone) {
+                  // Check if Claude is running or if we need to restart it
+                  const claudeRunning =
+                    updatedContent.includes("Claude") ||
+                    updatedContent.includes("claude") ||
+                    updatedContent.includes("Assistant") ||
+                    (prompt &&
+                      updatedContent.includes(
+                        prompt.substring(0, Math.min(20, prompt.length))
+                      ))
+
+                  if (!claudeRunning && !updatedContent.includes("$")) {
+                    await new Promise((resolve) => setTimeout(resolve, 300))
+                    execSync(
+                      `tmux send-keys -t '${paneInfo}' '${escapedCmd}'`,
+                      { stdio: "pipe" }
+                    )
+                    execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
+                      stdio: "pipe",
+                    })
+                  }
+
+                  break
+                }
               }
             }
+
+            // If we see Claude is already running without prompts, we're done
+            if (
+              !hasTrustPrompt &&
+              !hasClaudePermissionPrompt &&
+              (paneContent.includes("Claude") ||
+                paneContent.includes("Assistant"))
+            ) {
+              break
+            }
+          } catch (error) {
+            // Continue checking, errors are non-fatal
           }
-          
-          // If we see Claude is already running without prompts, we're done
-          if (!hasTrustPrompt && !hasClaudePermissionPrompt && 
-              (paneContent.includes('Claude') || paneContent.includes('Assistant'))) {
-            break;
-          }
-        } catch (error) {
-          // Continue checking, errors are non-fatal
         }
       }
-    };
-    
-    // Start monitoring for trust prompt in background
-    autoApproveTrust().catch(err => {
-    });
+
+      // Start monitoring for trust prompt in background
+      autoApproveTrust().catch((err) => {})
     }
-    
+
     // Keep focus on the new pane
-    execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
-    
+    execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: "pipe" })
+
     // Save pane info
     const newPane: DmuxPane = {
       id: `dmux-${Date.now()}`,
       slug,
-      prompt: prompt || 'No initial prompt',
+      prompt: prompt || "No initial prompt",
       paneId: paneInfo,
       worktreePath,
-      agent
-    };
-    
-    const updatedPanes = [...panes, newPane];
-    await savePanes(updatedPanes);
-    
+      agent,
+    }
+
+    const updatedPanes = [...panes, newPane]
+    await savePanes(updatedPanes)
+
     // Switch back to the original pane (where dmux is running)
-    execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
-    
+    execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: "pipe" })
+
     // Re-set the title for the dmux pane
     try {
-      execSync(`tmux select-pane -t '${originalPaneId}' -T "dmux v${packageJson.version} - ${projectName}"`, { stdio: 'pipe' });
+      execSync(
+        `tmux select-pane -t '${originalPaneId}' -T "dmux v${packageJson.version} - ${projectName}"`,
+        { stdio: "pipe" }
+      )
     } catch {
       // Ignore if setting title fails
     }
-    
+
     // Clear the screen and redraw the UI
-    process.stdout.write('\x1b[2J\x1b[H');
-    
+    process.stdout.write("\x1b[2J\x1b[H")
+
     // Reset the creating pane flag and refresh
-    setIsCreatingPane(false);
-    setStatusMessage('');
-    setNewPanePrompt('');
-    
+    setIsCreatingPane(false)
+    setStatusMessage("")
+
     // Force a reload of panes to ensure UI is up to date
-    await loadPanes();
-  };
+    await loadPanes()
+  }
 
   const jumpToPane = (paneId: string) => {
     try {
       // Enable pane borders to show titles (if not already enabled)
       try {
-        execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+        execSync(`tmux set-option -g pane-border-status top`, { stdio: "pipe" })
       } catch {
         // Ignore if already set or fails
       }
 
-      execSync(`tmux select-pane -t '${paneId}'`, { stdio: 'pipe' });
+      execSync(`tmux select-pane -t '${paneId}'`, { stdio: "pipe" })
 
       // Clear screen after jump to remove artifacts
-      clearScreen();
+      clearScreen()
 
-      setStatusMessage('Jumped to pane');
-      setTimeout(() => setStatusMessage(''), 2000);
+      setStatusMessage("Jumped to pane")
+      setTimeout(() => setStatusMessage(""), 2000)
     } catch {
-      setStatusMessage('Failed to jump - pane may be closed');
-      setTimeout(() => setStatusMessage(''), 2000);
+      setStatusMessage("Failed to jump - pane may be closed")
+      setTimeout(() => setStatusMessage(""), 2000)
     }
-  };
+  }
 
-
-
-
-
-
-
-
-
-  const runCommand = async (type: 'test' | 'dev', pane: DmuxPane) => {
+  const runCommand = async (type: "test" | "dev", pane: DmuxPane) => {
     if (!pane.worktreePath) {
-      setStatusMessage('No worktree path for this pane');
-      setTimeout(() => setStatusMessage(''), 2000);
-      return;
+      setStatusMessage("No worktree path for this pane")
+      setTimeout(() => setStatusMessage(""), 2000)
+      return
     }
 
-    const command = type === 'test' ? projectSettings.testCommand : projectSettings.devCommand;
-    const isFirstRun = type === 'test' ? !projectSettings.firstTestRun : !projectSettings.firstDevRun;
-    
+    const command =
+      type === "test" ? projectSettings.testCommand : projectSettings.devCommand
+    const isFirstRun =
+      type === "test"
+        ? !projectSettings.firstTestRun
+        : !projectSettings.firstDevRun
+
     if (!command) {
       // No command configured, prompt user
-      setShowCommandPrompt(type);
-      return;
+      setShowCommandPrompt(type)
+      return
     }
-    
+
     // Check if this is the first run and offer to copy non-git files
     if (isFirstRun) {
       // Show file copy prompt and wait for response
-      setShowFileCopyPrompt(true);
-      setCurrentCommandType(type);
-      setStatusMessage(`First time running ${type} command...`);
-      
+      setShowFileCopyPrompt(true)
+      setCurrentCommandType(type)
+      setStatusMessage(`First time running ${type} command...`)
+
       // Return here - the actual command will be run after user responds to prompt
-      return;
+      return
     }
 
     try {
-      setRunningCommand(true);
-      setStatusMessage(`Starting ${type} in background window...`);
-      
+      setRunningCommand(true)
+      setStatusMessage(`Starting ${type} in background window...`)
+
       // Kill existing window if present
-      const existingWindowId = type === 'test' ? pane.testWindowId : pane.devWindowId;
+      const existingWindowId =
+        type === "test" ? pane.testWindowId : pane.devWindowId
       if (existingWindowId) {
         try {
-          execSync(`tmux kill-window -t '${existingWindowId}'`, { stdio: 'pipe' });
+          execSync(`tmux kill-window -t '${existingWindowId}'`, {
+            stdio: "pipe",
+          })
         } catch {}
       }
-      
+
       // Create a new background window for the command
-      const windowName = `${pane.slug}-${type}`;
+      const windowName = `${pane.slug}-${type}`
       const windowId = execSync(
         `tmux new-window -d -n '${windowName}' -P -F '#{window_id}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-      
+        { encoding: "utf-8", stdio: "pipe" }
+      ).trim()
+
       // Create a log file to capture output
-      const logFile = `/tmp/dmux-${pane.id}-${type}.log`;
-      
+      const logFile = `/tmp/dmux-${pane.id}-${type}.log`
+
       // Build the command with output capture
-      const fullCommand = type === 'test'
-        ? `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`
-        : `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`;
-      
+      const fullCommand =
+        type === "test"
+          ? `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`
+          : `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`
+
       // Send the command to the new window
-      execSync(`tmux send-keys -t '${windowId}' '${fullCommand.replace(/'/g, "'\\''")}'`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${windowId}' Enter`, { stdio: 'pipe' });
-      
+      execSync(
+        `tmux send-keys -t '${windowId}' '${fullCommand.replace(
+          /'/g,
+          "'\\''"
+        )}'`,
+        { stdio: "pipe" }
+      )
+      execSync(`tmux send-keys -t '${windowId}' Enter`, { stdio: "pipe" })
+
       // Update pane with window info
       const updatedPane: DmuxPane = {
         ...pane,
-        [type === 'test' ? 'testWindowId' : 'devWindowId']: windowId,
-        [type === 'test' ? 'testStatus' : 'devStatus']: 'running'
-      };
-      
-      const updatedPanes = panes.map(p => p.id === pane.id ? updatedPane : p);
-      await savePanes(updatedPanes);
-      
+        [type === "test" ? "testWindowId" : "devWindowId"]: windowId,
+        [type === "test" ? "testStatus" : "devStatus"]: "running",
+      }
+
+      const updatedPanes = panes.map((p) =>
+        p.id === pane.id ? updatedPane : p
+      )
+      await savePanes(updatedPanes)
+
       // Start monitoring the output
-      if (type === 'test') {
+      if (type === "test") {
         // For tests, monitor for completion
-        setTimeout(() => monitorTestOutput(pane.id, logFile), 2000);
+        setTimeout(() => monitorTestOutput(pane.id, logFile), 2000)
       } else {
         // For dev, monitor for server URL
-        setTimeout(() => monitorDevOutput(pane.id, logFile), 2000);
+        setTimeout(() => monitorDevOutput(pane.id, logFile), 2000)
       }
-      
-      setRunningCommand(false);
-      setStatusMessage(`${type === 'test' ? 'Test' : 'Dev server'} started in background`);
-      setTimeout(() => setStatusMessage(''), 3000);
+
+      setRunningCommand(false)
+      setStatusMessage(
+        `${type === "test" ? "Test" : "Dev server"} started in background`
+      )
+      setTimeout(() => setStatusMessage(""), 3000)
     } catch (error) {
-      setRunningCommand(false);
-      setStatusMessage(`Failed to run ${type} command`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      setRunningCommand(false)
+      setStatusMessage(`Failed to run ${type} command`)
+      setTimeout(() => setStatusMessage(""), 3000)
     }
-  };
-  
-
-
+  }
 
   // Update handling moved to useAutoUpdater
 
@@ -1875,267 +2138,272 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   const clearScreen = () => {
     // CRITICAL: Force Ink to re-render FIRST, before clearing
     // This prevents blank screen by ensuring React starts rendering immediately
-    setForceRepaintTrigger(prev => prev + 1);
+    setForceRepaintTrigger((prev) => prev + 1)
 
     // Multiple clearing strategies to prevent artifacts
     // 1. Clear screen with ANSI codes
-    process.stdout.write('\x1b[2J\x1b[H');
+    process.stdout.write("\x1b[2J\x1b[H")
 
     // 2. Clear tmux history
     try {
-      execSync('tmux clear-history', { stdio: 'pipe' });
+      execSync("tmux clear-history", { stdio: "pipe" })
     } catch {}
 
     // 3. Force tmux to refresh the display
     try {
-      execSync('tmux refresh-client', { stdio: 'pipe' });
+      execSync("tmux refresh-client", { stdio: "pipe" })
     } catch {}
-  };
+  }
 
   // Cleanup function for exit
   const cleanExit = () => {
     // Clear screen before exiting Ink
-    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H")
 
     // Exit the Ink app (this cleans up the React tree)
-    exit();
+    exit()
 
     // Give Ink a moment to clean up its rendering, then do final cleanup
     setTimeout(() => {
       // Multiple aggressive clearing strategies
-      process.stdout.write('\x1b[2J\x1b[H'); // Clear screen and move cursor to home
-      process.stdout.write('\x1b[3J'); // Clear scrollback buffer
-      process.stdout.write('\x1b[0m'); // Reset all attributes
+      process.stdout.write("\x1b[2J\x1b[H") // Clear screen and move cursor to home
+      process.stdout.write("\x1b[3J") // Clear scrollback buffer
+      process.stdout.write("\x1b[0m") // Reset all attributes
 
       // Clear tmux history and pane
       try {
-        execSync('tmux clear-history', { stdio: 'pipe' });
-        execSync('tmux send-keys C-l', { stdio: 'pipe' });
+        execSync("tmux clear-history", { stdio: "pipe" })
+        execSync("tmux send-keys C-l", { stdio: "pipe" })
       } catch {}
 
       // One more final clear
-      process.stdout.write('\x1b[2J\x1b[H');
+      process.stdout.write("\x1b[2J\x1b[H")
 
       // Show clean goodbye message
-      process.stdout.write('\n  Run dmux again to resume. Goodbye 👋\n\n');
+      process.stdout.write("\n  Run dmux again to resume. Goodbye 👋\n\n")
 
       // Exit process
-      process.exit(0);
-    }, 100);
-  };
+      process.exit(0)
+    }, 100)
+  }
 
   useInput(async (input: string, key: any) => {
-    const logService = LogService.getInstance();
+    const logService = LogService.getInstance()
 
     // Log all input for debugging (only first 50 chars to avoid spam)
-    const inputPreview = input.length > 50 ? input.substring(0, 50) + '...' : input;
-    logService.debug(`Input: "${inputPreview}"`, 'InputDebug');
+    const inputPreview =
+      input.length > 50 ? input.substring(0, 50) + "..." : input
+    logService.debug(`Input: "${inputPreview}"`, "InputDebug")
 
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
-      return;
+      return
     }
 
     // Handle Ctrl+C for quit confirmation (must be first, before any other checks)
-    if (key.ctrl && input === 'c') {
+    if (key.ctrl && input === "c") {
       if (quitConfirmMode) {
         // Second Ctrl+C - actually quit
-        cleanExit();
+        cleanExit()
       } else {
         // First Ctrl+C - show confirmation
-        setQuitConfirmMode(true);
+        setQuitConfirmMode(true)
         // Reset after 3 seconds if user doesn't press Ctrl+C again
         setTimeout(() => {
-          setQuitConfirmMode(false);
-        }, 3000);
+          setQuitConfirmMode(false)
+        }, 3000)
       }
-      return;
+      return
     }
 
     if (isCreatingPane || runningCommand || isUpdating || isLoading) {
       // Disable input while performing operations or loading
-      return;
+      return
     }
 
     // Handle quit confirm mode - ESC cancels it
     if (quitConfirmMode) {
       if (key.escape) {
-        setQuitConfirmMode(false);
-        return;
+        setQuitConfirmMode(false)
+        return
       }
       // Allow other inputs to continue (don't return early)
     }
 
-
     if (showFileCopyPrompt) {
-      if (input === 'y' || input === 'Y') {
-        setShowFileCopyPrompt(false);
-        const selectedPane = panes[selectedIndex];
+      if (input === "y" || input === "Y") {
+        setShowFileCopyPrompt(false)
+        const selectedPane = panes[selectedIndex]
         if (selectedPane && selectedPane.worktreePath && currentCommandType) {
-          await copyNonGitFiles(selectedPane.worktreePath);
-          
+          await copyNonGitFiles(selectedPane.worktreePath)
+
           // Mark as not first run and continue with command
           const newSettings = {
             ...projectSettings,
-            [currentCommandType === 'test' ? 'firstTestRun' : 'firstDevRun']: true
-          };
-          await saveSettings(newSettings);
-          
+            [currentCommandType === "test" ? "firstTestRun" : "firstDevRun"]:
+              true,
+          }
+          await saveSettings(newSettings)
+
           // Now run the actual command
-          await runCommandInternal(currentCommandType, selectedPane);
+          await runCommandInternal(currentCommandType, selectedPane)
         }
-        setCurrentCommandType(null);
-      } else if (input === 'n' || input === 'N' || key.escape) {
-        setShowFileCopyPrompt(false);
-        const selectedPane = panes[selectedIndex];
+        setCurrentCommandType(null)
+      } else if (input === "n" || input === "N" || key.escape) {
+        setShowFileCopyPrompt(false)
+        const selectedPane = panes[selectedIndex]
         if (selectedPane && currentCommandType) {
           // Mark as not first run and continue without copying
           const newSettings = {
             ...projectSettings,
-            [currentCommandType === 'test' ? 'firstTestRun' : 'firstDevRun']: true
-          };
-          await saveSettings(newSettings);
-          
+            [currentCommandType === "test" ? "firstTestRun" : "firstDevRun"]:
+              true,
+          }
+          await saveSettings(newSettings)
+
           // Now run the actual command
-          await runCommandInternal(currentCommandType, selectedPane);
+          await runCommandInternal(currentCommandType, selectedPane)
         }
-        setCurrentCommandType(null);
+        setCurrentCommandType(null)
+      }
+      return
     }
-     return;
-   }
-   
-   if (showCommandPrompt) {
+
+    if (showCommandPrompt) {
       if (key.escape) {
-        setShowCommandPrompt(null);
-        setCommandInput('');
+        setShowCommandPrompt(null)
+        setCommandInput("")
       } else if (key.return) {
-        if (commandInput.trim() === '') {
+        if (commandInput.trim() === "") {
           // If empty, suggest a default command based on package manager
-          const suggested = await suggestCommand(showCommandPrompt);
+          const suggested = await suggestCommand(showCommandPrompt)
           if (suggested) {
-            setCommandInput(suggested);
+            setCommandInput(suggested)
           }
         } else {
           // User provided manual command
           const newSettings = {
             ...projectSettings,
-            [showCommandPrompt === 'test' ? 'testCommand' : 'devCommand']: commandInput.trim()
-          };
-          await saveSettings(newSettings);
-          const selectedPane = panes[selectedIndex];
+            [showCommandPrompt === "test" ? "testCommand" : "devCommand"]:
+              commandInput.trim(),
+          }
+          await saveSettings(newSettings)
+          const selectedPane = panes[selectedIndex]
           if (selectedPane) {
             // Check if first run
-            const isFirstRun = showCommandPrompt === 'test' ? !projectSettings.firstTestRun : !projectSettings.firstDevRun;
+            const isFirstRun =
+              showCommandPrompt === "test"
+                ? !projectSettings.firstTestRun
+                : !projectSettings.firstDevRun
             if (isFirstRun) {
-              setCurrentCommandType(showCommandPrompt);
-              setShowCommandPrompt(null);
-              setShowFileCopyPrompt(true);
+              setCurrentCommandType(showCommandPrompt)
+              setShowCommandPrompt(null)
+              setShowFileCopyPrompt(true)
             } else {
-              await runCommandInternal(showCommandPrompt, selectedPane);
-              setShowCommandPrompt(null);
-              setCommandInput('');
+              await runCommandInternal(showCommandPrompt, selectedPane)
+              setShowCommandPrompt(null)
+              setCommandInput("")
             }
           } else {
-            setShowCommandPrompt(null);
-            setCommandInput('');
+            setShowCommandPrompt(null)
+            setCommandInput("")
           }
         }
       }
-      return;
-    }
-    
-    if (showNewPaneDialog) {
-      if (key.escape) {
-        setShowNewPaneDialog(false);
-        setNewPanePrompt('');
-      }
-      // TextInput handles other input events
-      return;
+      return
     }
 
     // Handle directional navigation with spatial awareness based on card grid layout
     if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      let targetIndex: number | null = null;
-      
+      let targetIndex: number | null = null
+
       if (key.upArrow) {
-        targetIndex = findCardInDirection(selectedIndex, 'up');
+        targetIndex = findCardInDirection(selectedIndex, "up")
       } else if (key.downArrow) {
-        targetIndex = findCardInDirection(selectedIndex, 'down');
+        targetIndex = findCardInDirection(selectedIndex, "down")
       } else if (key.leftArrow) {
-        targetIndex = findCardInDirection(selectedIndex, 'left');
+        targetIndex = findCardInDirection(selectedIndex, "left")
       } else if (key.rightArrow) {
-        targetIndex = findCardInDirection(selectedIndex, 'right');
+        targetIndex = findCardInDirection(selectedIndex, "right")
       }
-      
+
       if (targetIndex !== null) {
-        setSelectedIndex(targetIndex);
+        setSelectedIndex(targetIndex)
       }
-      return;
+      return
     }
-    
-    if (input === 'm' && selectedIndex < panes.length) {
+
+    if (input === "m" && selectedIndex < panes.length) {
       // Open kebab menu popup for selected pane
-      await launchKebabMenuPopup(selectedIndex);
-    } else if (input === 's') {
+      await launchKebabMenuPopup(selectedIndex)
+    } else if (input === "s") {
       // Open settings popup
-      await launchSettingsPopup();
-    } else if (input === 'l') {
+      await launchSettingsPopup()
+    } else if (input === "l") {
       // Open logs popup
-      await launchLogsPopup();
-    } else if (input === '?') {
+      await launchLogsPopup()
+    } else if (input === "?") {
       // Open keyboard shortcuts popup
-      await launchShortcutsPopup();
-    } else if (input === 'L' && controlPaneId) {
+      await launchShortcutsPopup()
+    } else if (input === "L" && controlPaneId) {
       // Reset layout to sidebar configuration (Shift+L)
-      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
-      setStatusMessage('Layout reset');
-      setTimeout(() => setStatusMessage(''), 2000);
-    } else if (input === 'q') {
-      cleanExit();
-    } else if (input === 'r' && server) {
+      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
+      setStatusMessage("Layout reset")
+      setTimeout(() => setStatusMessage(""), 2000)
+    } else if (input === "q") {
+      cleanExit()
+    } else if (input === "r" && server) {
       // Handle remote tunnel
       if (tunnelUrl) {
         // Tunnel exists - open popup with QR code
-        await launchRemotePopup();
+        await launchRemotePopup()
       } else if (!tunnelCreating) {
         // Start tunnel creation
-        setTunnelCreating(true);
-        (async () => {
+        setTunnelCreating(true)
+        ;(async () => {
           try {
-            const url = await server.startTunnel();
-            setTunnelUrl(url);
+            const url = await server.startTunnel()
+            setTunnelUrl(url)
           } catch (error: any) {
-            setStatusMessage(`Failed to create tunnel: ${error.message}`);
-            setTimeout(() => setStatusMessage(''), 3000);
+            setStatusMessage(`Failed to create tunnel: ${error.message}`)
+            setTimeout(() => setStatusMessage(""), 3000)
           } finally {
-            setTunnelCreating(false);
+            setTunnelCreating(false)
           }
-        })();
+        })()
       }
       // If tunnelCreating is true, do nothing (already creating)
-      return;
-    } else if (!isLoading && (input === 'n' || (key.return && selectedIndex === panes.length))) {
+      return
+    } else if (
+      !isLoading &&
+      (input === "n" || (key.return && selectedIndex === panes.length))
+    ) {
       // Launch popup modal for new pane
-      await launchNewPanePopup();
-      return;
-    } else if (input === 'j' && selectedIndex < panes.length) {
+      await launchNewPanePopup()
+      return
+    } else if (input === "j" && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
-      StateManager.getInstance().setDebugMessage(`Jumping to pane: ${panes[selectedIndex].slug}`);
-      setTimeout(() => StateManager.getInstance().setDebugMessage(''), 2000);
-      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
-    } else if (input === 'x' && selectedIndex < panes.length) {
+      StateManager.getInstance().setDebugMessage(
+        `Jumping to pane: ${panes[selectedIndex].slug}`
+      )
+      setTimeout(() => StateManager.getInstance().setDebugMessage(""), 2000)
+      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex])
+    } else if (input === "x" && selectedIndex < panes.length) {
       // Close pane (NEW: using action system)
-      StateManager.getInstance().setDebugMessage(`Closing pane: ${panes[selectedIndex].slug}`);
-      setTimeout(() => StateManager.getInstance().setDebugMessage(''), 2000);
-      actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex]);
+      StateManager.getInstance().setDebugMessage(
+        `Closing pane: ${panes[selectedIndex].slug}`
+      )
+      setTimeout(() => StateManager.getInstance().setDebugMessage(""), 2000)
+      actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex])
     } else if (key.return && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
-      StateManager.getInstance().setDebugMessage(`Jumping to pane: ${panes[selectedIndex].slug}`);
-      setTimeout(() => StateManager.getInstance().setDebugMessage(''), 2000);
-      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex]);
+      StateManager.getInstance().setDebugMessage(
+        `Jumping to pane: ${panes[selectedIndex].slug}`
+      )
+      setTimeout(() => StateManager.getInstance().setDebugMessage(""), 2000)
+      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex])
     }
-  });
-
+  })
 
   // Calculate available height for content (terminal height - footer lines - active status messages)
   // Footer height varies based on state:
@@ -2146,33 +2414,33 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
   //   - Debug info: +1 line if DEBUG_DMUX
   //   - Status line: +1 line if updateAvailable/currentBranch/debugMessage
   //   - Status messages: +1 line per active message
-  let footerLines = 2;
+  let footerLines = 2
   if (quitConfirmMode) {
-    footerLines = 2;
+    footerLines = 2
   } else {
     // Base footer (logs divider + logs + shortcuts - always shown)
-    footerLines = 4; // marginTop + logs divider + logs + shortcuts
+    footerLines = 4 // marginTop + logs divider + logs + shortcuts
     // Add network section (now 2 lines for local IP + remote tunnel, plus 2 dividers)
     if (serverPort && serverPort > 0) {
-      footerLines += 4;
+      footerLines += 4
     }
     // Add debug info
     if (process.env.DEBUG_DMUX) {
-      footerLines += 1;
+      footerLines += 1
     }
     // Add status line
     if (updateAvailable || currentBranch || debugMessage) {
-      footerLines += 1;
+      footerLines += 1
     }
     // Add line for each active status message
     if (statusMessage) {
-      footerLines += 1;
+      footerLines += 1
     }
     if (actionSystem.actionState.statusMessage) {
-      footerLines += 1;
+      footerLines += 1
     }
   }
-  const contentHeight = Math.max(terminalHeight - footerLines, 10);
+  const contentHeight = Math.max(terminalHeight - footerLines, 10)
 
   return (
     <Box flexDirection="column" height={terminalHeight}>
@@ -2189,60 +2457,25 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
           panes={panes}
           selectedIndex={selectedIndex}
           isLoading={isLoading}
-          showNewPaneDialog={showNewPaneDialog}
           agentStatuses={agentStatuses}
         />
 
-      {/* Loading dialog */}
-      {isLoading && (<LoadingIndicator />)}
+        {/* Loading dialog */}
+        {isLoading && <LoadingIndicator />}
 
-      {showNewPaneDialog && (
-        <NewPaneDialog
-          value={newPanePrompt}
-          onChange={setNewPanePrompt}
-          onSubmit={async (value) => {
-            const promptValue = value;
-            const agents = availableAgents;
-            setShowNewPaneDialog(false);
-            setNewPanePrompt('');
+        {showCommandPrompt && (
+          <CommandPromptDialog
+            type={showCommandPrompt}
+            value={commandInput}
+            onChange={setCommandInput}
+          />
+        )}
 
-            if (agents.length === 0) {
-              await createNewPaneHook(promptValue);
-            } else if (agents.length === 1) {
-              await createNewPaneHook(promptValue, agents[0]);
-            } else {
-              // Multiple agents available - check for default agent setting first
-              const settings = settingsManager.getSettings();
-              if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
-                // Use the default agent from settings
-                await createNewPaneHook(promptValue, settings.defaultAgent);
-              } else {
-                // No default agent configured or default not available - show agent choice popup
-                const selectedAgent = await launchAgentChoicePopup(promptValue);
-                if (selectedAgent) {
-                  await createNewPaneHook(promptValue, selectedAgent);
-                }
-              }
-            }
-          }}
-        />
-      )}
+        {showFileCopyPrompt && <FileCopyPrompt />}
 
-      {showCommandPrompt && (
-        <CommandPromptDialog type={showCommandPrompt} value={commandInput} onChange={setCommandInput} />
-      )}
+        {runningCommand && <RunningIndicator />}
 
-      {showFileCopyPrompt && (
-        <FileCopyPrompt />
-      )}
-
-      {runningCommand && (
-        <RunningIndicator />
-      )}
-
-      {isUpdating && (
-        <UpdatingIndicator />
-      )}
+        {isUpdating && <UpdatingIndicator />}
       </Box>
 
       {/* Status messages - only render when present */}
@@ -2253,11 +2486,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       )}
       {actionSystem.actionState.statusMessage && (
         <Box>
-          <Text color={
-            actionSystem.actionState.statusType === 'error' ? 'red' :
-            actionSystem.actionState.statusType === 'success' ? 'green' :
-            'cyan'
-          }>
+          <Text
+            color={
+              actionSystem.actionState.statusType === "error"
+                ? "red"
+                : actionSystem.actionState.statusType === "success"
+                ? "green"
+                : "cyan"
+            }
+          >
             {actionSystem.actionState.statusMessage}
           </Text>
         </Box>
@@ -2265,7 +2502,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
       {/* Footer - always at bottom */}
       <FooterHelp
-        show={!showNewPaneDialog && !showCommandPrompt}
+        show={!showCommandPrompt}
         showRemoteKey={!!server}
         quitConfirmMode={quitConfirmMode}
         hasSidebarLayout={!!controlPaneId}
@@ -2277,15 +2514,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         tunnelCreating={tunnelCreating}
         tunnelCopied={tunnelCopied}
         tunnelSpinner={(() => {
-          const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-          return spinnerFrames[tunnelSpinnerFrame];
+          const spinnerFrames = [
+            "⠋",
+            "⠙",
+            "⠹",
+            "⠸",
+            "⠼",
+            "⠴",
+            "⠦",
+            "⠧",
+            "⠇",
+            "⠏",
+          ]
+          return spinnerFrames[tunnelSpinnerFrame]
         })()}
         gridInfo={(() => {
-          if (!process.env.DEBUG_DMUX) return undefined;
-          const cols = Math.max(1, Math.floor(terminalWidth / 37));
-          const rows = Math.ceil((panes.length + 1) / cols);
-          const pos = getCardGridPosition(selectedIndex);
-          return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`;
+          if (!process.env.DEBUG_DMUX) return undefined
+          const cols = Math.max(1, Math.floor(terminalWidth / 37))
+          const rows = Math.ceil((panes.length + 1) / cols)
+          const pos = getCardGridPosition(selectedIndex)
+          return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`
         })()}
       />
 
@@ -2293,18 +2541,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       {(updateAvailable || currentBranch || debugMessage) && (
         <Text dimColor>
           {updateAvailable && updateInfo && (
-            <Text color="red" bold>Update available: npm i -g dmux@latest </Text>
+            <Text color="red" bold>
+              Update available: npm i -g dmux@latest{" "}
+            </Text>
           )}
           {currentBranch && (
-            <Text color="magenta" bold>branch: {currentBranch}</Text>
+            <Text color="magenta" bold>
+              branch: {currentBranch}
+            </Text>
           )}
-          {debugMessage && (
-            <Text dimColor> • {debugMessage}</Text>
-          )}
+          {debugMessage && <Text dimColor> • {debugMessage}</Text>}
         </Text>
       )}
     </Box>
-  );
-};
+  )
+}
 
-export default DmuxApp;
+export default DmuxApp

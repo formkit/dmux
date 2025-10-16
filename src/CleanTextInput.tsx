@@ -7,6 +7,8 @@ interface CleanTextInputProps {
   onChange: (value: string) => void;
   onSubmit?: (expandedValue?: string) => void;
   placeholder?: string;
+  maxWidth?: number;
+  maxVisibleLines?: number;
 }
 
 interface PastedContent {
@@ -20,7 +22,9 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   value,
   onChange,
   onSubmit,
-  placeholder = ''
+  placeholder = '',
+  maxWidth: propMaxWidth,
+  maxVisibleLines: propMaxVisibleLines
 }) => {
   const { isFocused } = useFocus({ autoFocus: true });
   const [cursor, setCursor] = useState(value.length);
@@ -28,6 +32,7 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const [pastedItems, setPastedItems] = useState<Map<number, PastedContent>>(new Map());
   const [nextPasteId, setNextPasteId] = useState(1);
   const [isProcessingPaste, setIsProcessingPaste] = useState(false);
+  const [topVisibleLine, setTopVisibleLine] = useState(0);
   // Only ignore first input in production (not in tests)
   // Check for common test environment indicators
   const isTestEnvironment = process.env.NODE_ENV === 'test' || 
@@ -45,9 +50,10 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   // Subtract 2 for borders, 2 for padding, 2 for "> " prompt = 6 total
   // The prompt is always rendered separately, so we need to account for it
   // Use process.stdout.columns as fallback since useStdout might not update
+  // Allow override via prop for popup usage
   const terminalWidth = process.stdout.columns || (stdout ? stdout.columns : 80);
   // Reduce by 1 more to prevent edge case where text exactly fills width
-  const maxWidth = Math.max(20, terminalWidth - 7);
+  const maxWidth = propMaxWidth || Math.max(20, terminalWidth - 7);
 
   // Keep cursor in bounds
   useEffect(() => {
@@ -681,6 +687,33 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   const wrappedLines = useMemo(() => wrapText(value, maxWidth), [value, maxWidth]);
   const hasMultipleLines = wrappedLines.length > 1;
 
+  // Default to showing all lines if maxVisibleLines not specified
+  const maxVisibleLines = propMaxVisibleLines || wrappedLines.length;
+
+  // Find cursor position in wrapped lines
+  const cursorPos = findCursorInWrappedLines(wrappedLines, cursor);
+
+  // Update visible window when cursor moves outside it
+  useEffect(() => {
+    if (!propMaxVisibleLines) return; // No scrolling if maxVisibleLines not set
+
+    const cursorLine = cursorPos.line;
+
+    // If cursor is above the visible window, scroll up
+    if (cursorLine < topVisibleLine) {
+      setTopVisibleLine(cursorLine);
+    }
+    // If cursor is below the visible window, scroll down
+    else if (cursorLine >= topVisibleLine + maxVisibleLines) {
+      setTopVisibleLine(cursorLine - maxVisibleLines + 1);
+    }
+  }, [cursorPos.line, topVisibleLine, maxVisibleLines, propMaxVisibleLines]);
+
+  // Calculate which lines to render (visible window)
+  const visibleLines = wrappedLines.slice(topVisibleLine, topVisibleLine + maxVisibleLines);
+  const hasMoreAbove = topVisibleLine > 0;
+  const hasMoreBelow = topVisibleLine + maxVisibleLines < wrappedLines.length;
+
   if (value === '') {
     // Show cursor for empty input (no placeholder)
     return (
@@ -695,13 +728,19 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     );
   }
 
-  // Find cursor position in wrapped lines
-  const cursorPos = findCursorInWrappedLines(wrappedLines, cursor);
-
   // Render wrapped lines
   return (
     <Box flexDirection="column">
-      {wrappedLines.map((wrappedLine, idx) => {
+      {hasMoreAbove && (
+        <Box>
+          <Box width={2}>
+            <Text dimColor>⋮ </Text>
+          </Box>
+          <Text dimColor italic>(scroll up for more)</Text>
+        </Box>
+      )}
+      {visibleLines.map((wrappedLine, visibleIdx) => {
+        const idx = visibleIdx + topVisibleLine; // Actual index in wrappedLines
         const isFirst = idx === 0;
         const hasCursor = idx === cursorPos.line;
         const line = wrappedLine.line;
@@ -762,6 +801,14 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
           </Box>
         );
       })}
+      {hasMoreBelow && (
+        <Box>
+          <Box width={2}>
+            <Text dimColor>⋮ </Text>
+          </Box>
+          <Text dimColor italic>(scroll down for more)</Text>
+        </Box>
+      )}
     </Box>
   );
 };

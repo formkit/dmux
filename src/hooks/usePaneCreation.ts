@@ -10,14 +10,13 @@ interface Params {
   projectName: string;
   setIsCreatingPane: (v: boolean) => void;
   setStatusMessage: (msg: string) => void;
-  setNewPanePrompt: (v: string) => void;
   loadPanes: () => Promise<void>;
   panesFile: string;
   availableAgents: Array<'claude' | 'opencode'>;
   forceRepaint?: () => void;
 }
 
-export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, setNewPanePrompt, loadPanes, panesFile, availableAgents, forceRepaint }: Params) {
+export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, loadPanes, panesFile, availableAgents, forceRepaint }: Params) {
   const openInEditor = async (currentPrompt: string, setPrompt: (v: string) => void) => {
     try {
       const os = await import('os');
@@ -112,7 +111,6 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
         execSync('tmux refresh-client', { stdio: 'pipe' });
       } catch {}
 
-      setNewPanePrompt('');
       await loadPanes();
 
       // CRITICAL: One more repaint after loadPanes to ensure clean render

@@ -9,7 +9,6 @@ interface PanesGridProps {
   panes: DmuxPane[]
   selectedIndex: number
   isLoading: boolean
-  showNewPaneDialog: boolean
   agentStatuses?: AgentStatusMap
 }
 
@@ -17,10 +16,9 @@ const PanesGrid: React.FC<PanesGridProps> = ({
   panes,
   selectedIndex,
   isLoading,
-  showNewPaneDialog,
   agentStatuses,
 }) => {
-  const totalItems = panes.length + (!isLoading && !showNewPaneDialog ? 1 : 0)
+  const totalItems = panes.length + (!isLoading ? 1 : 0)
   const hasSelection = selectedIndex >= 0 && selectedIndex < totalItems
 
   return (
@@ -48,7 +46,7 @@ const PanesGrid: React.FC<PanesGridProps> = ({
         )
       })}
 
-      {!isLoading && !showNewPaneDialog && (
+      {!isLoading && (
         <Box marginTop={panes.length === 0 ? 1 : 0}>
           <Box
             borderStyle="round"
