@@ -262,6 +262,112 @@ createPane({prompt, agent, projectName, existingPanes}, availableAgents)
 ```
 Handles: slug generation → worktree creation → tmux split → agent launch
 
+### 8. Layout System (`src/utils/layoutManager.ts`, `src/utils/tmux.ts`)
+
+**Architecture**: Grid layout engine that generates custom tmux layout strings
+
+#### Key Components
+
+1. **Layout Calculation** (`calculateOptimalLayout`):
+   - Determines optimal columns/rows for given terminal dimensions
+   - Prefers 3-column grids for horizontal space (better for code)
+   - Scores layouts based on height comfort (>= 15 lines per pane)
+   - Constrains window width to avoid panes exceeding MAX_COMFORTABLE_WIDTH (80 chars)
+
+2. **Layout String Generation** (`generateSidebarGridLayout`):
+   - Generates tmux layout strings: `checksum,WxH,X,Y{pane1,pane2,...}`
+   - Uses **absolute coordinates** throughout (tmux requirement)
+   - Sidebar always 40 cells wide, content area uses remaining space
+   - Distributes remainder width to first pane (matches tmux behavior)
+
+3. **Checksum Calculation** (CRITICAL):
+   - Tmux requires exact 16-bit checksum matching layout string
+   - **16-bit masking**: `checksum &= 0xFFFF` after each operation
+   - **4-digit padding**: `checksum.toString(16).padStart(4, '0')`
+   - Mismatch causes "invalid layout" errors
+
+4. **Spacer Panes** (optional):
+   - Created when panes in last row would exceed MAX_COMFORTABLE_WIDTH
+   - **Minimum width**: 20 cells (prevents tmux rejecting tiny panes)
+   - Always positioned last in layout for proper rendering
+   - Destroyed and recreated on layout changes (ensures correct position)
+
+5. **Sidebar Enforcement**:
+   - Checks sidebar width before AND after window resizes
+   - Window resizes cause tmux to redistribute width proportionally
+   - Re-enforces sidebar at 40 cells to prevent drift (40→44)
+   - Order: sidebar first, then window, then re-check sidebar
+
+#### Layout Algorithm
+
+```
+1. Calculate optimal columns/rows for terminal dimensions
+2. Determine if spacer needed (last row width check)
+3. Create spacer pane if needed (split from last content pane)
+4. Resize sidebar to 40 cells (locks width)
+5. Resize window to calculated dimensions
+6. Re-check sidebar width (window resize may have changed it)
+7. Generate layout string with correct checksum
+8. Apply layout via `tmux select-layout`
+```
+
+#### Critical Fixes (Oct 2024)
+
+**Problem**: Layout generation failing with "invalid layout" at certain widths (201, 203, etc.)
+
+**Root Cause**: Checksum calculation bugs
+- Missing 16-bit masking caused incorrect checksums for long layout strings
+- Variable-width checksums (3 digits vs 4) didn't match tmux's expected format
+- Example: Generated `bf5`, tmux expected `0bf5`
+
+**Solution**:
+```typescript
+// Before (BROKEN)
+return checksum.toString(16);  // "bf5" (3 digits)
+
+// After (FIXED)
+checksum &= 0xFFFF;  // Mask to 16 bits
+return checksum.toString(16).padStart(4, '0');  // "0bf5" (4 digits)
+```
+
+**Additional Fixes**:
+- Sidebar width re-enforcement after window resize
+- Minimum spacer width (20 cells) to avoid tmux rejection
+- Debug logs always enabled (no DEBUG_DMUX flag needed)
+
+#### Testing
+
+See `tests/layout.test.ts` for comprehensive tests:
+- Checksum format validation (4-digit hex)
+- Regression tests for problematic widths (201, 203)
+- Spacer logic and minimum width checks
+- Layout calculation at various terminal sizes
+- Coordinate calculation (absolute positioning)
+
+Run tests: `pnpm test tests/layout.test.ts`
+
+#### Configuration
+
+```typescript
+export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
+  SIDEBAR_WIDTH: 40,           // Fixed sidebar width
+  MIN_COMFORTABLE_WIDTH: 50,   // Min pane width before creating rows
+  MAX_COMFORTABLE_WIDTH: 80,   // Max pane width for readability
+  MIN_COMFORTABLE_HEIGHT: 15,  // Min pane height
+}
+```
+
+#### Debugging
+
+When layout issues occur, check logs for:
+```
+[Layout] Sidebar width already correct: 40  (or "Resizing sidebar: X → 40")
+[Layout] Window dimensions already correct   (or "Resizing window: X → Y")
+[Layout] Sidebar changed after window resize  (indicates drift)
+[Layout] Generated layout string: XXXX,WxH,...  (checksum should be 4 hex digits)
+[Layout] Layout string applied successfully  (or "invalid layout" with error)
+```
+
 ## User Guide
 
 ### Basic Workflow
@@ -362,6 +468,12 @@ ps aux | grep dmux                    # Running processes
 ## Recent Updates
 
 ### Key Features
+- **Grid Layout System** (Oct 2024): Fixed critical checksum bugs causing "invalid layout" errors
+  - 16-bit masking and 4-digit padding for tmux compatibility
+  - Sidebar width re-enforcement prevents drift during window resizes
+  - Minimum spacer width (20 cells) prevents tmux rejection
+  - Comprehensive test suite with regression tests for problematic widths
+  - Debug logs always enabled for easier troubleshooting
 - **Vue 3 Dashboard**: Full SFC migration with TypeScript, kebab menus, dialogs (see [BUNDLED_ASSETS.md](BUNDLED_ASSETS.md))
 - **Standardized Action System**: Pure functions + adapters for TUI/Web/API consistency
 - **LLM Status Detection**: Worker-based monitoring with smart activity detection

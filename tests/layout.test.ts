@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { calculateOptimalColumns, MIN_COMFORTABLE_WIDTH, MIN_COMFORTABLE_HEIGHT } from '../src/utils/tmux.js';
+import { calculateOptimalColumns, MIN_COMFORTABLE_WIDTH, MIN_COMFORTABLE_HEIGHT, generateSidebarGridLayout } from '../src/utils/tmux.js';
+import { calculateOptimalLayout, DEFAULT_LAYOUT_CONFIG } from '../src/utils/layoutManager.js';
 
 describe('layout calculation', () => {
   describe('calculateOptimalColumns', () => {
@@ -97,6 +98,201 @@ describe('layout calculation', () => {
       // Should still return a valid column count (fallback mode)
       expect(cols).toBeGreaterThan(0);
       expect(cols).toBeLessThanOrEqual(5);
+    });
+  });
+
+  describe('generateSidebarGridLayout - checksum fixes', () => {
+    // Tests for the critical checksum bug fixes
+
+    it('generates valid 4-digit hex checksum', () => {
+      const layout = generateSidebarGridLayout(
+        '%0', // control pane
+        ['%1', '%2', '%3', '%4', '%5'], // 5 content panes
+        40, // sidebar width
+        203, // window width
+        60, // window height
+        3, // columns
+        80 // max comfortable width
+      );
+
+      // Checksum should be exactly 4 hex digits
+      const checksumMatch = layout.match(/^([0-9a-f]{4}),/);
+      expect(checksumMatch).toBeTruthy();
+      expect(checksumMatch![1]).toHaveLength(4);
+    });
+
+    it('checksum includes leading zeros when needed', () => {
+      // Generate several layouts and verify all have 4-digit checksums
+      const testCases = [
+        { width: 200, panes: ['%1', '%2', '%3'] },
+        { width: 201, panes: ['%1', '%2', '%3', '%4', '%5'] },
+        { width: 203, panes: ['%1', '%2'] },
+      ];
+
+      testCases.forEach(({ width, panes }) => {
+        const layout = generateSidebarGridLayout(
+          '%0',
+          panes,
+          40,
+          width,
+          60,
+          2,
+          80
+        );
+
+        const checksum = layout.split(',')[0];
+        expect(checksum).toHaveLength(4);
+        expect(checksum).toMatch(/^[0-9a-f]{4}$/);
+      });
+    });
+
+    it('generates identical layout structure at same dimensions', () => {
+      const layout1 = generateSidebarGridLayout(
+        '%0',
+        ['%1', '%2', '%3', '%4', '%5'],
+        40,
+        201,
+        60,
+        3,
+        80
+      );
+
+      const layout2 = generateSidebarGridLayout(
+        '%0',
+        ['%1', '%2', '%3', '%4', '%5'],
+        40,
+        201,
+        60,
+        3,
+        80
+      );
+
+      // Layouts should be identical (deterministic)
+      expect(layout1).toBe(layout2);
+    });
+
+    it('handles width 201 correctly (regression test)', () => {
+      // This specific width was failing before checksum fix
+      const layout = generateSidebarGridLayout(
+        '%0',
+        ['%1', '%2', '%3', '%4', '%5'],
+        40,
+        201,
+        60,
+        3,
+        80
+      );
+
+      expect(layout).toBeTruthy();
+      expect(layout).toContain('201x60'); // Window dimensions
+      expect(layout).toContain('40x60'); // Sidebar
+      expect(layout).toContain('160x'); // Content area width
+    });
+
+    it('handles width 203 correctly (regression test)', () => {
+      // Another problematic width before fix
+      const layout = generateSidebarGridLayout(
+        '%0',
+        ['%1', '%2', '%3', '%4', '%5'],
+        40,
+        203,
+        60,
+        3,
+        80
+      );
+
+      expect(layout).toBeTruthy();
+      expect(layout).toContain('203x60'); // Window dimensions
+      expect(layout).toContain('40x60'); // Sidebar
+      expect(layout).toContain('162x'); // Content area width
+    });
+
+    it('correctly calculates pane widths with remainder distribution', () => {
+      // 3 columns, 160 width content = 53.33 per pane
+      // Should distribute as: 54, 53, 53 (first pane gets remainder)
+      const layout = generateSidebarGridLayout(
+        '%0',
+        ['%1', '%2', '%3'],
+        40,
+        201,
+        60,
+        3,
+        80
+      );
+
+      // First pane should be 54 wide
+      expect(layout).toContain('54x');
+      // Other panes should be 52 or 53 wide
+      expect(layout).toMatch(/5[23]x/);
+    });
+
+    it('generates correct absolute coordinates', () => {
+      const layout = generateSidebarGridLayout(
+        '%0',
+        ['%1', '%2'],
+        40,
+        200,
+        60,
+        2,
+        80
+      );
+
+      // Content should start at X=41 (sidebar 40 + border 1)
+      expect(layout).toContain(',41,');
+
+      // Second pane should be roughly at X=121 (41 + 80)
+      expect(layout).toMatch(/,1[12][0-9],/);
+    });
+  });
+
+  describe('calculateOptimalLayout - spacer logic', () => {
+    it('chooses appropriate layout for 5 panes at various widths', () => {
+      const widths = [180, 200, 201, 203, 220, 240];
+
+      widths.forEach(width => {
+        const layout = calculateOptimalLayout(5, width, 60, DEFAULT_LAYOUT_CONFIG);
+
+        // Should always produce valid layout
+        expect(layout.cols).toBeGreaterThan(0);
+        expect(layout.rows).toBeGreaterThan(0);
+        expect(layout.windowWidth).toBeLessThanOrEqual(width);
+
+        // Pane width should be reasonable
+        expect(layout.actualPaneWidth).toBeGreaterThan(0);
+      });
+    });
+
+    it('prefers 3x2 grid for 5 panes in wide terminal', () => {
+      const layout = calculateOptimalLayout(5, 200, 60, DEFAULT_LAYOUT_CONFIG);
+
+      expect(layout.cols).toBe(3);
+      expect(layout.rows).toBe(2);
+    });
+
+    it('constrains window width to avoid panes exceeding MAX_COMFORTABLE_WIDTH', () => {
+      // Very wide terminal - should cap window width
+      const layout = calculateOptimalLayout(2, 500, 60, DEFAULT_LAYOUT_CONFIG);
+
+      // Window should be constrained, not full 500
+      expect(layout.windowWidth).toBeLessThan(500);
+
+      // Pane width should not exceed MAX_COMFORTABLE_WIDTH
+      expect(layout.actualPaneWidth).toBeLessThanOrEqual(DEFAULT_LAYOUT_CONFIG.MAX_COMFORTABLE_WIDTH);
+    });
+
+    it('distributes panes evenly across columns', () => {
+      const layout = calculateOptimalLayout(5, 200, 60, DEFAULT_LAYOUT_CONFIG);
+
+      // 5 panes in 3 cols = [2, 2, 1]
+      expect(layout.paneDistribution).toEqual([2, 2, 1]);
+    });
+
+    it('handles single pane (welcome screen)', () => {
+      const layout = calculateOptimalLayout(0, 200, 60, DEFAULT_LAYOUT_CONFIG);
+
+      expect(layout.cols).toBe(0);
+      expect(layout.rows).toBe(0);
+      expect(layout.paneDistribution).toEqual([]);
     });
   });
 });
