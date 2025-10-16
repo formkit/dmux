@@ -31,7 +31,11 @@ const ProgressPopupApp: React.FC<ProgressPopupProps> = ({
         const result = {
           success: true,
         };
-        fs.writeFileSync(resultFile, JSON.stringify(result));
+        try {
+          fs.writeFileSync(resultFile, JSON.stringify(result));
+        } catch (error) {
+          console.error('[progressPopup] Failed to write result file:', error);
+        }
         exit();
       }, timeout);
 

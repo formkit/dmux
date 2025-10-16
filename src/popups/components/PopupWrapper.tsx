@@ -43,7 +43,12 @@ export function PopupWrapper<T = any>({
         success: false,
         cancelled: true,
       };
-      fs.writeFileSync(resultFile, JSON.stringify(result));
+      try {
+        fs.writeFileSync(resultFile, JSON.stringify(result));
+      } catch (error) {
+        // If we can't write result, try stderr as fallback
+        console.error('[PopupWrapper] Failed to write result file:', error);
+      }
       exit();
     }
   });
@@ -59,7 +64,11 @@ export function writeSuccessAndExit<T>(resultFile: string, data: T, exit: () => 
     success: true,
     data,
   };
-  fs.writeFileSync(resultFile, JSON.stringify(result));
+  try {
+    fs.writeFileSync(resultFile, JSON.stringify(result));
+  } catch (error) {
+    console.error('[PopupWrapper] Failed to write success result:', error);
+  }
   exit();
 }
 
@@ -71,7 +80,11 @@ export function writeErrorAndExit(resultFile: string, error: string, exit: () =>
     success: false,
     error,
   };
-  fs.writeFileSync(resultFile, JSON.stringify(result));
+  try {
+    fs.writeFileSync(resultFile, JSON.stringify(result));
+  } catch (err) {
+    console.error('[PopupWrapper] Failed to write error result:', err);
+  }
   exit();
 }
 
@@ -83,6 +96,10 @@ export function writeCancelAndExit(resultFile: string, exit: () => void) {
     success: false,
     cancelled: true,
   };
-  fs.writeFileSync(resultFile, JSON.stringify(result));
+  try {
+    fs.writeFileSync(resultFile, JSON.stringify(result));
+  } catch (error) {
+    console.error('[PopupWrapper] Failed to write cancel result:', error);
+  }
   exit();
 }

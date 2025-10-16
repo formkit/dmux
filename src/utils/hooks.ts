@@ -287,58 +287,61 @@ export function initializeHooksDirectory(projectRoot: string): void {
   }
 
   const initMsg = 'Initializing .dmux-hooks/ directory...';
-  // console.error('[Hooks]', initMsg);
   LogService.getInstance().debug(initMsg, 'hooks');
 
-  // Create main hooks directory
-  if (!existsSync(hooksDir)) {
-    mkdirSync(hooksDir, { recursive: true });
-  }
-
-  // Write AGENTS.md (complete reference)
-  writeFileSync(
-    path.join(hooksDir, 'AGENTS.md'),
-    HOOKS_DOCUMENTATION,
-    'utf-8'
-  );
-
-  // Write CLAUDE.md (identical to AGENTS.md, just different filename for Claude Code)
-  writeFileSync(
-    path.join(hooksDir, 'CLAUDE.md'),
-    HOOKS_DOCUMENTATION,
-    'utf-8'
-  );
-
-  // Write README.md
-  writeFileSync(
-    path.join(hooksDir, 'README.md'),
-    HOOKS_README,
-    'utf-8'
-  );
-
-  // Create examples directory
-  const examplesDir = path.join(hooksDir, 'examples');
-  if (!existsSync(examplesDir)) {
-    mkdirSync(examplesDir, { recursive: true });
-  }
-
-  // Write example hooks
-  for (const [filename, content] of Object.entries(EXAMPLE_HOOKS)) {
-    const examplePath = path.join(examplesDir, filename);
-    writeFileSync(examplePath, content, 'utf-8');
-
-    // Make examples executable
-    try {
-      execSync(`chmod +x "${examplePath}"`, { stdio: 'pipe' });
-    } catch {
-      // Ignore chmod errors (Windows, etc.)
+  try {
+    // Create main hooks directory
+    if (!existsSync(hooksDir)) {
+      mkdirSync(hooksDir, { recursive: true });
     }
-  }
 
-  const completeMsg = '✅ Initialized .dmux-hooks/ with documentation and examples';
-  const readmeMsg = '📝 Read AGENTS.md or CLAUDE.md to get started';
-  // console.error('[Hooks]', completeMsg);
-  // console.error('[Hooks]', readmeMsg);
-  LogService.getInstance().debug(completeMsg, 'hooks');
-  LogService.getInstance().debug(readmeMsg, 'hooks');
+    // Write AGENTS.md (complete reference)
+    writeFileSync(
+      path.join(hooksDir, 'AGENTS.md'),
+      HOOKS_DOCUMENTATION,
+      'utf-8'
+    );
+
+    // Write CLAUDE.md (identical to AGENTS.md, just different filename for Claude Code)
+    writeFileSync(
+      path.join(hooksDir, 'CLAUDE.md'),
+      HOOKS_DOCUMENTATION,
+      'utf-8'
+    );
+
+    // Write README.md
+    writeFileSync(
+      path.join(hooksDir, 'README.md'),
+      HOOKS_README,
+      'utf-8'
+    );
+
+    // Create examples directory
+    const examplesDir = path.join(hooksDir, 'examples');
+    if (!existsSync(examplesDir)) {
+      mkdirSync(examplesDir, { recursive: true });
+    }
+
+    // Write example hooks
+    for (const [filename, content] of Object.entries(EXAMPLE_HOOKS)) {
+      const examplePath = path.join(examplesDir, filename);
+      writeFileSync(examplePath, content, 'utf-8');
+
+      // Make examples executable
+      try {
+        execSync(`chmod +x "${examplePath}"`, { stdio: 'pipe' });
+      } catch {
+        // Ignore chmod errors (Windows, etc.)
+      }
+    }
+
+    const completeMsg = '✅ Initialized .dmux-hooks/ with documentation and examples';
+    const readmeMsg = '📝 Read AGENTS.md or CLAUDE.md to get started';
+    LogService.getInstance().debug(completeMsg, 'hooks');
+    LogService.getInstance().debug(readmeMsg, 'hooks');
+  } catch (error) {
+    const errMsg = `Failed to initialize .dmux-hooks/ directory: ${error instanceof Error ? error.message : String(error)}`;
+    LogService.getInstance().warn(errMsg, 'hooks');
+    // Don't throw - hooks initialization is not critical
+  }
 }

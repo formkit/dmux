@@ -182,7 +182,12 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
 
       // Write to temp file
       const tempFile = path.join(os.tmpdir(), `dmux-logs-${Date.now()}.txt`);
-      fs.writeFileSync(tempFile, logsText);
+      try {
+        fs.writeFileSync(tempFile, logsText);
+      } catch (error) {
+        console.error('[logsPopup] Failed to write temp log file:', error);
+        return;
+      }
 
       // Open in editor (same pattern as openInEditor action)
       const editor = process.env.EDITOR || 'code';

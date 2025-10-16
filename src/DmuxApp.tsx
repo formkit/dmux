@@ -29,7 +29,6 @@ import { LogService } from './services/LogService.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
 import { PaneAction, getAvailableActions, type ActionMetadata } from './actions/index.js';
 import { SettingsManager, SETTING_DEFINITIONS } from './utils/settingsManager.js';
-import { launchNodePopup, launchNodePopupNonBlocking, supportsPopups, ensureMouseMode, POPUP_POSITIONING, type PopupHandle } from './utils/popup.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -83,10 +82,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   // Flag to ignore input temporarily after popup closes (prevents buffered keys)
   const [ignoreInput, setIgnoreInput] = useState(false);
-
-  // Active popup tracking for click-outside-to-close
-  // Use ref instead of state to avoid closure issues in useInput
-  const activePopupRef = React.useRef<PopupHandle<any> | null>(null);
 
   // Agent selection state
   const { availableAgents } = useAgentDetection();
@@ -185,33 +180,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     }
   }, []);
 
-  // Enable mouse tracking for click-outside-to-close popups
-  useEffect(() => {
-    const logService = LogService.getInstance();
-
-    // Check current tmux mouse mode
-    try {
-      const mouseMode = execSync('tmux show -g mouse', { encoding: 'utf-8' }).trim();
-      logService.debug(`Current tmux mouse mode: ${mouseMode}`, 'MouseTracking');
-    } catch (err) {
-      logService.debug('Failed to check tmux mouse mode', 'MouseTracking');
-    }
-
-    // Enable mouse tracking mode (all mouse events)
-    process.stdout.write('\x1b[?1003h');
-    logService.debug('Sent mouse tracking enable escape code: \\x1b[?1003h', 'MouseTracking');
-
-    // Also try button event tracking as fallback
-    process.stdout.write('\x1b[?1002h');
-    logService.debug('Sent button tracking enable escape code: \\x1b[?1002h', 'MouseTracking');
-
-    return () => {
-      // Disable mouse tracking on unmount
-      process.stdout.write('\x1b[?1003l');
-      process.stdout.write('\x1b[?1002l');
-      logService.debug('Mouse tracking disabled', 'MouseTracking');
-    };
-  }, []);
 
   // Spinner animation for tunnel creation
   useEffect(() => {
@@ -362,7 +330,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
     setPopupsSupported(popupSupport);
     if (popupSupport) {
       // Enable mouse mode only for this dmux session (not global)
-      ensureMouseMode(sessionName);
     }
 
     return () => {
@@ -433,16 +400,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
       LogService.getInstance().debug(`Popup created - PID: ${popupHandle.pid}, bounds: ${JSON.stringify(popupHandle.bounds)}`, 'PopupTracking');
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
       LogService.getInstance().debug('Popup closed, clearing tracking', 'PopupTracking');
-      activePopupRef.current = null;
 
       // Ignore input briefly after popup closes to prevent buffered keys
       setIgnoreInput(true);
@@ -521,14 +485,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Log the entire result for debugging
       LogService.getInstance().debug(`Kebab menu result: ${JSON.stringify(result)}`, 'KebabMenu');
@@ -603,14 +564,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -664,14 +622,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       if (result.success && result.data) {
         return result.data;
@@ -742,14 +697,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       if (result.success && result.data?.action === 'edit') {
         // Edit hooks using an agent
@@ -834,14 +786,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -899,14 +848,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -970,14 +916,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Show "Copied!" message if URL was copied
       // Note: result is the parsed JSON directly, not wrapped in PopupResult.data
@@ -1040,14 +983,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       if (result.success) {
         // Check if this is an action result (action field at top level)
@@ -1148,14 +1088,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
       );
       LogService.getInstance().debug(`Popup launched, PID: ${popupHandle.pid}`, 'MergePopup');
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -1217,14 +1154,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -1280,14 +1214,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       const result = await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -1350,14 +1281,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
         }
       );
 
-      // Track the active popup for click-outside-to-close
-      activePopupRef.current = popupHandle;
 
       // Wait for the popup to close
       await popupHandle.resultPromise;
 
       // Clear active popup tracking
-      activePopupRef.current = null;
 
       // Clean up temp file
       try {
@@ -1997,75 +1925,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({ panesFile, projectName, sessionName, 
 
   useInput(async (input: string, key: any) => {
     const logService = LogService.getInstance();
-    const activePopup = activePopupRef.current;
 
     // Log all input for debugging (only first 50 chars to avoid spam)
     const inputPreview = input.length > 50 ? input.substring(0, 50) + '...' : input;
-    logService.debug(`Input: "${inputPreview}", popup: ${!!activePopup}`, 'InputDebug');
-
-    // Manual mouse sequence parser
-    // Format: ESC[M<button><x><y> where button, x, y are encoded as characters
-    // Button codes: ' ' (32) = left press, '#' (35) = left release, 'a' (97) = left drag
-    // '@' (64) = left button down with modifiers
-    // Coordinates: ASCII value - 32 = actual coordinate
-    const mouseSeqMatch = input.match(/^\[M(.)(.)(.)/);
-
-    if (mouseSeqMatch && activePopup) {
-      const buttonChar = mouseSeqMatch[1];
-      const xChar = mouseSeqMatch[2];
-      const yChar = mouseSeqMatch[3];
-
-      // Decode coordinates (ASCII value - 32)
-      const x = xChar.charCodeAt(0) - 32;
-      const y = yChar.charCodeAt(0) - 32;
-      const buttonCode = buttonChar.charCodeAt(0);
-
-      // Button codes:
-      // 32 (' ') = left button press
-      // 35 ('#') = left button release
-      // 64-67 (@, A, B, C) = drag/move events
-      // 96-99 (`, a, b, c) = drag continuation
-
-      const isLeftClick = buttonCode === 32; // Space = left button press
-      const isLeftRelease = buttonCode === 35; // # = left button release
-
-      logService.info(`Parsed mouse: button=${buttonCode} (${buttonChar}), x=${x}, y=${y}, isClick=${isLeftClick}, isRelease=${isLeftRelease}`, 'MouseParser');
-
-      // Only handle left button PRESS events (not drag or release)
-      if (isLeftClick) {
-        const { bounds } = activePopup;
-
-        logService.info(`Popup bounds: x=${bounds.x}, y=${bounds.y}, w=${bounds.width}, h=${bounds.height}`, 'MouseParser');
-
-        // Check if click is outside popup bounds
-        const clickedOutside =
-          x < bounds.x ||
-          x >= bounds.x + bounds.width ||
-          y < bounds.y ||
-          y >= bounds.y + bounds.height;
-
-        logService.info(`Click check - clickedOutside: ${clickedOutside}, bounds: [${bounds.x}-${bounds.x + bounds.width}] x [${bounds.y}-${bounds.y + bounds.height}], click: (${x}, ${y})`, 'MouseParser');
-
-        if (clickedOutside) {
-          logService.info('✓ Closing popup - click detected outside bounds', 'MouseParser');
-          // Kill the popup process
-          activePopup.kill();
-          activePopupRef.current = null;
-
-          // Set ignore input flag briefly to prevent buffered keys
-          setIgnoreInput(true);
-          setTimeout(() => setIgnoreInput(false), 100);
-          return; // Don't process this input further
-        } else {
-          logService.info('Click inside popup bounds - not closing', 'MouseParser');
-        }
-      }
-    }
-
-    // Log Ink's mouse parsing for comparison (will always be false but keeping for reference)
-    if (key.mouse) {
-      logService.info(`Ink parsed mouse event: ${JSON.stringify(key.mouse)}`, 'MouseEvent');
-    }
+    logService.debug(`Input: "${inputPreview}"`, 'InputDebug');
 
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {

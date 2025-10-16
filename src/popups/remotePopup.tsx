@@ -31,7 +31,11 @@ const RemotePopupApp: React.FC<RemotePopupAppProps> = ({
   const [copied, setCopied] = useState(false);
 
   const closePopup = (wasCopied: boolean) => {
-    fs.writeFileSync(resultFile, JSON.stringify({ closed: true, copied: wasCopied }));
+    try {
+      fs.writeFileSync(resultFile, JSON.stringify({ closed: true, copied: wasCopied }));
+    } catch (error) {
+      console.error('[remotePopup] Failed to write result file:', error);
+    }
     exit();
   };
 

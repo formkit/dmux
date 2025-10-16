@@ -24,7 +24,11 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
 
   useInput((input, key) => {
     if (key.escape || input === 'q' || input === '?') {
-      fs.writeFileSync(resultFile, JSON.stringify({ closed: true }));
+      try {
+        fs.writeFileSync(resultFile, JSON.stringify({ closed: true }));
+      } catch (error) {
+        console.error('[shortcutsPopup] Failed to write result file:', error);
+      }
       exit();
     }
   });
