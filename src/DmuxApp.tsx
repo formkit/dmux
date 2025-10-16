@@ -24,6 +24,7 @@ import { suggestCommand } from './utils/commands.js';
 import { generateSlug } from './utils/slug.js';
 import { getMainBranch } from './utils/git.js';
 import { capturePaneContent } from './utils/paneCapture.js';
+import { supportsPopups, launchNodePopupNonBlocking, POPUP_POSITIONING } from './utils/popup.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
 import { getStatusDetector, type StatusUpdateEvent } from './services/StatusDetector.js';
