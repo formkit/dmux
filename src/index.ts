@@ -126,7 +126,24 @@ class Dmux {
         if (isDev && this.isWorktree()) {
           devDirectory = process.cwd();
         }
-        const dmuxCommand = isDev ? `cd "${devDirectory}" && pnpm dev:watch` : 'dmux';
+
+        // Determine the dmux command to use
+        let dmuxCommand: string;
+        if (isDev) {
+          dmuxCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+        } else {
+          // Check if we're running from a local installation
+          // __dirname is 'dist' when compiled, so '../dmux' points to the wrapper
+          const localDmuxPath = path.join(__dirname, '..', 'dmux');
+          if (fsSync.existsSync(localDmuxPath)) {
+            // Use absolute path to local dmux (works for both local builds and global installs)
+            dmuxCommand = `"${localDmuxPath}"`;
+          } else {
+            // Fallback to global dmux command
+            dmuxCommand = 'dmux';
+          }
+        }
+
         execSync(`tmux send-keys -t ${this.sessionName} "${dmuxCommand}" Enter`, { stdio: 'inherit' });
       }
       execSync(`tmux attach-session -t ${this.sessionName}`, { stdio: 'inherit' });
