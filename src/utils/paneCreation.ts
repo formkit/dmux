@@ -117,6 +117,24 @@ export async function createPane(
     const config: DmuxConfig = JSON.parse(configContent);
     controlPaneId = config.controlPaneId;
 
+    // Verify the control pane ID from config still exists
+    if (controlPaneId) {
+      try {
+        execSync(`tmux display-message -t '${controlPaneId}' -p '#{pane_id}'`, {
+          encoding: 'utf-8',
+          stdio: 'pipe'
+        });
+        // Pane exists, we can use it
+      } catch {
+        // Pane doesn't exist anymore, use current pane and update config
+        controlPaneId = originalPaneId;
+        config.controlPaneId = controlPaneId;
+        config.controlPaneSize = SIDEBAR_WIDTH;
+        config.lastUpdated = new Date().toISOString();
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      }
+    }
+
     // If control pane ID is missing, save it
     if (!controlPaneId) {
       controlPaneId = originalPaneId;
