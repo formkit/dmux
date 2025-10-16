@@ -229,7 +229,38 @@ export async function createPane(
 
   // Create git worktree and cd into it
   try {
-    const worktreeCmd = `git worktree add "${worktreePath}" -b ${slug} 2>/dev/null ; cd "${worktreePath}"`;
+    // IMPORTANT: Prune stale worktrees first to avoid conflicts
+    // This must run synchronously from dmux, not in the pane
+    try {
+      execSync('git worktree prune', {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        cwd: projectRoot,
+      });
+    } catch {
+      // Ignore prune errors, proceed anyway
+    }
+
+    // Check if branch already exists (from a deleted worktree)
+    let branchExists = false;
+    try {
+      execSync(`git show-ref --verify --quiet refs/heads/${slug}`, {
+        stdio: 'pipe',
+        cwd: projectRoot,
+      });
+      branchExists = true;
+    } catch {
+      // Branch doesn't exist, which is good
+    }
+
+    // Build worktree command:
+    // - If branch exists, use it (don't create with -b)
+    // - If branch doesn't exist, create it with -b
+    // - DON'T silence errors (we want to see them in the pane for debugging)
+    const worktreeCmd = branchExists
+      ? `git worktree add "${worktreePath}" ${slug} && cd "${worktreePath}"`
+      : `git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"`;
+
     execSync(`tmux send-keys -t '${paneInfo}' '${worktreeCmd}' Enter`, {
       stdio: 'pipe',
     });
@@ -241,6 +272,11 @@ export async function createPane(
 
     while (!fs.existsSync(worktreePath) && (Date.now() - startTime) < maxWaitTime) {
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
+    }
+
+    // Verify worktree was created successfully
+    if (!fs.existsSync(worktreePath)) {
+      throw new Error(`Worktree directory not created at ${worktreePath} after ${maxWaitTime}ms`);
     }
 
     // Give a bit more time for git to finish setting up the worktree
@@ -266,12 +302,19 @@ export async function createPane(
       }
     }
   } catch (error) {
-    // Even if worktree creation failed, try to cd to the directory
+    // Worktree creation failed - send helpful error message to the pane
+    const errorMsg = error instanceof Error ? error.message : String(error);
     execSync(
-      `tmux send-keys -t '${paneInfo}' 'cd "${worktreePath}" 2>/dev/null || (echo "ERROR: Failed to create/enter worktree ${slug}" && pwd)' Enter`,
+      `tmux send-keys -t '${paneInfo}' 'echo "❌ Failed to create worktree: ${errorMsg}"' Enter`,
+      { stdio: 'pipe' }
+    );
+    execSync(
+      `tmux send-keys -t '${paneInfo}' 'echo "Tip: Try running: git worktree prune && git branch -D ${slug}"' Enter`,
       { stdio: 'pipe' }
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Don't throw - let the pane stay open so user can debug
   }
 
   // Launch agent if specified
