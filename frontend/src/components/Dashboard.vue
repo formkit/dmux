@@ -724,7 +724,8 @@ onBeforeUnmount(() => {
               </a>
               <div class="pane-meta">
                 <span v-if="pane.autopilot" class="pane-autopilot" title="Autopilot enabled">🤖</span>
-                <span class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
+                <span v-if="pane.type === 'shell'" class="pane-agent shell" :title="'Shell pane'">{{ pane.shellType || 'shell' }}</span>
+                <span v-else class="pane-agent" :class="pane.agent || ''">{{ pane.agent || 'unknown' }}</span>
                 <span class="pane-id">{{ pane.paneId }}</span>
               </div>
             </div>

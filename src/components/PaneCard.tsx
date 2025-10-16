@@ -46,7 +46,9 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected, isFirstPane, isLast
           <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
             {pane.slug.substring(0, 25)}
           </Text>
-          {pane.agent && (
+          {pane.type === 'shell' ? (
+            <Text color="cyan"> [{pane.shellType || 'shell'}]</Text>
+          ) : pane.agent && (
             <Text color="gray"> [{pane.agent === 'claude' ? 'cc' : 'oc'}]</Text>
           )}
           {pane.autopilot && (

@@ -209,6 +209,7 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     description: 'Enable/disable automatic option acceptance',
     icon: '🤖',
     shortcut: 'a',
+    requires: { worktree: true },
   },
 };
 

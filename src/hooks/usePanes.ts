@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
+import { getUntrackedPanes, createShellPane, getNextDmuxId } from '../utils/shellPaneDetection.js';
+import { LogService } from '../services/LogService.js';
 
 // Separate config structure to match new format
 interface DmuxConfig {
@@ -48,7 +50,7 @@ async function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
 export default function usePanes(panesFile: string, skipLoading: boolean) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const initialLoadComplete = useRef(false);
 
   const loadPanes = async () => {
     if (skipLoading) return;
@@ -107,7 +109,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       // Only attempt to recreate missing panes on initial load AND only if not already completed
       // Check loadedPanes.length (from file) instead of panes.length (React state)
       // This prevents recreation when panes are intentionally closed (e.g., after merge)
-      const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && panes.length === 0 && !initialLoadComplete)
+      const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && panes.length === 0 && !initialLoadComplete.current)
         ? reboundPanes.filter(pane => !allPaneIds.includes(pane.paneId))
         : [];
 
@@ -178,30 +180,146 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         });
       }
 
-      // Update pane IDs if they've changed (rebinding), but DON'T filter out panes
-      // This prevents race conditions where panes get removed from config
-      const activePanes = loadedPanes.map(loadedPane => {
-        // If we have tmux data and this pane's ID isn't found, try to rebind by title
-        if (allPaneIds.length > 0 && !allPaneIds.includes(loadedPane.paneId)) {
-          const remappedId = titleToId.get(loadedPane.slug);
-          if (remappedId) {
-            return { ...loadedPane, paneId: remappedId };
-          }
-        }
-        return loadedPane;
-      });
+      // Update pane IDs if they've changed (rebinding)
+      // Filter out dead shell panes, but keep worktree panes (they can be recreated)
+      LogService.getInstance().debug(
+        `Checking panes: loaded=${loadedPanes.length}, allPaneIds=[${allPaneIds.join(', ')}]`,
+        'shellDetection'
+      );
 
-      // For initial load (when panes is empty AND we haven't loaded before), set the loaded panes
-      if (panes.length === 0 && activePanes.length > 0 && !initialLoadComplete) {
-        // Initial load - set pane titles and update state
+      let activePanes = loadedPanes
+        .map(loadedPane => {
+          // If we have tmux data and this pane's ID isn't found, try to rebind by title
+          if (allPaneIds.length > 0 && !allPaneIds.includes(loadedPane.paneId)) {
+            LogService.getInstance().debug(
+              `Pane ${loadedPane.id} (${loadedPane.paneId}) not found in tmux, checking for rebind`,
+              'shellDetection'
+            );
+            const remappedId = titleToId.get(loadedPane.slug);
+            if (remappedId) {
+              LogService.getInstance().debug(
+                `Rebound pane ${loadedPane.id} from ${loadedPane.paneId} to ${remappedId}`,
+                'shellDetection'
+              );
+              return { ...loadedPane, paneId: remappedId };
+            }
+          }
+          return loadedPane;
+        })
+        .filter(pane => {
+          // If we have tmux data and this pane is not found
+          if (allPaneIds.length > 0 && !allPaneIds.includes(pane.paneId)) {
+            LogService.getInstance().debug(
+              `Pane ${pane.id} (${pane.paneId}) not in tmux. Type: ${pane.type}`,
+              'shellDetection'
+            );
+            // Remove shell panes that are no longer present
+            if (pane.type === 'shell') {
+              LogService.getInstance().debug(
+                `Removing dead shell pane: ${pane.id} (${pane.slug})`,
+                'shellDetection'
+              );
+              return false;
+            }
+            // Keep worktree panes (they can be recreated on restart)
+            LogService.getInstance().debug(
+              `Keeping worktree pane: ${pane.id} (will be recreated if needed)`,
+              'shellDetection'
+            );
+          }
+          return true;
+        });
+
+      // Track if shell panes were removed (for saving to config)
+      const shellPanesRemoved = loadedPanes.some(p =>
+        p.type === 'shell' && allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)
+      );
+
+      if (shellPanesRemoved) {
+        LogService.getInstance().debug(
+          `Shell panes were removed, will save updated config`,
+          'shellDetection'
+        );
+      }
+
+      // Detect untracked panes (manually created via tmux commands)
+      // Only detect if we have pane IDs from tmux AND not on initial load
+      let shellPanesAdded = false;
+      LogService.getInstance().debug(
+        `Shell detection check: allPaneIds=${allPaneIds.length}, initialLoadComplete=${initialLoadComplete.current}`,
+        'shellDetection'
+      );
+      if (allPaneIds.length > 0 && initialLoadComplete.current) {
+        try {
+          // Get controlPaneId and welcomePaneId from config
+          let controlPaneId: string | undefined;
+          let welcomePaneId: string | undefined;
+
+          try {
+            const configContent = await fs.readFile(panesFile, 'utf-8');
+            const config = JSON.parse(configContent);
+            controlPaneId = config.controlPaneId;
+            welcomePaneId = config.welcomePaneId;
+          } catch {
+            // Config not available, continue without filtering
+          }
+
+          const trackedPaneIds = activePanes.map(p => p.paneId);
+          LogService.getInstance().debug(
+            `Checking for untracked panes. Tracked: [${trackedPaneIds.join(', ')}], Control: ${controlPaneId}, Welcome: ${welcomePaneId}`,
+            'shellDetection'
+          );
+          const sessionName = ''; // Empty string will make tmux use current session
+          const untrackedPanes = getUntrackedPanes(sessionName, trackedPaneIds, controlPaneId, welcomePaneId);
+
+          if (untrackedPanes.length > 0) {
+            LogService.getInstance().debug(
+              `Found ${untrackedPanes.length} untracked panes: ${untrackedPanes.map(p => p.paneId).join(', ')}`,
+              'shellDetection'
+            );
+
+            // Create shell pane objects for each untracked pane
+            const newShellPanes: DmuxPane[] = [];
+            let nextId = getNextDmuxId(activePanes);
+
+            for (const paneInfo of untrackedPanes) {
+              const shellPane = createShellPane(paneInfo.paneId, nextId, paneInfo.title);
+              newShellPanes.push(shellPane);
+              nextId++;
+            }
+
+            // Add new shell panes to active panes
+            activePanes = [...activePanes, ...newShellPanes];
+            shellPanesAdded = true;
+
+            LogService.getInstance().debug(
+              `Added ${newShellPanes.length} shell panes to tracking`,
+              'shellDetection'
+            );
+          }
+        } catch (error) {
+          LogService.getInstance().debug(
+            'Failed to detect untracked panes',
+            'shellDetection'
+          );
+        }
+      }
+
+      // For initial load, set the loaded panes and mark as complete
+      if (!initialLoadComplete.current) {
+        LogService.getInstance().debug(
+          `Initial load: panes.length=${panes.length}, activePanes.length=${activePanes.length}`,
+          'shellDetection'
+        );
+        // Initial load - set pane titles and update state (even if activePanes is empty)
         // NOTE: Title updates disabled to prevent UI shifts
         // activePanes.forEach(pane => {
         //   try {
         //     execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
         //   } catch {}
         // });
-        setPanes(activePanes);
-        setInitialLoadComplete(true);
+        setPanes(activePanes); // Always update state, even if empty
+        initialLoadComplete.current = true;
         return; // Exit early for initial load
       }
 
@@ -215,7 +333,32 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       const currentPaneIds = panes.map(p => `${p.id}:${p.paneId}`).sort().join(',');
       const newPaneIds = activePanes.map(p => `${p.id}:${p.paneId}`).sort().join(',');
 
-      if (currentPaneIds !== newPaneIds) {
+      // Detect when we go from 0 panes to having panes - destroy welcome pane
+      const shouldDestroyWelcome = panes.length === 0 && activePanes.length > 0;
+      if (shouldDestroyWelcome) {
+        try {
+          // Load config to get welcomePaneId
+          const configContent = await fs.readFile(panesFile, 'utf-8');
+          const config = JSON.parse(configContent);
+          if (config.welcomePaneId) {
+            LogService.getInstance().debug(
+              `Destroying welcome pane ${config.welcomePaneId} because panes were added`,
+              'shellDetection'
+            );
+            const { destroyWelcomePane } = await import('../utils/welcomePane.js');
+            destroyWelcomePane(config.welcomePaneId);
+            // Clear welcomePaneId from config (will be saved below)
+            config.welcomePaneId = undefined;
+            // Write the config immediately to clear welcomePaneId
+            await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
+          }
+        } catch (error) {
+          LogService.getInstance().debug('Failed to destroy welcome pane', 'shellDetection');
+        }
+      }
+
+      // Update state and save if panes changed OR if shell panes were added/removed
+      if (currentPaneIds !== newPaneIds || shellPanesAdded || shellPanesRemoved) {
         // Update pane titles in tmux
         // NOTE: Title updates disabled to prevent UI shifts during polling
         // activePanes.forEach(pane => {
@@ -228,8 +371,12 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
         setPanes(activePanes);
 
-        // Only save to file if IDs were remapped (not just reordered)
-        if (idsChanged) {
+        // Save to file if IDs were remapped OR if shell panes were added/removed
+        if (idsChanged || shellPanesAdded || shellPanesRemoved) {
+          LogService.getInstance().debug(
+            `Saving config: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}, activePanes=${activePanes.length}`,
+            'shellDetection'
+          );
           await withWriteLock(async () => {
             // Re-read config in case it changed
             let currentConfig: DmuxConfig = { panes: [] };
@@ -244,8 +391,24 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
             // Update with remapped panes
             currentConfig.panes = activePanes;
             currentConfig.lastUpdated = new Date().toISOString();
+            LogService.getInstance().debug(
+              `Writing config with ${currentConfig.panes.length} panes`,
+              'shellDetection'
+            );
             await fs.writeFile(panesFile, JSON.stringify(currentConfig, null, 2));
+            LogService.getInstance().debug('Config file written successfully', 'shellDetection');
           });
+
+          // If shell panes were removed and we now have 0 panes, recreate welcome pane and recalculate layout
+          if (shellPanesRemoved && activePanes.length === 0) {
+            const { handleLastPaneRemoved } = await import('../utils/postPaneCleanup.js');
+            await handleLastPaneRemoved(process.cwd());
+          }
+        } else {
+          LogService.getInstance().debug(
+            `NOT saving: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}`,
+            'shellDetection'
+          );
         }
       }
     } catch {
@@ -311,12 +474,26 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
   useEffect(() => {
     loadPanes();
+
+    // Listen for pane split events from SIGUSR2 signal
+    const handlePaneSplit = () => {
+      LogService.getInstance().debug('Pane split event received, triggering immediate detection', 'shellDetection');
+      if (!skipLoading) {
+        loadPanes();
+      }
+    };
+    process.on('pane-split-detected' as any, handlePaneSplit);
+
     // Re-enabled: polling helps correct any layout shifts by triggering re-renders
     // Increased to 5 seconds to reduce frequency
     const interval = setInterval(() => {
       if (!skipLoading) loadPanes();
     }, 5000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      process.off('pane-split-detected' as any, handlePaneSplit);
+    };
   }, [skipLoading, panesFile]);
 
   return { panes, setPanes, isLoading, loadPanes, savePanes } as const;

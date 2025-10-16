@@ -2384,6 +2384,38 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       // Launch popup modal for new pane
       await launchNewPanePopup()
       return
+    } else if (
+      !isLoading &&
+      (input === "t" || (key.return && selectedIndex === panes.length + 1))
+    ) {
+      // Create a new terminal pane without an agent
+      try {
+        setIsCreatingPane(true)
+        setStatusMessage("Creating terminal pane...")
+
+        // Create a simple tmux pane split
+        const paneInfo = execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
+          encoding: "utf-8",
+        }).trim()
+
+        // Wait for pane creation to settle
+        await new Promise((resolve) => setTimeout(resolve, 300))
+
+        // The shell pane will be automatically detected by the shell pane detection system
+        // No need to manually add it to the panes array
+
+        setIsCreatingPane(false)
+        setStatusMessage("Terminal pane created")
+        setTimeout(() => setStatusMessage(""), 2000)
+
+        // Force a reload to pick up the new shell pane
+        await loadPanes()
+      } catch (error: any) {
+        setIsCreatingPane(false)
+        setStatusMessage(`Failed to create terminal pane: ${error.message}`)
+        setTimeout(() => setStatusMessage(""), 3000)
+      }
+      return
     } else if (input === "j" && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
       StateManager.getInstance().setDebugMessage(

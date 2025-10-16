@@ -106,7 +106,7 @@ export const ASCII_ART = {
 │      ████████  ███  ███  ████  ████████  ███  ███       │
 │                                                         │
 │              AI developer agent multiplexer             │
-│                Press [n] to create a pane               │
+│              Press [n] to create a new agent            │
 │                                                         │
 ╰─────────────────────────────────────────────────────────╯
   `,

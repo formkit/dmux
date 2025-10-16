@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 export default function useNavigation(terminalWidth: number, panesLength: number, isLoading: boolean) {
   const cardWidth = 35 + 2; // Card width + gap
   const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
-  const totalItems = panesLength + (isLoading ? 0 : 1);
+  const totalItems = panesLength + (isLoading ? 0 : 2); // Two buttons: agent and terminal
 
   const getCardGridPosition = useMemo(() => {
     return (index: number): { row: number; col: number } => {

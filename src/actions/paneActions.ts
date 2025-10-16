@@ -79,6 +79,12 @@ export async function closePane(
   pane: DmuxPane,
   context: ActionContext
 ): Promise<ActionResult> {
+  // For shell panes (no worktree), close immediately without options
+  if (pane.type === 'shell' || !pane.worktreePath) {
+    return executeCloseOption(pane, context, 'kill_only');
+  }
+
+  // For worktree panes, present options
   const options: ActionOption[] = [
     {
       id: 'kill_only',
@@ -86,24 +92,19 @@ export async function closePane(
       description: 'Keep worktree and branch',
       default: true,
     },
+    {
+      id: 'kill_and_clean',
+      label: 'Close and remove worktree',
+      description: 'Delete worktree but keep branch',
+      danger: true,
+    },
+    {
+      id: 'kill_clean_branch',
+      label: 'Close and delete everything',
+      description: 'Remove worktree and delete branch',
+      danger: true,
+    },
   ];
-
-  if (pane.worktreePath) {
-    options.push(
-      {
-        id: 'kill_and_clean',
-        label: 'Close and remove worktree',
-        description: 'Delete worktree but keep branch',
-        danger: true,
-      },
-      {
-        id: 'kill_clean_branch',
-        label: 'Close and delete everything',
-        description: 'Remove worktree and delete branch',
-        danger: true,
-      }
-    );
-  }
 
   return {
     type: 'choice',
@@ -253,24 +254,10 @@ async function executeCloseOption(
       // Trigger pane_closed hook (after everything is cleaned up)
       await triggerHook('pane_closed', projectRoot, pane);
 
-      // If we just closed the last pane, recreate the welcome pane using coordinated function
+      // If we just closed the last pane, recreate the welcome pane and recalculate layout
       if (updatedPanes.length === 0) {
-        try {
-          const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
-          const configContent = fs.readFileSync(configPath, 'utf-8');
-          const config: DmuxConfig = JSON.parse(configContent);
-
-          if (config.controlPaneId) {
-            const { createWelcomePaneCoordinated } = await import('../utils/welcomePaneManager.js');
-            const created = await createWelcomePaneCoordinated(projectRoot, config.controlPaneId);
-            if (created) {
-              LogService.getInstance().debug('Recreated welcome pane after closing last pane', 'paneActions');
-            }
-          }
-        } catch (error) {
-          // Log but don't fail - welcome pane is nice-to-have
-          LogService.getInstance().error('Failed to recreate welcome pane', 'paneActions', undefined, error instanceof Error ? error : undefined);
-        }
+        const { handleLastPaneRemoved } = await import('../utils/postPaneCleanup.js');
+        await handleLastPaneRemoved(projectRoot);
       }
 
       return {

@@ -71,9 +71,10 @@ class Dmux {
     // Set up global signal handlers for clean exit
     this.setupGlobalSignalHandlers();
 
-    // Set up resize hook for this session (if in tmux)
+    // Set up hooks for this session (if in tmux)
     if (process.env.TMUX) {
       this.setupResizeHook();
+      this.setupPaneSplitHook();
     }
 
     // Ensure .dmux directory exists and is in .gitignore
@@ -176,27 +177,30 @@ class Dmux {
         stdio: 'pipe',
       }).trim();
 
-      // Load existing config to check if control pane is already set
+      // Load existing config
       const configContent = await fs.readFile(this.panesFile, 'utf-8');
       const config = JSON.parse(configContent);
 
-      // If this is initial load (no controlPaneId in config), set up the sidebar width
-      if (!config.controlPaneId) {
-        // Resize control pane to sidebar width
-        // The rest of the terminal will be empty space until content panes are created
-        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
+      // Ensure panes array exists
+      if (!config.panes) {
+        config.panes = [];
+      }
 
+      // ALWAYS update controlPaneId with current pane (it changes on restart)
+      // This ensures layout manager always has the correct control pane ID
+      const needsUpdate = config.controlPaneId !== controlPaneId;
+      config.controlPaneId = controlPaneId;
+      config.controlPaneSize = SIDEBAR_WIDTH;
+
+      // If this is initial load or control pane changed, resize the sidebar
+      if (needsUpdate) {
+        // Resize control pane to sidebar width
+        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
         // Refresh client
         execSync('tmux refresh-client', { stdio: 'pipe' });
-
-        // Save control pane to config
-        config.controlPaneId = controlPaneId;
-        config.controlPaneSize = SIDEBAR_WIDTH;
+        // Save updated config
         config.lastUpdated = new Date().toISOString();
         await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
-      } else {
-        // Use existing config value
-        controlPaneId = config.controlPaneId;
       }
 
       // Create welcome pane if there are no dmux panes and no existing welcome pane
@@ -557,6 +561,18 @@ class Dmux {
     }
   }
 
+  private setupPaneSplitHook() {
+    try {
+      // Set up hook that sends SIGUSR2 to dmux process when a pane is split
+      // This allows us to detect manually created panes via Ctrl+b %
+      const pid = process.pid;
+      execSync(`tmux set-hook -t '${this.sessionName}' after-split-window 'run-shell "kill -USR2 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
+      LogService.getInstance().debug(`Set up pane split detection hook for session ${this.sessionName}`, 'Setup');
+    } catch (error) {
+      LogService.getInstance().debug('Failed to set up pane split hook', 'Setup');
+    }
+  }
+
   private cleanupResizeHook() {
     try {
       // Remove session-specific hook
@@ -567,11 +583,22 @@ class Dmux {
     }
   }
 
+  private cleanupPaneSplitHook() {
+    try {
+      // Remove pane split hook
+      execSync(`tmux set-hook -u -t '${this.sessionName}' after-split-window`, { stdio: 'pipe' });
+      LogService.getInstance().debug('Cleaned up pane split hook', 'Setup');
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
   private setupGlobalSignalHandlers() {
     const cleanTerminalExit = () => {
-      // Clean up resize hook
+      // Clean up hooks
       if (process.env.TMUX) {
         this.cleanupResizeHook();
+        this.cleanupPaneSplitHook();
       }
 
       // Clear screen multiple times to ensure no artifacts
@@ -598,6 +625,15 @@ class Dmux {
     // Handle Ctrl+C and SIGTERM
     process.on('SIGINT', cleanTerminalExit);
     process.on('SIGTERM', cleanTerminalExit);
+
+    // Handle SIGUSR2 for pane split detection
+    // This signal is sent by tmux hook when a new pane is created
+    process.on('SIGUSR2', () => {
+      // Log that a pane split was detected
+      LogService.getInstance().debug('Pane split detected via SIGUSR2, triggering immediate detection', 'shellDetection');
+      // Emit a custom event to trigger immediate shell pane detection
+      process.emit('pane-split-detected' as any);
+    });
 
     // Handle uncaught exceptions and unhandled rejections
     process.on('uncaughtException', (error) => {

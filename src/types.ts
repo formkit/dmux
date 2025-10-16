@@ -17,6 +17,8 @@ export interface DmuxPane {
   slug: string;
   prompt: string;
   paneId: string;
+  type?: 'worktree' | 'shell';  // Type of pane (defaults to 'worktree' for backward compat)
+  shellType?: string;  // Shell type for shell panes (bash, zsh, fish, etc)
   worktreePath?: string;
   testWindowId?: string;  // Background window for tests
   testStatus?: 'running' | 'passed' | 'failed';
