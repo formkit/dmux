@@ -444,6 +444,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         "newPanePopup.js"
       )
 
+      // Calculate popup height as 80% of terminal height to allow room for file list
+      const popupHeight = Math.floor(terminalHeight * 0.8);
+
       // Launch the popup non-blocking and track it
       const popupHandle = launchNodePopupNonBlocking<string>(
         popupScriptPath,
@@ -451,7 +454,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         {
           ...POPUP_POSITIONING.centeredWithSidebar(SIDEBAR_WIDTH),
           width: 90,
-          height: 22,
+          height: popupHeight,
           title: "  ✨ dmux - Create New Pane  ",
         }
       )

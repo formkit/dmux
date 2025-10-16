@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useFocus, useStdout } from 'ink';
 import { wrapText, findCursorInWrappedLines, preprocessPastedContent } from './utils/input.js';
+import fs from 'fs';
+import path from 'path';
+
+// Debug logging to file
+const DEBUG_LOG = path.join(process.cwd(), '.dmux', 'file-picker-debug.log')
+function debugLog(message: string, data?: any) {
+  const timestamp = new Date().toISOString()
+  const logLine = `[${timestamp}] ${message} ${data !== undefined ? JSON.stringify(data, null, 2) : ''}\n`
+  try {
+    fs.appendFileSync(DEBUG_LOG, logLine)
+  } catch (e) {
+    // Ignore write errors
+  }
+}
 
 interface CleanTextInputProps {
   value: string;
@@ -9,6 +23,13 @@ interface CleanTextInputProps {
   placeholder?: string;
   maxWidth?: number;
   maxVisibleLines?: number;
+  cursorPosition?: number; // Optional cursor position override
+  disableArrowKeys?: boolean; // Disable ALL arrow key navigation (for external controls)
+  disableUpDownArrows?: boolean; // Disable only up/down arrows (for external controls)
+  onCursorChange?: (position: number) => void; // Callback when cursor position changes
+  disableEscape?: boolean; // Disable ESC key (for external controls)
+  ignoreFocus?: boolean; // Always accept input regardless of focus state
+  onCancel?: () => void; // Callback when Ctrl+C is pressed with empty input
 }
 
 interface PastedContent {
@@ -24,9 +45,17 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   onSubmit,
   placeholder = '',
   maxWidth: propMaxWidth,
-  maxVisibleLines: propMaxVisibleLines
+  maxVisibleLines: propMaxVisibleLines,
+  cursorPosition,
+  disableArrowKeys = false,
+  disableUpDownArrows = false,
+  onCursorChange,
+  disableEscape = false,
+  ignoreFocus = false,
+  onCancel
 }) => {
-  const { isFocused } = useFocus({ autoFocus: true });
+  // Use id to maintain focus even when other components mount/unmount
+  const { isFocused } = useFocus({ autoFocus: true, id: 'clean-text-input' });
   const [cursor, setCursor] = useState(value.length);
   const { stdout } = useStdout();
   const [pastedItems, setPastedItems] = useState<Map<number, PastedContent>>(new Map());
@@ -63,6 +92,19 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
       setCursor(0);
     }
   }, [value.length, cursor]);
+
+  // Update cursor when cursorPosition prop changes
+  useEffect(() => {
+    if (cursorPosition !== undefined) {
+      const boundedPosition = Math.max(0, Math.min(cursorPosition, value.length));
+      setCursor(boundedPosition);
+    }
+  }, [cursorPosition, value.length]);
+
+  // Notify parent when cursor changes
+  useEffect(() => {
+    onCursorChange?.(cursor);
+  }, [cursor, onCursorChange]);
 
   // Enable bracketed paste mode with small delay to avoid blocking UI
   useEffect(() => {
@@ -219,13 +261,38 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   };
 
   useInput((input, key) => {
-    if (!isFocused) return;
+    debugLog('[CleanTextInput] useInput called', {
+      isFocused,
+      ignoreFocus,
+      input: input?.substring(0, 10),
+      keyPressed: Object.keys(key).filter(k => key[k as keyof typeof key]).join(','),
+      disableEscape,
+      disableArrowKeys
+    });
 
-    // Escape clears
-    if (key.escape) {
-      onChange('');
-      setCursor(0);
+    if (!isFocused && !ignoreFocus) {
+      debugLog('[CleanTextInput] Not focused and not ignoring focus, ignoring input');
       return;
+    }
+
+    if (!isFocused && ignoreFocus) {
+      debugLog('[CleanTextInput] Not focused but ignoring focus check, processing input');
+    }
+
+    // Note: Ctrl+C (SIGINT) is handled at the process level in newPanePopup, not here
+    // This is because SIGINT bypasses Ink's input system
+
+    // Escape clears (unless disabled by external control)
+    if (key.escape) {
+      debugLog('[CleanTextInput] ESC pressed', { disableEscape, value: value.substring(0, 50) });
+      if (!disableEscape) {
+        debugLog('[CleanTextInput] Clearing input');
+        onChange('');
+        setCursor(0);
+        return;
+      } else {
+        debugLog('[CleanTextInput] ESC disabled, ignoring');
+      }
     }
 
     // Shift+Enter adds newline
@@ -315,19 +382,19 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     }
 
     // Left arrow
-    if (key.leftArrow) {
+    if (key.leftArrow && !disableArrowKeys) {
       setCursor(Math.max(0, cursor - 1));
       return;
     }
 
     // Right arrow
-    if (key.rightArrow) {
+    if (key.rightArrow && !disableArrowKeys) {
       setCursor(Math.min(value.length, cursor + 1));
       return;
     }
 
     // Up/Down arrows for navigation (works with both hard and soft wrapped lines)
-    if (key.upArrow || key.downArrow) {
+    if ((key.upArrow || key.downArrow) && !disableArrowKeys && !disableUpDownArrows) {
       // Get wrapped lines to understand visual layout
       const wrapped = wrapText(value, maxWidth);
       const currentPos = findCursorInWrappedLines(wrapped, cursor);

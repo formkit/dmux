@@ -15,6 +15,7 @@ interface PopupWrapperProps<T = any> {
   onCancel?: () => void;
   onSuccess?: (data: T) => void;
   allowEscapeToCancel?: boolean;
+  shouldAllowCancel?: () => boolean; // Optional function to check if cancel is allowed
 }
 
 /**
@@ -30,12 +31,19 @@ export function PopupWrapper<T = any>({
   onCancel,
   onSuccess,
   allowEscapeToCancel = true,
+  shouldAllowCancel,
 }: PopupWrapperProps<T>) {
   const { exit } = useApp();
 
   // Handle ESC key for cancellation
   useInput((input, key) => {
     if (allowEscapeToCancel && key.escape) {
+      // Check if cancel is allowed (if shouldAllowCancel is provided)
+      if (shouldAllowCancel && !shouldAllowCancel()) {
+        // Cancel is blocked - do nothing
+        return;
+      }
+
       if (onCancel) {
         onCancel();
       }
