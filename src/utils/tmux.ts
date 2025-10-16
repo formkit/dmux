@@ -19,9 +19,11 @@ function calculateLayoutChecksum(layout: string): string {
   for (let i = 0; i < layout.length; i++) {
     checksum = (checksum >> 1) + ((checksum & 1) << 15);
     checksum += layout.charCodeAt(i);
+    checksum &= 0xFFFF; // Mask to 16 bits (critical!)
   }
 
-  return checksum.toString(16);
+  // Tmux expects a 4-digit hex checksum (pad with leading zeros)
+  return checksum.toString(16).padStart(4, '0');
 }
 
 export interface WindowDimensions {
@@ -211,13 +213,14 @@ export const generateSidebarGridLayout = (
   LogService.getInstance().debug(`Pane width: ${paneWidth}, borders: ${bordersWidth}`, 'Layout');
 
   // Build grid rows (vertical splits within content area)
+  // Use ABSOLUTE coordinates everywhere (tmux requirement - yes, even inside containers!)
   const gridRows: string[] = [];
   let paneIndex = 0;
-  let currentY = 0; // Track Y position relative to content area
+  let currentY = 0; // Track Y position (starts at 0, relative to content area)
 
   for (let row = 0; row < rows; row++) {
     const rowPanes: string[] = [];
-    let absoluteX = contentStartX; // Track ABSOLUTE X position from window origin (not relative!)
+    let absoluteX = contentStartX; // Track X position as ABSOLUTE from window origin
 
     // Calculate height for this row
     // Last row gets remainder to account for rounding
@@ -278,17 +281,17 @@ export const generateSidebarGridLayout = (
       contentPaneWidths[0] += remainder; // First pane gets remainder, not last!
     }
 
-    // Build row panes with calculated widths
+    // Build row panes with calculated widths using ABSOLUTE coordinates
     for (let col = 0; col < panesInThisRow.length; col++) {
       const paneId = panesInThisRow[col].replace('%', '');
       const isSpacerPane = rowHasSpacer && col === panesInThisRow.length - 1;
 
       const colWidth = isSpacerPane ? spacerWidth! : contentPaneWidths[col];
 
-      // CRITICAL: Use ABSOLUTE coordinates from window origin - tmux requires this!
+      // Use ABSOLUTE coordinates (from window origin) - tmux requirement
       rowPanes.push(`${colWidth}x${rowHeight},${absoluteX},${currentY},${paneId}`);
 
-      // Move X position right by actual pane width + 1 for border
+      // Move X position right by pane width + border
       absoluteX += colWidth;
       if (col < panesInThisRow.length - 1) {
         absoluteX += 1; // Add border
@@ -297,20 +300,19 @@ export const generateSidebarGridLayout = (
 
     paneIndex += panesInThisRow.length;
 
-    // Wrap multi-pane rows in horizontal container
+    // Wrap multi-pane rows in horizontal container (uses ABSOLUTE coordinates)
     if (rowPanes.length > 1) {
       // Horizontal split = use curly braces {}
-      // CRITICAL: Use ABSOLUTE coordinates from window origin, not relative to content area
+      // Row container also uses ABSOLUTE coordinates
       const rowString = `${contentWidth}x${rowHeight},${contentStartX},${currentY}{${rowPanes.join(',')}}`;
       LogService.getInstance().debug(`Row ${row}: ${rowPanes.length} panes → ${rowString}`, 'Layout');
       gridRows.push(rowString);
     } else if (rowPanes.length === 1) {
-      // Single pane - no container needed, just specify the pane
-      // CRITICAL: Use ABSOLUTE coordinates from window origin
+      // Single pane - no container needed, use ABSOLUTE coordinates
       const paneStr = rowPanes[0];
       const parts = paneStr.split(',');
-      parts[1] = contentStartX.toString(); // Update X coordinate to absolute
-      parts[2] = currentY.toString(); // Update Y coordinate to absolute
+      parts[1] = contentStartX.toString(); // X absolute
+      parts[2] = currentY.toString(); // Y absolute
       const singlePaneString = parts.join(',');
       LogService.getInstance().debug(`Row ${row}: 1 pane → ${singlePaneString}`, 'Layout');
       gridRows.push(singlePaneString);
@@ -487,7 +489,6 @@ export const enforceControlPaneSize = (
   } catch (error) {
     // Log error for debugging but don't crash
     const msg = 'Layout enforcement failed';
-    console.error(msg, error);
     LogService.getInstance().error(msg, 'tmux', undefined, error instanceof Error ? error : undefined);
   }
 };

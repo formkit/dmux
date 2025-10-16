@@ -120,6 +120,7 @@ function needsSpacerPane(
   config: LayoutConfig
 ): boolean {
   const { cols, rows } = layout
+  const MIN_SPACER_WIDTH = 20 // Minimum width for spacer pane (tmux may reject layouts with tiny panes)
 
   // No spacer needed if we have no content or only one column
   if (cols === 0 || cols === 1) return false
@@ -146,7 +147,26 @@ function needsSpacerPane(
   )
 
   // Need spacer if distributing width evenly would exceed comfortable width
-  return widthPerPane > config.MAX_COMFORTABLE_WIDTH
+  if (widthPerPane <= config.MAX_COMFORTABLE_WIDTH) {
+    return false
+  }
+
+  // Calculate what the spacer width would be
+  const contentPaneWidth = config.MAX_COMFORTABLE_WIDTH
+  const totalBorders = panesInLastRow // Total borders if we add spacer (between N+1 panes)
+  const totalContentWidth = panesInLastRow * contentPaneWidth
+  const spacerWidth = contentWidth - totalContentWidth - totalBorders
+
+  // Only use spacer if it would be wide enough (avoid tmux rejecting tiny panes)
+  if (spacerWidth < MIN_SPACER_WIDTH) {
+    LogService.getInstance().debug(
+      `Spacer would be too narrow (${spacerWidth} < ${MIN_SPACER_WIDTH}), skipping spacer`,
+      "Layout"
+    )
+    return false
+  }
+
+  return true
 }
 
 /**
@@ -327,30 +347,83 @@ export function recalculateAndApplyLayout(
     LogService.getInstance().debug(`Current pane positions before layout:\n${currentPanes}`, "Layout")
   } catch {}
 
-  setWindowDimensions(finalLayout.windowWidth, terminalHeight)
+  // CRITICAL ORDER: Resize sidebar FIRST (before window), then window
+  // This prevents tmux from redistributing window width changes to the sidebar
 
-  // Wait for tmux to complete the window resize before applying layout
+  // Step 1: Check sidebar width and resize if needed
+  // Do this BEFORE window resize to lock sidebar width
+  let sidebarResized = false
   try {
-    execSync("sleep 0.05", { stdio: "pipe" })
-  } catch {}
-
-  // CRITICAL: After window resize, tmux proportionally adjusts panes which can change sidebar width
-  // Force sidebar back to the exact width we want BEFORE applying layout
-  try {
-    execSync(`tmux resize-pane -t '${controlPaneId}' -x ${config.SIDEBAR_WIDTH}`, { stdio: "pipe" })
-
-    // Verify sidebar is actually the width we want
-    const actualWidth = execSync(
+    const currentSidebarWidth = execSync(
       `tmux display-message -t '${controlPaneId}' -p '#{pane_width}'`,
       { encoding: 'utf-8', stdio: 'pipe' }
     ).trim()
-    LogService.getInstance().debug(`Enforced sidebar: requested=${config.SIDEBAR_WIDTH}, actual=${actualWidth}`, "Layout")
 
-    if (actualWidth !== String(config.SIDEBAR_WIDTH)) {
-      LogService.getInstance().debug(`WARNING: Sidebar width mismatch!`, "Layout")
+    if (currentSidebarWidth !== String(config.SIDEBAR_WIDTH)) {
+      LogService.getInstance().debug(
+        `Resizing sidebar: ${currentSidebarWidth} → ${config.SIDEBAR_WIDTH}`,
+        "Layout"
+      )
+      execSync(`tmux resize-pane -t '${controlPaneId}' -x ${config.SIDEBAR_WIDTH}`, { stdio: "pipe" })
+      sidebarResized = true
+
+      // Wait for tmux to settle after sidebar resize
+      try {
+        execSync("sleep 0.1", { stdio: "pipe" })
+      } catch {}
+    } else {
+      LogService.getInstance().debug(`Sidebar width already correct: ${config.SIDEBAR_WIDTH}`, "Layout")
     }
   } catch (error) {
-    LogService.getInstance().debug(`Failed to resize sidebar: ${error}`, "Layout")
+    LogService.getInstance().debug(`Failed to check/resize sidebar: ${error}`, "Layout")
+  }
+
+  // Step 2: Check window dimensions and resize if needed
+  // Do this AFTER sidebar resize so sidebar width is locked
+  const currentWindowDims = getWindowDimensions()
+  const needsWindowResize = currentWindowDims.width !== finalLayout.windowWidth ||
+                            currentWindowDims.height !== terminalHeight
+
+  if (needsWindowResize) {
+    LogService.getInstance().debug(
+      `Resizing window: ${currentWindowDims.width}x${currentWindowDims.height} → ${finalLayout.windowWidth}x${terminalHeight}`,
+      "Layout"
+    )
+    setWindowDimensions(finalLayout.windowWidth, terminalHeight)
+
+    // Wait for tmux to complete the window resize
+    try {
+      execSync("sleep 0.05", { stdio: "pipe" })
+    } catch {}
+
+    // CRITICAL: Re-enforce sidebar width after window resize!
+    // Window resizes cause tmux to redistribute width changes to ALL panes including sidebar
+    try {
+      const sidebarWidthAfterResize = execSync(
+        `tmux display-message -t '${controlPaneId}' -p '#{pane_width}'`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim()
+
+      if (sidebarWidthAfterResize !== String(config.SIDEBAR_WIDTH)) {
+        LogService.getInstance().debug(
+          `Sidebar changed after window resize: ${sidebarWidthAfterResize} → ${config.SIDEBAR_WIDTH}, fixing`,
+          "Layout"
+        )
+        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${config.SIDEBAR_WIDTH}`, { stdio: "pipe" })
+
+        // Wait for tmux to settle
+        try {
+          execSync("sleep 0.1", { stdio: "pipe" })
+        } catch {}
+      }
+    } catch (error) {
+      LogService.getInstance().debug(`Failed to re-check sidebar after window resize: ${error}`, "Layout")
+    }
+  } else {
+    LogService.getInstance().debug(
+      `Window dimensions already correct: ${finalLayout.windowWidth}x${terminalHeight}`,
+      "Layout"
+    )
   }
 
   // Log window state after sidebar enforcement
@@ -515,9 +588,9 @@ function setWindowDimensions(width: number, height: number): void {
     execSync(`tmux resize-window -x ${width} -y ${height}`, { stdio: "pipe" })
   } catch (error) {
     // Log but don't fail - some tmux versions may not support this
-    console.error(
-      `Warning: Could not set window dimensions to ${width}x${height}:`,
-      error
+    LogService.getInstance().warn(
+      `Could not set window dimensions to ${width}x${height}: ${error}`,
+      "Layout"
     )
   }
 }
@@ -543,7 +616,7 @@ function applyPaneLayout(
         { stdio: "pipe" }
       )
     } catch (error) {
-      console.error("Error resizing control pane:", error)
+      LogService.getInstance().error("Error resizing control pane", "Layout", undefined, error instanceof Error ? error : undefined)
     }
     return
   }

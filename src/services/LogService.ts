@@ -88,10 +88,8 @@ export class LogService extends EventEmitter {
           console.log(prefix, message);
           break;
         case 'debug':
-          // Only show debug in development
-          if (process.env.DEBUG_DMUX) {
-            console.log(prefix, message);
-          }
+          // Always show debug logs
+          console.log(prefix, message);
           break;
       }
     }
