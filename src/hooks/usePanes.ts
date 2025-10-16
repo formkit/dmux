@@ -107,10 +107,11 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       });
 
       // Only attempt to recreate missing panes on initial load AND only if not already completed
-      // Check loadedPanes.length (from file) instead of panes.length (React state)
-      // This prevents recreation when panes are intentionally closed (e.g., after merge)
-      const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && panes.length === 0 && !initialLoadComplete.current)
-        ? reboundPanes.filter(pane => !allPaneIds.includes(pane.paneId))
+      // Recreate worktree panes (type !== 'shell') that exist in config but not in tmux
+      const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && !initialLoadComplete.current)
+        ? reboundPanes.filter(pane =>
+            !allPaneIds.includes(pane.paneId) && pane.type !== 'shell'
+          )
         : [];
 
       // Recreate missing panes (only on initial load)
@@ -187,6 +188,9 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         'shellDetection'
       );
 
+      // Track worktree panes that need to be recreated
+      const worktreePanesToRecreate: DmuxPane[] = [];
+
       let activePanes = loadedPanes
         .map(loadedPane => {
           // If we have tmux data and this pane's ID isn't found, try to rebind by title
@@ -221,6 +225,17 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
               );
               return false;
             }
+            // For worktree panes after initial load, queue them for recreation
+            // This handles the case where user kills pane with Ctrl+b x
+            // (intentional closes via menu remove the pane from config entirely)
+            if (initialLoadComplete.current && pane.worktreePath) {
+              LogService.getInstance().debug(
+                `Worktree pane ${pane.id} (${pane.slug}) was killed, will recreate it`,
+                'shellDetection'
+              );
+              worktreePanesToRecreate.push(pane);
+              return true; // Keep it in the list
+            }
             // Keep worktree panes (they can be recreated on restart)
             LogService.getInstance().debug(
               `Keeping worktree pane: ${pane.id} (will be recreated if needed)`,
@@ -240,6 +255,78 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           `Shell panes were removed, will save updated config`,
           'shellDetection'
         );
+      }
+
+      // Recreate worktree panes that were killed (e.g., via Ctrl+b x)
+      if (worktreePanesToRecreate.length > 0) {
+        LogService.getInstance().debug(
+          `Recreating ${worktreePanesToRecreate.length} killed worktree panes`,
+          'shellDetection'
+        );
+
+        for (const pane of worktreePanesToRecreate) {
+          try {
+            // Create new pane in the worktree directory
+            const newPaneId = execSync(
+              `tmux split-window -h -P -F '#{pane_id}' -c "${pane.worktreePath}"`,
+              { encoding: 'utf-8', stdio: 'pipe' }
+            ).trim();
+
+            // Set pane title
+            execSync(`tmux select-pane -t '${newPaneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+
+            // Update the pane with new ID
+            pane.paneId = newPaneId;
+
+            // Send a message to the pane indicating it was restored
+            const slug = pane.slug.replace(/'/g, "'\\''");
+            const promptPreview = (pane.prompt?.substring(0, 50) || '').replace(/'/g, "'\\''");
+            execSync(`tmux send-keys -t '${newPaneId}' "echo '# Pane restored: ${slug}'" Enter`, { stdio: 'pipe' });
+            if (pane.prompt) {
+              execSync(`tmux send-keys -t '${newPaneId}' "echo '# Original prompt: ${promptPreview}...'" Enter`, { stdio: 'pipe' });
+            }
+            execSync(`tmux send-keys -t '${newPaneId}' "cd ${pane.worktreePath}" Enter`, { stdio: 'pipe' });
+
+            LogService.getInstance().debug(
+              `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
+              'shellDetection'
+            );
+          } catch (error) {
+            LogService.getInstance().debug(
+              `Failed to recreate worktree pane ${pane.id} (${pane.slug})`,
+              'shellDetection'
+            );
+          }
+        }
+
+        // Recalculate layout after recreating panes
+        try {
+          const configContent = await fs.readFile(panesFile, 'utf-8');
+          const config = JSON.parse(configContent);
+          if (config.controlPaneId) {
+            const { recalculateAndApplyLayout } = await import('../utils/layoutManager.js');
+            const { getTerminalDimensions } = await import('../utils/tmux.js');
+            const dimensions = getTerminalDimensions();
+
+            const contentPaneIds = activePanes.map(p => p.paneId);
+            recalculateAndApplyLayout(
+              config.controlPaneId,
+              contentPaneIds,
+              dimensions.width,
+              dimensions.height
+            );
+
+            LogService.getInstance().debug(
+              `Recalculated layout after recreating worktree panes`,
+              'shellDetection'
+            );
+          }
+        } catch (error) {
+          LogService.getInstance().debug(
+            'Failed to recalculate layout after recreating worktree panes',
+            'shellDetection'
+          );
+        }
       }
 
       // Detect untracked panes (manually created via tmux commands)
