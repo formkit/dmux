@@ -380,31 +380,36 @@ class Dmux {
       await fs.mkdir(worktreesDir, { recursive: true });
     }
 
+    // Check if .dmux is ignored by either this repo's .gitignore or global gitignore
+    const isIgnored = (() => {
+      try {
+        execSync(`git check-ignore --quiet "${dmuxDir}"`);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    })();
+
+    if (isIgnored) {
+      return;
+    }
+
     // Check if .gitignore exists and if .dmux is in it
     const gitignorePath = path.join(this.projectRoot, '.gitignore');
     if (await this.fileExists(gitignorePath)) {
-      const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
-      const lines = gitignoreContent.split('\n');
-      const hasDmuxEntry = lines.some(line =>
-        line.trim() === '.dmux' ||
-        line.trim() === '.dmux/' ||
-        line.trim() === '/.dmux' ||
-        line.trim() === '/.dmux/'
+
+      // Prompt user to add .dmux to .gitignore
+      const shouldAdd = await this.promptUser(
+        'The .dmux directory is not in .gitignore. Would you like to add it? (y/n): '
       );
 
-      if (!hasDmuxEntry) {
-        // Prompt user to add .dmux to .gitignore
-        const shouldAdd = await this.promptUser(
-          'The .dmux directory is not in .gitignore. Would you like to add it? (y/n): '
-        );
-
-        if (shouldAdd) {
-          // Add .dmux to .gitignore
-          const newGitignore = gitignoreContent.endsWith('\n')
-            ? gitignoreContent + '.dmux/\n'
-            : gitignoreContent + '\n.dmux/\n';
-          await fs.writeFile(gitignorePath, newGitignore);
-        }
+      if (shouldAdd) {
+        // Add .dmux to .gitignore
+        const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+        const newGitignore = gitignoreContent.endsWith('\n')
+          ? gitignoreContent + '.dmux/\n'
+          : gitignoreContent + '\n.dmux/\n';
+        await fs.writeFile(gitignorePath, newGitignore);
       }
     } else {
       // No .gitignore exists, prompt to create one
