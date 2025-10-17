@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import chalk from 'chalk';
 import fs from 'fs/promises';
 import * as fsSync from 'fs';
@@ -381,15 +381,7 @@ class Dmux {
     }
 
     // Check if .dmux is ignored by either this repo's .gitignore or global gitignore
-    const isIgnored = (() => {
-      try {
-        execSync(`git check-ignore --quiet "${dmuxDir}"`);
-        return true;
-      } catch (error) {
-        return false;
-      }
-    })();
-
+    const isIgnored = spawnSync('git', ['check-ignore', '--quiet', dmuxDir]).status === 0;
     if (isIgnored) {
       return;
     }
