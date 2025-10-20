@@ -33,10 +33,10 @@ class Dmux {
   private autoUpdater: AutoUpdater;
   private server: DmuxServer;
   private stateManager: StateManager;
-  private static cachedProjectRoot: string | null = null;
 
   constructor() {
-    // Get git root directory to determine project scope (cached)
+    // Get git root directory to determine project scope
+    // NOTE: No caching - must be re-evaluated per instance to support multiple projects
     this.projectRoot = this.getProjectRoot();
     // Get project name from git root directory
     this.projectName = path.basename(this.projectRoot);
@@ -330,11 +330,6 @@ class Dmux {
   }
 
   private getProjectRoot(): string {
-    // Return cached value if available
-    if (Dmux.cachedProjectRoot) {
-      return Dmux.cachedProjectRoot;
-    }
-
     try {
       // First, try to get the main worktree if we're in a git repository
       // This ensures we always use the main repository root, even when run from a worktree
@@ -347,7 +342,6 @@ class Dmux {
       const mainWorktreeLine = worktreeList.split('\n')[0];
       if (mainWorktreeLine && mainWorktreeLine.startsWith('worktree ')) {
         const mainWorktreePath = mainWorktreeLine.substring(9).trim();
-        Dmux.cachedProjectRoot = mainWorktreePath;
         return mainWorktreePath;
       }
 
@@ -356,13 +350,10 @@ class Dmux {
         encoding: 'utf-8',
         stdio: 'pipe'
       }).trim();
-      Dmux.cachedProjectRoot = gitRoot;
       return gitRoot;
     } catch {
       // Fallback to current directory if not in a git repo
-      const cwd = process.cwd();
-      Dmux.cachedProjectRoot = cwd;
-      return cwd;
+      return process.cwd();
     }
   }
 
