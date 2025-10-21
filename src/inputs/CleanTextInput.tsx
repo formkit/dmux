@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useFocus, useStdout } from 'ink';
-import { wrapText, findCursorInWrappedLines, preprocessPastedContent } from './utils/input.js';
+import { wrapText, findCursorInWrappedLines, preprocessPastedContent } from '../utils/input.js';
 import fs from 'fs';
 import path from 'path';
 

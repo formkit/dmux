@@ -1,4 +1,4 @@
-import { capturePaneContent } from './utils/paneCapture.js';
+import { capturePaneContent } from '../utils/paneCapture.js';
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';

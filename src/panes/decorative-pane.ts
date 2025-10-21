@@ -3,7 +3,7 @@
 // Decorative pane renderer - displays ASCII art with animated falling binary characters
 // This runs continuously without showing a command prompt
 
-import { ASCII_ART as ASCII_ART_EXPORTS } from "./utils/asciiArt.js"
+import { ASCII_ART as ASCII_ART_EXPORTS } from "../utils/asciiArt.js"
 
 // Parse the ASCII art string into an array of lines
 const ASCII_ART = ASCII_ART_EXPORTS.dmuxWelcome.trim().split("\n")

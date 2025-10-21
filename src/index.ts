@@ -11,7 +11,7 @@ import React from 'react';
 import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import DmuxApp from './DmuxApp.js';
-import { AutoUpdater } from './AutoUpdater.js';
+import { AutoUpdater } from './services/AutoUpdater.js';
 import readline from 'readline';
 import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';

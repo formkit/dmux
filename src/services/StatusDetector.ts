@@ -2,8 +2,8 @@ import { EventEmitter } from 'events';
 import type { DmuxPane, AgentStatus, OptionChoice, PotentialHarm } from '../types.js';
 import { WorkerMessageBus } from './WorkerMessageBus.js';
 import { PaneWorkerManager } from './PaneWorkerManager.js';
-import { PaneAnalyzer } from '../PaneAnalyzer.js';
-import type { PaneAnalysis } from '../PaneAnalyzer.js';
+import { PaneAnalyzer } from './PaneAnalyzer.js';
+import type { PaneAnalysis } from './PaneAnalyzer.js';
 import type { OutboundMessage } from '../workers/WorkerMessages.js';
 import { StateManager } from '../shared/StateManager.js';
 

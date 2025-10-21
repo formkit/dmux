@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import StyledTextInput from '../StyledTextInput.js';
+import StyledTextInput from '../inputs/StyledTextInput.js';
 
 interface CommandPromptDialogProps {
   type: 'test' | 'dev';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { execSync, exec } from 'child_process';
-import CleanTextInput from './CleanTextInput.js';
+import CleanTextInput from '../inputs/CleanTextInput.js';
 import chalk from 'chalk';
 
 interface MergePaneProps {

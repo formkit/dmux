@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useApp } from 'ink';
-import CleanTextInput from '../../CleanTextInput.js';
+import CleanTextInput from '../../inputs/CleanTextInput.js';
 import { PopupContainer, PopupInputBox, PopupWrapper, writeSuccessAndExit } from '../components/index.js';
 import { PopupFooters } from '../config.js';
 
