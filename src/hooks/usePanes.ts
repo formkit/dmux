@@ -98,16 +98,31 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       }
 
       // Attempt to rebind panes whose IDs changed by matching on title (slug)
+      // IMPORTANT: Only rebind if the pane ID is truly missing (pane was killed and recreated)
+      // Do NOT rebind if the title simply changed (user renamed it)
       const reboundPanes = loadedPanes.map(p => {
+        // If pane ID exists in tmux, keep using it (even if title changed)
+        if (allPaneIds.length > 0 && allPaneIds.includes(p.paneId)) {
+          return p; // Pane still exists, no rebinding needed
+        }
+
+        // Pane ID missing - try to find it by title match
         if (allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)) {
           const remappedId = titleToId.get(p.slug);
-          if (remappedId) return { ...p, paneId: remappedId };
+          if (remappedId) {
+            LogService.getInstance().debug(
+              `Rebound pane ${p.id} from ${p.paneId} to ${remappedId} (matched by title: ${p.slug})`,
+              'shellDetection'
+            );
+            return { ...p, paneId: remappedId };
+          }
         }
         return p;
       });
 
       // Only attempt to recreate missing panes on initial load AND only if not already completed
       // Recreate worktree panes (type !== 'shell') that exist in config but not in tmux
+      // AND could not be rebound by title match
       const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && !initialLoadComplete.current)
         ? reboundPanes.filter(pane =>
             !allPaneIds.includes(pane.paneId) && pane.type !== 'shell'
@@ -191,9 +206,16 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       // Track worktree panes that need to be recreated
       const worktreePanesToRecreate: DmuxPane[] = [];
 
-      let activePanes = loadedPanes
+      let activePanes = reboundPanes
         .map(loadedPane => {
+          // Already rebound above - this is a second check after potential recreation
+          // If pane ID exists in tmux, keep it (don't rebind based on title)
+          if (allPaneIds.length > 0 && allPaneIds.includes(loadedPane.paneId)) {
+            return loadedPane; // Pane still exists, use current ID
+          }
+
           // If we have tmux data and this pane's ID isn't found, try to rebind by title
+          // This handles panes that were recreated in the previous step
           if (allPaneIds.length > 0 && !allPaneIds.includes(loadedPane.paneId)) {
             LogService.getInstance().debug(
               `Pane ${loadedPane.id} (${loadedPane.paneId}) not found in tmux, checking for rebind`,
@@ -444,18 +466,33 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         }
       }
 
+      // Enforce pane titles always match slug (worktree name)
+      // This ensures dmux config is the source of truth for pane names
+      activePanes.forEach(pane => {
+        if (allPaneIds.includes(pane.paneId)) {
+          try {
+            // Get current title to check if update is needed
+            const currentTitle = execSync(
+              `tmux display-message -t '${pane.paneId}' -p '#{pane_title}'`,
+              { encoding: 'utf-8', stdio: 'pipe' }
+            ).trim();
+
+            // Only update if title doesn't match slug (avoids unnecessary tmux commands)
+            if (currentTitle !== pane.slug) {
+              execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+              LogService.getInstance().debug(
+                `Synced pane title: ${pane.id} "${currentTitle}" → "${pane.slug}"`,
+                'shellDetection'
+              );
+            }
+          } catch {
+            // Ignore errors (pane might have been killed)
+          }
+        }
+      });
+
       // Update state and save if panes changed OR if shell panes were added/removed
       if (currentPaneIds !== newPaneIds || shellPanesAdded || shellPanesRemoved) {
-        // Update pane titles in tmux
-        // NOTE: Title updates disabled to prevent UI shifts during polling
-        // activePanes.forEach(pane => {
-        //   if (allPaneIds.includes(pane.paneId)) {
-        //     try {
-        //       execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-        //     } catch {}
-        //   }
-        // });
-
         setPanes(activePanes);
 
         // Save to file if IDs were remapped OR if shell panes were added/removed
