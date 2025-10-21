@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react"
 import { Box, Text, useInput, useApp, useStdout } from "ink"
 import { execSync } from "child_process"
-import fs from "fs/promises"
-import path from "path"
 import { createRequire } from "module"
 
 // Hooks
@@ -18,7 +16,7 @@ import usePaneCreation from "./hooks/usePaneCreation.js"
 import useActionSystem from "./hooks/useActionSystem.js"
 
 // Utils
-import { getPanePositions, enforceControlPaneSize } from "./utils/tmux.js"
+import { enforceControlPaneSize } from "./utils/tmux.js"
 import { SIDEBAR_WIDTH } from "./utils/layoutManager.js"
 import { suggestCommand } from "./utils/commands.js"
 import { getMainBranch } from "./utils/git.js"
@@ -33,10 +31,7 @@ import {
   PaneAction,
   type ActionResult,
 } from "./actions/index.js"
-import {
-  SettingsManager,
-  SETTING_DEFINITIONS,
-} from "./utils/settingsManager.js"
+import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
@@ -47,8 +42,6 @@ const require = createRequire(import.meta.url)
 const packageJson = require("../package.json")
 import type {
   DmuxPane,
-  PanePosition,
-  ProjectSettings,
   DmuxAppProps,
 } from "./types.js"
 import PanesGrid from "./components/panes/PanesGrid.js"
@@ -57,7 +50,6 @@ import FileCopyPrompt from "./components/ui/FileCopyPrompt.js"
 import LoadingIndicator from "./components/indicators/LoadingIndicator.js"
 import RunningIndicator from "./components/indicators/RunningIndicator.js"
 import UpdatingIndicator from "./components/indicators/UpdatingIndicator.js"
-import CreatingIndicator from "./components/indicators/CreatingIndicator.js"
 import FooterHelp from "./components/ui/FooterHelp.js"
 
 const DmuxApp: React.FC<DmuxAppProps> = ({
@@ -103,11 +95,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Update state handled by hook
   const {
     updateInfo,
-    showUpdateDialog,
     isUpdating,
-    performUpdate,
-    skipUpdate,
-    dismissUpdate,
     updateAvailable,
   } = useAutoUpdater(autoUpdater, setStatusMessage)
   const { exit } = useApp()
@@ -173,9 +161,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const {
     copyNonGitFiles,
     runCommandInternal,
-    monitorTestOutput,
-    monitorDevOutput,
-    attachBackgroundWindow,
   } = usePaneRunner({
     panes,
     savePanes,
@@ -269,7 +254,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   })
 
   // Initialize services
-  const { popupManager, paneCreationService } = useServices({
+  const { popupManager } = useServices({
     // PopupManager config
     sidebarWidth: SIDEBAR_WIDTH,
     projectRoot: projectRoot || process.cwd(),
@@ -634,155 +619,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     },
   })
 
-  const jumpToPane = (paneId: string) => {
-    try {
-      // Enable pane borders to show titles (if not already enabled)
-      try {
-        execSync(`tmux set-option -g pane-border-status top`, { stdio: "pipe" })
-      } catch {
-        // Ignore if already set or fails
-      }
-
-      execSync(`tmux select-pane -t '${paneId}'`, { stdio: "pipe" })
-
-      // Clear screen after jump to remove artifacts
-      clearScreen()
-
-      setStatusMessage("Jumped to pane")
-      setTimeout(() => setStatusMessage(""), 2000)
-    } catch {
-      setStatusMessage("Failed to jump - pane may be closed")
-      setTimeout(() => setStatusMessage(""), 2000)
-    }
-  }
-
-  const runCommand = async (type: "test" | "dev", pane: DmuxPane) => {
-    if (!pane.worktreePath) {
-      setStatusMessage("No worktree path for this pane")
-      setTimeout(() => setStatusMessage(""), 2000)
-      return
-    }
-
-    const command =
-      type === "test" ? projectSettings.testCommand : projectSettings.devCommand
-    const isFirstRun =
-      type === "test"
-        ? !projectSettings.firstTestRun
-        : !projectSettings.firstDevRun
-
-    if (!command) {
-      // No command configured, prompt user
-      setShowCommandPrompt(type)
-      return
-    }
-
-    // Check if this is the first run and offer to copy non-git files
-    if (isFirstRun) {
-      // Show file copy prompt and wait for response
-      setShowFileCopyPrompt(true)
-      setCurrentCommandType(type)
-      setStatusMessage(`First time running ${type} command...`)
-
-      // Return here - the actual command will be run after user responds to prompt
-      return
-    }
-
-    try {
-      setRunningCommand(true)
-      setStatusMessage(`Starting ${type} in background window...`)
-
-      // Kill existing window if present
-      const existingWindowId =
-        type === "test" ? pane.testWindowId : pane.devWindowId
-      if (existingWindowId) {
-        try {
-          execSync(`tmux kill-window -t '${existingWindowId}'`, {
-            stdio: "pipe",
-          })
-        } catch {}
-      }
-
-      // Create a new background window for the command
-      const windowName = `${pane.slug}-${type}`
-      const windowId = execSync(
-        `tmux new-window -d -n '${windowName}' -P -F '#{window_id}'`,
-        { encoding: "utf-8", stdio: "pipe" }
-      ).trim()
-
-      // Create a log file to capture output
-      const logFile = `/tmp/dmux-${pane.id}-${type}.log`
-
-      // Build the command with output capture
-      const fullCommand =
-        type === "test"
-          ? `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`
-          : `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`
-
-      // Send the command to the new window
-      execSync(
-        `tmux send-keys -t '${windowId}' '${fullCommand.replace(
-          /'/g,
-          "'\\''"
-        )}'`,
-        { stdio: "pipe" }
-      )
-      execSync(`tmux send-keys -t '${windowId}' Enter`, { stdio: "pipe" })
-
-      // Update pane with window info
-      const updatedPane: DmuxPane = {
-        ...pane,
-        [type === "test" ? "testWindowId" : "devWindowId"]: windowId,
-        [type === "test" ? "testStatus" : "devStatus"]: "running",
-      }
-
-      const updatedPanes = panes.map((p) =>
-        p.id === pane.id ? updatedPane : p
-      )
-      await savePanes(updatedPanes)
-
-      // Start monitoring the output
-      if (type === "test") {
-        // For tests, monitor for completion
-        setTimeout(() => monitorTestOutput(pane.id, logFile), 2000)
-      } else {
-        // For dev, monitor for server URL
-        setTimeout(() => monitorDevOutput(pane.id, logFile), 2000)
-      }
-
-      setRunningCommand(false)
-      setStatusMessage(
-        `${type === "test" ? "Test" : "Dev server"} started in background`
-      )
-      setTimeout(() => setStatusMessage(""), 3000)
-    } catch (error) {
-      setRunningCommand(false)
-      setStatusMessage(`Failed to run ${type} command`)
-      setTimeout(() => setStatusMessage(""), 3000)
-    }
-  }
+  // jumpToPane and runCommand functions removed - now handled by action system and pane runner
 
   // Update handling moved to useAutoUpdater
 
-  // Helper function to clear screen artifacts
-  const clearScreen = () => {
-    // CRITICAL: Force Ink to re-render FIRST, before clearing
-    // This prevents blank screen by ensuring React starts rendering immediately
-    setForceRepaintTrigger((prev) => prev + 1)
-
-    // Multiple clearing strategies to prevent artifacts
-    // 1. Clear screen with ANSI codes
-    process.stdout.write("\x1b[2J\x1b[H")
-
-    // 2. Clear tmux history
-    try {
-      execSync("tmux clear-history", { stdio: "pipe" })
-    } catch {}
-
-    // 3. Force tmux to refresh the display
-    try {
-      execSync("tmux refresh-client", { stdio: "pipe" })
-    } catch {}
-  }
+  // clearScreen function removed - no longer used (was only used by removed jumpToPane function)
 
   // Cleanup function for exit
   const cleanExit = () => {
@@ -1049,9 +890,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         setStatusMessage("Creating terminal pane...")
 
         // Create a simple tmux pane split
-        const paneInfo = execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
+        execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
           encoding: "utf-8",
-        }).trim()
+          stdio: "pipe",
+        })
 
         // Wait for pane creation to settle
         await new Promise((resolve) => setTimeout(resolve, 300))
