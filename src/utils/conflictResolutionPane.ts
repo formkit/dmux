@@ -6,7 +6,7 @@
 
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
-import { enforceControlPaneSize } from './tmux.js';
+import { enforceControlPaneSize, splitPane } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
 
@@ -48,9 +48,7 @@ export async function createConflictResolutionPane(
   }
 
   // Create new pane
-  const paneInfo = execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
-    encoding: 'utf-8',
-  }).trim();
+  const paneInfo = splitPane();
 
   // Wait for pane creation to settle
   await new Promise((resolve) => setTimeout(resolve, 500));

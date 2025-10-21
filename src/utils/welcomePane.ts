@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import { renderAsciiArt } from './asciiArt.js';
 import { LogService } from '../services/LogService.js';
-import { getTerminalDimensions } from './tmux.js';
+import { getTerminalDimensions, splitPane } from './tmux.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
 
 /**
@@ -17,12 +17,7 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
   try {
     // Split horizontally to the right of the control pane
     // This creates a new pane that takes up the rest of the horizontal space
-    const result = execSync(
-      `tmux split-window -h -t '${controlPaneId}' -P -F '#{pane_id}'`,
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
-
-    const welcomePaneId = result;
+    const welcomePaneId = splitPane({ targetPane: controlPaneId });
 
     if (!welcomePaneId) {
       logService.error('Failed to create welcome pane: no pane ID returned', 'WelcomePane');

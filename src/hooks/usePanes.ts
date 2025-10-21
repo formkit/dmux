@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
 import { getUntrackedPanes, createShellPane, getNextDmuxId } from '../utils/shellPaneDetection.js';
 import { LogService } from '../services/LogService.js';
+import { splitPane } from '../utils/tmux.js';
 
 // Separate config structure to match new format
 interface DmuxConfig {
@@ -133,10 +134,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       for (const missingPane of missingPanes) {
         try {
           // Create new pane
-          const newPaneId = execSync(`tmux split-window -h -P -F '#{pane_id}' -c "${missingPane.worktreePath || process.cwd()}"`, {
-            encoding: 'utf-8',
-            stdio: 'pipe'
-          }).trim();
+          const newPaneId = splitPane({ cwd: missingPane.worktreePath || process.cwd() });
 
           // Set pane title
           execSync(`tmux select-pane -t '${newPaneId}' -T "${missingPane.slug}"`, { stdio: 'pipe' });
@@ -289,10 +287,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         for (const pane of worktreePanesToRecreate) {
           try {
             // Create new pane in the worktree directory
-            const newPaneId = execSync(
-              `tmux split-window -h -P -F '#{pane_id}' -c "${pane.worktreePath}"`,
-              { encoding: 'utf-8', stdio: 'pipe' }
-            ).trim();
+            const newPaneId = splitPane({ cwd: pane.worktreePath });
 
             // Set pane title
             execSync(`tmux select-pane -t '${newPaneId}' -T "${pane.slug}"`, { stdio: 'pipe' });

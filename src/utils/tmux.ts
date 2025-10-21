@@ -89,6 +89,41 @@ export const getPanePositions = (): PanePosition[] => {
 };
 
 /**
+ * Creates a new tmux pane by splitting horizontally
+ * @param options - Split pane options
+ * @param options.targetPane - Pane to split from (optional)
+ * @param options.cwd - Working directory for new pane (optional)
+ * @param options.command - Command to run in new pane (optional)
+ * @returns The new pane ID
+ */
+export const splitPane = (options: {
+  targetPane?: string;
+  cwd?: string;
+  command?: string;
+} = {}): string => {
+  const { targetPane, cwd, command } = options;
+
+  let cmd = 'tmux split-window -h -P -F \'#{pane_id}\'';
+
+  if (targetPane) {
+    cmd += ` -t '${targetPane}'`;
+  }
+
+  if (cwd) {
+    cmd += ` -c "${cwd}"`;
+  }
+
+  if (command) {
+    cmd += ` "${command}"`;
+  }
+
+  return execSync(cmd, {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  }).trim();
+};
+
+/**
  * Gets all pane IDs in current window
  */
 export const getAllPaneIds = (): string[] => {

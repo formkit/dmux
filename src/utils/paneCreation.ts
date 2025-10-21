@@ -6,6 +6,7 @@ import {
   setupSidebarLayout,
   getContentPaneIds,
   getTerminalDimensions,
+  splitPane,
 } from './tmux.js';
 import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import { generateSlug } from './slug.js';
@@ -181,10 +182,7 @@ export async function createPane(
     const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
     // Always split horizontally - the layout manager will organize panes optimally
-    paneInfo = execSync(
-      `tmux split-window -h -t '${targetPane}' -P -F '#{pane_id}'`,
-      { encoding: 'utf-8' }
-    ).trim();
+    paneInfo = splitPane({ targetPane });
   }
 
   // Wait for pane creation to settle
