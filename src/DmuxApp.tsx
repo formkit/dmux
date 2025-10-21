@@ -268,11 +268,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     settingsManager,
     projectSettings,
 
-    // PaneCreation config
-    projectName,
-    controlPaneId,
-    dmuxVersion: packageJson.version,
-
     // Callbacks
     setStatusMessage,
     setIgnoreInput,

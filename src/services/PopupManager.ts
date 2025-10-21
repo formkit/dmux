@@ -480,60 +480,6 @@ export class PopupManager {
     }
   }
 
-  async launchMergePopup(pane: DmuxPane): Promise<{
-    merged: boolean
-    closedPane?: boolean
-    error?: string
-  } | null> {
-    LogService.getInstance().debug(
-      `launchMergePopup called for pane: ${pane.slug}`,
-      "MergePopup"
-    )
-
-    if (!this.checkPopupSupport()) return null
-    if (!pane.worktreePath) {
-      this.showTempMessage("This pane has no worktree to merge")
-      return null
-    }
-
-    try {
-      // Check if popup script exists
-      const popupScriptPath = this.getPopupScriptPath("mergePopup.js")
-      await fs.access(popupScriptPath)
-
-      const mainRepoPath = pane.worktreePath.replace(
-        /\/\.dmux\/worktrees\/[^/]+$/,
-        ""
-      )
-      const { getMainBranch } = await import("../utils/git.js")
-
-      const result = await this.launchPopup<{
-        merged: boolean
-        closedPane?: boolean
-        error?: string
-      }>(
-        "mergePopup.js",
-        [],
-        {
-          width: 80,
-          height: 30,
-          title: `🔀 Merge: ${pane.slug}`,
-          positioning: "large",
-        },
-        {
-          paneSlug: pane.slug,
-          worktreePath: pane.worktreePath,
-          mainRepoPath,
-          mainBranch: getMainBranch(),
-        }
-      )
-
-      return this.handleResult(result)
-    } catch (error: any) {
-      this.showTempMessage(`Failed to launch merge popup: ${error.message}`)
-      return null
-    }
-  }
 
   async launchChoicePopup(
     title: string,

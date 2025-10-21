@@ -1,7 +1,5 @@
 import { useState, useMemo } from "react"
 import { PopupManager, type PopupManagerConfig } from "../services/PopupManager.js"
-import { InputHandler } from "../services/InputHandler.js"
-import { PaneCreationService } from "../services/PaneCreationService.js"
 import type { DmuxPane, ProjectSettings } from "../types.js"
 
 interface UseServicesProps {
@@ -17,11 +15,6 @@ interface UseServicesProps {
   server?: any
   settingsManager: any
   projectSettings: ProjectSettings
-
-  // PaneCreation config
-  projectName: string
-  controlPaneId?: string
-  dmuxVersion: string
 
   // Callbacks
   setStatusMessage: (msg: string) => void
@@ -68,33 +61,7 @@ export function useServices(props: UseServicesProps) {
     props.setIgnoreInput,
   ])
 
-  // Initialize PaneCreationService
-  const paneCreationService = useMemo(() => {
-    return new PaneCreationService(
-      {
-        projectName: props.projectName,
-        sidebarWidth: props.sidebarWidth,
-        controlPaneId: props.controlPaneId,
-        dmuxVersion: props.dmuxVersion,
-      },
-      {
-        setStatusMessage: props.setStatusMessage,
-        savePanes: props.savePanes,
-        loadPanes: props.loadPanes,
-      }
-    )
-  }, [
-    props.projectName,
-    props.sidebarWidth,
-    props.controlPaneId,
-    props.dmuxVersion,
-    props.setStatusMessage,
-    props.savePanes,
-    props.loadPanes,
-  ])
-
   return {
     popupManager,
-    paneCreationService,
   }
 }
