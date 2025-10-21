@@ -170,6 +170,64 @@ describe('Merge Execution - Bug Fixes', () => {
     });
   });
 
+  describe('BUG #4: Runtime Conflict Detection', () => {
+    it('should detect conflicts during Step 1 and offer resolution options', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+
+      // Simulate a conflict occurring during actual merge (not caught by pre-validation)
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: ['pnpm-lock.yaml'],
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      // Should offer AI/manual conflict resolution, not just show error
+      expect(result.type).toBe('choice');
+      expect(result.title).toContain('Conflict');
+      expect(result.options?.map(o => o.id)).toContain('ai_merge');
+      expect(result.options?.map(o => o.id)).toContain('manual_merge');
+    });
+
+    it('should show which files have conflicts', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: ['pnpm-lock.yaml', 'package.json'],
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      expect(result.type).toBe('choice');
+      if (result.type === 'choice') {
+        expect(result.message).toContain('pnpm-lock.yaml');
+        expect(result.message).toContain('package.json');
+      }
+    });
+
+    it('should still show error for non-conflict merge failures', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+
+      // Different kind of error (not a conflict)
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Git command failed: permission denied',
+        needsManualResolution: false,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      // Should show error for non-conflict failures
+      expect(result.type).toBe('error');
+      expect(result.message).toContain('permission denied');
+    });
+  });
+
   describe('Post-merge hooks', () => {
     it('should trigger post_merge hook after successful merge', async () => {
       const { mergeMainIntoWorktree, mergeWorktreeIntoMain } = await import(

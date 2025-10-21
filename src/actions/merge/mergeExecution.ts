@@ -95,6 +95,67 @@ export async function executeMerge(
   const step1 = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
 
   if (!step1.success) {
+    // Check if this is a conflict that needs manual resolution
+    if (step1.needsManualResolution && step1.conflictFiles && step1.conflictFiles.length > 0) {
+      // Offer AI/manual conflict resolution
+      return {
+        type: 'choice',
+        title: 'Merge Conflicts Detected',
+        message: `Conflicts occurred while merging ${mainBranch} into worktree:\n${step1.conflictFiles.slice(0, 5).join('\n')}${step1.conflictFiles.length > 5 ? '\n...' : ''}`,
+        options: [
+          {
+            id: 'ai_merge',
+            label: 'Try AI-assisted merge',
+            description: 'Let AI intelligently combine both versions',
+            default: true,
+          },
+          {
+            id: 'manual_merge',
+            label: 'Manual resolution',
+            description: 'Resolve conflicts yourself in the pane',
+          },
+          {
+            id: 'abort',
+            label: 'Abort merge',
+            description: 'Cancel and clean up',
+          },
+        ],
+        onSelect: async (optionId: string) => {
+          if (optionId === 'abort') {
+            // Abort the merge
+            const { abortMerge } = await import('../../utils/mergeExecution.js');
+            abortMerge(pane.worktreePath!);
+            return {
+              type: 'info',
+              message: 'Merge aborted',
+              dismissable: true,
+            };
+          }
+
+          if (optionId === 'manual_merge') {
+            // Jump to the pane so user can resolve manually
+            return {
+              type: 'navigation',
+              title: 'Manual Conflict Resolution',
+              message: `Conflicts in: ${step1.conflictFiles?.join(', ')}.\nResolve in the pane, then try merge again.`,
+              targetPaneId: pane.id,
+              dismissable: true,
+            };
+          }
+
+          if (optionId === 'ai_merge') {
+            // Create conflict resolution pane with AI
+            const { createConflictResolutionPaneForMerge } = await import('./conflictResolution.js');
+            return createConflictResolutionPaneForMerge(pane, context, mainBranch, mainRepoPath);
+          }
+
+          return { type: 'info', message: 'Unknown option', dismissable: true };
+        },
+        dismissable: true,
+      };
+    }
+
+    // Non-conflict error (e.g., permission denied, git failure)
     return {
       type: 'error',
       title: 'Merge Failed',
