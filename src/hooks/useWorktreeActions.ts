@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import type { DmuxPane } from '../types.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
+import { getCurrentBranch } from '../utils/git.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -59,7 +60,7 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
 
     try {
       setStatusMessage('Checking worktree status...');
-      const mainBranch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
+      const mainBranch = getCurrentBranch();
       const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
 
       if (statusOutput.trim()) {
@@ -116,7 +117,7 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
 
     try {
       setStatusMessage('Checking worktree status...');
-      const mainBranch = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
+      const mainBranch = getCurrentBranch();
       const statusOutput = execSync(`git -C "${pane.worktreePath}" status --porcelain`, { encoding: 'utf-8' });
 
       if (statusOutput.trim()) {

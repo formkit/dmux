@@ -5,6 +5,7 @@
  */
 
 import { execSync } from 'child_process';
+import { getCurrentBranch as getCurrentBranchUtil } from './git.js';
 
 export interface MergeValidationResult {
   canMerge: boolean;
@@ -61,15 +62,7 @@ export function getGitStatus(repoPath: string): GitStatus {
  * Get current branch name
  */
 export function getCurrentBranch(repoPath: string): string {
-  try {
-    return execSync('git branch --show-current', {
-      cwd: repoPath,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-  } catch {
-    return 'main';
-  }
+  return getCurrentBranchUtil(repoPath);
 }
 
 /**
