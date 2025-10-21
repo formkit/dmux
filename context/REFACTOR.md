@@ -1,5 +1,69 @@
 # Codebase Refactoring Analysis & Recommendations
 
+## Progress Tracker
+
+### Phase 1: Quick Wins ✅ COMPLETED
+- [x] **Step 1.1:** Delete 6 unused text input components (1,832 lines)
+- [x] **Step 1.2:** Reorganize root-level files into proper directories
+- [x] **Step 1.3:** Update all imports across codebase
+- [x] **Step 1.4:** Verify build passes with no errors
+- [x] **Commit:** `67657e7` - "refactor: phase 1 cleanup - remove dead code and reorganize files"
+
+**Impact:** Codebase reduced by 6% (1,832 lines), improved file organization
+
+---
+
+### Phase 2: Split Monolithic Action System ✅ COMPLETED
+- [x] **Step 2.1:** Create action file structure (8 new files in `src/actions/implementations/`)
+- [x] **Step 2.2:** Extract VIEW action → `viewAction.ts`
+- [x] **Step 2.3:** Extract CLOSE action → `closeAction.ts`
+- [x] **Step 2.4:** Extract MERGE action → `mergeAction.ts`
+- [x] **Step 2.5:** Extract remaining 5 actions (RENAME, DUPLICATE, COPY_PATH, OPEN_IN_EDITOR, TOGGLE_AUTOPILOT)
+- [x] **Step 2.6:** Create exports barrel in `implementations/index.ts`
+- [x] **Step 2.7:** Update `paneActions.ts` to re-export from implementations
+- [x] **Step 2.8:** Verify build passes with no errors
+- [x] **Commit:** Phase 2 completion
+
+**Impact Achieved:**
+- `paneActions.ts` reduced from 1,222 lines → 18 lines (98.5% reduction!)
+- 8 focused action files created in `src/actions/implementations/`
+- Maintained backward compatibility via re-exports
+- Improved testability and maintainability
+
+---
+
+### Phase 3: Modularize Server Routes ⏳ PENDING
+- [ ] **Step 3.1:** Create `src/server/routes/` directory structure
+- [ ] **Step 3.2:** Extract panes routes → `panesRoutes.ts`
+- [ ] **Step 3.3:** Extract stream routes → `streamRoutes.ts`
+- [ ] **Step 3.4:** Extract keys routes → `keysRoutes.ts`
+- [ ] **Step 3.5:** Extract actions routes → `actionsRoutes.ts`
+- [ ] **Step 3.6:** Extract tunnel routes → `tunnelRoutes.ts`
+- [ ] **Step 3.7:** Extract health routes → `healthRoutes.ts`
+- [ ] **Step 3.8:** Create main router assembly in `index.ts`
+- [ ] **Step 3.9:** Add integration tests for each route module
+- [ ] **Step 3.10:** Verify all API endpoints work correctly
+- [ ] **Commit:** Phase 3 completion
+
+**Expected Impact:** 7 route modules (~150 lines each), clearer domain separation
+
+---
+
+### Phase 4: Refactor DmuxApp.tsx ⏳ PENDING
+- [ ] **Step 4.1:** Extract PopupManager service
+- [ ] **Step 4.2:** Extract InputHandler service
+- [ ] **Step 4.3:** Extract PaneCreationService
+- [ ] **Step 4.4:** Update DmuxApp to use new services
+- [ ] **Step 4.5:** Add unit tests for each service
+- [ ] **Step 4.6:** Add integration tests for service interactions
+- [ ] **Step 4.7:** Add E2E tests for full workflows
+- [ ] **Step 4.8:** Verify all TUI functionality works
+- [ ] **Commit:** Phase 4 completion
+
+**Expected Impact:** DmuxApp.tsx reduced from 2,595 → ~1,200 lines (54% reduction)
+
+---
+
 Based on the comprehensive exploration, I've identified critical areas for refactoring. Here's a detailed analysis with a phased approach:
 
 ## Executive Summary

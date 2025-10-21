@@ -2,9 +2,26 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
 const require = createRequire(import.meta.url);
-const packageJson = require('../package.json');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Find package.json by walking up the directory tree
+function findPackageJson(): any {
+  let currentDir = __dirname;
+  while (currentDir !== path.parse(currentDir).root) {
+    const packagePath = path.join(currentDir, 'package.json');
+    try {
+      return require(packagePath);
+    } catch {
+      currentDir = path.dirname(currentDir);
+    }
+  }
+  throw new Error('Could not find package.json');
+}
+
+const packageJson = findPackageJson();
 
 interface UpdateInfo {
   currentVersion: string;
