@@ -5,6 +5,7 @@ import type { DmuxPane } from '../types.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
 import { getCurrentBranch } from '../utils/git.js';
+import { useTemporaryStatus } from './useTemporaryStatus.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -16,6 +17,8 @@ interface Params {
 }
 
 export default function useWorktreeActions({ panes, savePanes, setStatusMessage, setShowMergeConfirmation, setMergedPane, forceRepaint }: Params) {
+  const showTemporary = useTemporaryStatus(setStatusMessage);
+
   const closePane = useCallback(async (pane: DmuxPane) => {
     try {
       if (pane.testWindowId) {
@@ -43,13 +46,11 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
       const updatedPanes = panes.filter(p => p.id !== pane.id);
       await savePanes(updatedPanes);
 
-      setStatusMessage(`Closed pane: ${pane.slug}`);
-      setTimeout(() => setStatusMessage(''), 3000);
+      showTemporary(`Closed pane: ${pane.slug}`);
     } catch {
-      setStatusMessage('Failed to close pane');
-      setTimeout(() => setStatusMessage(''), 2000);
+      showTemporary('Failed to close pane', 2000);
     }
-  }, [panes, savePanes, setStatusMessage]);
+  }, [panes, savePanes, showTemporary]);
 
   const mergeWorktree = useCallback(async (pane: DmuxPane) => {
     if (!pane.worktreePath) {
