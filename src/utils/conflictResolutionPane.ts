@@ -80,8 +80,30 @@ export async function createConflictResolutionPane(
     console.error('[conflictResolutionPane] Failed to cd into target repo:', error);
   }
 
+  // CRITICAL: Ensure clean state before starting merge
+  // If a previous merge attempt left MERGE_HEAD, abort it first
+  try {
+    execSync(`tmux send-keys -t '${paneInfo}' 'git merge --abort 2>/dev/null || true' Enter`, {
+      stdio: 'pipe',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  } catch (error) {
+    console.error('[conflictResolutionPane] Failed to abort previous merge:', error);
+  }
+
+  // CRITICAL: Start the merge to create conflict markers for the agent to resolve
+  // This is necessary because pre-validation or failed execution may have aborted the merge
+  try {
+    execSync(`tmux send-keys -t '${paneInfo}' 'git merge ${targetBranch} --no-edit || true' Enter`, {
+      stdio: 'pipe',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  } catch (error) {
+    console.error('[conflictResolutionPane] Failed to initiate merge:', error);
+  }
+
   // Construct the AI prompt for conflict resolution
-  const prompt = `There are conflicts merging ${sourceBranch} into ${targetBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes.`;
+  const prompt = `There are conflicts merging ${targetBranch} into ${sourceBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes. Once all conflicts are resolved, commit the merge.`;
 
   // Launch agent with the conflict resolution prompt
   if (agent === 'claude') {

@@ -14,6 +14,7 @@ vi.mock('../../../src/utils/mergeExecution.ts', () => ({
   mergeWorktreeIntoMain: vi.fn(() => ({ success: true })),
   cleanupAfterMerge: vi.fn(() => ({ success: true })),
   completeMerge: vi.fn(() => ({ success: true })),
+  abortMerge: vi.fn(), // Add abortMerge mock
 }));
 
 vi.mock('../../../src/utils/hooks.js', () => ({
@@ -28,6 +29,17 @@ vi.mock('../../../src/actions/implementations/closeAction.js', () => ({
       options: [{ id: 'kill_only', label: 'Kill only' }],
       onSelect: vi.fn(() => Promise.resolve({ type: 'success', message: 'Closed', dismissable: true })),
       dismissable: true,
+    })
+  ),
+}));
+
+vi.mock('../../../src/actions/merge/conflictResolution.js', () => ({
+  createConflictResolutionPaneForMerge: vi.fn(() =>
+    Promise.resolve({
+      type: 'navigation',
+      title: 'Conflict Resolution Pane Created',
+      message: 'AI agent will help resolve conflicts',
+      targetPaneId: 'conflict-pane-1',
     })
   ),
 }));
@@ -225,6 +237,120 @@ describe('Merge Execution - Bug Fixes', () => {
       // Should show error for non-conflict failures
       expect(result.type).toBe('error');
       expect(result.message).toContain('permission denied');
+    });
+
+    it('should offer abort option for conflicts', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: ['test.txt'],
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      expect(result.type).toBe('choice');
+      if (result.type === 'choice') {
+        expect(result.options?.map(o => o.id)).toContain('abort');
+      }
+    });
+
+    it('should abort merge and clean up when abort option selected', async () => {
+      const { mergeMainIntoWorktree, abortMerge } = await import('../../../src/utils/mergeExecution.ts');
+
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: ['test.txt'],
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      if (result.type === 'choice' && result.onSelect) {
+        const abortResult = await result.onSelect('abort');
+
+        expect(abortMerge).toHaveBeenCalledWith(mockPane.worktreePath);
+        expect(abortResult.type).toBe('info');
+        expect(abortResult.message).toContain('aborted');
+      }
+    });
+
+    it('should navigate to pane for manual resolution', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: ['test.txt'],
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      if (result.type === 'choice' && result.onSelect) {
+        const manualResult = await result.onSelect('manual_merge');
+
+        expect(manualResult.type).toBe('navigation');
+        expect(manualResult.targetPaneId).toBe(mockPane.id);
+        if (manualResult.type === 'navigation') {
+          expect(manualResult.message).toContain('test.txt');
+        }
+      }
+    });
+
+    it('should create AI conflict resolution pane when AI merge selected', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+      const { createConflictResolutionPaneForMerge } = await import(
+        '../../../src/actions/merge/conflictResolution.js'
+      );
+
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: ['test.txt'],
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      if (result.type === 'choice' && result.onSelect) {
+        const aiResult = await result.onSelect('ai_merge');
+
+        expect(createConflictResolutionPaneForMerge).toHaveBeenCalledWith(
+          mockPane,
+          mockContext,
+          'main',
+          '/test/main'
+        );
+        expect(aiResult.type).toBe('navigation');
+        expect(aiResult.targetPaneId).toBe('conflict-pane-1');
+      }
+    });
+
+    it('should truncate long conflict file lists in message', async () => {
+      const { mergeMainIntoWorktree } = await import('../../../src/utils/mergeExecution.ts');
+
+      const manyFiles = Array.from({ length: 10 }, (_, i) => `file${i}.txt`);
+
+      vi.mocked(mergeMainIntoWorktree).mockReturnValue({
+        success: false,
+        error: 'Merge conflicts detected',
+        conflictFiles: manyFiles,
+        needsManualResolution: true,
+      });
+
+      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
+
+      if (result.type === 'choice') {
+        // Should show first 5 files + "..."
+        expect(result.message).toContain('file0.txt');
+        expect(result.message).toContain('file4.txt');
+        expect(result.message).toContain('...');
+        expect(result.message).not.toContain('file9.txt');
+      }
     });
   });
 

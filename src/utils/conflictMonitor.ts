@@ -88,37 +88,52 @@ function checkPaneExists(paneId: string): boolean {
 /**
  * Check if merge conflicts are resolved in a repository
  * Returns true if:
- * - No conflicting files remain (git diff --name-only --diff-filter=U is empty)
- * - Not in merge state (no MERGE_HEAD file)
+ * - A new merge commit was created (HEAD moved and is a merge commit)
+ * - No longer in merge state (MERGE_HEAD removed by commit)
  */
 function areConflictsResolved(repoPath: string): boolean {
   try {
-    // Check for conflicting files
-    const conflictFiles = execSync('git diff --name-only --diff-filter=U', {
-      cwd: repoPath,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-
-    // If there are still conflicts, not resolved
-    if (conflictFiles.length > 0) {
-      return false;
-    }
-
     // Check if we're still in merge state
-    const mergeHeadExists = execSync('test -f .git/MERGE_HEAD && echo "yes" || echo "no"', {
-      cwd: repoPath,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
+    // In a worktree, MERGE_HEAD is in .git/worktrees/<name>/MERGE_HEAD
+    // Git automatically resolves .git paths correctly in worktrees
+    let mergeHeadExists = false;
+    try {
+      execSync('git rev-parse --verify MERGE_HEAD', {
+        cwd: repoPath,
+        stdio: 'pipe',
+      });
+      mergeHeadExists = true;
+    } catch {
+      mergeHeadExists = false;
+    }
 
-    // If MERGE_HEAD exists, we're still mid-merge
-    if (mergeHeadExists === 'yes') {
+    // If MERGE_HEAD exists, we're still mid-merge (not yet committed)
+    if (mergeHeadExists) {
       return false;
     }
 
-    // No conflicts and not in merge state = resolved!
-    return true;
+    // Check if the most recent commit is a merge commit
+    // This indicates the agent successfully committed the merge
+    let isMergeCommit = false;
+    try {
+      execSync('git rev-parse --verify HEAD^2', {
+        cwd: repoPath,
+        stdio: 'pipe',
+      });
+      isMergeCommit = true;
+    } catch {
+      isMergeCommit = false;
+    }
+
+    // Conflicts are resolved when:
+    // 1. No MERGE_HEAD (merge was committed or aborted)
+    // 2. HEAD is a merge commit (has 2 parents)
+    //
+    // Note: In conflict resolution, we initiated a merge that had conflicts,
+    // so it cannot be fast-forward. The result must be a merge commit.
+    // If there's no MERGE_HEAD but also no merge commit, the agent may have
+    // aborted or done something unexpected - treat as not resolved.
+    return isMergeCommit;
   } catch {
     return false;
   }

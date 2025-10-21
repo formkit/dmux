@@ -81,10 +81,12 @@ async function createAndLaunchConflictPane(
     const { createConflictResolutionPane } = await import('../../utils/conflictResolutionPane.js');
 
     // Create the new pane
+    // NOTE: We pass the WORKTREE path as targetRepoPath because that's where
+    // the conflicts exist and need to be resolved (not in main repo)
     const conflictPane = await createConflictResolutionPane({
       sourceBranch: pane.slug,
       targetBranch,
-      targetRepoPath,
+      targetRepoPath: pane.worktreePath!, // CRITICAL: Use worktree, not main repo
       agent,
       projectName: context.projectName,
       existingPanes: context.panes,
@@ -103,25 +105,33 @@ async function createAndLaunchConflictPane(
     const { startConflictMonitoring } = await import('../../utils/conflictMonitor.js');
     startConflictMonitoring({
       conflictPaneId: conflictPane.paneId,
-      repoPath: targetRepoPath,
+      repoPath: pane.worktreePath!, // Monitor the WORKTREE, not main repo
       onResolved: async () => {
         // Conflicts resolved! Close the conflict pane and trigger cleanup
         try {
-          // Kill the conflict pane
           const { execSync } = await import('child_process');
+
+          // Kill the conflict pane
           execSync(`tmux kill-pane -t '${conflictPane.paneId}'`, { stdio: 'pipe' });
 
           // Remove conflict pane from state
-          const updatedPanes = context.panes.filter(p => p.id !== conflictPane.id);
-          await context.savePanes(updatedPanes);
+          const panesWithoutConflictPane = context.panes.filter(p => p.id !== conflictPane.id);
+          await context.savePanes(panesWithoutConflictPane);
 
           // Now trigger the cleanup flow for the original pane
           // We need to execute the merge completion flow
           const { executeMerge } = await import('../merge/mergeExecution.js');
 
+          // Create updated context with current pane list (without conflict pane)
+          const updatedContext = {
+            ...context,
+            panes: panesWithoutConflictPane,
+          };
+
           // Re-run executeMerge which will now succeed (conflicts are resolved)
           // This will return the cleanup confirmation dialog
-          const result = await executeMerge(pane, context, targetBranch, targetRepoPath);
+          // IMPORTANT: Pass skipWorktreeMerge=true because agent already resolved conflicts
+          const result = await executeMerge(pane, updatedContext, targetBranch, targetRepoPath, true);
 
           // If we have the onActionResult callback, use it to show the dialog
           if (context.onActionResult) {

@@ -82,17 +82,22 @@ export async function executeMergeWithConflictHandling(
  * This implements the 2-phase merge:
  * 1. Merge main INTO worktree (to get latest changes and detect conflicts)
  * 2. Merge worktree INTO main (to bring changes back)
+ *
+ * @param skipWorktreeMerge - Set to true when resuming after conflict resolution (step 1 already done)
  */
 export async function executeMerge(
   pane: DmuxPane,
   context: ActionContext,
   mainBranch: string,
-  mainRepoPath: string
+  mainRepoPath: string,
+  skipWorktreeMerge: boolean = false
 ): Promise<ActionResult> {
   const { mergeMainIntoWorktree, mergeWorktreeIntoMain, cleanupAfterMerge } = await import('../../utils/mergeExecution.js');
 
   // Step 1: Merge main into worktree first (get latest changes from main)
-  const step1 = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
+  // Skip this if we're resuming after conflict resolution (already done by agent)
+  if (!skipWorktreeMerge) {
+    const step1 = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
 
   if (!step1.success) {
     // Check if this is a conflict that needs manual resolution
@@ -162,6 +167,7 @@ export async function executeMerge(
       message: `Failed to merge ${mainBranch} into worktree: ${step1.error}`,
       dismissable: true,
     };
+    }
   }
 
   // Step 2: Merge worktree into main (bring changes back to main)
@@ -200,14 +206,27 @@ export async function executeMerge(
         };
       }
 
-      // Close the pane after cleanup
-      // Update context to remove the pane from the list
-      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
+      // Remove pane from state FIRST (before killing tmux pane)
+      // This prevents race conditions with auto-cleanup detecting dead panes
+      // IMPORTANT: Read current panes from StateManager, don't use context.panes (might be stale)
+      const { StateManager } = await import('../../shared/StateManager.js');
+      const stateManager = StateManager.getInstance();
+      const currentPanes = stateManager.getPanes();
+      const updatedPanes = currentPanes.filter((p: DmuxPane) => p.id !== pane.id);
       await context.savePanes(updatedPanes);
 
+      // Kill the tmux pane AFTER removing from state
+      try {
+        const { execSync } = await import('child_process');
+        execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
+      } catch (error) {
+        // Pane may already be closed, ignore errors
+        console.error('[mergeExecution] Failed to kill pane:', error);
+      }
+
       // Notify about pane removal if callback exists
-      if (context.onPaneUpdate) {
-        context.onPaneUpdate(pane);
+      if (context.onPaneRemove) {
+        context.onPaneRemove(pane.id);
       }
 
       return {

@@ -21,9 +21,36 @@ vi.mock('../../../src/utils/conflictResolutionPane.js', () => ({
       slug: 'resolve-conflicts',
       prompt: 'Resolve merge conflicts',
       paneId: '%99',
-      worktreePath: '/test/conflict-worktree',
+      // Note: No worktreePath - conflict pane operates in targetRepoPath
     })
   ),
+}));
+
+// Mock conflict monitor
+vi.mock('../../../src/utils/conflictMonitor.js', () => ({
+  startConflictMonitoring: vi.fn(() => vi.fn()), // Returns cleanup function
+}));
+
+// Mock merge execution
+vi.mock('../../../src/actions/merge/mergeExecution.js', () => ({
+  executeMerge: vi.fn(() =>
+    Promise.resolve({
+      type: 'confirm',
+      title: 'Merge Complete',
+      message: 'Successfully merged',
+    })
+  ),
+  executeMergeWithConflictHandling: vi.fn(() =>
+    Promise.resolve({
+      type: 'navigation',
+      message: 'Manual resolution',
+    })
+  ),
+}));
+
+// Mock child_process for tmux commands
+vi.mock('child_process', () => ({
+  execSync: vi.fn(),
 }));
 
 describe('Conflict Resolution', () => {
@@ -85,7 +112,7 @@ describe('Conflict Resolution', () => {
       expect(createConflictResolutionPane).toHaveBeenCalledWith({
         sourceBranch: 'test-branch',
         targetBranch: 'main',
-        targetRepoPath: '/test/main',
+        targetRepoPath: '/test/worktree', // Bug #10 fix: use worktree, not main repo
         agent: 'claude',
         projectName: 'test-project',
         existingPanes: [mockPane],
@@ -110,7 +137,7 @@ describe('Conflict Resolution', () => {
           slug: 'resolve-conflicts',
           prompt: 'Resolve merge conflicts',
           paneId: '%99',
-          worktreePath: '/test/conflict-worktree',
+          // No worktreePath - conflict pane operates in targetRepoPath
         },
       ]);
       expect(mockContext.onPaneUpdate).toHaveBeenCalledWith({
@@ -118,7 +145,44 @@ describe('Conflict Resolution', () => {
         slug: 'resolve-conflicts',
         prompt: 'Resolve merge conflicts',
         paneId: '%99',
-        worktreePath: '/test/conflict-worktree',
+        // No worktreePath - operates in targetRepoPath
+      });
+    });
+
+    it('should start conflict monitoring with correct worktree path', async () => {
+      const { findClaudeCommand, findOpencodeCommand } = await import('../../../src/utils/agentDetection.js');
+      const { startConflictMonitoring } = await import('../../../src/utils/conflictMonitor.js');
+
+      vi.mocked(findClaudeCommand).mockResolvedValue(true);
+      vi.mocked(findOpencodeCommand).mockResolvedValue(false);
+
+      await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
+
+      expect(startConflictMonitoring).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conflictPaneId: '%99',
+          repoPath: '/test/worktree', // Should monitor the WORKTREE, not main repo
+          onResolved: expect.any(Function),
+        })
+      );
+    });
+
+    it('should pass targetRepoPath (worktree) to createConflictResolutionPane', async () => {
+      const { findClaudeCommand, findOpencodeCommand } = await import('../../../src/utils/agentDetection.js');
+      const { createConflictResolutionPane } = await import('../../../src/utils/conflictResolutionPane.js');
+
+      vi.mocked(findClaudeCommand).mockResolvedValue(true);
+      vi.mocked(findOpencodeCommand).mockResolvedValue(false);
+
+      await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
+
+      expect(createConflictResolutionPane).toHaveBeenCalledWith({
+        sourceBranch: 'test-branch',
+        targetBranch: 'main',
+        targetRepoPath: '/test/worktree', // Bug #10 fix: pass worktree path, not main repo
+        agent: 'claude',
+        projectName: 'test-project',
+        existingPanes: [mockPane],
       });
     });
 
@@ -138,7 +202,7 @@ describe('Conflict Resolution', () => {
         expect(createConflictResolutionPane).toHaveBeenCalledWith({
           sourceBranch: 'test-branch',
           targetBranch: 'main',
-          targetRepoPath: '/test/main',
+          targetRepoPath: '/test/worktree', // Bug #10 fix: pass worktree path
           agent: 'opencode',
           projectName: 'test-project',
           existingPanes: [mockPane],
@@ -160,5 +224,17 @@ describe('Conflict Resolution', () => {
       expect(result.message).toContain('Failed to create conflict resolution pane');
       expect(result.message).toContain('Pane creation failed');
     });
+
+    // NOTE: Full integration tests for onActionResult and monitoring callbacks
+    // are better suited for E2E tests. The unit behavior is covered by:
+    // - conflictMonitor.test.ts (monitoring logic)
+    // - mergeExecution.test.ts (runtime conflict handling)
+    // - Above tests (conflict pane creation flow)
+
+    // NOTE: The onResolved callback behavior tests are integration-level tests
+    // that are complex to test with mocks due to dynamic imports. The critical
+    // behavior is tested at the conflictMonitor.test.ts level. The integration
+    // of monitoring → pane kill → cleanup dialog is best tested manually or
+    // with E2E tests.
   });
 });
