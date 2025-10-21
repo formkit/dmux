@@ -20,6 +20,7 @@ vi.mock('../../../src/utils/mergeValidation.js', () => ({
 }));
 
 vi.mock('../../../src/utils/mergeExecution.js', () => ({
+  mergeMainIntoWorktree: vi.fn(() => ({ success: true })),
   mergeWorktreeIntoMain: vi.fn(() => ({ success: true })),
   cleanupAfterMerge: vi.fn(() => ({ success: true })),
 }));

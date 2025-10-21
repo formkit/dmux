@@ -79,6 +79,9 @@ export async function executeMergeWithConflictHandling(
 
 /**
  * Execute the actual merge operation (called after all pre-checks pass)
+ * This implements the 2-phase merge:
+ * 1. Merge main INTO worktree (to get latest changes and detect conflicts)
+ * 2. Merge worktree INTO main (to bring changes back)
  */
 export async function executeMerge(
   pane: DmuxPane,
@@ -86,16 +89,28 @@ export async function executeMerge(
   mainBranch: string,
   mainRepoPath: string
 ): Promise<ActionResult> {
-  const { mergeWorktreeIntoMain, cleanupAfterMerge } = await import('../../utils/mergeExecution.js');
+  const { mergeMainIntoWorktree, mergeWorktreeIntoMain, cleanupAfterMerge } = await import('../../utils/mergeExecution.js');
 
-  // Step 2: Merge worktree into main
-  const result = mergeWorktreeIntoMain(mainRepoPath, pane.slug);
+  // Step 1: Merge main into worktree first (get latest changes from main)
+  const step1 = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
 
-  if (!result.success) {
+  if (!step1.success) {
     return {
       type: 'error',
       title: 'Merge Failed',
-      message: `Failed to merge into ${mainBranch}: ${result.error}`,
+      message: `Failed to merge ${mainBranch} into worktree: ${step1.error}`,
+      dismissable: true,
+    };
+  }
+
+  // Step 2: Merge worktree into main (bring changes back to main)
+  const step2 = mergeWorktreeIntoMain(mainRepoPath, pane.slug);
+
+  if (!step2.success) {
+    return {
+      type: 'error',
+      title: 'Merge Failed',
+      message: `Failed to merge into ${mainBranch}: ${step2.error}`,
       dismissable: true,
     };
   }
@@ -124,19 +139,21 @@ export async function executeMerge(
         };
       }
 
-      // Import the closePane function from closeAction
-      const { closePane: executeCloseOption } = await import('../implementations/closeAction.js');
+      // Close the pane after cleanup
+      // Update context to remove the pane from the list
+      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
+      await context.savePanes(updatedPanes);
 
-      // Close the pane by calling closePane and selecting 'kill_only' option
-      // We need to execute the close directly since we're in the cleanup phase
-      const closeResult = await executeCloseOption(pane, context);
-
-      // If closeResult is a choice dialog, automatically select 'kill_only'
-      if (closeResult.type === 'choice' && closeResult.onSelect) {
-        return closeResult.onSelect('kill_only');
+      // Notify about pane removal if callback exists
+      if (context.onPaneUpdate) {
+        context.onPaneUpdate(pane);
       }
 
-      return closeResult;
+      return {
+        type: 'success',
+        message: `Successfully merged and cleaned up "${pane.slug}"`,
+        dismissable: true,
+      };
     },
     onCancel: async () => {
       return {
