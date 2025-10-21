@@ -32,6 +32,125 @@
 
 ---
 
+### Phase 2.5: Refactor Merge Action (TDD Approach) ⏳ PENDING
+
+**Problem:** `mergeAction.ts` is monolithic (804 lines, 7 functions) and currently broken. Needs modularization and comprehensive testing.
+
+**Current Structure Analysis:**
+```
+mergeAction.ts (804 lines)
+├── generateCommitMessageSafe() - 28 lines
+├── mergePane() - 48 lines (main entry point)
+├── handleMergeIssues() - 462 lines! (massive nested logic)
+│   ├── Main dirty handling (192 lines)
+│   ├── Worktree uncommitted handling (186 lines)
+│   └── Merge conflict handling (42 lines)
+├── createConflictResolutionPaneForMerge() - 58 lines
+├── createAndLaunchConflictPane() - 48 lines
+├── executeMergeWithConflictHandling() - 70 lines
+└── executeMerge() - 66 lines
+```
+
+**Refactoring Plan (TDD):**
+
+#### Step 2.5.1: Extract Commit Message Handling
+Create `src/actions/merge/commitMessageHandler.ts`:
+- `generateCommitMessageSafe()` - moved from mergeAction
+- `promptForCommitMessage()` - extract common pattern
+- `handleCommitWithOptions()` - DRY up the 3 commit option flows
+
+**Tests First:** Write tests for commit message generation, timeouts, fallbacks
+
+#### Step 2.5.2: Extract Merge Issue Handlers
+Create separate handlers in `src/actions/merge/issueHandlers/`:
+- `mainDirtyHandler.ts` - Handle uncommitted changes in main (192 lines → 80)
+- `worktreeUncommittedHandler.ts` - Handle uncommitted in worktree (186 lines → 80)
+- `mergeConflictHandler.ts` - Handle merge conflicts (42 lines)
+- `nothingToMergeHandler.ts` - Handle no-op case
+
+**Tests First:** Write tests for each issue type independently
+
+#### Step 2.5.3: Extract Conflict Resolution
+Create `src/actions/merge/conflictResolution.ts`:
+- `createConflictResolutionPaneForMerge()` - moved
+- `createAndLaunchConflictPane()` - moved
+- Better separation of agent selection logic
+
+**Tests First:** Test conflict pane creation, agent selection
+
+#### Step 2.5.4: Extract Merge Execution
+Create `src/actions/merge/mergeExecution.ts`:
+- `executeMergeWithConflictHandling()` - moved
+- `executeMerge()` - moved
+- Simplified error handling
+
+**Tests First:** Test merge execution paths, cleanup
+
+#### Step 2.5.5: Simplify Main Action
+Update `mergeAction.ts` to orchestrate (target: <100 lines):
+```typescript
+export async function mergePane(pane, context, params) {
+  // 1. Validation
+  if (!pane.worktreePath) return noWorktreeError();
+
+  // 2. Pre-merge checks
+  const validation = await validateMerge(...);
+  if (!validation.canMerge) {
+    return handleMergeIssues(pane, context, validation);
+  }
+
+  // 3. Confirmation
+  return confirmMerge(pane, context, validation);
+}
+```
+
+**Tests First:** Integration tests for full merge flows
+
+#### Step 2.5.6: Add Comprehensive Tests
+- [ ] Unit tests for each extracted module
+- [ ] Integration tests for merge workflows
+- [ ] Edge case tests (conflicts, dirty state, errors)
+- [ ] Regression tests for current bugs
+
+#### Step 2.5.7: Fix Known Issues
+- [ ] Merge actually completes successfully
+- [ ] Cleanup happens correctly
+- [ ] Error messages are clear
+- [ ] Hooks fire at right times
+
+**Target Structure:**
+```
+src/actions/
+├── implementations/
+│   └── mergeAction.ts (< 100 lines - orchestration only)
+└── merge/
+    ├── commitMessageHandler.ts
+    ├── conflictResolution.ts
+    ├── mergeExecution.ts
+    ├── issueHandlers/
+    │   ├── mainDirtyHandler.ts
+    │   ├── worktreeUncommittedHandler.ts
+    │   ├── mergeConflictHandler.ts
+    │   └── nothingToMergeHandler.ts
+    └── types.ts (shared types)
+```
+
+**Expected Impact:**
+- `mergeAction.ts`: 804 lines → <100 lines (87% reduction)
+- 8 focused modules (avg 60-80 lines each)
+- Fully tested with TDD approach
+- Actually works correctly!
+
+**Commit Strategy:**
+1. Commit: Extract commit message handler + tests
+2. Commit: Extract issue handlers + tests
+3. Commit: Extract conflict resolution + tests
+4. Commit: Extract merge execution + tests
+5. Commit: Simplify main action + integration tests
+6. Commit: Fix bugs and verify all flows work
+
+---
+
 ### Phase 3: Modularize Server Routes ⏳ PENDING
 - [ ] **Step 3.1:** Create `src/server/routes/` directory structure
 - [ ] **Step 3.2:** Extract panes routes → `panesRoutes.ts`
