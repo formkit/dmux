@@ -5,6 +5,8 @@ import type { DmuxPane } from '../types.js';
 import { getUntrackedPanes, createShellPane, getNextDmuxId } from '../utils/shellPaneDetection.js';
 import { LogService } from '../services/LogService.js';
 import { splitPane } from '../utils/tmux.js';
+import { rebindPaneByTitle } from '../utils/paneRebinding.js';
+import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY, PANE_POLLING_INTERVAL } from '../constants/timing.js';
 
 // Separate config structure to match new format
 interface DmuxConfig {
@@ -78,7 +80,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           const output = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
             encoding: 'utf-8',
             stdio: 'pipe',
-            timeout: 1000
+            timeout: TMUX_COMMAND_TIMEOUT
           }).trim();
           if (output) {
             const lines = output.split('\n');
@@ -93,33 +95,13 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           }
           if (allPaneIds.length > 0 || retryCount === maxRetries) break;
         } catch {
-          if (retryCount < maxRetries) await new Promise(r => setTimeout(r, 100));
+          if (retryCount < maxRetries) await new Promise(r => setTimeout(r, TMUX_RETRY_DELAY));
         }
         retryCount++;
       }
 
       // Attempt to rebind panes whose IDs changed by matching on title (slug)
-      // IMPORTANT: Only rebind if the pane ID is truly missing (pane was killed and recreated)
-      // Do NOT rebind if the title simply changed (user renamed it)
-      const reboundPanes = loadedPanes.map(p => {
-        // If pane ID exists in tmux, keep using it (even if title changed)
-        if (allPaneIds.length > 0 && allPaneIds.includes(p.paneId)) {
-          return p; // Pane still exists, no rebinding needed
-        }
-
-        // Pane ID missing - try to find it by title match
-        if (allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)) {
-          const remappedId = titleToId.get(p.slug);
-          if (remappedId) {
-            LogService.getInstance().debug(
-              `Rebound pane ${p.id} from ${p.paneId} to ${remappedId} (matched by title: ${p.slug})`,
-              'shellDetection'
-            );
-            return { ...p, paneId: remappedId };
-          }
-        }
-        return p;
-      });
+      const reboundPanes = loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
 
       // Only attempt to recreate missing panes on initial load AND only if not already completed
       // Recreate worktree panes (type !== 'shell') that exist in config but not in tmux
@@ -170,7 +152,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           const output = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
             encoding: 'utf-8',
             stdio: 'pipe',
-            timeout: 1000
+            timeout: TMUX_COMMAND_TIMEOUT
           }).trim();
           if (output) {
             const lines = output.split('\n');
@@ -186,10 +168,10 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         } catch {}
 
         // Re-rebind after recreation
-        loadedPanes.forEach(p => {
-          if (!allPaneIds.includes(p.paneId)) {
-            const remappedId = titleToId.get(p.slug);
-            if (remappedId) p.paneId = remappedId;
+        loadedPanes.forEach((p, idx) => {
+          const rebound = rebindPaneByTitle(p, titleToId, allPaneIds);
+          if (rebound.paneId !== p.paneId) {
+            loadedPanes[idx] = rebound;
           }
         });
       }
@@ -207,28 +189,14 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       let activePanes = reboundPanes
         .map(loadedPane => {
           // Already rebound above - this is a second check after potential recreation
-          // If pane ID exists in tmux, keep it (don't rebind based on title)
-          if (allPaneIds.length > 0 && allPaneIds.includes(loadedPane.paneId)) {
-            return loadedPane; // Pane still exists, use current ID
-          }
-
-          // If we have tmux data and this pane's ID isn't found, try to rebind by title
-          // This handles panes that were recreated in the previous step
-          if (allPaneIds.length > 0 && !allPaneIds.includes(loadedPane.paneId)) {
+          const rebound = rebindPaneByTitle(loadedPane, titleToId, allPaneIds);
+          if (rebound.paneId !== loadedPane.paneId) {
             LogService.getInstance().debug(
               `Pane ${loadedPane.id} (${loadedPane.paneId}) not found in tmux, checking for rebind`,
               'shellDetection'
             );
-            const remappedId = titleToId.get(loadedPane.slug);
-            if (remappedId) {
-              LogService.getInstance().debug(
-                `Rebound pane ${loadedPane.id} from ${loadedPane.paneId} to ${remappedId}`,
-                'shellDetection'
-              );
-              return { ...loadedPane, paneId: remappedId };
-            }
           }
-          return loadedPane;
+          return rebound;
         })
         .filter(pane => {
           // If we have tmux data and this pane is not found
@@ -415,13 +383,9 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           `Initial load: panes.length=${panes.length}, activePanes.length=${activePanes.length}`,
           'shellDetection'
         );
-        // Initial load - set pane titles and update state (even if activePanes is empty)
-        // NOTE: Title updates disabled to prevent UI shifts
-        // activePanes.forEach(pane => {
-        //   try {
-        //     execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
-        //   } catch {}
-        // });
+        // Initial load - update state (even if activePanes is empty)
+        // Note: Pane title enforcement happens later in the code (line 432)
+        // to avoid UI shifts during initial load
         setPanes(activePanes); // Always update state, even if empty
         initialLoadComplete.current = true;
         return; // Exit early for initial load
@@ -546,7 +510,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         const out = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
           encoding: 'utf-8',
           stdio: 'pipe',
-          timeout: 1000
+          timeout: TMUX_COMMAND_TIMEOUT
         }).trim();
         const titleToId = new Map<string, string>();
         if (out) {
@@ -604,10 +568,9 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
     process.on('pane-split-detected' as any, handlePaneSplit);
 
     // Re-enabled: polling helps correct any layout shifts by triggering re-renders
-    // Increased to 5 seconds to reduce frequency
     const interval = setInterval(() => {
       if (!skipLoading) loadPanes();
-    }, 5000);
+    }, PANE_POLLING_INTERVAL);
 
     return () => {
       clearInterval(interval);

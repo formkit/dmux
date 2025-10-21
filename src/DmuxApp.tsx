@@ -24,6 +24,13 @@ import { supportsPopups } from "./utils/popup.js"
 import { StateManager } from "./shared/StateManager.js"
 import { LogService } from "./services/LogService.js"
 import {
+  REPAINT_SPINNER_DURATION,
+  STATUS_MESSAGE_DURATION_SHORT,
+  STATUS_MESSAGE_DURATION_LONG,
+  TUNNEL_COPY_FEEDBACK_DURATION,
+  ANIMATION_DELAY,
+} from "./constants/timing.js"
+import {
   getStatusDetector,
   type StatusUpdateEvent,
 } from "./services/StatusDetector.js"
@@ -174,7 +181,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     setForceRepaintTrigger((prev) => prev + 1)
     setShowRepaintSpinner(true)
     // Hide spinner after a few frames (enough to trigger multiple renders)
-    setTimeout(() => setShowRepaintSpinner(false), 100)
+    setTimeout(() => setShowRepaintSpinner(false), REPAINT_SPINNER_DURATION)
   }
 
   // Force repaint effect - ensures Ink re-renders when trigger changes
@@ -825,7 +832,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           result.scope
         )
         setStatusMessage(`Setting saved (${result.scope})`)
-        setTimeout(() => setStatusMessage(""), 2000)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       }
     } else if (input === "l") {
       // Open logs popup
@@ -837,7 +844,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       // Reset layout to sidebar configuration (Shift+L)
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
       setStatusMessage("Layout reset")
-      setTimeout(() => setStatusMessage(""), 2000)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } else if (input === "q") {
       cleanExit()
     } else if (input === "r" && server) {
@@ -846,7 +853,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         // Tunnel exists - open popup with QR code
         await popupManager.launchRemotePopup(tunnelUrl, () => {
           setTunnelCopied(true)
-          setTimeout(() => setTunnelCopied(false), 2000)
+          setTimeout(() => setTunnelCopied(false), TUNNEL_COPY_FEEDBACK_DURATION)
         })
       } else if (!tunnelCreating) {
         // Start tunnel creation
@@ -857,7 +864,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
             setTunnelUrl(url)
           } catch (error: any) {
             setStatusMessage(`Failed to create tunnel: ${error.message}`)
-            setTimeout(() => setStatusMessage(""), 3000)
+            setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
           } finally {
             setTunnelCreating(false)
           }
@@ -891,21 +898,21 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         })
 
         // Wait for pane creation to settle
-        await new Promise((resolve) => setTimeout(resolve, 300))
+        await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
 
         // The shell pane will be automatically detected by the shell pane detection system
         // No need to manually add it to the panes array
 
         setIsCreatingPane(false)
         setStatusMessage("Terminal pane created")
-        setTimeout(() => setStatusMessage(""), 2000)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
 
         // Force a reload to pick up the new shell pane
         await loadPanes()
       } catch (error: any) {
         setIsCreatingPane(false)
         setStatusMessage(`Failed to create terminal pane: ${error.message}`)
-        setTimeout(() => setStatusMessage(""), 3000)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
       }
       return
     } else if (input === "j" && selectedIndex < panes.length) {
@@ -913,21 +920,21 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       StateManager.getInstance().setDebugMessage(
         `Jumping to pane: ${panes[selectedIndex].slug}`
       )
-      setTimeout(() => StateManager.getInstance().setDebugMessage(""), 2000)
+      setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex])
     } else if (input === "x" && selectedIndex < panes.length) {
       // Close pane (NEW: using action system)
       StateManager.getInstance().setDebugMessage(
         `Closing pane: ${panes[selectedIndex].slug}`
       )
-      setTimeout(() => StateManager.getInstance().setDebugMessage(""), 2000)
+      setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex])
     } else if (key.return && selectedIndex < panes.length) {
       // Jump to pane (NEW: using action system)
       StateManager.getInstance().setDebugMessage(
         `Jumping to pane: ${panes[selectedIndex].slug}`
       )
-      setTimeout(() => StateManager.getInstance().setDebugMessage(""), 2000)
+      setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex])
     }
   })

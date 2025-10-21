@@ -6,6 +6,7 @@ import {
   getAllPaneIds,
 } from "./tmux.js"
 import { LogService } from "../services/LogService.js"
+import { TMUX_PANE_CREATION_DELAY, TMUX_SIDEBAR_SETTLE_DELAY } from "../constants/timing.js"
 
 // Spacer pane identifier
 const SPACER_PANE_TITLE = "dmux-spacer"
@@ -257,7 +258,7 @@ export function recalculateAndApplyLayout(
       LogService.getInstance().debug(`Created fresh spacer pane: ${spacerId}`, "Layout")
 
       // CRITICAL: Wait for tmux to fully register the new pane before applying layout
-      execSync("sleep 0.05", { stdio: "pipe" })
+      execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: "pipe" })
 
       // Verify the pane appears in list-panes output
       let paneVerified = false
@@ -275,7 +276,7 @@ export function recalculateAndApplyLayout(
           }
         } catch {
           // Pane not ready yet, wait a bit
-          if (attempts < 2) execSync("sleep 0.05", { stdio: "pipe" })
+          if (attempts < 2) execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: "pipe" })
         }
       }
 
@@ -369,7 +370,7 @@ export function recalculateAndApplyLayout(
 
       // Wait for tmux to settle after sidebar resize
       try {
-        execSync("sleep 0.1", { stdio: "pipe" })
+        execSync(`sleep ${TMUX_SIDEBAR_SETTLE_DELAY / 1000}`, { stdio: "pipe" })
       } catch {}
     } else {
       LogService.getInstance().debug(`Sidebar width already correct: ${config.SIDEBAR_WIDTH}`, "Layout")
@@ -393,7 +394,7 @@ export function recalculateAndApplyLayout(
 
     // Wait for tmux to complete the window resize
     try {
-      execSync("sleep 0.05", { stdio: "pipe" })
+      execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: "pipe" })
     } catch {}
 
     // CRITICAL: Re-enforce sidebar width after window resize!
@@ -413,7 +414,7 @@ export function recalculateAndApplyLayout(
 
         // Wait for tmux to settle
         try {
-          execSync("sleep 0.1", { stdio: "pipe" })
+          execSync(`sleep ${TMUX_SIDEBAR_SETTLE_DELAY / 1000}`, { stdio: "pipe" })
         } catch {}
       }
     } catch (error) {
