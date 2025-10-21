@@ -120,20 +120,30 @@ export async function mergePane(pane, context, params) {
 
 **Target Structure:**
 ```
-src/actions/
-├── implementations/
-│   └── mergeAction.ts (< 100 lines - orchestration only)
-└── merge/
-    ├── commitMessageHandler.ts
-    ├── conflictResolution.ts
-    ├── mergeExecution.ts
-    ├── issueHandlers/
-    │   ├── mainDirtyHandler.ts
-    │   ├── worktreeUncommittedHandler.ts
-    │   ├── mergeConflictHandler.ts
-    │   └── nothingToMergeHandler.ts
-    └── types.ts (shared types)
+src/
+├── utils/                              # ✅ KEEP: Shared domain logic
+│   ├── mergeValidation.ts              # Used by action + popup
+│   ├── mergeExecution.ts               # Used by action + popup
+│   └── aiMerge.ts                      # Used by action + popup
+│
+└── actions/
+    ├── implementations/
+    │   └── mergeAction.ts              # < 100 lines - orchestration only
+    │
+    └── merge/                          # NEW: Action-specific UI logic
+        ├── commitMessageHandler.ts     # ActionResult flows for commits
+        ├── issueHandlers/              # ActionResult flows for issues
+        │   ├── mainDirtyHandler.ts     # Returns choice dialogs
+        │   ├── worktreeUncommittedHandler.ts
+        │   ├── mergeConflictHandler.ts
+        │   └── nothingToMergeHandler.ts
+        └── types.ts                    # Action-specific types
 ```
+
+**Key Principle:**
+- `src/utils/` = Domain logic (pure functions, no UI, reusable)
+- `src/actions/merge/` = UI logic (ActionResult objects, action-specific)
+- Utilities are already shared by `mergePopup.tsx` - keep them reusable!
 
 **Expected Impact:**
 - `mergeAction.ts`: 804 lines → <100 lines (87% reduction)
