@@ -576,34 +576,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           "KebabMenu"
         )
 
-        // Handle merge action with dedicated popup
-        if (actionId === PaneAction.MERGE) {
-          LogService.getInstance().debug(
-            `Merge action selected for pane: ${selectedPane.slug}`,
-            "MergeAction"
-          )
-          try {
-            await launchMergePopup(selectedPane)
-            LogService.getInstance().debug(
-              "Merge popup completed",
-              "MergeAction"
-            )
-          } catch (error) {
-            LogService.getInstance().error(
-              "Merge popup error",
-              "MergeAction",
-              selectedPane.id,
-              error instanceof Error ? error : undefined
-            )
-            setStatusMessage(`Merge popup failed: ${error}`)
-            setTimeout(() => setStatusMessage(""), 3000)
-          }
-        } else {
-          // Execute other actions through action system
-          await actionSystem.executeAction(actionId, selectedPane, {
-            mainBranch: getMainBranch(),
-          })
-        }
+        // Execute actions through action system (including MERGE)
+        await actionSystem.executeAction(actionId, selectedPane, {
+          mainBranch: getMainBranch(),
+        })
       } else if (result.cancelled) {
         // User pressed ESC - do nothing
         LogService.getInstance().debug("Kebab menu cancelled", "KebabMenu")
