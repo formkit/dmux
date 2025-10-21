@@ -45,6 +45,22 @@ import {
   SettingsManager,
   SETTING_DEFINITIONS,
 } from "./utils/settingsManager.js"
+import {
+  PopupManager,
+  type PopupManagerConfig,
+} from "./services/PopupManager.js"
+import {
+  InputHandler,
+  type InputHandlerConfig,
+  type InputHandlerCallbacks,
+  type InputHandlerState,
+  type InputHandlerDependencies,
+} from "./services/InputHandler.js"
+import {
+  PaneCreationService,
+  type PaneCreationConfig,
+  type PaneCreationCallbacks,
+} from "./services/PaneCreationService.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 

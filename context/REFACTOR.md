@@ -221,18 +221,61 @@ src/
 
 ---
 
-### Phase 4: Refactor DmuxApp.tsx ⏳ PENDING
-- [ ] **Step 4.1:** Extract PopupManager service
-- [ ] **Step 4.2:** Extract InputHandler service
-- [ ] **Step 4.3:** Extract PaneCreationService
-- [ ] **Step 4.4:** Update DmuxApp to use new services
-- [ ] **Step 4.5:** Add unit tests for each service
-- [ ] **Step 4.6:** Add integration tests for service interactions
-- [ ] **Step 4.7:** Add E2E tests for full workflows
-- [ ] **Step 4.8:** Verify all TUI functionality works
+### Phase 4: Refactor DmuxApp.tsx 🔄 IN PROGRESS (Services Extracted)
+- [x] **Step 4.1:** Extract PopupManager service (629 lines)
+- [x] **Step 4.2:** Extract InputHandler service (409 lines)
+- [x] **Step 4.3:** Extract PaneCreationService (477 lines)
+- [x] **Step 4.3.1:** Create useServices hook for initialization (100 lines)
+- [x] **Step 4.3.2:** Verify all services compile successfully ✅
+- [ ] **Step 4.4:** Integrate services into DmuxApp.tsx (NEXT SESSION)
+- [ ] **Step 4.5:** Remove duplicate code from DmuxApp.tsx
+- [ ] **Step 4.6:** Add unit tests for each service
+- [ ] **Step 4.7:** Add integration tests for service interactions
+- [ ] **Step 4.8:** Add E2E tests for full workflows
+- [ ] **Step 4.9:** Verify all TUI functionality works
 - [ ] **Commit:** Phase 4 completion
 
-**Expected Impact:** DmuxApp.tsx reduced from 2,595 → ~1,200 lines (54% reduction)
+**Expected Impact:** DmuxApp.tsx reduced from 2,594 → ~1,200 lines (54% reduction)
+
+**Services Created (1,615 lines total):**
+1. `src/services/PopupManager.ts` - 629 lines
+   - Extracted all 13 popup launchers
+   - Applied DRY principles with `launchPopup()` and `handleResult()` helpers
+   - 27% code reduction from original extraction (869 → 629 lines)
+
+2. `src/services/InputHandler.ts` - 409 lines
+   - Extracted all keyboard input routing from `useInput` hook
+   - Handles quit confirmation, dialog states, navigation, action shortcuts
+   - Clean separation of input handling from UI rendering
+
+3. `src/services/PaneCreationService.ts` - 477 lines
+   - Extracted the massive 362-line `createNewPane` function
+   - Handles worktree creation, agent launching (Claude/opencode)
+   - Auto-approval of Claude trust prompts
+   - Proper error handling and cleanup
+
+4. `src/hooks/useServices.ts` - 100 lines
+   - Clean hook for service initialization
+   - Manages service dependencies and lifecycle
+   - Memoized to prevent unnecessary recreations
+
+**Files Created:**
+- `src/services/PopupManager.ts`
+- `src/services/InputHandler.ts`
+- `src/services/PaneCreationService.ts`
+- `src/hooks/useServices.ts`
+
+**Build Status:** ✅ All services compile successfully with no errors
+
+**Next Steps (Integration Phase):**
+1. Import services into DmuxApp.tsx via useServices hook
+2. Replace all popup launcher method calls with `popupManager.*` calls
+3. Replace `useInput` logic with `inputHandler.handleInput()`
+4. Replace `createNewPane` with `paneCreationService.createPane()`
+5. Remove all duplicate popup launcher methods (~1,100 lines)
+6. Remove duplicate `createNewPane` function (~360 lines)
+7. Verify build passes and all functionality works
+8. Target: DmuxApp.tsx reduced to ~1,200 lines
 
 ---
 
