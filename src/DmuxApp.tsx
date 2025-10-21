@@ -39,6 +39,7 @@ import {
   PaneAction,
   getAvailableActions,
   type ActionMetadata,
+  type ActionResult,
 } from "./actions/index.js"
 import {
   SettingsManager,
@@ -1500,6 +1501,28 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       setTimeout(() => {
         intentionallyClosedPanes.current.delete(paneId)
       }, 5000)
+    },
+    onActionResult: async (result: ActionResult) => {
+      // Handle ActionResults from background callbacks (e.g., conflict resolution completion)
+      // This allows showing dialogs even when not in the normal action flow
+      if (!popupsSupported) return;
+
+      // Handle the result type and show appropriate dialog
+      if (result.type === 'confirm') {
+        const confirmed = await launchConfirmPopup(
+          result.title || 'Confirm',
+          result.message,
+          result.confirmLabel,
+          result.cancelLabel
+        );
+        if (confirmed && result.onConfirm) {
+          await result.onConfirm();
+        } else if (!confirmed && result.onCancel) {
+          await result.onCancel();
+        }
+      } else if (result.type === 'info' || result.type === 'success' || result.type === 'error') {
+        await launchProgressPopup(result.message, result.type as 'info' | 'success' | 'error', 3000);
+      }
     },
     forceRepaint,
     popupLaunchers: popupsSupported

@@ -23,6 +23,7 @@ interface UseActionSystemParams {
   onPaneUpdate?: (pane: DmuxPane) => void;
   onPaneRemove?: (paneId: string) => void;
   forceRepaint?: () => void;
+  onActionResult?: (result: ActionResult) => Promise<void>;
 
   // Popup launchers (optional - falls back to inline dialogs if not provided)
   popupLaunchers?: {
@@ -41,6 +42,7 @@ export default function useActionSystem({
   onPaneUpdate,
   onPaneRemove,
   forceRepaint,
+  onActionResult,
   popupLaunchers,
 }: UseActionSystemParams) {
   // TUI state for rendering dialogs
@@ -55,7 +57,8 @@ export default function useActionSystem({
     onPaneUpdate,
     onPaneRemove,
     forceRepaint,
-  }), [panes, sessionName, projectName, savePanes, onPaneUpdate, onPaneRemove, forceRepaint]);
+    onActionResult,
+  }), [panes, sessionName, projectName, savePanes, onPaneUpdate, onPaneRemove, forceRepaint, onActionResult]);
 
   // Execute an action and handle the result
   const executeActionWithHandling = useCallback(async (

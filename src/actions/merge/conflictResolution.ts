@@ -99,6 +99,40 @@ async function createAndLaunchConflictPane(
       context.onPaneUpdate(conflictPane);
     }
 
+    // Start monitoring for conflict resolution completion
+    const { startConflictMonitoring } = await import('../../utils/conflictMonitor.js');
+    startConflictMonitoring({
+      conflictPaneId: conflictPane.paneId,
+      repoPath: targetRepoPath,
+      onResolved: async () => {
+        // Conflicts resolved! Close the conflict pane and trigger cleanup
+        try {
+          // Kill the conflict pane
+          const { execSync } = await import('child_process');
+          execSync(`tmux kill-pane -t '${conflictPane.paneId}'`, { stdio: 'pipe' });
+
+          // Remove conflict pane from state
+          const updatedPanes = context.panes.filter(p => p.id !== conflictPane.id);
+          await context.savePanes(updatedPanes);
+
+          // Now trigger the cleanup flow for the original pane
+          // We need to execute the merge completion flow
+          const { executeMerge } = await import('../merge/mergeExecution.js');
+
+          // Re-run executeMerge which will now succeed (conflicts are resolved)
+          // This will return the cleanup confirmation dialog
+          const result = await executeMerge(pane, context, targetBranch, targetRepoPath);
+
+          // If we have the onActionResult callback, use it to show the dialog
+          if (context.onActionResult) {
+            await context.onActionResult(result);
+          }
+        } catch (error) {
+          console.error('[conflictResolution] Error in onResolved:', error);
+        }
+      },
+    });
+
     return {
       type: 'navigation',
       title: 'Conflict Resolution Pane Created',
