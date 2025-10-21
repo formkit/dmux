@@ -1,4 +1,4 @@
-import { COLORS, TMUX_COLORS } from '../theme/colors.js';
+import { COLORS, TMUX_COLORS } from '../../theme/colors.js';
 
 /**
  * Centralized configuration for all dmux popups

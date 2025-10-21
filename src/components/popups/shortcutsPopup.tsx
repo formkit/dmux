@@ -6,7 +6,7 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
-import { PopupWrapper } from './components/index.js';
+import { PopupWrapper } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
 
 interface ShortcutsPopupAppProps {

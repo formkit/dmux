@@ -8,7 +8,7 @@
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
-import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface ChoiceOption {

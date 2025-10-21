@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { DmuxPane } from '../types.js';
-import { COLORS } from '../theme/colors.js';
+import type { DmuxPane } from '../../types.js';
+import { COLORS } from '../../theme/colors.js';
 
 interface PaneCardProps {
   pane: DmuxPane;

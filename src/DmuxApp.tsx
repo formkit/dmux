@@ -57,14 +57,14 @@ import type {
   ProjectSettings,
   DmuxAppProps,
 } from "./types.js"
-import PanesGrid from "./components/PanesGrid.js"
-import CommandPromptDialog from "./components/CommandPromptDialog.js"
-import FileCopyPrompt from "./components/FileCopyPrompt.js"
-import LoadingIndicator from "./components/LoadingIndicator.js"
-import RunningIndicator from "./components/RunningIndicator.js"
-import UpdatingIndicator from "./components/UpdatingIndicator.js"
-import CreatingIndicator from "./components/CreatingIndicator.js"
-import FooterHelp from "./components/FooterHelp.js"
+import PanesGrid from "./components/panes/PanesGrid.js"
+import CommandPromptDialog from "./components/dialogs/CommandPromptDialog.js"
+import FileCopyPrompt from "./components/ui/FileCopyPrompt.js"
+import LoadingIndicator from "./components/indicators/LoadingIndicator.js"
+import RunningIndicator from "./components/indicators/RunningIndicator.js"
+import UpdatingIndicator from "./components/indicators/UpdatingIndicator.js"
+import CreatingIndicator from "./components/indicators/CreatingIndicator.js"
+import FooterHelp from "./components/ui/FooterHelp.js"
 
 const DmuxApp: React.FC<DmuxAppProps> = ({
   panesFile,

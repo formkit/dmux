@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { ActionOption } from '../actions/types.js';
+import type { ActionOption } from '../../actions/types.js';
 
 interface ActionChoiceDialogProps {
   title: string;

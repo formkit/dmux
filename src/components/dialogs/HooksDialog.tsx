@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { HookType } from '../utils/hooks.js';
+import type { HookType } from '../../utils/hooks.js';
 
 interface Hook {
   name: string;

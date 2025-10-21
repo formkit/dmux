@@ -9,7 +9,7 @@ import React, { useState } from 'react';
 import { render, Box, Text, useApp } from 'ink';
 import * as fs from 'fs';
 import CleanTextInput from '../inputs/CleanTextInput.js';
-import { PopupContainer, PopupInputBox, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupContainer, PopupInputBox, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { PopupFooters } from './config.js';
 
 interface InputPopupProps {

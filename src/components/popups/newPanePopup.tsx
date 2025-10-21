@@ -13,10 +13,10 @@ import {
   PopupWrapper,
   writeSuccessAndExit,
   FileList,
-} from "./components/index.js"
+} from "./shared/index.js"
 import { PopupFooters, POPUP_CONFIG } from "./config.js"
 import CleanTextInput from "../inputs/CleanTextInput.js"
-import { scanProjectFiles, fuzzyMatchFiles } from "../utils/fileScanner.js"
+import { scanProjectFiles, fuzzyMatchFiles } from "../../utils/fileScanner.js"
 import fs from "fs"
 import path from "path"
 

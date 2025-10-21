@@ -7,13 +7,13 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import type { SettingDefinition, DmuxSettings } from '../types.js';
+import type { SettingDefinition, DmuxSettings } from '../../types.js';
 import { POPUP_CONFIG } from './config.js';
 import {
   PopupWrapper,
   writeSuccessAndExit,
   writeCancelAndExit,
-} from './components/index.js';
+} from './shared/index.js';
 
 interface SettingsPopupProps {
   resultFile: string;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { SettingDefinition, DmuxSettings, SettingsScope } from '../types.js';
+import type { SettingDefinition, DmuxSettings, SettingsScope } from '../../types.js';
 
 interface SettingsDialogProps {
   settings: DmuxSettings;

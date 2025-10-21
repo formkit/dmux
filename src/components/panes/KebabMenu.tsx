@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { ActionMetadata } from '../actions/types.js';
+import type { ActionMetadata } from '../../actions/types.js';
 
 interface KebabMenuProps {
   selectedOption: number;

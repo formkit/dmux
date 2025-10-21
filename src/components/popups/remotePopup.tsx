@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import { execSync } from 'child_process';
 // @ts-ignore - No types available for qrcode-terminal
 import qrcode from 'qrcode-terminal';
-import { PopupWrapper } from './components/index.js';
+import { PopupWrapper } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
 
 interface RemotePopupAppProps {

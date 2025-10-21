@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render } from 'ink-testing-library';
 import stripAnsi from 'strip-ansi';
-import CleanTextInput from '../src/CleanTextInput.js';
+import CleanTextInput from '../src/components/inputs/CleanTextInput.js';
 import { wrapText } from '../src/utils/input.js';
 
 const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));

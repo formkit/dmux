@@ -7,7 +7,7 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface AgentChoicePopupProps {

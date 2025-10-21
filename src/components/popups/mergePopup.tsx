@@ -17,7 +17,7 @@ import {
   writeCancelAndExit,
   writeErrorAndExit,
   type PopupResult
-} from './components/index.js';
+} from './shared/index.js';
 
 interface MergeIssue {
   type: string;
@@ -73,7 +73,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
     (async () => {
       try {
         // Import and run validation
-        const { validateMerge } = await import('../utils/mergeValidation.js');
+        const { validateMerge } = await import('../../utils/mergeValidation.js');
         const result = validateMerge(mainRepoPath, worktreePath, paneSlug);
         setValidation(result);
 
@@ -113,7 +113,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
     setStatusMessage('Generating commit message with AI...');
 
     try {
-      const { generateCommitMessage } = await import('../utils/aiMerge.js');
+      const { generateCommitMessage } = await import('../../utils/aiMerge.js');
       const message = await generateCommitMessage(repoPath);
 
       if (message) {
@@ -138,7 +138,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
     setStatusMessage('Merging worktree into main...');
 
     try {
-      const { mergeWorktreeIntoMain } = await import('../utils/mergeExecution.js');
+      const { mergeWorktreeIntoMain } = await import('../../utils/mergeExecution.js');
       const result = mergeWorktreeIntoMain(mainRepoPath, paneSlug);
 
       if (!result.success) {
@@ -159,7 +159,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
   // Commit changes
   const commitChanges = async (repoPath: string, message: string) => {
     try {
-      const { stageAllChanges, commitChanges: doCommit } = await import('../utils/mergeValidation.js');
+      const { stageAllChanges, commitChanges: doCommit } = await import('../../utils/mergeValidation.js');
 
       const stageResult = stageAllChanges(repoPath);
       if (!stageResult.success) {
@@ -243,7 +243,7 @@ const MergePopupApp: React.FC<MergePopupProps> = ({
         // Cleanup and close
         (async () => {
           try {
-            const { cleanupAfterMerge } = await import('../utils/mergeExecution.js');
+            const { cleanupAfterMerge } = await import('../../utils/mergeExecution.js');
             cleanupAfterMerge(mainRepoPath, worktreePath, paneSlug);
 
             writeSuccessAndExit(resultFile, { merged: true, closedPane: true }, exit);

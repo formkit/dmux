@@ -7,7 +7,7 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import { PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
 
 interface Hook {

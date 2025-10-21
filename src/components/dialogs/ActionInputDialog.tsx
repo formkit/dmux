@@ -7,7 +7,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import CleanTextInput from '../inputs/CleanTextInput.js';
-import { COLORS } from '../theme/colors.js';
+import { COLORS } from '../../theme/colors.js';
 import chalk from 'chalk';
 
 interface ActionInputDialogProps {

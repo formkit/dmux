@@ -1,9 +1,9 @@
 import React from "react"
 import { Box, Text } from "ink"
-import type { DmuxPane } from "../types.js"
-import type { AgentStatusMap } from "../hooks/useAgentStatus.js"
+import type { DmuxPane } from "../../types.js"
+import type { AgentStatusMap } from "../../hooks/useAgentStatus.js"
 import PaneCard from "./PaneCard.js"
-import { COLORS } from "../theme/colors.js"
+import { COLORS } from "../../theme/colors.js"
 
 interface PanesGridProps {
   panes: DmuxPane[]

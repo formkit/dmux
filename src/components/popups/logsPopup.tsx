@@ -11,13 +11,13 @@
 
 import React, { useState, useMemo } from 'react';
 import { render, Box, Text, useInput, useStdout, useApp } from 'ink';
-import type { LogEntry, LogLevel } from '../types.js';
+import type { LogEntry, LogLevel } from '../../types.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { POPUP_CONFIG } from './config.js';
-import { PopupWrapper, writeSuccessAndExit } from './components/index.js';
+import { PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 
 type FilterMode = 'all' | 'errors' | 'warnings' | 'pane';
 

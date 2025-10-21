@@ -7,7 +7,7 @@ import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { POPUP_CONFIG } from '../popups/config.js';
+import { POPUP_CONFIG } from '../components/popups/config.js';
 
 export interface PopupOptions {
   width?: number;
