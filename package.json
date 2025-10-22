@@ -83,6 +83,7 @@
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "^1.0.0",
     "bumpp": "^10.2.3",
     "ink-testing-library": "^4.0.0",
     "npm-run-all2": "^8.0.4",

@@ -8,6 +8,11 @@ import { executeMerge, executeMergeWithConflictHandling } from '../../../src/act
 import type { DmuxPane } from '../../../src/types.js';
 import type { ActionContext } from '../../../src/actions/types.js';
 
+// Mock child_process to prevent actual tmux commands
+vi.mock('child_process', () => ({
+  execSync: vi.fn(() => Buffer.from('')),
+}));
+
 // Mock utilities
 vi.mock('../../../src/utils/mergeExecution.ts', () => ({
   mergeMainIntoWorktree: vi.fn(() => ({ success: true })),
@@ -19,6 +24,16 @@ vi.mock('../../../src/utils/mergeExecution.ts', () => ({
 
 vi.mock('../../../src/utils/hooks.js', () => ({
   triggerHook: vi.fn(() => Promise.resolve()),
+}));
+
+// Create a mock StateManager that can be configured per test
+const mockGetPanes = vi.fn(() => []);
+vi.mock('../../../src/shared/StateManager.js', () => ({
+  StateManager: {
+    getInstance: vi.fn(() => ({
+      getPanes: mockGetPanes,
+    })),
+  },
 }));
 
 vi.mock('../../../src/actions/implementations/closeAction.js', () => ({
@@ -116,6 +131,11 @@ describe('Merge Execution - Bug Fixes', () => {
   });
 
   describe('BUG #2: Cleanup Flow', () => {
+    beforeEach(() => {
+      // Configure StateManager to return the test pane
+      mockGetPanes.mockReturnValue([mockPane]);
+    });
+
     it('should cleanup worktree when user confirms', async () => {
       const { mergeMainIntoWorktree, mergeWorktreeIntoMain, cleanupAfterMerge } = await import(
         '../../../src/utils/mergeExecution.ts'
