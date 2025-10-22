@@ -164,21 +164,59 @@ export async function createPane(
 
   let paneInfo: string;
 
-  if (isFirstContentPane) {
-    // First, create the tmux pane but DON'T destroy welcome pane yet
-    // This way we can save the pane to config first, THEN destroy welcome pane
-    paneInfo = setupSidebarLayout(controlPaneId);
+  // Self-healing: Try to create pane, if it fails due to stale controlPaneId, fix and retry
+  try {
+    if (isFirstContentPane) {
+      // First, create the tmux pane but DON'T destroy welcome pane yet
+      // This way we can save the pane to config first, THEN destroy welcome pane
+      paneInfo = setupSidebarLayout(controlPaneId);
 
-    // Wait for pane creation to settle
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  } else {
-    // Subsequent panes - always split horizontally, let layout manager organize
-    // Get actual dmux pane IDs (not welcome pane) from existingPanes
-    const dmuxPaneIds = existingPanes.map(p => p.paneId);
-    const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
+      // Wait for pane creation to settle
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } else {
+      // Subsequent panes - always split horizontally, let layout manager organize
+      // Get actual dmux pane IDs (not welcome pane) from existingPanes
+      const dmuxPaneIds = existingPanes.map(p => p.paneId);
+      const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
-    // Always split horizontally - the layout manager will organize panes optimally
-    paneInfo = splitPane({ targetPane });
+      // Always split horizontally - the layout manager will organize panes optimally
+      paneInfo = splitPane({ targetPane });
+    }
+  } catch (error) {
+    // Check if error is due to stale pane ID (can't find pane)
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes("can't find pane")) {
+      console.error(`[dmux] Pane creation failed with stale ID, self-healing...`);
+
+      // Fix: Update controlPaneId to current pane and save to config
+      const currentPaneId = originalPaneId; // We got this at the start of createPane
+      console.error(`[dmux] Updating controlPaneId from ${controlPaneId} to ${currentPaneId}`);
+
+      try {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config: DmuxConfig = JSON.parse(configContent);
+        config.controlPaneId = currentPaneId;
+        config.lastUpdated = new Date().toISOString();
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        controlPaneId = currentPaneId; // Update local variable
+      } catch (configError) {
+        console.error('[dmux] Failed to update config:', configError);
+        throw error; // Re-throw original error
+      }
+
+      // Retry pane creation with corrected controlPaneId
+      if (isFirstContentPane) {
+        paneInfo = setupSidebarLayout(controlPaneId);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } else {
+        const dmuxPaneIds = existingPanes.map(p => p.paneId);
+        const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1];
+        paneInfo = splitPane({ targetPane });
+      }
+    } else {
+      // Different error, re-throw
+      throw error;
+    }
   }
 
   // Wait for pane creation to settle
