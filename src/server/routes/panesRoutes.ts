@@ -199,7 +199,8 @@ export function createPanesRoutes() {
         };
       }
 
-      // Save the new pane to the panes file
+      // Note: createPane() already saves the pane to config for the first content pane
+      // For subsequent panes, we need to check if it's already been saved before adding
       const fs = await import('fs/promises');
       const path = await import('path');
 
@@ -221,14 +222,19 @@ export function createPanesRoutes() {
         // File doesn't exist yet, start with empty array
       }
 
-      // Add new pane
-      const updatedPanes = [...existingPanes, result.pane];
+      // Check if the pane was already saved by createPane()
+      const paneAlreadyExists = existingPanes.some(p => p.id === result.pane.id);
 
-      // Write back to file - ConfigWatcher will update StateManager
-      await fs.writeFile(
-        panesFile,
-        JSON.stringify({ panes: updatedPanes }, null, 2)
-      );
+      if (!paneAlreadyExists) {
+        // Add new pane only if it doesn't exist
+        const updatedPanes = [...existingPanes, result.pane];
+
+        // Write back to file - ConfigWatcher will update StateManager
+        await fs.writeFile(
+          panesFile,
+          JSON.stringify({ panes: updatedPanes }, null, 2)
+        );
+      }
 
       return {
         success: true,
