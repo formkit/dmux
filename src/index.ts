@@ -12,7 +12,6 @@ import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import DmuxApp from './DmuxApp.js';
 import { AutoUpdater } from './services/AutoUpdater.js';
-import readline from 'readline';
 import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
@@ -373,53 +372,41 @@ class Dmux {
     }
 
     // Check if .dmux is ignored by either this repo's .gitignore or global gitignore
-    const isIgnored = spawnSync('git', ['check-ignore', '--quiet', dmuxDir]).status === 0;
+    const isIgnored = spawnSync('git', ['check-ignore', '--quiet', dmuxDir], {
+      cwd: this.projectRoot
+    }).status === 0;
+
     if (isIgnored) {
       return;
     }
 
-    // Check if .gitignore exists and if .dmux is in it
+    // Auto-add .dmux to .gitignore if not already present
     const gitignorePath = path.join(this.projectRoot, '.gitignore');
     if (await this.fileExists(gitignorePath)) {
+      const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+      const lines = gitignoreContent.split('\n');
 
-      // Prompt user to add .dmux to .gitignore
-      const shouldAdd = await this.promptUser(
-        'The .dmux directory is not in .gitignore. Would you like to add it? (y/n): '
-      );
+      // Check if .dmux is already in .gitignore (exact match or pattern match)
+      const hasDmuxEntry = lines.some(line => {
+        const trimmed = line.trim();
+        return trimmed === '.dmux/' || trimmed === '.dmux' || trimmed === '/.dmux/';
+      });
 
-      if (shouldAdd) {
-        // Add .dmux to .gitignore
-        const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+      if (!hasDmuxEntry) {
+        // Add .dmux/ to .gitignore
         const newGitignore = gitignoreContent.endsWith('\n')
           ? gitignoreContent + '.dmux/\n'
           : gitignoreContent + '\n.dmux/\n';
         await fs.writeFile(gitignorePath, newGitignore);
+        LogService.getInstance().debug('Added .dmux/ to .gitignore', 'Setup');
       }
     } else {
-      // No .gitignore exists, prompt to create one
-      const shouldCreate = await this.promptUser(
-        'No .gitignore file found. Would you like to create one with .dmux/ entry? (y/n): '
-      );
-
-      if (shouldCreate) {
-        await fs.writeFile(gitignorePath, '.dmux/\n');
-      }
+      // No .gitignore exists, create one with .dmux/ entry
+      await fs.writeFile(gitignorePath, '.dmux/\n');
+      LogService.getInstance().debug('Created .gitignore with .dmux/ entry', 'Setup');
     }
   }
 
-  private async promptUser(question: string): Promise<boolean> {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-
-    return new Promise((resolve) => {
-      rl.question(question, (answer) => {
-        rl.close();
-        resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
-      });
-    });
-  }
 
   private async migrateOldConfig() {
     // Check if we're using the new config location
