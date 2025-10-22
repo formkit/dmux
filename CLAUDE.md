@@ -42,6 +42,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 - **Intelligent merge workflows**: Auto-commits, generates commit messages, and merges worktrees
 - **React-based TUI**: Interactive terminal UI built with Ink framework
 - **Session persistence**: Tracks active panes per project with automatic cleanup
+- **Test merge functionality**: This line added to test the merge workflow
 
 ## Architecture
 
