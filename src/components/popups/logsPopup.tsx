@@ -276,7 +276,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
       case 'error': return 'red';
       case 'warn': return 'yellow';
       case 'info': return 'cyan';
-      case 'debug': return 'gray';
+      case 'debug': return 'magenta';  // Changed from gray to make debug logs visible
     }
   };
 
