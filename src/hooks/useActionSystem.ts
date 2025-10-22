@@ -49,8 +49,11 @@ async function handleResultWithPopups(
   context: ActionContext,
   setActionState: (updater: (prev: TUIActionState) => TUIActionState) => void
 ): Promise<void> {
+  console.error(`[useActionSystem] handleResultWithPopups called with type: ${result.type}, title: ${result.title || result.message?.substring(0, 50)}`);
+
   // Handle confirm dialogs
   if (result.type === 'confirm' && popupLaunchers?.launchConfirmPopup) {
+    console.error(`[useActionSystem] Launching confirm popup: ${result.title}`);
     const confirmed = await popupLaunchers.launchConfirmPopup(
       result.title || 'Confirm',
       result.message,
@@ -58,11 +61,16 @@ async function handleResultWithPopups(
       result.cancelLabel
     );
 
+    console.error(`[useActionSystem] Popup result: confirmed=${confirmed}`);
     if (confirmed && result.onConfirm) {
+      console.error(`[useActionSystem] Calling onConfirm callback`);
       const nextResult = await result.onConfirm();
+      console.error(`[useActionSystem] onConfirm returned type: ${nextResult.type}`);
       await handleResultWithPopups(nextResult, popupLaunchers, context, setActionState);
     } else if (!confirmed && result.onCancel) {
+      console.error(`[useActionSystem] Calling onCancel callback`);
       const nextResult = await result.onCancel();
+      console.error(`[useActionSystem] onCancel returned type: ${nextResult.type}`);
       await handleResultWithPopups(nextResult, popupLaunchers, context, setActionState);
     }
     return;

@@ -184,11 +184,14 @@ export async function executeMerge(
   }
 
   // Trigger post_merge hook after successful merge
+  console.error(`[mergeExecution] About to trigger post_merge hook for ${pane.slug}`);
   await triggerHook('post_merge', mainRepoPath, pane, {
     DMUX_TARGET_BRANCH: mainBranch,
   });
+  console.error(`[mergeExecution] post_merge hook completed for ${pane.slug}`);
 
   // Merge successful! Ask about cleanup
+  console.error(`[mergeExecution] Returning confirm dialog for cleanup of ${pane.slug}`);
   return {
     type: 'confirm',
     title: 'Merge Complete',
