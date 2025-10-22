@@ -81,27 +81,27 @@ export class SpacerManager {
       // Return focus to the originally active pane
       this.tmuxService.selectPaneSync(originalPaneId);
 
-      LogService.getInstance().debug(
-        `Created spacer pane: ${newPaneId} (split from ${lastContentPaneId}, restored focus to ${originalPaneId})`,
-        'Layout'
-      );
+  //       LogService.getInstance().debug(
+  //         `Created spacer pane: ${newPaneId} (split from ${lastContentPaneId}, restored focus to ${originalPaneId})`,
+  //         'Layout'
+  //       );
       return newPaneId;
     } catch (error) {
-      LogService.getInstance().debug(`Failed to create spacer pane: ${error}`, 'Layout');
-      throw error;
-    }
-  }
-
-  /**
-   * Destroys a spacer pane by ID
-   * @param spacerId - The pane ID to destroy
-   */
-  destroySpacerPane(spacerId: string): void {
-    try {
-      this.tmuxService.killPaneSync(spacerId);
-      LogService.getInstance().debug(`Destroyed spacer pane: ${spacerId}`, 'Layout');
-    } catch (error) {
-      LogService.getInstance().debug(`Failed to destroy spacer pane: ${error}`, 'Layout');
+  //   //       LogService.getInstance().debug(`Failed to create spacer pane: ${error}`, 'Layout');
+  //       throw error;
+  //     }
+  //   }
+  // 
+  //   /**
+  //    * Destroys a spacer pane by ID
+  //    * @param spacerId - The pane ID to destroy
+  //    */
+  //   destroySpacerPane(spacerId: string): void {
+  //     try {
+  //       this.tmuxService.killPaneSync(spacerId);
+  //   //       LogService.getInstance().debug(`Destroyed spacer pane: ${spacerId}`, 'Layout');
+  //     } catch (error) {
+  //   //       LogService.getInstance().debug(`Failed to destroy spacer pane: ${error}`, 'Layout');
     }
   }
 
@@ -143,10 +143,10 @@ export class SpacerManager {
     // Calculate width per pane if we distribute evenly
     const widthPerPane = availableWidth / panesInLastRow;
 
-    LogService.getInstance().debug(
-      `Spacer check: ${panesInLastRow} panes in last row, ${Math.round(availableWidth)} available width, ${Math.round(widthPerPane)} per pane (max: ${this.config.MAX_COMFORTABLE_WIDTH})`,
-      'Layout'
-    );
+  //     LogService.getInstance().debug(
+  //       `Spacer check: ${panesInLastRow} panes in last row, ${Math.round(availableWidth)} available width, ${Math.round(widthPerPane)} per pane (max: ${this.config.MAX_COMFORTABLE_WIDTH})`,
+  //       'Layout'
+  //     );
 
     // Need spacer if distributing width evenly would exceed comfortable width
     if (widthPerPane <= this.config.MAX_COMFORTABLE_WIDTH) {
@@ -161,10 +161,10 @@ export class SpacerManager {
 
     // Only use spacer if it would be wide enough (avoid tmux rejecting tiny panes)
     if (spacerWidth < MIN_SPACER_WIDTH) {
-      LogService.getInstance().debug(
-        `Spacer would be too narrow (${spacerWidth} < ${MIN_SPACER_WIDTH}), skipping spacer`,
-        'Layout'
-      );
+  //       LogService.getInstance().debug(
+  //         `Spacer would be too narrow (${spacerWidth} < ${MIN_SPACER_WIDTH}), skipping spacer`,
+  //         'Layout'
+  //       );
       return false;
     }
 

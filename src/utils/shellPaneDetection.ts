@@ -68,10 +68,10 @@ export async function detectShellType(paneId: string): Promise<string> {
     // Fallback to generic 'shell'
     return 'shell';
   } catch (error) {
-    LogService.getInstance().debug(
-      `Failed to detect shell type for pane ${paneId}`,
-      'shellDetection'
-    );
+  //     LogService.getInstance().debug(
+  //       `Failed to detect shell type for pane ${paneId}`,
+  //       'shellDetection'
+  //     );
     return 'shell';
   }
 }
@@ -119,47 +119,47 @@ export async function getUntrackedPanes(
 
       // CRITICAL: Skip internal dmux panes by title
       if (title === 'dmux-spacer') {
-        LogService.getInstance().debug(`Excluding spacer pane: ${paneId}`, 'shellDetection');
-        continue;
-      }
-      if (title && title.startsWith('dmux v')) {
-        LogService.getInstance().debug(`Excluding control pane by title: ${paneId} (${title})`, 'shellDetection');
+  //   //         LogService.getInstance().debug(`Excluding spacer pane: ${paneId}`, 'shellDetection');
+  //         continue;
+  //       }
+  //       if (title && title.startsWith('dmux v')) {
+  //   //         LogService.getInstance().debug(`Excluding control pane by title: ${paneId} (${title})`, 'shellDetection');
         continue;
       }
       if (title === 'Welcome') {
-        LogService.getInstance().debug(`Excluding welcome pane: ${paneId}`, 'shellDetection');
-        continue;
-      }
-
-      // CRITICAL: Skip control and welcome panes by ID (most reliable method)
-      if (controlPaneId && paneId === controlPaneId) {
-        LogService.getInstance().debug(`Excluding control pane by ID: ${paneId}`, 'shellDetection');
+  //   //         LogService.getInstance().debug(`Excluding welcome pane: ${paneId}`, 'shellDetection');
+  //         continue;
+  //       }
+  // 
+  //       // CRITICAL: Skip control and welcome panes by ID (most reliable method)
+  //       if (controlPaneId && paneId === controlPaneId) {
+  //   //         LogService.getInstance().debug(`Excluding control pane by ID: ${paneId}`, 'shellDetection');
         continue;
       }
       if (welcomePaneId && paneId === welcomePaneId) {
-        LogService.getInstance().debug(`Excluding welcome pane by ID: ${paneId}`, 'shellDetection');
-        continue;
-      }
-
-      // CRITICAL: Skip panes running dmux itself (node process running dmux)
-      if (command && (command === 'node' || command.includes('dmux'))) {
-        LogService.getInstance().debug(`Excluding dmux process pane: ${paneId} (command: ${command})`, 'shellDetection');
+  //   //         LogService.getInstance().debug(`Excluding welcome pane by ID: ${paneId}`, 'shellDetection');
+  //         continue;
+  //       }
+  // 
+  //       // CRITICAL: Skip panes running dmux itself (node process running dmux)
+  //       if (command && (command === 'node' || command.includes('dmux'))) {
+  //   //         LogService.getInstance().debug(`Excluding dmux process pane: ${paneId} (command: ${command})`, 'shellDetection');
         continue;
       }
 
       // Skip already tracked panes
       if (trackedPaneIds.includes(paneId)) continue;
 
-      LogService.getInstance().debug(`Found untracked pane: ${paneId} (title: ${title}, command: ${command})`, 'shellDetection');
-      untrackedPanes.push({ paneId, title: title || '', command: command || '' });
+  //   //       LogService.getInstance().debug(`Found untracked pane: ${paneId} (title: ${title}, command: ${command})`, 'shellDetection');
+  //       untrackedPanes.push({ paneId, title: title || '', command: command || '' });
     }
 
     return untrackedPanes;
   } catch (error) {
-    LogService.getInstance().debug(
-      'Failed to get untracked panes',
-      'shellDetection'
-    );
+  //     LogService.getInstance().debug(
+  //       'Failed to get untracked panes',
+  //       'shellDetection'
+  //     );
     return [];
   }
 }
@@ -189,10 +189,10 @@ export async function createShellPane(paneId: string, nextId: number, existingTi
     try {
       await tmuxService.setPaneTitle(paneId, slug);
     } catch (error) {
-      LogService.getInstance().debug(
-        `Failed to set title for shell pane ${paneId}`,
-        'shellDetection'
-      );
+  //       LogService.getInstance().debug(
+  //         `Failed to set title for shell pane ${paneId}`,
+  //         'shellDetection'
+  //       );
     }
   }
 

@@ -146,20 +146,29 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const [unreadErrorCount, setUnreadErrorCount] = useState(0)
   const [unreadWarningCount, setUnreadWarningCount] = useState(0)
 
-  // Subscribe to StateManager for unread error/warning count updates
+  // Track toast state
+  const [currentToast, setCurrentToast] = useState<any>(null)
+  const [toastQueueLength, setToastQueueLength] = useState(0)
+  const [toastQueuePosition, setToastQueuePosition] = useState<number | null>(null)
+
+  // Subscribe to StateManager for unread error/warning count and toast updates
   useEffect(() => {
     const stateManager = StateManager.getInstance()
 
-    const updateCounts = () => {
-      setUnreadErrorCount(stateManager.getUnreadErrorCount())
-      setUnreadWarningCount(stateManager.getUnreadWarningCount())
+    const updateState = () => {
+      const state = stateManager.getState()
+      setUnreadErrorCount(state.unreadErrorCount)
+      setUnreadWarningCount(state.unreadWarningCount)
+      setCurrentToast(state.currentToast)
+      setToastQueueLength(state.toastQueueLength)
+      setToastQueuePosition(state.toastQueuePosition)
     }
 
-    // Initial count
-    updateCounts()
+    // Initial state
+    updateState()
 
     // Subscribe to changes
-    const unsubscribe = stateManager.subscribe(updateCounts)
+    const unsubscribe = stateManager.subscribe(updateState)
 
     return () => {
       unsubscribe()
@@ -696,6 +705,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // - Quit confirm mode: 2 lines (marginTop + 1 text line)
   // - Normal mode calculation:
   //   - Base: 4 lines (marginTop + logs divider + logs line + keyboard shortcuts)
+  //   - Toast: +2 lines (toast message + marginBottom) if currentToast exists
   //   - Network section: +4 lines (divider, local IP, remote tunnel, divider) if serverPort exists
   //   - Debug info: +1 line if DEBUG_DMUX
   //   - Status line: +1 line if updateAvailable/currentBranch/debugMessage
@@ -706,6 +716,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   } else {
     // Base footer (logs divider + logs + shortcuts - always shown)
     footerLines = 4 // marginTop + logs divider + logs + shortcuts
+    // Add toast notification (calculate wrapped lines + header)
+    if (currentToast) {
+      // Calculate how many lines the toast will take
+      // Toast format: "✓ message" - icon (1) + space (1) + message
+      const iconAndSpaceLength = 2;
+      const toastTextLength = iconAndSpaceLength + currentToast.message.length;
+
+      // Available width is sidebar width (40) minus padding/margins (~2)
+      const availableWidth = SIDEBAR_WIDTH - 2;
+      const wrappedLines = Math.ceil(toastTextLength / availableWidth);
+
+      footerLines += wrappedLines + 1 + 1; // wrapped lines + header line + marginBottom
+    }
     // Add network section (now 2 lines for local IP + remote tunnel, plus 2 dividers)
     if (serverPort && serverPort > 0) {
       footerLines += 4
@@ -795,6 +818,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         serverPort={serverPort}
         unreadErrorCount={unreadErrorCount}
         unreadWarningCount={unreadWarningCount}
+        currentToast={currentToast}
+        toastQueueLength={toastQueueLength}
+        toastQueuePosition={toastQueuePosition}
         localIp={localIp}
         tunnelUrl={tunnelUrl}
         tunnelCreating={tunnelCreating}

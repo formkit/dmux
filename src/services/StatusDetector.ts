@@ -6,6 +6,7 @@ import { PaneAnalyzer } from './PaneAnalyzer.js';
 import type { PaneAnalysis } from './PaneAnalyzer.js';
 import type { OutboundMessage } from '../workers/WorkerMessages.js';
 import { StateManager } from '../shared/StateManager.js';
+import { LogService } from './LogService.js';
 
 export interface StatusUpdateEvent {
   paneId: string;
@@ -215,7 +216,7 @@ export class StatusDetector extends EventEmitter {
 
         if (error.name === 'AbortError') {
           // Request was aborted due to timeout
-          StateManager.getInstance().setDebugMessage(`LLM analysis timeout for pane ${paneId} after 10 seconds`);
+          LogService.getInstance().warn(`LLM analysis timeout for pane ${paneId} after 10 seconds`, 'statusDetector', paneId);
 
           this.paneStatuses.set(paneId, 'idle');
 
@@ -242,7 +243,7 @@ export class StatusDetector extends EventEmitter {
         throw error; // Re-throw other errors to outer catch
       }
     } catch (error: any) {
-      StateManager.getInstance().setDebugMessage(`LLM analysis error for pane ${paneId}: ${error.message || error}`);
+      LogService.getInstance().error(`LLM analysis error for pane ${paneId}: ${error.message || error}`, 'statusDetector', paneId, error instanceof Error ? error : undefined);
 
       // Extract detailed error message
       let errorMessage = 'Analysis failed';
@@ -323,32 +324,29 @@ export class StatusDetector extends EventEmitter {
 
     // Check if there's a risk - don't auto-accept risky options
     if (analysis.potentialHarm?.hasRisk) {
-      StateManager.getInstance().setDebugMessage(`[Autopilot] Skipping auto-accept for pane ${paneId}: potential harm detected`);
       return;
     }
 
     // Check if we have options
     if (!analysis.options || analysis.options.length === 0) {
-      StateManager.getInstance().setDebugMessage(`[Autopilot] Skipping auto-accept for pane ${paneId}: no options found`);
       return;
     }
 
     // Get the first option (typically the "accept" or "continue" option)
     const firstOption = analysis.options[0];
     if (!firstOption.keys || firstOption.keys.length === 0) {
-      StateManager.getInstance().setDebugMessage(`[Autopilot] Skipping auto-accept for pane ${paneId}: no keys for first option`);
       return;
     }
 
     // Send the first key of the first option
     const keyToSend = firstOption.keys[0];
-    StateManager.getInstance().setDebugMessage(`[Autopilot] Auto-accepting option for pane ${paneId}: ${firstOption.action} (key: ${keyToSend})`);
+    LogService.getInstance().info(`Autopilot: Auto-accepting option for pane ${paneId}: ${firstOption.action} (key: ${keyToSend})`, 'autopilot', paneId);
 
     try {
       // Send the key through the worker manager
       await this.sendKeysToPane(paneId, keyToSend);
     } catch (error) {
-      StateManager.getInstance().setDebugMessage(`[Autopilot] Failed to send keys for pane ${paneId}: ${error}`);
+      LogService.getInstance().error(`Autopilot: Failed to send keys for pane ${paneId}: ${error}`, 'autopilot', paneId, error instanceof Error ? error : undefined);
     }
   }
 

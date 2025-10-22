@@ -316,13 +316,13 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
       <Box key={log.id} flexDirection="column" marginBottom={0}>
         <Text>
           <Text dimColor>{time}</Text>
-          <Text color={color} bold={isCritical} backgroundColor={log.level === 'error' ? 'red' : undefined}>
+          <Text color={color} bold={isCritical}>
             {' ['}
             {levelLabel}
             {'] '}
           </Text>
           <Text dimColor>[{log.source || 'dmux'}]</Text>
-          <Text color={isCritical ? color : undefined} bold={log.level === 'error'}>
+          <Text color={color}>
             {' '}
             {log.message}
           </Text>

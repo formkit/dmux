@@ -312,6 +312,17 @@ export function useInputHandling(params: UseInputHandlingParams) {
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
       setStatusMessage("Layout reset")
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+    } else if (input === "T") {
+      // Demo toasts (Shift+T) - cycles through different types
+      const stateManager = StateManager.getInstance()
+      const demos = [
+        { msg: "Pane created successfully", severity: "success" as const },
+        { msg: "Failed to merge: conflicts detected", severity: "error" as const },
+        { msg: "Warning: API key not configured", severity: "warning" as const },
+        { msg: "This is a longer informational message that will wrap to multiple lines if needed to demonstrate how toasts handle longer content", severity: "info" as const },
+      ]
+      // Queue all demo toasts
+      demos.forEach(demo => stateManager.showToast(demo.msg, demo.severity))
     } else if (input === "q") {
       cleanExit()
     } else if (input === "r" && server) {

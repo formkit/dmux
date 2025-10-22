@@ -1,5 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import type { Toast } from '../../services/ToastService.js';
+import ToastNotification from './ToastNotification.js';
 
 interface FooterHelpProps {
   show: boolean;
@@ -15,6 +17,9 @@ interface FooterHelpProps {
   tunnelCreating?: boolean;
   tunnelSpinner?: string;
   tunnelCopied?: boolean;
+  currentToast?: Toast | null;
+  toastQueueLength?: number;
+  toastQueuePosition?: number | null;
 }
 
 const FooterHelp: React.FC<FooterHelpProps> = ({
@@ -30,7 +35,10 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
   tunnelUrl,
   tunnelCreating = false,
   tunnelSpinner = '⠋',
-  tunnelCopied = false
+  tunnelCopied = false,
+  currentToast,
+  toastQueueLength = 0,
+  toastQueuePosition
 }) => {
   if (!show) return null;
 
@@ -52,8 +60,71 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
     <Box borderStyle="single" borderColor="gray" borderTop={false} borderLeft={false} borderRight={false} borderBottom={true} />
   );
 
+  // Calculate toast height to reserve proper space (including header)
+  const getToastHeight = () => {
+    if (!currentToast) {
+      // If no current toast but we have queued toasts, just show header (1 line)
+      return toastQueueLength > 0 ? 1 : 0;
+    }
+
+    // Toast format: "✓ message"
+    const iconAndSpaceLength = 2;
+    const toastTextLength = iconAndSpaceLength + currentToast.message.length;
+
+    // Available width (sidebar is 40, minus some padding)
+    const availableWidth = 38;
+    const wrappedLines = Math.ceil(toastTextLength / availableWidth);
+
+    // Add 1 for header line
+    return wrappedLines + 1;
+  };
+
+  const toastHeight = getToastHeight();
+
+  // Generate notifications header with dynamic dashes
+  const renderNotificationsHeader = () => {
+    const totalCount = (currentToast ? 1 : 0) + toastQueueLength;
+    if (totalCount === 0) return null;
+
+    const countText = `(${totalCount})`;
+    const label = 'Notifications';
+
+    // Sidebar width is 40, calculate dashes to fill the line
+    const sidebarWidth = 40;
+    const contentLength = label.length + countText.length; // "Notifications(4)"
+    const totalDashes = sidebarWidth - contentLength;
+
+    // Distribute dashes: left (1) + middle + right (1)
+    const leftDashes = 1;
+    const rightDashes = 1;
+    const middleDashes = Math.max(0, totalDashes - leftDashes - rightDashes);
+
+    return (
+      <Text dimColor>
+        {'─'.repeat(leftDashes)}{label}{'─'.repeat(middleDashes)}{countText}{'─'.repeat(rightDashes)}
+      </Text>
+    );
+  };
+
+  // Check if we should show the notifications section
+  const hasNotifications = currentToast !== null || toastQueueLength > 0;
+
   return (
     <Box marginTop={1} flexDirection="column">
+      {/* Toast notification section - show header even when transitioning between toasts */}
+      {hasNotifications ? (
+        <Box height={toastHeight} marginBottom={1} flexDirection="column">
+          {renderNotificationsHeader()}
+          {currentToast && (
+            <ToastNotification
+              toast={currentToast}
+              queuePosition={toastQueuePosition}
+              totalInQueue={toastQueueLength}
+            />
+          )}
+        </Box>
+      ) : null}
+
       {/* Logs section with top border */}
       <Divider />
       <Box justifyContent="space-between">
