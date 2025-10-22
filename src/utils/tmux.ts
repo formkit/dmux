@@ -109,6 +109,15 @@ export const getContentPaneIds = (controlPaneId: string): string[] => {
 export const setupSidebarLayout = (controlPaneId: string): string => {
   try {
     const tmuxService = TmuxService.getInstance();
+
+    // Defensive check: verify the control pane still exists before splitting
+    try {
+      // Try to get the pane title - this will throw if the pane doesn't exist
+      tmuxService.getPaneTitleSync(controlPaneId);
+    } catch (error) {
+      throw new Error(`Control pane ${controlPaneId} does not exist. Cannot create sidebar layout.`);
+    }
+
     // Split horizontally (left-right) from control pane
     const newPaneId = tmuxService.splitPaneSync({
       targetPane: controlPaneId,

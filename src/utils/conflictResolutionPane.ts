@@ -66,8 +66,8 @@ export async function createConflictResolutionPane(
 
   // CD into the target repository (where we'll resolve conflicts)
   try {
-    const cdCmd = `'cd "${targetRepoPath}"'`;
-    await tmuxService.sendKeys(paneInfo, `${cdCmd} Enter`);
+    await tmuxService.sendShellCommand(paneInfo, `cd "${targetRepoPath}"`);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to cd into target repo:', error);
@@ -76,7 +76,8 @@ export async function createConflictResolutionPane(
   // CRITICAL: Ensure clean state before starting merge
   // If a previous merge attempt left MERGE_HEAD, abort it first
   try {
-    await tmuxService.sendKeys(paneInfo, `'git merge --abort 2>/dev/null || true' Enter`);
+    await tmuxService.sendShellCommand(paneInfo, 'git merge --abort 2>/dev/null || true');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to abort previous merge:', error);
@@ -85,8 +86,8 @@ export async function createConflictResolutionPane(
   // CRITICAL: Start the merge to create conflict markers for the agent to resolve
   // This is necessary because pre-validation or failed execution may have aborted the merge
   try {
-    const mergeCmd = `'git merge ${targetBranch} --no-edit || true'`;
-    await tmuxService.sendKeys(paneInfo, `${mergeCmd} Enter`);
+    await tmuxService.sendShellCommand(paneInfo, `git merge ${targetBranch} --no-edit || true`);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to initiate merge:', error);
@@ -104,15 +105,16 @@ export async function createConflictResolutionPane(
       .replace(/\$/g, '\\$');
     const claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
 
-    await tmuxService.sendKeys(paneInfo, claudeCmd);
-    await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
+    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Auto-approve trust prompts for Claude
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'opencode') {
-    await tmuxService.sendKeys(paneInfo, 'opencode Enter');
+    await tmuxService.sendShellCommand(paneInfo, 'opencode');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Wait for opencode to start, then paste the prompt
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -123,7 +125,7 @@ export async function createConflictResolutionPane(
     await tmuxService.pasteBuffer(bufName, paneInfo);
     await new Promise((resolve) => setTimeout(resolve, 200));
     await tmuxService.deleteBuffer(bufName);
-    await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 
   // Keep focus on the new pane
@@ -225,14 +227,14 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
 
           if (isNewClaudeFormat) {
             const tmuxService = TmuxService.getInstance();
-            await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           } else {
             const tmuxService = TmuxService.getInstance();
-            await tmuxService.sendKeys(paneInfo, 'y');
+            await tmuxService.sendTmuxKeys(paneInfo, 'y');
             await new Promise((resolve) => setTimeout(resolve, 50));
-            await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
             await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
-            await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter again
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           }
 
           promptHandled = true;

@@ -121,20 +121,17 @@ export async function createPane(
 
     // Verify the control pane ID from config still exists
     if (controlPaneId) {
-      try {
-        const exists = await tmuxService.paneExists(controlPaneId);
-        if (!exists) {
-          throw new Error('Pane does not exist');
-        }
-        // Pane exists, we can use it
-      } catch {
+      const exists = await tmuxService.paneExists(controlPaneId);
+      if (!exists) {
         // Pane doesn't exist anymore, use current pane and update config
+        console.error(`[dmux] Control pane ${controlPaneId} no longer exists, updating to ${originalPaneId}`);
         controlPaneId = originalPaneId;
         config.controlPaneId = controlPaneId;
         config.controlPaneSize = SIDEBAR_WIDTH;
         config.lastUpdated = new Date().toISOString();
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       }
+      // Else: Pane exists, we can use it
     }
 
     // If control pane ID is missing, save it
@@ -256,9 +253,9 @@ export async function createPane(
       ? `git worktree add "${worktreePath}" ${slug} && cd "${worktreePath}"`
       : `git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"`;
 
-    // Properly quote the command for tmux send-keys, escaping any single quotes
-    const quotedCmd = `'${worktreeCmd.replace(/'/g, "'\\''")}'`;
-    await tmuxService.sendKeys(paneInfo, `${quotedCmd} Enter`);
+    // Send the git worktree command (auto-quoted by sendShellCommand)
+    await tmuxService.sendShellCommand(paneInfo, worktreeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Wait for worktree to actually exist on the filesystem
     const maxWaitTime = 5000; // 5 seconds max
@@ -299,14 +296,16 @@ export async function createPane(
   } catch (error) {
     // Worktree creation failed - send helpful error message to the pane
     const errorMsg = error instanceof Error ? error.message : String(error);
-    await tmuxService.sendKeys(
+    await tmuxService.sendShellCommand(
       paneInfo,
-      `echo "❌ Failed to create worktree: ${errorMsg}" Enter`
+      `echo "❌ Failed to create worktree: ${errorMsg}"`
     );
-    await tmuxService.sendKeys(
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    await tmuxService.sendShellCommand(
       paneInfo,
-      `echo "Tip: Try running: git worktree prune && git branch -D ${slug}" Enter`
+      `echo "Tip: Try running: git worktree prune && git branch -D ${slug}"`
     );
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
 
     // Don't throw - let the pane stay open so user can debug
@@ -325,15 +324,17 @@ export async function createPane(
     } else {
       claudeCmd = `claude --permission-mode=acceptEdits`;
     }
-    await tmuxService.sendKeys(paneInfo, claudeCmd);
-    await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
+    // Send the claude command (auto-quoted by sendShellCommand)
+    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Auto-approve trust prompts for Claude
     autoApproveTrustPrompt(paneInfo, prompt).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'opencode') {
-    await tmuxService.sendKeys(paneInfo, 'opencode Enter');
+    await tmuxService.sendShellCommand(paneInfo, 'opencode');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     if (prompt && prompt.trim()) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -343,7 +344,7 @@ export async function createPane(
       await tmuxService.pasteBuffer(bufName, paneInfo);
       await new Promise((resolve) => setTimeout(resolve, 200));
       await tmuxService.deleteBuffer(bufName);
-      await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
+      await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     }
   }
 
@@ -484,14 +485,14 @@ async function autoApproveTrustPrompt(
           const tmuxService = TmuxService.getInstance();
           if (isNewClaudeFormat) {
             // For new Claude format, just press Enter
-            await tmuxService.sendKeys(paneInfo, 'Enter');
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           } else {
             // Try multiple response methods for older formats
-            await tmuxService.sendKeys(paneInfo, 'y');
+            await tmuxService.sendTmuxKeys(paneInfo, 'y');
             await new Promise((resolve) => setTimeout(resolve, 50));
-            await tmuxService.sendKeys(paneInfo, 'Enter');
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
             await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
-            await tmuxService.sendKeys(paneInfo, 'Enter');
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           }
 
           promptHandled = true;

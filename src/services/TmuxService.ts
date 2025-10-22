@@ -444,6 +444,7 @@ export class TmuxService {
 
   /**
    * Send keys to a pane
+   * @deprecated Use sendShellCommand() for shell commands or sendTmuxKeys() for tmux keys
    */
   async sendKeys(paneId: string, keys: string): Promise<void> {
     await this.executeWithRetry(
@@ -452,6 +453,59 @@ export class TmuxService {
       },
       RetryStrategy.FAST,
       `sendKeys(${paneId})`
+    );
+  }
+
+  /**
+   * Send a shell command to a pane (auto-quotes to preserve spaces)
+   *
+   * Use this for shell commands like: `claude "my prompt"`, `git status`, etc.
+   * The command will be automatically quoted to prevent tmux from splitting on spaces.
+   *
+   * @example
+   * await tmuxService.sendShellCommand(paneId, 'claude "fix the bug" --permission-mode=acceptEdits');
+   * await tmuxService.sendTmuxKeys(paneId, 'Enter'); // Then send Enter key
+   *
+   * @param paneId The tmux pane ID (e.g., "%1")
+   * @param command The shell command to execute (will be auto-quoted)
+   * @see sendTmuxKeys For sending tmux key sequences (Enter, C-l, etc.)
+   */
+  async sendShellCommand(paneId: string, command: string): Promise<void> {
+    // Quote the command to preserve spaces, escaping any single quotes
+    const quotedCommand = `'${command.replace(/'/g, "'\\''")}'`;
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux send-keys -t '${paneId}' ${quotedCommand}`);
+      },
+      RetryStrategy.FAST,
+      `sendShellCommand(${paneId})`
+    );
+  }
+
+  /**
+   * Send tmux key sequences to a pane (no quoting)
+   *
+   * Use this for tmux keys like: Enter, C-l, Escape, Tab, C-c, etc.
+   * Keys are sent as-is without quoting.
+   *
+   * @example
+   * await tmuxService.sendShellCommand(paneId, 'git status');
+   * await tmuxService.sendTmuxKeys(paneId, 'Enter'); // Execute the command
+   *
+   * @example
+   * await tmuxService.sendTmuxKeys(paneId, 'C-l'); // Clear screen
+   *
+   * @param paneId The tmux pane ID (e.g., "%1")
+   * @param keys The tmux key sequence (Enter, C-l, Escape, etc.)
+   * @see sendShellCommand For sending shell commands (auto-quoted)
+   */
+  async sendTmuxKeys(paneId: string, keys: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux send-keys -t '${paneId}' ${keys}`);
+      },
+      RetryStrategy.FAST,
+      `sendTmuxKeys(${paneId})`
     );
   }
 
