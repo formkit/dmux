@@ -1,6 +1,6 @@
 # CLAUDE.md - Complete Documentation for dmux
 
-## Table of Contents1234ABCD
+## Table of Contents???
 
 1. [Documentation Files](#documentation-files)
 2. [Project Overview](#project-overview)
