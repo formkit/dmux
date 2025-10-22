@@ -477,7 +477,9 @@ export class TerminalStreamer extends EventEmitter {
     // Stop current pipe
     try {
       execSync(`tmux pipe-pane -t ${stream.tmuxPaneId}`, { stdio: 'pipe' });
-    } catch {}
+    } catch {
+      // Expected - no pipe exists yet
+    }
 
     // Kill tail process
     if (stream.tailProcess) {
@@ -488,7 +490,9 @@ export class TerminalStreamer extends EventEmitter {
     if (existsSync(stream.pipePath)) {
       try {
         unlinkSync(stream.pipePath);
-      } catch {}
+      } catch {
+        // Intentionally silent - pipe file cleanup is optional
+      }
     }
 
     // Create new pipe path

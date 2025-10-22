@@ -297,7 +297,9 @@ export class PaneWorkerManager {
     this.workers.delete(paneId);
     try {
       await workerInfo.worker.terminate();
-    } catch {}
+    } catch {
+      // Intentionally silent - worker may already be dead
+    }
 
     // Wait before restart with exponential backoff
     await new Promise(resolve => setTimeout(resolve, WORKER_BACKOFF_BASE * restartCount));

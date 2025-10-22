@@ -19,6 +19,7 @@ import { LogService } from './services/LogService.js';
 import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
 import { TMUX_COLORS } from './theme/colors.js';
 import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
+import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -109,7 +110,7 @@ class Dmux {
         execSync(`tmux has-session -t ${this.sessionName} 2>/dev/null`, { stdio: 'pipe' });
         // Session exists, will attach
       } catch {
-        // Create new session
+        // Expected - session doesn't exist, create new one
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
         // Enable pane borders to show titles
@@ -301,6 +302,7 @@ class Dmux {
       await fs.access(path);
       return true;
     } catch {
+      // Expected - file doesn't exist
       return false;
     }
   }
@@ -323,6 +325,7 @@ class Dmux {
 
       return false;
     } catch {
+      // Expected - errors during git/file checks
       return false;
     }
   }
@@ -454,7 +457,9 @@ class Dmux {
         try {
           const oldPanesContent = await fs.readFile(oldPanesFile, 'utf-8');
           panes = JSON.parse(oldPanesContent);
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
       
       // Try to read old settings file
@@ -462,7 +467,9 @@ class Dmux {
         try {
           const oldSettingsContent = await fs.readFile(oldSettingsFile, 'utf-8');
           settings = JSON.parse(oldSettingsContent);
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
       
       // Try to read old update settings file
@@ -470,7 +477,9 @@ class Dmux {
         try {
           const oldUpdateContent = await fs.readFile(oldUpdateSettingsFile, 'utf-8');
           updateSettings = JSON.parse(oldUpdateContent);
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
       
       // Check for config from previous parent directory location
@@ -480,7 +489,9 @@ class Dmux {
           if (oldConfig.panes) panes = oldConfig.panes;
           if (oldConfig.settings) settings = oldConfig.settings;
           if (oldConfig.updateSettings) updateSettings = oldConfig.updateSettings;
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
 
       // If we found old config, migrate it
@@ -499,16 +510,24 @@ class Dmux {
         // Clean up old files after successful migration
         try {
           await fs.unlink(oldPanesFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
         try {
           await fs.unlink(oldSettingsFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
         try {
           await fs.unlink(oldUpdateSettingsFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
         try {
           await fs.unlink(oldParentConfigFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
       }
     }
   }
@@ -609,7 +628,9 @@ class Dmux {
         try {
           execSync('tmux clear-history', { stdio: 'pipe' });
           execSync('tmux send-keys C-l', { stdio: 'pipe' });
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
       }
 
       // Wait a moment for clearing to settle, then show goodbye message
@@ -646,5 +667,12 @@ class Dmux {
   }
 }
 
-const dmux = new Dmux();
-dmux.init().catch(() => process.exit(1));
+// Validate system requirements before starting
+const validationResult = validateSystemRequirements();
+printValidationResults(validationResult);
+
+// Only proceed if system requirements are met
+if (validationResult.canRun) {
+  const dmux = new Dmux();
+  dmux.init().catch(() => process.exit(1));
+}

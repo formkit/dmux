@@ -148,7 +148,9 @@ export class PopupManager {
       if (tempFile) {
         try {
           await fs.unlink(tempFile)
-        } catch {}
+        } catch {
+          // Intentionally silent - temp file cleanup is optional
+        }
       }
 
       return result
@@ -157,7 +159,9 @@ export class PopupManager {
       if (tempFile) {
         try {
           await fs.unlink(tempFile)
-        } catch {}
+        } catch {
+          // Intentionally silent - temp file cleanup is optional
+        }
       }
       throw error
     }
@@ -432,7 +436,9 @@ export class PopupManager {
       // Clean up status file
       try {
         await fs.unlink(tunnelStatusFile)
-      } catch {}
+      } catch {
+        // Intentionally silent - status file cleanup is optional
+      }
 
       if (result && (result as any).copied) {
         onCopied()

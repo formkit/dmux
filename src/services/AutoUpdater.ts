@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
+import { LogService } from './LogService.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,7 @@ function findPackageJson(): any {
     try {
       return require(packagePath);
     } catch {
+      // Expected - package.json not found at this level, continue traversing
       currentDir = path.dirname(currentDir);
     }
   }
@@ -41,6 +43,7 @@ interface UpdateSettings {
 export class AutoUpdater {
   private configFile: string;
   private checkIntervalMs: number = 24 * 60 * 60 * 1000; // 24 hours
+  private logger = LogService.getInstance();
 
   constructor(configFile: string) {
     this.configFile = configFile;
@@ -54,7 +57,8 @@ export class AutoUpdater {
         checkIntervalHours: 24,
         autoUpdateEnabled: true
       };
-    } catch {
+    } catch (error) {
+      this.logger.warn('Failed to load update settings, using defaults', 'AutoUpdater');
       return {
         checkIntervalHours: 24,
         autoUpdateEnabled: true
@@ -67,7 +71,9 @@ export class AutoUpdater {
     try {
       const content = await fs.readFile(this.configFile, 'utf-8');
       config = JSON.parse(content);
-    } catch {}
+    } catch {
+      // Expected - config file may not exist yet
+    }
     
     config.updateSettings = settings;
     config.lastUpdated = new Date().toISOString();
@@ -155,7 +161,9 @@ export class AutoUpdater {
         if (npmGlobals.includes(`${packageJson.name}@`)) {
           return { packageManager: 'npm', installMethod: 'global' };
         }
-      } catch {}
+      } catch {
+        // Expected - npm might not be available or package not globally installed
+      }
 
       // Method 2: Check pnpm global packages
       try {
@@ -167,7 +175,9 @@ export class AutoUpdater {
         if (pnpmGlobals.includes(`${packageJson.name}@`)) {
           return { packageManager: 'pnpm', installMethod: 'global' };
         }
-      } catch {}
+      } catch {
+        // Expected - pnpm might not be available or package not globally installed
+      }
 
       // Method 3: Check yarn global packages
       try {
@@ -179,7 +189,9 @@ export class AutoUpdater {
         if (yarnGlobals.includes(`${packageJson.name}@`)) {
           return { packageManager: 'yarn', installMethod: 'global' };
         }
-      } catch {}
+      } catch {
+        // Expected - yarn might not be available or package not globally installed
+      }
 
       // Method 4: Check where dmux is installed by looking at the executable path
       try {
@@ -198,10 +210,13 @@ export class AutoUpdater {
           // Local installation
           return { packageManager: null, installMethod: 'local' };
         }
-      } catch {}
+      } catch {
+        // Expected - which command might not be available or dmux not in PATH
+      }
 
       return { packageManager: null, installMethod: 'unknown' };
-    } catch {
+    } catch (error) {
+      this.logger.warn('Failed to detect installation method', 'AutoUpdater');
       return { packageManager: null, installMethod: 'unknown' };
     }
   }
@@ -258,7 +273,8 @@ export class AutoUpdater {
       // Verify the update was successful
       const newUpdateInfo = await this.checkForUpdates();
       return newUpdateInfo.currentVersion === updateInfo.latestVersion;
-    } catch {
+    } catch (error) {
+      this.logger.error('Update failed', 'AutoUpdater', undefined, error as Error);
       return false;
     }
   }
