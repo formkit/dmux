@@ -80,10 +80,10 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
       // Detect untracked panes (only after initial load)
       let shellPanesAdded = false;
       if (initialLoadComplete.current) {
-        LogService.getInstance().debug(
-          `Shell detection check: allPaneIds=${allPaneIds.length}, initialLoadComplete=${initialLoadComplete.current}`,
-          'shellDetection'
-        );
+        // LogService.getInstance().debug(
+        //   `Shell detection check: allPaneIds=${allPaneIds.length}, initialLoadComplete=${initialLoadComplete.current}`,
+        //   'shellDetection'
+        // );
 
         const { updatedPanes, shellPanesAdded: added } = await detectAndAddShellPanes(
           panesFile,
@@ -115,10 +115,10 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
         // Save to file if IDs were remapped OR if shell panes were added/removed
         if (idsChanged || shellPanesAdded || shellPanesRemoved) {
-          LogService.getInstance().debug(
-            `Saving config: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}, finalPanes=${finalPanes.length}`,
-            'shellDetection'
-          );
+          // LogService.getInstance().debug(
+          //   `Saving config: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}, finalPanes=${finalPanes.length}`,
+          //   'shellDetection'
+          // );
           await saveUpdatedPaneConfig(panesFile, finalPanes, withWriteLock);
 
           // If shell panes were removed and we now have 0 panes, recreate welcome pane
@@ -126,10 +126,10 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
             await handleLastPaneRemoval(process.cwd());
           }
         } else {
-          LogService.getInstance().debug(
-            `NOT saving: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}`,
-            'shellDetection'
-          );
+          // LogService.getInstance().debug(
+          //   `NOT saving: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}`,
+          //   'shellDetection'
+          // );
         }
       }
     } catch (error) {

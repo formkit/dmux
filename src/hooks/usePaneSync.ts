@@ -118,10 +118,10 @@ export function rebindAndFilterPanes(
 ): { activePanes: DmuxPane[]; shellPanesRemoved: boolean; worktreePanesToRecreate: DmuxPane[] } {
   const worktreePanesToRecreate: DmuxPane[] = [];
 
-  LogService.getInstance().debug(
-    `Checking panes: loaded=${loadedPanes.length}, allPaneIds=[${allPaneIds.join(', ')}]`,
-    'shellDetection'
-  );
+  // LogService.getInstance().debug(
+  //   `Checking panes: loaded=${loadedPanes.length}, allPaneIds=[${allPaneIds.join(', ')}]`,
+  //   'shellDetection'
+  // );
 
   // Rebind panes based on title matching
   const reboundPanes = loadedPanes.map(loadedPane => {
