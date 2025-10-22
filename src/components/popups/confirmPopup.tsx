@@ -55,7 +55,7 @@ const ConfirmPopupApp: React.FC<ConfirmPopupProps> = ({
         {/* Message */}
         <Box marginBottom={1} flexDirection="column">
           {message.split('\n').map((line, idx) => (
-            <Text key={idx} wrap="truncate-end">{line}</Text>
+            <Text key={idx} wrap="wrap">{line}</Text>
           ))}
         </Box>
 

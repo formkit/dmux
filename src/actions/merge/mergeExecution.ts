@@ -8,7 +8,6 @@
 import type { ActionResult, ActionContext } from '../types.js';
 import type { DmuxPane } from '../../types.js';
 import { triggerHook } from '../../utils/hooks.js';
-import { TmuxService } from '../../services/TmuxService.js';
 
 /**
  * Execute merge with conflict handling
@@ -93,7 +92,7 @@ export async function executeMerge(
   mainRepoPath: string,
   skipWorktreeMerge: boolean = false
 ): Promise<ActionResult> {
-  const { mergeMainIntoWorktree, mergeWorktreeIntoMain, cleanupAfterMerge } = await import('../../utils/mergeExecution.js');
+  const { mergeMainIntoWorktree, mergeWorktreeIntoMain } = await import('../../utils/mergeExecution.js');
 
   // Step 1: Merge main into worktree first (get latest changes from main)
   // Skip this if we're resuming after conflict resolution (already done by agent)
@@ -199,65 +198,26 @@ export async function executeMerge(
     confirmLabel: 'Yes, close it',
     cancelLabel: 'No, keep it',
     onConfirm: async () => {
-      console.error(`[mergeExecution] Starting cleanup for pane ${pane.id} (${pane.slug})`);
+      console.error(`[mergeExecution] Starting cleanup for pane ${pane.id} (${pane.slug}) by calling closeAction`);
 
-      // Cleanup worktree and branch
-      const cleanup = cleanupAfterMerge(mainRepoPath, pane.worktreePath!, pane.slug);
+      // Use the CLOSE action which handles everything properly:
+      // - Hooks (before_pane_close, before_worktree_remove, worktree_removed, pane_closed)
+      // - Layout recalculation after pane removal
+      // - Last pane handling (recreates welcome pane)
+      // - Terminal clearing to prevent artifacts
+      const { closePane } = await import('../implementations/closeAction.js');
 
-      if (!cleanup.success) {
-        console.error(`[mergeExecution] Cleanup failed: ${cleanup.error}`);
-        return {
-          type: 'error',
-          message: `Merge succeeded but cleanup failed: ${cleanup.error}`,
-          dismissable: true,
-        };
+      // First execute the close action to get the choice dialog
+      const closeResult = await closePane(pane, context);
+
+      // If it's a choice dialog, auto-select the "kill_clean_branch" option
+      if (closeResult.type === 'choice' && closeResult.onSelect) {
+        console.error(`[mergeExecution] Auto-selecting kill_clean_branch option for ${pane.slug}`);
+        return closeResult.onSelect('kill_clean_branch');
       }
 
-      console.error(`[mergeExecution] Git cleanup successful, removing pane from state`);
-
-      // CRITICAL: Pause ConfigWatcher to prevent race condition where
-      // the watcher reloads the pane list from disk before our save completes
-      const { StateManager } = await import('../../shared/StateManager.js');
-      const stateManager = StateManager.getInstance();
-      stateManager.pauseConfigWatcher();
-
-      try {
-        // Kill the tmux pane FIRST (before saving to file)
-        // This prevents savePanes from rebinding and re-adding the pane
-        try {
-          const tmuxService = TmuxService.getInstance();
-          console.error(`[mergeExecution] Killing tmux pane ${pane.paneId}`);
-          await tmuxService.killPane(pane.paneId);
-        } catch (error) {
-          // Pane may already be closed, ignore errors
-          console.error('[mergeExecution] Failed to kill pane:', error);
-        }
-
-        // Now remove from state and save to file
-        // IMPORTANT: Read current panes from StateManager, don't use context.panes (might be stale)
-        const currentPanes = stateManager.getPanes();
-        console.error(`[mergeExecution] Current panes in StateManager: ${currentPanes.map(p => p.id).join(', ')}`);
-
-        const updatedPanes = currentPanes.filter((p: DmuxPane) => p.id !== pane.id);
-        console.error(`[mergeExecution] Saving updated panes (removed ${pane.id}): ${updatedPanes.map(p => p.id).join(', ')}`);
-        await context.savePanes(updatedPanes);
-
-        // Notify about pane removal if callback exists
-        if (context.onPaneRemove) {
-          console.error(`[mergeExecution] Notifying about pane removal via callback`);
-          context.onPaneRemove(pane.id);
-        }
-
-        console.error(`[mergeExecution] Cleanup complete for ${pane.slug}`);
-        return {
-          type: 'success',
-          message: `Successfully merged and cleaned up "${pane.slug}"`,
-          dismissable: true,
-        };
-      } finally {
-        // CRITICAL: Always resume watcher, even if there was an error
-        stateManager.resumeConfigWatcher();
-      }
+      // For shell panes or if something unexpected happened, just return the result
+      return closeResult;
     },
     onCancel: async () => {
       return {
