@@ -33,6 +33,7 @@ export interface GitStatus {
  */
 export function getGitStatus(repoPath: string): GitStatus {
   try {
+    LogService.getInstance().info(`Getting git status for: ${repoPath}`, 'mergeValidation');
     const statusOutput = execSync('git status --porcelain', {
       cwd: repoPath,
       encoding: 'utf-8',
@@ -55,7 +56,7 @@ export function getGitStatus(repoPath: string): GitStatus {
         return filename;
       });
 
-    LogService.getInstance().info(`Final files: ${JSON.stringify(files)}`, 'mergeValidation');
+    LogService.getInstance().info(`Final files for ${repoPath}: ${JSON.stringify(files)}`, 'mergeValidation');
 
     return {
       hasChanges: files.length > 0,
@@ -203,6 +204,10 @@ export function validateMerge(
 
   // Check if worktree has uncommitted changes
   const worktreeStatus = getGitStatus(worktreePath);
+  LogService.getInstance().info(
+    `Worktree status: hasChanges=${worktreeStatus.hasChanges}, files=${JSON.stringify(worktreeStatus.files)}`,
+    'mergeValidation'
+  );
   if (worktreeStatus.hasChanges) {
     issues.push({
       type: 'worktree_uncommitted',
@@ -214,7 +219,12 @@ export function validateMerge(
 
   // Check if there's anything to merge (commits OR uncommitted changes)
   const hasCommits = hasCommitsToMerge(mainRepoPath, worktreeBranch, mainBranch);
+  LogService.getInstance().info(
+    `Merge check: hasCommits=${hasCommits}, worktreeHasChanges=${worktreeStatus.hasChanges}`,
+    'mergeValidation'
+  );
   if (!hasCommits && !worktreeStatus.hasChanges) {
+    LogService.getInstance().info('Adding nothing_to_merge issue', 'mergeValidation');
     issues.push({
       type: 'nothing_to_merge',
       message: 'No new commits to merge',
