@@ -108,7 +108,8 @@ export async function createConflictResolutionPane(
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
-    // Auto-approve trust prompts for Claude
+    // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
+    // Note: --permission-mode=acceptEdits handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
@@ -158,8 +159,8 @@ export async function createConflictResolutionPane(
  * Auto-approve Claude trust prompts (reused from paneCreation.ts)
  */
 async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
-  // Wait for Claude to start up before checking for prompts
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  // Wait longer for Claude to start up before checking for prompts
+  await new Promise((resolve) => setTimeout(resolve, 1200));
 
   const maxChecks = 100;
   const checkInterval = 100;
@@ -167,28 +168,19 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
   let stableContentCount = 0;
   let promptHandled = false;
 
+  // Trust prompt patterns - made more specific to avoid false positives
   const trustPromptPatterns = [
+    // Specific trust/permission questions
     /Do you trust the files in this folder\?/i,
     /Trust the files in this workspace\?/i,
     /Do you trust the authors of the files/i,
     /Do you want to trust this workspace\?/i,
     /trust.*files.*folder/i,
     /trust.*workspace/i,
-    /Do you trust/i,
     /Trust this folder/i,
     /trust.*directory/i,
-    /permission.*grant/i,
-    /allow.*access/i,
     /workspace.*trust/i,
-    /accept.*edits/i,
-    /permission.*mode/i,
-    /allow.*claude/i,
-    /\[y\/n\]/i,
-    /\(y\/n\)/i,
-    /Yes\/No/i,
-    /\[Y\/n\]/i,
-    /press.*enter.*accept/i,
-    /press.*enter.*continue/i,
+    // Claude-specific numbered menu format
     /❯\s*1\.\s*Yes,\s*proceed/i,
     /Enter to confirm.*Esc to exit/i,
     /1\.\s*Yes,\s*proceed/i,
@@ -201,6 +193,15 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
     try {
       const paneContent = capturePaneContent(paneInfo, 30);
 
+      // Early exit: If Claude is already running (prompt has been processed), we're done
+      if (
+        paneContent.includes('Claude') ||
+        paneContent.includes('Assistant') ||
+        paneContent.includes('claude>')
+      ) {
+        break;
+      }
+
       if (paneContent === lastContent) {
         stableContentCount++;
       } else {
@@ -208,19 +209,15 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
         lastContent = paneContent;
       }
 
+      // Look for trust prompt using specific patterns only
       const hasTrustPrompt = trustPromptPatterns.some((pattern) =>
         pattern.test(paneContent)
       );
 
-      const hasClaudePermissionPrompt =
-        paneContent.includes('Do you trust') ||
-        paneContent.includes('trust the files') ||
-        paneContent.includes('permission') ||
-        paneContent.includes('allow') ||
-        (paneContent.includes('folder') && paneContent.includes('?'));
-
-      if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
-        if (stableContentCount >= 2) {
+      // Only act if we have high confidence it's a trust prompt
+      if (hasTrustPrompt && !promptHandled) {
+        // Require content to be stable for longer to avoid false positives
+        if (stableContentCount >= 5) {
           const isNewClaudeFormat =
             /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
             /Enter to confirm.*Esc to exit/i.test(paneContent);
@@ -250,14 +247,6 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
             break;
           }
         }
-      }
-
-      if (
-        !hasTrustPrompt &&
-        !hasClaudePermissionPrompt &&
-        (paneContent.includes('Claude') || paneContent.includes('Assistant'))
-      ) {
-        break;
       }
     } catch {
       // Continue checking
