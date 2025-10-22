@@ -865,8 +865,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
             </Text>
           )}
           {currentBranch && (
-            <Text color="magenta" bold>
-              branch: {currentBranch}
+            <Text color="magenta">
+              dev: {currentBranch}
             </Text>
           )}
           {debugMessage && <Text dimColor> • {debugMessage}</Text>}
