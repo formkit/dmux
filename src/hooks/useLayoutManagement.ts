@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
+import { LogService } from '../services/LogService.js';
 
 interface LayoutManagementOptions {
   controlPaneId: string | undefined;
@@ -41,16 +42,23 @@ export function useLayoutManagement({
       }
 
       // Debounce: wait 500ms after last resize event (prevents excessive recalculations)
-      resizeTimeoutRef.current = setTimeout(() => {
+      resizeTimeoutRef.current = setTimeout(async () => {
         // Only enforce if not showing dialogs (to avoid interference)
         if (!hasActiveDialog) {
           isApplyingLayoutRef.current = true;
 
-          // Only enforce sidebar width when terminal resizes
-          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+          LogService.getInstance().debug('Starting resize handler', 'ResizeDebug');
 
-          // Force Ink to repaint after resize to prevent blank dmux pane
+          // Only enforce sidebar width when terminal resizes
+          await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+
+          LogService.getInstance().debug('enforceControlPaneSize complete, calling onForceRepaint', 'ResizeDebug');
+
+          // CRITICAL: Force Ink to repaint AFTER layout changes complete
+          // This ensures the dmux UI redraws last, preventing blank pane
           onForceRepaint();
+
+          LogService.getInstance().debug('onForceRepaint called', 'ResizeDebug');
 
           // Reset flag after a brief delay
           setTimeout(() => {

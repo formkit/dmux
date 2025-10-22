@@ -446,9 +446,13 @@ export const enforceControlPaneSize = async (
           // Get terminal dimensions and let window follow terminal
           const termDims = getTerminalDimensions();
 
+          // Calculate window height accounting for status bar to prevent scroll
+          const statusBarHeight = tmuxService.getStatusBarHeightSync();
+          const windowHeight = termDims.height - statusBarHeight;
+
           // Set window size to match terminal (manual mode but always tracking terminal)
           tmuxService.setWindowOptionSync('window-size', 'manual');
-          await tmuxService.resizeWindow({ width: termDims.width, height: termDims.height });
+          await tmuxService.resizeWindow({ width: termDims.width, height: windowHeight });
 
           // Apply main-vertical layout with fixed sidebar width
           tmuxService.setWindowOptionSync('main-pane-width', String(width));

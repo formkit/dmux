@@ -703,6 +703,99 @@ export class TmuxService {
   }
 
   /**
+   * Get status bar height in lines
+   * Returns the number of lines the status bar occupies
+   *
+   * IMPORTANT DIMENSION RELATIONSHIPS:
+   *
+   * When window-size is "latest" (automatic):
+   *   - tmux automatically manages window size to fit client
+   *   - window_height = client_height (tmux handles status bar internally)
+   *
+   * When window-size is "manual" (dmux uses this):
+   *   - You control window dimensions explicitly
+   *   - total_terminal = window_height + status_bar_height
+   *   - When setting window size: window_height = client_height - status_bar_height
+   *
+   * Therefore, when calculating layouts in manual mode:
+   * - Get client_height (terminal size)
+   * - Subtract status bar height to get available window height
+   * - Set window to that calculated height
+   *
+   * @returns Number of lines occupied by status bar (0 if disabled)
+   */
+  getStatusBarHeightSync(): number {
+    try {
+      // Check if status bar is enabled
+      const statusEnabled = this.execute('tmux display-message -p "#{status}"').trim();
+      if (statusEnabled !== 'on') {
+        return 0;
+      }
+
+      // Count the number of status-format lines
+      // Each status-format line adds one line to the status bar height
+      const statusFormats = this.execute('tmux show-options -gv status-format');
+      const formatLines = statusFormats.split('\n').filter(line => line.trim()).length;
+
+      return formatLines;
+    } catch (error) {
+      this.logger.debug('Failed to get status bar height, assuming 0', 'TmuxService');
+      return 0;
+    }
+  }
+
+  /**
+   * Get comprehensive dimension information for debugging
+   * Shows the relationship between terminal, window, and status bar dimensions
+   */
+  getDimensionInfoSync(): {
+    clientWidth: number;
+    clientHeight: number;
+    windowWidth: number;
+    windowHeight: number;
+    statusBarHeight: number;
+    statusBarEnabled: boolean;
+  } {
+    const client = this.getTerminalDimensionsSync();
+    const window = this.getWindowDimensionsSync();
+    const statusBarHeight = this.getStatusBarHeightSync();
+
+    return {
+      clientWidth: client.width,
+      clientHeight: client.height,
+      windowWidth: window.width,
+      windowHeight: window.height,
+      statusBarHeight,
+      statusBarEnabled: statusBarHeight > 0,
+    };
+  }
+
+  /**
+   * Calculate the proper window dimensions for manual window-size mode
+   *
+   * SINGLE SOURCE OF TRUTH for window dimension calculations.
+   *
+   * When window-size is "manual", we must subtract the status bar height
+   * to prevent terminal scrolling.
+   *
+   * Formula: windowHeight = terminalHeight - statusBarHeight
+   *
+   * @returns Calculated window dimensions that fit within the terminal
+   */
+  calculateWindowDimensions(): WindowDimensions {
+    const termDims = this.getTerminalDimensionsSync();
+    const statusBarHeight = this.getStatusBarHeightSync();
+
+    // Calculate window height: terminal height - status bar
+    const windowHeight = termDims.height - statusBarHeight;
+
+    return {
+      width: termDims.width,
+      height: windowHeight,
+    };
+  }
+
+  /**
    * Get all pane IDs (sync version for compatibility)
    */
   getAllPaneIdsSync(): string[] {

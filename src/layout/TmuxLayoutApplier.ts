@@ -26,14 +26,28 @@ export class TmuxLayoutApplier {
   /**
    * Sets tmux window dimensions to match calculated layout
    *
+   * Accounts for status bar height to prevent terminal scrolling.
+   * Only resizes if dimensions have actually changed to prevent resize loops.
+   *
    * @param width - Desired window width in cells
-   * @param height - Desired window height in cells
+   * @param height - Desired terminal height in cells (will subtract status bar)
    */
   setWindowDimensions(width: number, height: number): void {
     try {
+      // Subtract status bar height from the provided terminal height
+      const statusBarHeight = this.tmuxService.getStatusBarHeightSync();
+      const windowHeight = height - statusBarHeight;
+
+      // Check if dimensions have actually changed
+      const currentDims = this.tmuxService.getWindowDimensionsSync();
+      if (currentDims.width === width && currentDims.height === windowHeight) {
+        // Dimensions already correct, skip resize to prevent loops
+        return;
+      }
+
       // Use manual mode to constrain width, but also set height to match terminal
       this.tmuxService.setWindowOptionSync('window-size', 'manual');
-      this.tmuxService.resizeWindowSync({ width, height });
+      this.tmuxService.resizeWindowSync({ width, height: windowHeight });
     } catch (error) {
       // Log but don't fail - some tmux versions may not support this
       LogService.getInstance().warn(

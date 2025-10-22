@@ -77,13 +77,20 @@ export async function recalculateAndApplyLayout(
     lastLayoutDimensions.height === terminalHeight &&
     lastLayoutDimensions.paneCount === realContentPanes.length;
 
-  if (dimensionsUnchanged && existingSpacerId) {
+  if (dimensionsUnchanged) {
+    // Layout unchanged - skip ALL layout operations to prevent Ink redraw
+    // This prevents the dmux UI from being cleared on resize when nothing changed
     LogService.getInstance().debug(
-      `Layout unchanged (${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes), skipping spacer recreation`,
-      'Layout'
+      `Layout unchanged (${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes), skipping layout application`,
+      'ResizeDebug'
     );
     return;
   }
+
+  LogService.getInstance().debug(
+    `Dimensions changed, applying layout: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
+    'ResizeDebug'
+  );
 
   // Update last layout dimensions
   lastLayoutDimensions = {
@@ -275,13 +282,18 @@ export async function recalculateAndApplyLayout(
   // Step 8: Check window dimensions and resize if needed
   // Do this AFTER sidebar resize so sidebar width is locked
   const currentWindowDims = getWindowDimensions();
+
+  // Calculate target window height (accounting for status bar)
+  const statusBarHeight = tmuxService.getStatusBarHeightSync();
+  const targetWindowHeight = terminalHeight - statusBarHeight;
+
   const needsWindowResize =
     currentWindowDims.width !== finalLayout.windowWidth ||
-    currentWindowDims.height !== terminalHeight;
+    currentWindowDims.height !== targetWindowHeight;
 
   if (needsWindowResize) {
     // LogService.getInstance().debug(
-    //   `Resizing window: ${currentWindowDims.width}x${currentWindowDims.height} → ${finalLayout.windowWidth}x${terminalHeight}`,
+    //   `Resizing window: ${currentWindowDims.width}x${currentWindowDims.height} → ${finalLayout.windowWidth}x${targetWindowHeight}`,
     //   'Layout'
     // );
     layoutApplier.setWindowDimensions(finalLayout.windowWidth, terminalHeight);

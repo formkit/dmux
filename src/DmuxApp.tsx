@@ -70,6 +70,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   serverPort,
   server,
   controlPaneId,
+  rerenderRef,
 }) => {
   const { stdout } = useStdout()
   const terminalHeight = stdout?.rows || 40
@@ -210,6 +211,25 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const forceRepaint = () => {
     setForceRepaintTrigger((prev) => prev + 1)
     setShowRepaintSpinner(true)
+
+    // CRITICAL: Use Ink's official rerender method to force complete redraw
+    // When tmux clears the pane via selectLayout, Ink's output is lost
+    // Calling rerender forces Ink to redraw the entire component tree
+    if (rerenderRef?.current) {
+      rerenderRef.current(React.createElement(DmuxApp, {
+        panesFile,
+        projectName,
+        sessionName,
+        settingsFile,
+        projectRoot,
+        autoUpdater,
+        serverPort,
+        server,
+        controlPaneId,
+        rerenderRef,
+      }));
+    }
+
     // Hide spinner after a few frames (enough to trigger multiple renders)
     setTimeout(() => setShowRepaintSpinner(false), REPAINT_SPINNER_DURATION)
   }

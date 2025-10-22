@@ -306,7 +306,7 @@ class Dmux {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     // Launch the Ink app
-    const app = render(React.createElement(DmuxApp, {
+    const appProps = {
       panesFile: this.panesFile,
       settingsFile: this.settingsFile,
       projectName: this.projectName,
@@ -315,10 +315,17 @@ class Dmux {
       autoUpdater: this.autoUpdater,
       serverPort: serverInfo.port,
       server: this.server,
-      controlPaneId
-    }), {
+      controlPaneId,
+      // Pass rerender function as a ref that will be set after first render
+      rerenderRef: { current: null as any }
+    };
+
+    const app = render(React.createElement(DmuxApp, appProps), {
       exitOnCtrlC: false  // Disable automatic exit on Ctrl+C
     });
+
+    // Set the rerender function so DmuxApp can use it
+    appProps.rerenderRef.current = app.rerender;
 
     // Clean shutdown on app exit
     app.waitUntilExit().then(async () => {
