@@ -132,8 +132,13 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
           );
         }
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      // Silently ignore errors during pane loading to prevent UI crashes
+      // Most common errors are transient tmux state issues that resolve on next poll
+      LogService.getInstance().debug(
+        `Error loading panes: ${error instanceof Error ? error.message : String(error)}`,
+        'usePanes'
+      );
     } finally {
       if (isLoading) setIsLoading(false);
     }

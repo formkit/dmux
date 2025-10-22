@@ -31,8 +31,12 @@ export async function enforcePaneTitles(
             'shellDetection'
           );
         }
-      } catch {
-        // Ignore errors (pane might have been killed)
+      } catch (error) {
+        // Ignore errors - pane might have been killed between check and sync
+        LogService.getInstance().debug(
+          `Failed to sync title for pane ${pane.id}: ${error instanceof Error ? error.message : String(error)}`,
+          'usePaneSync'
+        );
       }
     }
   }
@@ -73,8 +77,12 @@ export async function savePanesToFile(
       // Note: We need to get allPaneIds to properly use rebindPaneByTitle
       const allPaneIds = Array.from(titleToId.values());
       activePanes = panes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
-    } catch {
-      // If tmux command fails, keep panes as-is
+    } catch (error) {
+      // If tmux command fails, keep panes as-is (prevents data loss during tmux instability)
+      LogService.getInstance().debug(
+        `Failed to fetch tmux panes for rebinding: ${error instanceof Error ? error.message : String(error)}`,
+        'usePaneSync'
+      );
       activePanes = panes;
     }
 

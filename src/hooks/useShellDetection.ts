@@ -27,8 +27,12 @@ export async function detectAndAddShellPanes(
       const config = JSON.parse(configContent);
       controlPaneId = config.controlPaneId;
       welcomePaneId = config.welcomePaneId;
-    } catch {
-      // Config not available, continue without filtering
+    } catch (error) {
+      // Config not available (expected on first run), continue without filtering
+      LogService.getInstance().debug(
+        `Config file not available for shell detection: ${error instanceof Error ? error.message : String(error)}`,
+        'useShellDetection'
+      );
     }
 
     const trackedPaneIds = activePanes.map(p => p.paneId);

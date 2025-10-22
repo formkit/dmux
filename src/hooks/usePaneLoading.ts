@@ -52,7 +52,12 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
         }
       }
       if (allPaneIds.length > 0 || retryCount === maxRetries) break;
-    } catch {
+    } catch (error) {
+      // Retry on tmux command failure (common during rapid pane creation/destruction)
+      LogService.getInstance().debug(
+        `Tmux fetch failed (attempt ${retryCount + 1}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`,
+        'usePaneLoading'
+      );
       if (retryCount < maxRetries) await new Promise(r => setTimeout(r, TMUX_RETRY_DELAY));
     }
     retryCount++;
@@ -76,7 +81,13 @@ export async function loadPanesFromFile(panesFile: string): Promise<DmuxPane[]> 
       const config = parsed as DmuxConfig;
       return config.panes || [];
     }
-  } catch {
+  } catch (error) {
+    // Return empty array if config file doesn't exist or is invalid
+    // This is expected on first run
+    LogService.getInstance().debug(
+      `Config file not found or invalid: ${error instanceof Error ? error.message : String(error)}`,
+      'usePaneLoading'
+    );
     return [];
   }
 }
