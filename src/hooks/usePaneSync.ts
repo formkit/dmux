@@ -70,13 +70,9 @@ export async function savePanesToFile(
 
       // Only rebind IDs, don't filter out panes
       // This prevents losing panes during concurrent operations
-      activePanes = panes.map(p => {
-        const remappedId = titleToId.get(p.slug);
-        if (remappedId && remappedId !== p.paneId) {
-          return { ...p, paneId: remappedId };
-        }
-        return p;
-      });
+      // Note: We need to get allPaneIds to properly use rebindPaneByTitle
+      const allPaneIds = Array.from(titleToId.values());
+      activePanes = panes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
     } catch {
       // If tmux command fails, keep panes as-is
       activePanes = panes;

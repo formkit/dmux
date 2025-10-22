@@ -9,6 +9,7 @@ import type { DmuxPane } from '../types.js';
 import { enforceControlPaneSize, splitPane } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
+import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
@@ -95,7 +96,7 @@ export async function createConflictResolutionPane(
     execSync(`tmux send-keys -t '${paneInfo}' 'git merge ${targetBranch} --no-edit || true' Enter`, {
       stdio: 'pipe',
     });
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to initiate merge:', error);
   }
@@ -257,7 +258,7 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
             execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
               stdio: 'pipe',
             });
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
             execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
               stdio: 'pipe',
             });

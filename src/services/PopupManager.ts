@@ -13,6 +13,7 @@ import { LogService } from "./LogService.js"
 import { SETTING_DEFINITIONS } from "../utils/settingsManager.js"
 import type { DmuxPane, ProjectSettings } from "../types.js"
 import { getAvailableActions, type PaneAction } from "../actions/index.js"
+import { INPUT_IGNORE_DELAY } from "../constants/timing.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -88,7 +89,7 @@ export class PopupManager {
    */
   private ignoreInputBriefly() {
     this.setIgnoreInput(true)
-    setTimeout(() => this.setIgnoreInput(false), 100)
+    setTimeout(() => this.setIgnoreInput(false), INPUT_IGNORE_DELAY)
   }
 
   /**

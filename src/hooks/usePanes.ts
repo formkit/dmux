@@ -18,6 +18,7 @@ import {
 import {
   detectAndAddShellPanes,
 } from './useShellDetection.js';
+import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 
 // Simple write lock to prevent concurrent config writes
 let isWriting = false;
@@ -96,14 +97,8 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         const updatedIds = freshData.allPaneIds;
         const updatedTitleToId = freshData.titleToId;
 
-        // Re-rebind after recreation
-        finalPanes = finalPanes.map(p => {
-          const titleMatch = updatedTitleToId.get(p.slug);
-          if (titleMatch && titleMatch !== p.paneId) {
-            return { ...p, paneId: titleMatch };
-          }
-          return p;
-        });
+        // Re-rebind after recreation using the utility function
+        finalPanes = finalPanes.map(p => rebindPaneByTitle(p, updatedTitleToId, updatedIds));
       }
 
       // Detect untracked panes (only after initial load)

@@ -223,30 +223,66 @@ export function recalculateAndApplyLayout(
   // CRITICAL ORDER: Resize sidebar FIRST (before window), then window
   // This prevents tmux from redistributing window width changes to the sidebar
 
-  // Step 7: Check sidebar width and resize if needed
-  // Do this BEFORE window resize to lock sidebar width
+  // Step 7: Find and verify the actual control pane
+  // The control pane ID may change after layout operations, so we need to find it by position
+  let actualControlPaneId = controlPaneId;
+  try {
+    // First, verify the provided controlPaneId still exists
+    execSync(`tmux display-message -t '${controlPaneId}' -p '#{pane_id}'`, {
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    });
+  } catch {
+    // Control pane ID is stale, find it by position (leftmost pane at x=0)
+    // Use the smallest pane at x=0 as the sidebar (allows for slight width variations)
+    try {
+      const allPanes = execSync(
+        `tmux list-panes -F '#{pane_id} #{pane_left} #{pane_width}'`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim().split('\n');
+
+      let smallestPaneAtLeft: { id: string; width: number } | null = null;
+
+      for (const paneInfo of allPanes) {
+        const [paneId, left, width] = paneInfo.split(' ');
+        const paneWidth = parseInt(width);
+
+        // Find the smallest pane at x=0 (likely the sidebar)
+        if (left === '0' && (!smallestPaneAtLeft || paneWidth < smallestPaneAtLeft.width)) {
+          smallestPaneAtLeft = { id: paneId, width: paneWidth };
+        }
+      }
+
+      if (smallestPaneAtLeft) {
+        actualControlPaneId = smallestPaneAtLeft.id;
+        LogService.getInstance().debug(
+          `Control pane ID updated: ${controlPaneId} → ${actualControlPaneId} (width: ${smallestPaneAtLeft.width})`,
+          'Layout'
+        );
+      }
+    } catch (findError) {
+      LogService.getInstance().debug(`Failed to find control pane by position: ${findError}`, 'Layout');
+    }
+  }
+
+  // Step 8: Check sidebar width (but DON'T resize yet)
+  // We'll let the layout application handle the sizing to avoid pane swapping
   try {
     const currentSidebarWidth = execSync(
-      `tmux display-message -t '${controlPaneId}' -p '#{pane_width}'`,
+      `tmux display-message -t '${actualControlPaneId}' -p '#{pane_width}'`,
       { encoding: 'utf-8', stdio: 'pipe' }
     ).trim();
 
     if (currentSidebarWidth !== String(config.SIDEBAR_WIDTH)) {
       LogService.getInstance().debug(
-        `Resizing sidebar: ${currentSidebarWidth} → ${config.SIDEBAR_WIDTH}`,
+        `Sidebar width mismatch: ${currentSidebarWidth} (current) vs ${config.SIDEBAR_WIDTH} (target), will fix via layout`,
         'Layout'
       );
-      execSync(`tmux resize-pane -t '${controlPaneId}' -x ${config.SIDEBAR_WIDTH}`, { stdio: 'pipe' });
-
-      // Wait for tmux to settle after sidebar resize
-      try {
-        execSync(`sleep ${TMUX_SIDEBAR_SETTLE_DELAY / 1000}`, { stdio: 'pipe' });
-      } catch {}
     } else {
       LogService.getInstance().debug(`Sidebar width already correct: ${config.SIDEBAR_WIDTH}`, 'Layout');
     }
   } catch (error) {
-    LogService.getInstance().debug(`Failed to check/resize sidebar: ${error}`, 'Layout');
+    LogService.getInstance().debug(`Failed to check sidebar width: ${error}`, 'Layout');
   }
 
   // Step 8: Check window dimensions and resize if needed
@@ -268,29 +304,8 @@ export function recalculateAndApplyLayout(
       execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: 'pipe' });
     } catch {}
 
-    // CRITICAL: Re-enforce sidebar width after window resize!
-    // Window resizes cause tmux to redistribute width changes to ALL panes including sidebar
-    try {
-      const sidebarWidthAfterResize = execSync(
-        `tmux display-message -t '${controlPaneId}' -p '#{pane_width}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-
-      if (sidebarWidthAfterResize !== String(config.SIDEBAR_WIDTH)) {
-        LogService.getInstance().debug(
-          `Sidebar changed after window resize: ${sidebarWidthAfterResize} → ${config.SIDEBAR_WIDTH}, fixing`,
-          'Layout'
-        );
-        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${config.SIDEBAR_WIDTH}`, { stdio: 'pipe' });
-
-        // Wait for tmux to settle
-        try {
-          execSync(`sleep ${TMUX_SIDEBAR_SETTLE_DELAY / 1000}`, { stdio: 'pipe' });
-        } catch {}
-      }
-    } catch (error) {
-      LogService.getInstance().debug(`Failed to re-check sidebar after window resize: ${error}`, 'Layout');
-    }
+    // Note: We don't re-enforce sidebar width here anymore
+    // The layout application below will set the correct dimensions for all panes
   } else {
     LogService.getInstance().debug(
       `Window dimensions already correct: ${finalLayout.windowWidth}x${terminalHeight}`,
@@ -311,7 +326,7 @@ export function recalculateAndApplyLayout(
   } catch {}
 
   // Step 9: Apply the layout to tmux
-  layoutApplier.applyPaneLayout(controlPaneId, finalContentPanes, finalLayout, terminalHeight);
+  layoutApplier.applyPaneLayout(actualControlPaneId, finalContentPanes, finalLayout, terminalHeight);
 }
 
 /**

@@ -12,6 +12,7 @@ import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
 import { triggerHook } from './hooks.js';
+import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -310,7 +311,7 @@ export async function createPane(
       `tmux send-keys -t '${paneInfo}' 'echo "Tip: Try running: git worktree prune && git branch -D ${slug}"' Enter`,
       { stdio: 'pipe' }
     );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
 
     // Don't throw - let the pane stay open so user can debug
   }
@@ -511,7 +512,7 @@ async function autoApproveTrustPrompt(
             execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
               stdio: 'pipe',
             });
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
             execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
               stdio: 'pipe',
             });

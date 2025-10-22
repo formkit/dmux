@@ -160,12 +160,10 @@ class Dmux {
     // }
 
     // Set pane title for the current pane running dmux
-    // NOTE: Temporarily disabled to test if title updates cause UI shifts
-    // try {
-    //   execSync(`tmux select-pane -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'pipe' });
-    // } catch {
-    //   // Ignore if it fails (might not have permission or tmux version doesn't support it)
-    // }
+    // TODO(future): Re-enable control pane title once UI shift issue is resolved
+    // Setting the title can cause visual artifacts in some tmux configurations
+    // Original code: execSync(`tmux select-pane -T "dmux v${version} - ${project}"`)
+    // See: Title updates are currently handled by enforcePaneTitles() in usePaneSync.ts
 
     // Get current pane ID (control pane for left sidebar)
     let controlPaneId: string | undefined;

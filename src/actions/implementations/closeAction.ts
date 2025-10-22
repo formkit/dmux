@@ -10,6 +10,7 @@ import type { ActionResult, ActionContext, ActionOption } from '../types.js';
 import { StateManager } from '../../shared/StateManager.js';
 import { triggerHook } from '../../utils/hooks.js';
 import { LogService } from '../../services/LogService.js';
+import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -84,7 +85,7 @@ async function executeCloseOption(
         try {
           execSync(`tmux send-keys -t '${pane.paneId}' C-c`, { stdio: 'pipe' });
           // Wait a moment for the process to exit
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, TMUX_SPLIT_DELAY));
         } catch {
           // Process might not be running
         }

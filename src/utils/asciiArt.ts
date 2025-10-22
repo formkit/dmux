@@ -1,4 +1,5 @@
 import { execSync } from "child_process"
+import { ASCII_ART_RENDER_DELAY } from "../constants/timing.js"
 
 export interface RenderAsciiArtOptions {
   paneId: string
@@ -78,7 +79,7 @@ export async function renderAsciiArt(
   } catch {
     // Pane might not have a running process, that's okay
   }
-  await new Promise((resolve) => setTimeout(resolve, 100))
+  await new Promise((resolve) => setTimeout(resolve, ASCII_ART_RENDER_DELAY))
 
   // Run the decorative pane script with absolute path
   const absolutePath = path.isAbsolute(scriptPath)

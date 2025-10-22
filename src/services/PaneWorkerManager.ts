@@ -10,6 +10,7 @@ import type {
   WorkerConfig
 } from '../workers/WorkerMessages.js';
 import { LogService } from './LogService.js';
+import { WORKER_BACKOFF_BASE } from '../constants/timing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -298,8 +299,8 @@ export class PaneWorkerManager {
       await workerInfo.worker.terminate();
     } catch {}
 
-    // Wait before restart
-    await new Promise(resolve => setTimeout(resolve, 1000 * restartCount));
+    // Wait before restart with exponential backoff
+    await new Promise(resolve => setTimeout(resolve, WORKER_BACKOFF_BASE * restartCount));
 
     // Create new worker with updated restart count
     if (!this.isShuttingDown) {
