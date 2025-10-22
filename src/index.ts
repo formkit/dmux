@@ -185,7 +185,23 @@ class Dmux {
 
       // ALWAYS update controlPaneId with current pane (it changes on restart)
       // This ensures layout manager always has the correct control pane ID
-      const needsUpdate = config.controlPaneId !== controlPaneId;
+      const oldControlPaneId = config.controlPaneId;
+      const needsUpdate = oldControlPaneId !== controlPaneId;
+
+      if (needsUpdate) {
+        if (oldControlPaneId) {
+          LogService.getInstance().info(
+            `Control pane ID changed: ${oldControlPaneId} → ${controlPaneId}`,
+            'Setup'
+          );
+        } else {
+          LogService.getInstance().info(
+            `Setting initial control pane ID: ${controlPaneId}`,
+            'Setup'
+          );
+        }
+      }
+
       config.controlPaneId = controlPaneId;
       config.controlPaneSize = SIDEBAR_WIDTH;
 
@@ -203,7 +219,33 @@ class Dmux {
       // Create welcome pane if there are no dmux panes and no existing welcome pane
       // Check if welcome pane actually exists, not just if it's in config (handles tmux restarts)
       const { welcomePaneExists } = await import('./utils/welcomePane.js');
-      const hasValidWelcomePane = config.welcomePaneId && welcomePaneExists(config.welcomePaneId);
+
+      // Validate welcome pane existence
+      let hasValidWelcomePane = false;
+      if (config.welcomePaneId) {
+        hasValidWelcomePane = await welcomePaneExists(config.welcomePaneId);
+
+        if (!hasValidWelcomePane) {
+          LogService.getInstance().info(
+            `Welcome pane ${config.welcomePaneId} no longer exists, will create new one`,
+            'Setup'
+          );
+          // Clear stale welcome pane ID from config
+          const staleWelcomePaneId = config.welcomePaneId;
+          config.welcomePaneId = undefined;
+          config.lastUpdated = new Date().toISOString();
+          await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+          LogService.getInstance().debug(
+            `Cleared stale welcome pane ID ${staleWelcomePaneId} from config`,
+            'Setup'
+          );
+        } else {
+          LogService.getInstance().debug(
+            `Welcome pane ${config.welcomePaneId} exists`,
+            'Setup'
+          );
+        }
+      }
 
       if (controlPaneId && config.panes && config.panes.length === 0) {
         if (!hasValidWelcomePane) {
@@ -213,7 +255,7 @@ class Dmux {
             config.welcomePaneId = welcomePaneId;
             config.lastUpdated = new Date().toISOString();
             await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
-            LogService.getInstance().debug(`Created welcome pane: ${welcomePaneId}`, 'Setup');
+            LogService.getInstance().info(`Created welcome pane: ${welcomePaneId}`, 'Setup');
           }
         } else {
           // Welcome pane exists from previous session - fix the layout

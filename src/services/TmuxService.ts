@@ -288,15 +288,17 @@ export class TmuxService {
    */
   async paneExists(paneId: string): Promise<boolean> {
     try {
-      await this.executeWithRetry(
+      const result = await this.executeWithRetry(
         () => {
-          this.execute(`tmux display-message -t '${paneId}' -p '#{pane_id}'`, { silent: true });
-          return true;
+          const output = this.execute(`tmux display-message -t '${paneId}' -p '#{pane_id}'`, { silent: true });
+          return output;
         },
         RetryStrategy.FAST,
         `paneExists(${paneId})`
       );
-      return true;
+      // Verify the pane ID is actually returned (not empty)
+      // Empty output indicates a zombie pane that exists but has no properties
+      return result.trim() === paneId;
     } catch {
       // Expected - pane doesn't exist
       return false;
