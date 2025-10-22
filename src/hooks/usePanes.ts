@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import PQueue from 'p-queue';
 import type { DmuxPane } from '../types.js';
 import { LogService } from '../services/LogService.js';
 import { PANE_POLLING_INTERVAL } from '../constants/timing.js';
@@ -20,37 +21,12 @@ import {
 } from './useShellDetection.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 
-// Simple write lock to prevent concurrent config writes
-let isWriting = false;
-const writeQueue: (() => Promise<void>)[] = [];
+// Use p-queue for proper concurrency control instead of manual write lock
+// This prevents race conditions and provides better visibility into queue state
+const configQueue = new PQueue({ concurrency: 1 });
 
 async function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
-  if (isWriting) {
-    // Queue this operation
-    return new Promise((resolve, reject) => {
-      writeQueue.push(async () => {
-        try {
-          const result = await operation();
-          resolve(result as any);
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
-  }
-
-  isWriting = true;
-  try {
-    const result = await operation();
-    // Process any queued operations
-    while (writeQueue.length > 0) {
-      const nextOp = writeQueue.shift();
-      if (nextOp) await nextOp();
-    }
-    return result;
-  } finally {
-    isWriting = false;
-  }
+  return configQueue.add(operation);
 }
 
 export default function usePanes(panesFile: string, skipLoading: boolean) {
