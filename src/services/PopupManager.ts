@@ -33,8 +33,8 @@ export interface PopupManagerConfig {
 }
 
 interface PopupOptions {
-  width: number
-  height: number
+  width?: number
+  height?: number
   title: string
   positioning?: "standard" | "centered" | "large"
 }
@@ -136,8 +136,8 @@ export class PopupManager {
       // Launch popup
       const popupHandle = launchNodePopupNonBlocking<T>(popupScriptPath, args, {
         ...positioning,
-        width: options.width,
-        height: options.height,
+        ...(options.width !== undefined && { width: options.width }),
+        ...(options.height !== undefined && { height: options.height }),
         title: options.title,
       })
 
@@ -364,8 +364,6 @@ export class PopupManager {
         "logsPopup.js",
         [],
         {
-          width: 90,
-          height: 35,
           title: "🪵 dmux Logs",
           positioning: "large",
         },
