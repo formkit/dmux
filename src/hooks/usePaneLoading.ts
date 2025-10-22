@@ -1,0 +1,252 @@
+import { execSync } from 'child_process';
+import fs from 'fs/promises';
+import type { DmuxPane } from '../types.js';
+import { splitPane } from '../utils/tmux.js';
+import { rebindPaneByTitle } from '../utils/paneRebinding.js';
+import { LogService } from '../services/LogService.js';
+import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
+
+// Separate config structure to match new format
+export interface DmuxConfig {
+  projectName?: string;
+  projectRoot?: string;
+  panes: DmuxPane[];
+  settings?: any;
+  lastUpdated?: string;
+  controlPaneId?: string;
+  welcomePaneId?: string;
+}
+
+interface PaneLoadResult {
+  panes: DmuxPane[];
+  allPaneIds: string[];
+  titleToId: Map<string, string>;
+}
+
+/**
+ * Fetches all tmux pane IDs and titles for the current session
+ * Retries up to maxRetries times with delay between attempts
+ */
+export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: string[]; titleToId: Map<string, string> }> {
+  let allPaneIds: string[] = [];
+  let titleToId = new Map<string, string>();
+  let retryCount = 0;
+
+  while (retryCount <= maxRetries) {
+    try {
+      const output = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: TMUX_COMMAND_TIMEOUT
+      }).trim();
+
+      if (output) {
+        const lines = output.split('\n');
+        for (const line of lines) {
+          const [id, title] = line.split('::');
+          // Filter out dmux internal panes (spacer, control pane, etc.)
+          if (id && id.startsWith('%') && title !== 'dmux-spacer') {
+            allPaneIds.push(id);
+            if (title) titleToId.set(title.trim(), id);
+          }
+        }
+      }
+      if (allPaneIds.length > 0 || retryCount === maxRetries) break;
+    } catch {
+      if (retryCount < maxRetries) await new Promise(r => setTimeout(r, TMUX_RETRY_DELAY));
+    }
+    retryCount++;
+  }
+
+  return { allPaneIds, titleToId };
+}
+
+/**
+ * Reads and parses the panes config file
+ * Handles both old array format and new config format
+ */
+export async function loadPanesFromFile(panesFile: string): Promise<DmuxPane[]> {
+  try {
+    const content = await fs.readFile(panesFile, 'utf-8');
+    const parsed: any = JSON.parse(content);
+
+    if (Array.isArray(parsed)) {
+      return parsed as DmuxPane[];
+    } else {
+      const config = parsed as DmuxConfig;
+      return config.panes || [];
+    }
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Recreates missing worktree panes that exist in config but not in tmux
+ * Only called on initial load
+ */
+export async function recreateMissingPanes(
+  missingPanes: DmuxPane[],
+  panesFile: string
+): Promise<void> {
+  if (missingPanes.length === 0) return;
+
+  for (const missingPane of missingPanes) {
+    try {
+      // Create new pane
+      const newPaneId = splitPane({ cwd: missingPane.worktreePath || process.cwd() });
+
+      // Set pane title
+      execSync(`tmux select-pane -t '${newPaneId}' -T "${missingPane.slug}"`, { stdio: 'pipe' });
+
+      // Update the pane with new ID
+      missingPane.paneId = newPaneId;
+
+      // Send a message to the pane indicating it was restored
+      const slug = missingPane.slug.replace(/'/g, "'\\''");
+      const promptPreview = (missingPane.prompt?.substring(0, 50) || '').replace(/'/g, "'\\''");
+      execSync(`tmux send-keys -t '${newPaneId}' "echo '# Pane restored: ${slug}'" Enter`, { stdio: 'pipe' });
+      execSync(`tmux send-keys -t '${newPaneId}' "echo '# Original prompt: ${promptPreview}...'" Enter`, { stdio: 'pipe' });
+      execSync(`tmux send-keys -t '${newPaneId}' "cd ${missingPane.worktreePath || process.cwd()}" Enter`, { stdio: 'pipe' });
+    } catch (error) {
+      // If we can't create the pane, skip it
+    }
+  }
+
+  // Apply even-horizontal layout after creating panes
+  try {
+    execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
+    execSync('tmux refresh-client', { stdio: 'pipe' });
+  } catch {}
+}
+
+/**
+ * Recreates worktree panes that were killed by the user (e.g., via Ctrl+b x)
+ * Called during periodic polling after initial load
+ */
+export async function recreateKilledWorktreePanes(
+  panes: DmuxPane[],
+  allPaneIds: string[],
+  panesFile: string
+): Promise<DmuxPane[]> {
+  const worktreePanesToRecreate = panes.filter(pane =>
+    !allPaneIds.includes(pane.paneId) && pane.worktreePath
+  );
+
+  if (worktreePanesToRecreate.length === 0) return panes;
+
+  LogService.getInstance().debug(
+    `Recreating ${worktreePanesToRecreate.length} killed worktree panes`,
+    'shellDetection'
+  );
+
+  const updatedPanes = [...panes];
+
+  for (const pane of worktreePanesToRecreate) {
+    try {
+      // Create new pane in the worktree directory
+      const newPaneId = splitPane({ cwd: pane.worktreePath });
+
+      // Set pane title
+      execSync(`tmux select-pane -t '${newPaneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+
+      // Update the pane with new ID
+      const paneIndex = updatedPanes.findIndex(p => p.id === pane.id);
+      if (paneIndex !== -1) {
+        updatedPanes[paneIndex] = { ...pane, paneId: newPaneId };
+      }
+
+      // Send a message to the pane indicating it was restored
+      const slug = pane.slug.replace(/'/g, "'\\''");
+      const promptPreview = (pane.prompt?.substring(0, 50) || '').replace(/'/g, "'\\''");
+      execSync(`tmux send-keys -t '${newPaneId}' "echo '# Pane restored: ${slug}'" Enter`, { stdio: 'pipe' });
+      if (pane.prompt) {
+        execSync(`tmux send-keys -t '${newPaneId}' "echo '# Original prompt: ${promptPreview}...'" Enter`, { stdio: 'pipe' });
+      }
+      execSync(`tmux send-keys -t '${newPaneId}' "cd ${pane.worktreePath}" Enter`, { stdio: 'pipe' });
+
+      LogService.getInstance().debug(
+        `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
+        'shellDetection'
+      );
+    } catch (error) {
+      LogService.getInstance().debug(
+        `Failed to recreate worktree pane ${pane.id} (${pane.slug})`,
+        'shellDetection'
+      );
+    }
+  }
+
+  // Recalculate layout after recreating panes
+  try {
+    const configContent = await fs.readFile(panesFile, 'utf-8');
+    const config = JSON.parse(configContent);
+    if (config.controlPaneId) {
+      const { recalculateAndApplyLayout } = await import('../utils/layoutManager.js');
+      const { getTerminalDimensions } = await import('../utils/tmux.js');
+      const dimensions = getTerminalDimensions();
+
+      const contentPaneIds = updatedPanes.map(p => p.paneId);
+      recalculateAndApplyLayout(
+        config.controlPaneId,
+        contentPaneIds,
+        dimensions.width,
+        dimensions.height
+      );
+
+      LogService.getInstance().debug(
+        `Recalculated layout after recreating worktree panes`,
+        'shellDetection'
+      );
+    }
+  } catch (error) {
+    LogService.getInstance().debug(
+      'Failed to recalculate layout after recreating worktree panes',
+      'shellDetection'
+    );
+  }
+
+  return updatedPanes;
+}
+
+/**
+ * Loads panes from config file, rebinds IDs, and recreates missing panes
+ * Returns the loaded and processed panes along with tmux state
+ */
+export async function loadAndProcessPanes(
+  panesFile: string,
+  isInitialLoad: boolean
+): Promise<PaneLoadResult> {
+  const loadedPanes = await loadPanesFromFile(panesFile);
+  let { allPaneIds, titleToId } = await fetchTmuxPaneIds();
+
+  // Attempt to rebind panes whose IDs changed by matching on title (slug)
+  const reboundPanes = loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
+
+  // Only attempt to recreate missing panes on initial load
+  const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && isInitialLoad)
+    ? reboundPanes.filter(pane =>
+        !allPaneIds.includes(pane.paneId) && pane.type !== 'shell'
+      )
+    : [];
+
+  // Recreate missing panes (only on initial load)
+  await recreateMissingPanes(missingPanes, panesFile);
+
+  // Re-fetch pane IDs after recreation
+  if (missingPanes.length > 0) {
+    const freshData = await fetchTmuxPaneIds();
+    allPaneIds = freshData.allPaneIds;
+    titleToId = freshData.titleToId;
+
+    // Re-rebind after recreation
+    loadedPanes.forEach((p, idx) => {
+      const rebound = rebindPaneByTitle(p, titleToId, allPaneIds);
+      if (rebound.paneId !== p.paneId) {
+        loadedPanes[idx] = rebound;
+      }
+    });
+  }
+
+  return { panes: reboundPanes, allPaneIds, titleToId };
+}

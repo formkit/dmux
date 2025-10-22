@@ -14,6 +14,8 @@ import useAgentStatus from "./hooks/useAgentStatus.js"
 import usePaneRunner from "./hooks/usePaneRunner.js"
 import usePaneCreation from "./hooks/usePaneCreation.js"
 import useActionSystem from "./hooks/useActionSystem.js"
+import { useStatusMessages } from "./hooks/useStatusMessages.js"
+import { useLayoutManagement } from "./hooks/useLayoutManagement.js"
 
 // Utils
 import { enforceControlPaneSize } from "./utils/tmux.js"
@@ -75,7 +77,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [statusMessage, setStatusMessage] = useState("")
+  const { statusMessage, setStatusMessage, showStatus, clearStatus } = useStatusMessages()
   const [isCreatingPane, setIsCreatingPane] = useState(false)
 
   // Settings state
@@ -516,86 +518,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Auto-show new pane dialog removed - users can press 'n' to create panes via popup
 
   // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
-  useEffect(() => {
-    if (!controlPaneId) {
-      return // No sidebar layout configured
-    }
-
-    // Enforce sidebar width immediately on mount
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
-
-    // Debounce resize handler to prevent infinite loops
-    let resizeTimeout: NodeJS.Timeout | null = null
-    let isApplyingLayout = false
-
-    const handleResize = () => {
-      // Skip if we're already applying a layout (prevents loops)
-      if (isApplyingLayout) {
-        return
-      }
-
-      // Clear any pending resize
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout)
-      }
-
-      // Debounce: wait 500ms after last resize event (prevents excessive recalculations)
-      resizeTimeout = setTimeout(() => {
-        // Only enforce if not showing dialogs (to avoid interference)
-        const hasActiveDialog =
-          actionSystem.actionState.showConfirmDialog ||
-          actionSystem.actionState.showChoiceDialog ||
-          actionSystem.actionState.showInputDialog ||
-          actionSystem.actionState.showProgressDialog ||
-          !!showCommandPrompt ||
-          showFileCopyPrompt ||
-          isCreatingPane ||
-          runningCommand ||
-          isUpdating
-
-        if (!hasActiveDialog) {
-          isApplyingLayout = true
-          // Only enforce sidebar width when terminal resizes
-          enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
-
-          // Force Ink to repaint after resize to prevent blank dmux pane
-          forceRepaint()
-
-          // Reset flag after a brief delay
-          setTimeout(() => {
-            isApplyingLayout = false
-          }, 100)
-        }
-      }, 500)
-    }
-
-    // Listen to stdout resize events
-    process.stdout.on("resize", handleResize)
-
-    // Also listen for SIGWINCH and SIGUSR1 (tmux hook sends USR1)
-    process.on("SIGWINCH", handleResize)
-    process.on("SIGUSR1", handleResize)
-
-    return () => {
-      process.stdout.off("resize", handleResize)
-      process.off("SIGWINCH", handleResize)
-      process.off("SIGUSR1", handleResize)
-      if (resizeTimeout) {
-        clearTimeout(resizeTimeout)
-      }
-    }
-  }, [
+  useLayoutManagement({
     controlPaneId,
-    actionSystem.actionState.showConfirmDialog,
-    actionSystem.actionState.showChoiceDialog,
-    actionSystem.actionState.showInputDialog,
-    actionSystem.actionState.showProgressDialog,
-    showCommandPrompt,
-    showFileCopyPrompt,
-    isCreatingPane,
-    runningCommand,
-    isUpdating,
-  ])
+    hasActiveDialog:
+      actionSystem.actionState.showConfirmDialog ||
+      actionSystem.actionState.showChoiceDialog ||
+      actionSystem.actionState.showInputDialog ||
+      actionSystem.actionState.showProgressDialog ||
+      !!showCommandPrompt ||
+      showFileCopyPrompt ||
+      isCreatingPane ||
+      runningCommand ||
+      isUpdating,
+    onForceRepaint: forceRepaint,
+  })
 
   // Monitor agent status across panes (returns a map of pane ID to status)
   const agentStatuses = useAgentStatus({
