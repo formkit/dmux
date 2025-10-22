@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 import { getAvailableAgents } from './agentDetection.js';
+import { LogService } from '../services/LogService.js';
 
 /**
  * System requirement check results
@@ -167,20 +168,22 @@ export async function validateSystemRequirements(): Promise<ValidationResult> {
  * Exits process if critical errors found
  */
 export function printValidationResults(result: ValidationResult): void {
+  const logger = LogService.getInstance();
+
   if (result.errors.length > 0) {
     console.error(chalk.red.bold('\n❌ System Requirements Check Failed:\n'));
     result.errors.forEach(error => {
       console.error(chalk.red(`  • ${error}`));
+      logger.error(error, 'systemCheck');
     });
     console.error(chalk.yellow('\nPlease install missing dependencies and try again.\n'));
     process.exit(1);
   }
 
   if (result.warnings.length > 0) {
-    console.warn(chalk.yellow.bold('\n⚠️  Warnings:\n'));
+    // Log warnings using logger instead of console.warn
     result.warnings.forEach(warning => {
-      console.warn(chalk.yellow(`  • ${warning}`));
+      logger.warn(warning, 'systemCheck');
     });
-    console.warn('');
   }
 }
