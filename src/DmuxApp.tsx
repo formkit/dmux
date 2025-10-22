@@ -450,6 +450,94 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     }
   }
 
+  // Helper function to handle action results recursively
+  const handleActionResult = async (result: ActionResult): Promise<void> => {
+    // Handle ActionResults from background callbacks (e.g., conflict resolution completion)
+    // This allows showing dialogs even when not in the normal action flow
+    if (!popupsSupported) return
+
+    // Handle the result type and show appropriate dialog
+    if (result.type === "confirm") {
+      const confirmed = await popupManager.launchConfirmPopup(
+        result.title || "Confirm",
+        result.message,
+        result.confirmLabel,
+        result.cancelLabel
+      )
+      if (confirmed && result.onConfirm) {
+        const nextResult = await result.onConfirm()
+        // Recursively handle nested results
+        if (nextResult) {
+          await handleActionResult(nextResult)
+        }
+      } else if (!confirmed && result.onCancel) {
+        const nextResult = await result.onCancel()
+        if (nextResult) {
+          await handleActionResult(nextResult)
+        }
+      }
+    } else if (result.type === "choice") {
+      if (!result.options || !result.onSelect) return
+      const selectedId = await popupManager.launchChoicePopup(
+        result.title || "Choose Option",
+        result.message,
+        result.options
+      )
+      if (selectedId) {
+        const nextResult = await result.onSelect(selectedId)
+        // Recursively handle nested results
+        if (nextResult) {
+          await handleActionResult(nextResult)
+        }
+      }
+    } else if (result.type === "input") {
+      if (!result.onSubmit) return
+      const inputValue = await popupManager.launchInputPopup(
+        result.title || "Input",
+        result.message,
+        result.placeholder,
+        result.defaultValue
+      )
+      if (inputValue !== null) {
+        const nextResult = await result.onSubmit(inputValue)
+        // Recursively handle nested results
+        if (nextResult) {
+          await handleActionResult(nextResult)
+        }
+      }
+    } else if (result.type === "navigation") {
+      // Navigate to target pane if specified
+      if (result.targetPaneId) {
+        const targetPane = panes.find(p => p.id === result.targetPaneId)
+        if (targetPane) {
+          try {
+            TmuxService.getInstance().selectPane(targetPane.paneId)
+          } catch (error) {
+            console.error('[onActionResult] Failed to navigate to pane:', error)
+          }
+        }
+      }
+      // Show message if dismissable
+      if (result.message && result.dismissable) {
+        await popupManager.launchProgressPopup(
+          result.message,
+          "info",
+          3000
+        )
+      }
+    } else if (
+      result.type === "info" ||
+      result.type === "success" ||
+      result.type === "error"
+    ) {
+      await popupManager.launchProgressPopup(
+        result.message,
+        result.type as "info" | "success" | "error",
+        3000
+      )
+    }
+  }
+
   // Action system - initialized after services are defined
   const actionSystem = useActionSystem({
     panes,
@@ -467,36 +555,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       // Mark close as completed (no more lock needed)
       await lifecycleManager.completeClose(paneId)
     },
-    onActionResult: async (result: ActionResult) => {
-      // Handle ActionResults from background callbacks (e.g., conflict resolution completion)
-      // This allows showing dialogs even when not in the normal action flow
-      if (!popupsSupported) return
-
-      // Handle the result type and show appropriate dialog
-      if (result.type === "confirm") {
-        const confirmed = await popupManager.launchConfirmPopup(
-          result.title || "Confirm",
-          result.message,
-          result.confirmLabel,
-          result.cancelLabel
-        )
-        if (confirmed && result.onConfirm) {
-          await result.onConfirm()
-        } else if (!confirmed && result.onCancel) {
-          await result.onCancel()
-        }
-      } else if (
-        result.type === "info" ||
-        result.type === "success" ||
-        result.type === "error"
-      ) {
-        await popupManager.launchProgressPopup(
-          result.message,
-          result.type as "info" | "success" | "error",
-          3000
-        )
-      }
-    },
+    onActionResult: handleActionResult,
     forceRepaint,
     popupLaunchers: popupsSupported
       ? {
