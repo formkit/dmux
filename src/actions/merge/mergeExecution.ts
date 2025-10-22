@@ -189,42 +189,9 @@ export async function executeMerge(
   });
   console.error(`[mergeExecution] post_merge hook completed for ${pane.slug}`);
 
-  // Merge successful! Ask about cleanup
-  console.error(`[mergeExecution] Returning confirm dialog for cleanup of ${pane.slug}`);
-  return {
-    type: 'confirm',
-    title: 'Merge Complete',
-    message: `Successfully merged "${pane.slug}" into ${mainBranch}. Close the pane and cleanup worktree?`,
-    confirmLabel: 'Yes, close it',
-    cancelLabel: 'No, keep it',
-    onConfirm: async () => {
-      console.error(`[mergeExecution] Starting cleanup for pane ${pane.id} (${pane.slug}) by calling closeAction`);
+  // Merge successful! Show cleanup options using the existing closePane dialog
+  console.error(`[mergeExecution] Merge complete for ${pane.slug}, showing cleanup options`);
 
-      // Use the CLOSE action which handles everything properly:
-      // - Hooks (before_pane_close, before_worktree_remove, worktree_removed, pane_closed)
-      // - Layout recalculation after pane removal
-      // - Last pane handling (recreates welcome pane)
-      // - Terminal clearing to prevent artifacts
-      const { closePane } = await import('../implementations/closeAction.js');
-
-      // First execute the close action to get the choice dialog
-      const closeResult = await closePane(pane, context);
-
-      // If it's a choice dialog, auto-select the "kill_clean_branch" option
-      if (closeResult.type === 'choice' && closeResult.onSelect) {
-        console.error(`[mergeExecution] Auto-selecting kill_clean_branch option for ${pane.slug}`);
-        return closeResult.onSelect('kill_clean_branch');
-      }
-
-      // For shell panes or if something unexpected happened, just return the result
-      return closeResult;
-    },
-    onCancel: async () => {
-      return {
-        type: 'success',
-        message: 'Merge complete. Pane kept open.',
-        dismissable: true,
-      };
-    },
-  };
+  const { closePane } = await import('../implementations/closeAction.js');
+  return closePane(pane, context);
 }
