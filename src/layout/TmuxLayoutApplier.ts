@@ -90,22 +90,22 @@ export class TmuxLayoutApplier {
 
         try {
           this.tmuxService.selectLayoutSync(layoutString);
-          LogService.getInstance().debug('Layout string applied successfully', 'Layout');
+          // LogService.getInstance().debug('Layout string applied successfully', 'Layout');
         } catch (layoutError: any) {
           // Log the error for debugging
           const errorMsg = layoutError?.message || String(layoutError);
-          LogService.getInstance().debug(
+          LogService.getInstance().error(
             `Layout string application failed: ${errorMsg}`,
             'Layout'
           );
-          LogService.getInstance().debug(`Failed layout string: ${layoutString}`, 'Layout');
+          // LogService.getInstance().debug(`Failed layout string: ${layoutString}`, 'Layout');
 
           // Fallback to main-vertical if custom layout fails
           this.applyMainVerticalFallback();
         }
       } else {
         // Empty layout string - fallback to main-vertical
-        LogService.getInstance().debug('Empty layout string, using main-vertical fallback', 'Layout');
+        // LogService.getInstance().debug('Empty layout string, using main-vertical fallback', 'Layout');
         this.applyMainVerticalFallback();
       }
     } catch (error) {
@@ -141,9 +141,9 @@ export class TmuxLayoutApplier {
     try {
       this.tmuxService.setWindowOptionSync('main-pane-width', String(this.config.SIDEBAR_WIDTH));
       this.tmuxService.selectLayoutSync('main-vertical');
-      LogService.getInstance().debug('Fell back to main-vertical layout', 'Layout');
+      // LogService.getInstance().debug('Fell back to main-vertical layout', 'Layout');
     } catch (error) {
-      LogService.getInstance().debug(`Main-vertical fallback failed: ${error}`, 'Layout');
+      LogService.getInstance().error(`Main-vertical fallback failed: ${error}`, 'Layout');
     }
   }
 
@@ -152,11 +152,12 @@ export class TmuxLayoutApplier {
    * Useful for diagnosing layout application failures
    */
   private logPaneState(): void {
-    try {
-      const paneList = this.tmuxService.listPanesSync('#{pane_id}=#{pane_index}');
-      LogService.getInstance().debug(`Panes right before layout apply: ${paneList}`, 'Layout');
-    } catch {
-      // Ignore errors
-    }
+    // Commented out to reduce log noise
+    // try {
+    //   const paneList = this.tmuxService.listPanesSync('#{pane_id}=#{pane_index}');
+    //   LogService.getInstance().debug(`Panes right before layout apply: ${paneList}`, 'Layout');
+    // } catch {
+    //   // Ignore errors
+    // }
   }
 }

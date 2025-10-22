@@ -549,9 +549,9 @@ class Dmux {
       // This works inside tmux where normal SIGWINCH may not propagate
       const pid = process.pid;
       execSync(`tmux set-hook -t '${this.sessionName}' client-resized 'run-shell "kill -USR1 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
-      LogService.getInstance().debug(`Set up resize hook for session ${this.sessionName}`, 'Setup');
+      // LogService.getInstance().debug(`Set up resize hook for session ${this.sessionName}`, 'Setup');
     } catch (error) {
-      LogService.getInstance().debug('Failed to set up resize hook', 'Setup');
+      LogService.getInstance().warn('Failed to set up resize hook', 'Setup');
     }
   }
 
@@ -561,9 +561,9 @@ class Dmux {
       // This allows us to detect manually created panes via Ctrl+b %
       const pid = process.pid;
       execSync(`tmux set-hook -t '${this.sessionName}' after-split-window 'run-shell "kill -USR2 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
-      LogService.getInstance().debug(`Set up pane split detection hook for session ${this.sessionName}`, 'Setup');
+      // LogService.getInstance().debug(`Set up pane split detection hook for session ${this.sessionName}`, 'Setup');
     } catch (error) {
-      LogService.getInstance().debug('Failed to set up pane split hook', 'Setup');
+      LogService.getInstance().warn('Failed to set up pane split hook', 'Setup');
     }
   }
 

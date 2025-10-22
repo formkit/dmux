@@ -81,27 +81,27 @@ export class SpacerManager {
       // Return focus to the originally active pane
       this.tmuxService.selectPaneSync(originalPaneId);
 
-  //       LogService.getInstance().debug(
-  //         `Created spacer pane: ${newPaneId} (split from ${lastContentPaneId}, restored focus to ${originalPaneId})`,
-  //         'Layout'
-  //       );
+      // LogService.getInstance().debug(
+      //   `Created spacer pane: ${newPaneId} (split from ${lastContentPaneId}, restored focus to ${originalPaneId})`,
+      //   'Layout'
+      // );
       return newPaneId;
     } catch (error) {
-  //   //       LogService.getInstance().debug(`Failed to create spacer pane: ${error}`, 'Layout');
-  //       throw error;
-  //     }
-  //   }
-  // 
-  //   /**
-  //    * Destroys a spacer pane by ID
-  //    * @param spacerId - The pane ID to destroy
-  //    */
-  //   destroySpacerPane(spacerId: string): void {
-  //     try {
-  //       this.tmuxService.killPaneSync(spacerId);
-  //   //       LogService.getInstance().debug(`Destroyed spacer pane: ${spacerId}`, 'Layout');
-  //     } catch (error) {
-  //   //       LogService.getInstance().debug(`Failed to destroy spacer pane: ${error}`, 'Layout');
+      // LogService.getInstance().debug(`Failed to create spacer pane: ${error}`, 'Layout');
+      throw error;
+    }
+  }
+
+  /**
+   * Destroys a spacer pane by ID
+   * @param spacerId - The pane ID to destroy
+   */
+  destroySpacerPane(spacerId: string): void {
+    try {
+      this.tmuxService.killPaneSync(spacerId);
+      // LogService.getInstance().debug(`Destroyed spacer pane: ${spacerId}`, 'Layout');
+    } catch (error) {
+      // LogService.getInstance().debug(`Failed to destroy spacer pane: ${error}`, 'Layout');
     }
   }
 
