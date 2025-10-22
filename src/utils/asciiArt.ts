@@ -35,9 +35,9 @@ export async function renderAsciiArt(
 
   // Try multiple possible locations
   const possiblePaths = [
-    path.join(__dirname, "..", "..", "dist", "decorative-pane.js"),
-    path.join(__dirname, "..", "decorative-pane.js"),
-    path.join(process.cwd(), "dist", "decorative-pane.js"),
+    path.join(__dirname, "..", "panes", "decorative-pane.js"),
+    path.join(__dirname, "..", "..", "dist", "panes", "decorative-pane.js"),
+    path.join(process.cwd(), "dist", "panes", "decorative-pane.js"),
   ]
 
   let scriptPath = possiblePaths[0] // Default
