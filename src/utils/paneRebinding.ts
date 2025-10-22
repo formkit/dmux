@@ -26,10 +26,10 @@ export function rebindPaneByTitle(
   if (allPaneIds.length > 0 && !allPaneIds.includes(pane.paneId)) {
     const remappedId = titleToIdMap.get(pane.slug);
     if (remappedId) {
-      LogService.getInstance().debug(
-        `Rebound pane ${pane.id} from ${pane.paneId} to ${remappedId} (matched by title: ${pane.slug})`,
-        'shellDetection'
-      );
+  //       LogService.getInstance().debug(
+  //         `Rebound pane ${pane.id} from ${pane.paneId} to ${remappedId} (matched by title: ${pane.slug})`,
+  //         'shellDetection'
+  //       );
       return { ...pane, paneId: remappedId };
     }
   }

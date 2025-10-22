@@ -249,18 +249,7 @@ class Dmux {
       // Continue without server - not critical for main functionality
     }
 
-    // Add test logs to verify logging system functionality
-    const logService = LogService.getInstance();
-    logService.debug(`dmux started for project: ${this.projectName}`, 'startup');
-    logService.debug(`Project root: ${this.projectRoot}`, 'startup');
-    logService.debug(`HTTP server running on port ${serverInfo.port}`, 'startup');
-    logService.debug('Debug log: System initialized successfully', 'startup');
-
-    // Add a sample warning and error for testing
-    if (process.env.DMUX_DEV === 'true') {
-      logService.debug('Development mode enabled - this is a test warning', 'startup');
-      logService.debug('Press [l] to view logs, [L] to reset layout', 'startup');
-    }
+    // Logging system is ready (removed debug logs to reduce clutter)
 
     // Suppress console output from LogService to prevent interference with Ink UI
     LogService.getInstance().setSuppressConsole(true);

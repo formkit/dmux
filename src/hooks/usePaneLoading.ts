@@ -56,10 +56,10 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
       if (allPaneIds.length > 0 || retryCount === maxRetries) break;
     } catch (error) {
       // Retry on tmux command failure (common during rapid pane creation/destruction)
-      LogService.getInstance().debug(
-        `Tmux fetch failed (attempt ${retryCount + 1}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`,
-        'usePaneLoading'
-      );
+  //       LogService.getInstance().debug(
+  //         `Tmux fetch failed (attempt ${retryCount + 1}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`,
+  //         'usePaneLoading'
+  //       );
       if (retryCount < maxRetries) await new Promise(r => setTimeout(r, TMUX_RETRY_DELAY));
     }
     retryCount++;
@@ -86,10 +86,10 @@ export async function loadPanesFromFile(panesFile: string): Promise<DmuxPane[]> 
   } catch (error) {
     // Return empty array if config file doesn't exist or is invalid
     // This is expected on first run
-    LogService.getInstance().debug(
-      `Config file not found or invalid: ${error instanceof Error ? error.message : String(error)}`,
-      'usePaneLoading'
-    );
+  //     LogService.getInstance().debug(
+  //       `Config file not found or invalid: ${error instanceof Error ? error.message : String(error)}`,
+  //       'usePaneLoading'
+  //     );
     return [];
   }
 }
@@ -151,10 +151,10 @@ export async function recreateKilledWorktreePanes(
 
   const tmuxService = TmuxService.getInstance();
 
-  LogService.getInstance().debug(
-    `Recreating ${worktreePanesToRecreate.length} killed worktree panes`,
-    'shellDetection'
-  );
+  //   LogService.getInstance().debug(
+  //     `Recreating ${worktreePanesToRecreate.length} killed worktree panes`,
+  //     'shellDetection'
+  //   );
 
   const updatedPanes = [...panes];
 
@@ -180,15 +180,15 @@ export async function recreateKilledWorktreePanes(
       }
       await tmuxService.sendKeys(newPaneId, `"cd ${pane.worktreePath}" Enter`);
 
-      LogService.getInstance().debug(
-        `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
-        'shellDetection'
-      );
+  //       LogService.getInstance().debug(
+  //         `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
+  //         'shellDetection'
+  //       );
     } catch (error) {
-      LogService.getInstance().debug(
-        `Failed to recreate worktree pane ${pane.id} (${pane.slug})`,
-        'shellDetection'
-      );
+  //       LogService.getInstance().debug(
+  //         `Failed to recreate worktree pane ${pane.id} (${pane.slug})`,
+  //         'shellDetection'
+  //       );
     }
   }
 
@@ -209,16 +209,16 @@ export async function recreateKilledWorktreePanes(
         dimensions.height
       );
 
-      LogService.getInstance().debug(
-        `Recalculated layout after recreating worktree panes`,
-        'shellDetection'
-      );
+  //       LogService.getInstance().debug(
+  //         `Recalculated layout after recreating worktree panes`,
+  //         'shellDetection'
+  //       );
     }
   } catch (error) {
-    LogService.getInstance().debug(
-      'Failed to recalculate layout after recreating worktree panes',
-      'shellDetection'
-    );
+  //     LogService.getInstance().debug(
+  //       'Failed to recalculate layout after recreating worktree panes',
+  //       'shellDetection'
+  //     );
   }
 
   return updatedPanes;

@@ -114,11 +114,6 @@ export class LayoutCalculator {
           terminalHeight
         );
 
-        LogService.getInstance().debug(
-          `Layout option: ${cols} cols x ${rows} rows, paneHeight=${paneHeight}, score=${score.toFixed(3)}`,
-          'Layout'
-        );
-
         // Update best if this score is higher, OR if tied but with fewer columns (more width per pane)
         const isBetter = score > bestScore || (score === bestScore && cols < (bestLayout?.cols || Infinity));
 
@@ -137,10 +132,6 @@ export class LayoutCalculator {
 
     // Return the best layout we found
     if (bestLayout) {
-      LogService.getInstance().debug(
-        `Best layout: ${numContentPanes} panes → ${bestLayout.cols} cols x ${bestLayout.rows} rows, window=${bestLayout.windowWidth}, paneWidth=${bestLayout.actualPaneWidth}`,
-        'Layout'
-      );
       return bestLayout;
     }
 

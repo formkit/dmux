@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import type { DmuxPane, ProjectSettings, LogEntry } from '../types.js';
 import { ConfigWatcher } from '../services/ConfigWatcher.js';
 import { LogService } from '../services/LogService.js';
+import { ToastService, type Toast } from '../services/ToastService.js';
 
 export interface DmuxState {
   panes: DmuxPane[];
@@ -15,6 +16,9 @@ export interface DmuxState {
   logs: LogEntry[];
   unreadErrorCount: number;
   unreadWarningCount: number;
+  currentToast: Toast | null;
+  toastQueueLength: number;
+  toastQueuePosition: number | null;
 }
 
 export class StateManager extends EventEmitter {
@@ -24,10 +28,12 @@ export class StateManager extends EventEmitter {
   private configWatcher: ConfigWatcher | null = null;
   private debugMessageCallback: ((message: string) => void) | undefined;
   private logService: LogService;
+  private toastService: ToastService;
 
   private constructor() {
     super();
     this.logService = LogService.getInstance();
+    this.toastService = ToastService.getInstance();
     this.state = {
       panes: [],
       projectName: '',
@@ -37,6 +43,9 @@ export class StateManager extends EventEmitter {
       logs: [],
       unreadErrorCount: 0,
       unreadWarningCount: 0,
+      currentToast: null,
+      toastQueueLength: 0,
+      toastQueuePosition: null,
     };
 
     // Listen to log events and sync state
@@ -54,6 +63,23 @@ export class StateManager extends EventEmitter {
 
     this.logService.on('logs-cleared', () => {
       this.syncLogsFromService();
+    });
+
+    // Listen to toast events and sync state
+    this.toastService.on('toast-shown', () => {
+      this.syncToastsFromService();
+    });
+
+    this.toastService.on('toast-dismissed', () => {
+      this.syncToastsFromService();
+    });
+
+    this.toastService.on('queue-updated', () => {
+      this.syncToastsFromService();
+    });
+
+    this.toastService.on('all-cleared', () => {
+      this.syncToastsFromService();
     });
   }
 
@@ -253,6 +279,57 @@ export class StateManager extends EventEmitter {
     return this.logService.getStats();
   }
 
+  /**
+   * Sync toasts from ToastService to state
+   */
+  private syncToastsFromService(): void {
+    const toastState = this.toastService.getState();
+
+    this.state.currentToast = toastState.currentToast;
+    this.state.toastQueueLength = toastState.queueLength;
+    this.state.toastQueuePosition = toastState.queuePosition;
+
+    this.notifyListeners();
+  }
+
+  /**
+   * Show a toast notification
+   * Also logs the message to the log panel
+   */
+  showToast(message: string, severity: 'success' | 'error' | 'info' | 'warning' = 'info'): void {
+    // Show the toast
+    this.toastService.showToast(message, severity);
+
+    // Also log it to the log panel
+    const logLevel = severity === 'success' ? 'info' : severity === 'warning' ? 'warn' : severity;
+    switch (logLevel) {
+      case 'error':
+        this.logService.error(message, 'toast');
+        break;
+      case 'warn':
+        this.logService.warn(message, 'toast');
+        break;
+      case 'info':
+      default:
+        this.logService.info(message, 'toast');
+        break;
+    }
+  }
+
+  /**
+   * Dismiss current toast
+   */
+  dismissToast(): void {
+    this.toastService.dismiss();
+  }
+
+  /**
+   * Clear all toasts
+   */
+  clearAllToasts(): void {
+    this.toastService.clearAll();
+  }
+
   reset(): void {
     // Stop file watcher
     if (this.configWatcher) {
@@ -269,13 +346,17 @@ export class StateManager extends EventEmitter {
       logs: [],
       unreadErrorCount: 0,
       unreadWarningCount: 0,
+      currentToast: null,
+      toastQueueLength: 0,
+      toastQueuePosition: null,
     };
     this.updateCallbacks.clear();
     this.removeAllListeners();
     this.debugMessageCallback = undefined;
 
-    // Also reset log service
+    // Also reset services
     this.logService.reset();
+    this.toastService.reset();
   }
 }
 

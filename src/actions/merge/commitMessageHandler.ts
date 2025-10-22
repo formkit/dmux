@@ -7,7 +7,6 @@
  */
 
 import type { ActionResult } from '../types.js';
-import { StateManager } from '../../shared/StateManager.js';
 import { LogService } from '../../services/LogService.js';
 
 /**
@@ -30,14 +29,12 @@ export async function generateCommitMessageSafe(
     ]);
 
     if (!result) {
-      StateManager.getInstance().setDebugMessage('[AI] Commit message generation returned null');
       LogService.getInstance().warn('AI commit message generation returned null', 'aiMerge');
     }
 
     return result;
   } catch (error) {
     const errorMsg = `AI commit message generation error: ${error}`;
-    StateManager.getInstance().setDebugMessage(`[AI] ${errorMsg}`);
     LogService.getInstance().error(errorMsg, 'aiMerge', undefined, error instanceof Error ? error : undefined);
     return null;
   }
@@ -87,16 +84,10 @@ export async function promptForCommitMessage(
 
   // AI modes - generate message
   const { diff, summary } = getComprehensiveDiff(repoPath);
-  StateManager.getInstance().setDebugMessage('[AI] Generating commit message...');
   const generatedMessage = await generateCommitMessageSafe(repoPath);
-
-  if (generatedMessage) {
-    StateManager.getInstance().setDebugMessage(`[AI] Generated message: ${generatedMessage.split('\n')[0]}`);
-  }
 
   // If AI generation failed, fall back to manual with explanation
   if (!generatedMessage) {
-    StateManager.getInstance().setDebugMessage('[AI] Generation failed, falling back to manual input');
     return {
       type: 'input',
       title: 'Enter Commit Message',

@@ -34,11 +34,11 @@ export function handleWithFallback<T>(
   try {
     return operation();
   } catch (error) {
-    LogService.getInstance().debug(
-      `${context} - using fallback`,
-      'warn',
-      error instanceof Error ? error.message : String(error)
-    );
+  //     LogService.getInstance().debug(
+  //       `${context} - using fallback`,
+  //       'warn',
+  //       error instanceof Error ? error.message : String(error)
+  //     );
     return fallback;
   }
 }
@@ -54,11 +54,11 @@ export function handleCriticalOperation<T>(
   try {
     return operation();
   } catch (error) {
-    LogService.getInstance().debug(
-      `Critical operation failed: ${context}`,
-      'error',
-      error instanceof Error ? error.message : String(error)
-    );
+  //     LogService.getInstance().debug(
+  //       `Critical operation failed: ${context}`,
+  //       'error',
+  //       error instanceof Error ? error.message : String(error)
+  //     );
     throw error;
   }
 }
@@ -75,11 +75,11 @@ export function handleExpectedError<T>(
   try {
     return operation();
   } catch (error) {
-    LogService.getInstance().debug(
-      context,
-      'debug',
-      error instanceof Error ? error.message : String(error)
-    );
+  //     LogService.getInstance().debug(
+  //       context,
+  //       'debug',
+  //       error instanceof Error ? error.message : String(error)
+  //     );
     return defaultValue;
   }
 }
@@ -96,10 +96,10 @@ export function checkExists(
     checkOperation();
     return true;
   } catch {
-    LogService.getInstance().debug(
-      `${resourceName} does not exist`,
-      'debug'
-    );
+  //     LogService.getInstance().debug(
+  //       `${resourceName} does not exist`,
+  //       'debug'
+  //     );
     return false;
   }
 }
@@ -128,11 +128,11 @@ export async function handleWithFallbackAsync<T>(
   try {
     return await operation();
   } catch (error) {
-    LogService.getInstance().debug(
-      `${context} - using fallback`,
-      'warn',
-      error instanceof Error ? error.message : String(error)
-    );
+  //     LogService.getInstance().debug(
+  //       `${context} - using fallback`,
+  //       'warn',
+  //       error instanceof Error ? error.message : String(error)
+  //     );
     return fallback;
   }
 }
@@ -144,11 +144,11 @@ export async function handleCriticalOperationAsync<T>(
   try {
     return await operation();
   } catch (error) {
-    LogService.getInstance().debug(
-      `Critical operation failed: ${context}`,
-      'error',
-      error instanceof Error ? error.message : String(error)
-    );
+  //     LogService.getInstance().debug(
+  //       `Critical operation failed: ${context}`,
+  //       'error',
+  //       error instanceof Error ? error.message : String(error)
+  //     );
     throw error;
   }
 }
@@ -161,11 +161,11 @@ export async function handleExpectedErrorAsync<T>(
   try {
     return await operation();
   } catch (error) {
-    LogService.getInstance().debug(
-      context,
-      'debug',
-      error instanceof Error ? error.message : String(error)
-    );
+  //     LogService.getInstance().debug(
+  //       context,
+  //       'debug',
+  //       error instanceof Error ? error.message : String(error)
+  //     );
     return defaultValue;
   }
 }
