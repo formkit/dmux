@@ -62,7 +62,7 @@ export class PopupManager {
       ? path.resolve(__dirname, "../..") // If in dist/services/, go up two levels
       : path.resolve(__dirname, "../..") // If in src/services/, go up two levels
 
-    return path.join(projectRootForPopup, "dist", "popups", scriptName)
+    return path.join(projectRootForPopup, "dist", "components", "popups", scriptName)
   }
 
   /**

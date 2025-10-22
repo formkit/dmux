@@ -467,10 +467,6 @@ export function launchNodePopupNonBlocking<T = any>(
   const escapedCommand = command.replace(/'/g, "'\\''");
   const fullCommand = `tmux ${tmuxArgs.join(' ')} '${escapedCommand}'`;
 
-  // DEBUG: Log the actual tmux command
-  console.error('[DEBUG popup.ts launchNodePopupNonBlocking] Full tmux command:', fullCommand);
-  console.error('[DEBUG popup.ts] tmuxBorderColor:', POPUP_CONFIG.tmuxBorderColor);
-
   // Launch popup with spawn (non-blocking)
   const child = spawn('sh', ['-c', fullCommand], {
     stdio: 'inherit',
