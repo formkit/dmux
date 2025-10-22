@@ -5,6 +5,7 @@ import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
 import { TMUX_COMMAND_TIMEOUT } from '../constants/timing.js';
 import type { DmuxConfig } from './usePaneLoading.js';
+import { atomicWriteJson } from '../utils/atomicWrite.js';
 
 /**
  * Enforces that pane titles in tmux match the slugs in the config
@@ -97,10 +98,10 @@ export async function savePanesToFile(
       }
     } catch {}
 
-    // Save in config format
+    // Save in config format (use atomic write to prevent race conditions)
     config.panes = activePanes;
     config.lastUpdated = new Date().toISOString();
-    await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
+    await atomicWriteJson(panesFile, config);
 
     return activePanes;
   });

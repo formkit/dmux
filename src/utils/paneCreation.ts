@@ -14,6 +14,7 @@ import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
 import { triggerHook } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
+import { atomicWriteJsonSync } from './atomicWrite.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -129,7 +130,7 @@ export async function createPane(
         config.controlPaneId = controlPaneId;
         config.controlPaneSize = SIDEBAR_WIDTH;
         config.lastUpdated = new Date().toISOString();
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        atomicWriteJsonSync(configPath, config);
       }
       // Else: Pane exists, we can use it
     }
@@ -141,7 +142,7 @@ export async function createPane(
       config.controlPaneSize = SIDEBAR_WIDTH;
       config.lastUpdated = new Date().toISOString();
 
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      atomicWriteJsonSync(configPath, config);
     }
   } catch (error) {
     // Fallback if config loading fails
@@ -197,7 +198,7 @@ export async function createPane(
         const config: DmuxConfig = JSON.parse(configContent);
         config.controlPaneId = currentPaneId;
         config.lastUpdated = new Date().toISOString();
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        atomicWriteJsonSync(configPath, config);
         controlPaneId = currentPaneId; // Update local variable
       } catch (configError) {
         console.error('[dmux] Failed to update config:', configError);
@@ -412,7 +413,7 @@ export async function createPane(
       // Add the new pane to the config (panesCount becomes 1)
       config.panes = [...existingPanes, newPane];
       config.lastUpdated = new Date().toISOString();
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      atomicWriteJsonSync(configPath, config);
 
       // NOW destroy the welcome pane (event-based destruction)
       const { destroyWelcomePaneCoordinated } = await import('./welcomePaneManager.js');

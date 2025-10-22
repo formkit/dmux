@@ -3,8 +3,7 @@ import path from 'path';
 import type { DmuxConfig } from '../types.js';
 import { createWelcomePane, welcomePaneExists, destroyWelcomePane } from './welcomePane.js';
 import { LogService } from '../services/LogService.js';
-import { recalculateAndApplyLayout } from './layoutManager.js';
-import { getTerminalDimensions } from './tmux.js';
+import { atomicWriteJsonSync } from './atomicWrite.js';
 
 // Global lock to prevent concurrent welcome pane operations
 let creationLock = false;
@@ -67,29 +66,18 @@ export function destroyWelcomePaneCoordinated(projectRoot: string): boolean {
       // Destroy the pane
       destroyWelcomePane(config.welcomePaneId);
 
-      // Clear from config
+      // Clear from config (use atomic write to prevent race conditions)
       delete config.welcomePaneId;
       config.lastUpdated = new Date().toISOString();
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      atomicWriteJsonSync(configPath, config);
 
       logService.debug('Welcome pane destroyed and cleared from config', 'WelcomePaneManager');
 
-      // Recalculate layout for remaining content panes (if any)
-      if (config.panes && config.panes.length > 0 && config.controlPaneId) {
-        try {
-          const dimensions = getTerminalDimensions();
-          const contentPaneIds = config.panes.map(p => p.paneId);
-          recalculateAndApplyLayout(
-            config.controlPaneId,
-            contentPaneIds,
-            dimensions.width,
-            dimensions.height
-          );
-          logService.debug(`Recalculated layout for ${contentPaneIds.length} content panes`, 'WelcomePaneManager');
-        } catch (error) {
-          logService.debug('Failed to recalculate layout after welcome pane destruction', 'WelcomePaneManager');
-        }
-      }
+      // DO NOT recalculate layout here - layout was already calculated in paneCreation.ts
+      // before this function was called. Recalculating now would cause a mismatch because
+      // tmux still has 3 panes (sidebar, welcome being destroyed, new content) but we'd
+      // calculate for 2 panes (sidebar, new content).
+      // The layout application in paneCreation.ts already accounts for the correct final state.
     }
 
     return true;
@@ -143,10 +131,10 @@ export async function createWelcomePaneCoordinated(
     const welcomePaneId = await createWelcomePane(controlPaneId);
 
     if (welcomePaneId) {
-      // Update config with new welcome pane ID
+      // Update config with new welcome pane ID (use atomic write)
       config.welcomePaneId = welcomePaneId;
       config.lastUpdated = new Date().toISOString();
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      atomicWriteJsonSync(configPath, config);
 
       logService.debug(`Created welcome pane: ${welcomePaneId}`, 'WelcomePaneManager');
       return true;

@@ -4,6 +4,7 @@ import path from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { LogService } from './LogService.js';
+import { atomicWriteJson } from '../utils/atomicWrite.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,7 +78,7 @@ export class AutoUpdater {
     
     config.updateSettings = settings;
     config.lastUpdated = new Date().toISOString();
-    await fs.writeFile(this.configFile, JSON.stringify(config, null, 2));
+    await atomicWriteJson(this.configFile, config);
   }
 
   async shouldCheckForUpdates(): Promise<boolean> {
