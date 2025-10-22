@@ -305,18 +305,27 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
     );
   };
 
-  // Render log entry
+  // Render log entry with color-coded severity levels
   const renderLogEntry = (log: LogEntry) => {
     const time = formatTime(log.timestamp);
     const color = getLevelColor(log.level);
+    const levelLabel = log.level.toUpperCase().padEnd(5, ' ');
+    const isCritical = log.level === 'error' || log.level === 'warn';
 
     return (
       <Box key={log.id} flexDirection="column" marginBottom={0}>
         <Text>
-          <Text color={color}>
-            {time}
+          <Text dimColor>{time}</Text>
+          <Text color={color} bold={isCritical} backgroundColor={log.level === 'error' ? 'red' : undefined}>
+            {' ['}
+            {levelLabel}
+            {'] '}
           </Text>
-          <Text color={color}> [{log.source || 'dmux'}] {log.message}</Text>
+          <Text dimColor>[{log.source || 'dmux'}]</Text>
+          <Text color={isCritical ? color : undefined} bold={log.level === 'error'}>
+            {' '}
+            {log.message}
+          </Text>
         </Text>
         {log.paneId && (
           <Box marginLeft={2}>
@@ -327,7 +336,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
         )}
         {log.stack && (
           <Box marginLeft={2}>
-            <Text dimColor>
+            <Text color="red">
               Stack: {log.stack.split('\n')[0]}
             </Text>
           </Box>
