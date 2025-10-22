@@ -657,11 +657,13 @@ class Dmux {
 }
 
 // Validate system requirements before starting
-const validationResult = validateSystemRequirements();
-printValidationResults(validationResult);
+(async () => {
+  const validationResult = await validateSystemRequirements();
+  printValidationResults(validationResult);
 
-// Only proceed if system requirements are met
-if (validationResult.canRun) {
-  const dmux = new Dmux();
-  dmux.init().catch(() => process.exit(1));
-}
+  // Only proceed if system requirements are met
+  if (validationResult.canRun) {
+    const dmux = new Dmux();
+    dmux.init().catch(() => process.exit(1));
+  }
+})();

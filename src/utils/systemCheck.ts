@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
+import { getAvailableAgents } from './agentDetection.js';
 
 /**
  * System requirement check results
@@ -98,23 +99,6 @@ function checkGitVersion(minVersion: string): DependencyCheck {
   }
 }
 
-/**
- * Check which agents are available (claude, opencode)
- */
-function checkAvailableAgents(agents: string[]): string[] {
-  const available: string[] = [];
-
-  for (const agent of agents) {
-    try {
-      execSync(`command -v ${agent}`, { encoding: 'utf-8', stdio: 'pipe' });
-      available.push(agent);
-    } catch {
-      // Agent not found
-    }
-  }
-
-  return available;
-}
 
 /**
  * Parse version string into comparable array [major, minor, patch]
@@ -148,11 +132,11 @@ function compareVersions(a: number[], b: number[]): number {
  * Validate all system requirements for dmux
  * Returns validation result with errors and warnings
  */
-export function validateSystemRequirements(): ValidationResult {
+export async function validateSystemRequirements(): Promise<ValidationResult> {
   const checks = {
     tmux: checkTmuxVersion('3.0'),
     git: checkGitVersion('2.20'),
-    agents: checkAvailableAgents(['claude', 'opencode'])
+    agents: await getAvailableAgents()
   };
 
   const errors: string[] = [];
@@ -166,7 +150,8 @@ export function validateSystemRequirements(): ValidationResult {
   if (checks.agents.length === 0) {
     warnings.push('No agents found (claude or opencode). You will not be able to use AI features.');
   } else if (checks.agents.length === 1) {
-    const missing = ['claude', 'opencode'].find(a => !checks.agents.includes(a));
+    const allAgents: Array<'claude' | 'opencode'> = ['claude', 'opencode'];
+    const missing = allAgents.find(a => !checks.agents.includes(a));
     warnings.push(`Agent '${missing}' not found. Only '${checks.agents[0]}' is available.`);
   }
 
