@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import type { PanePosition } from '../types.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { recalculateAndApplyLayout } from './layoutManager.js';
 
 // Layout configuration - adjust these to change layout behavior
@@ -26,66 +27,32 @@ function calculateLayoutChecksum(layout: string): string {
   return checksum.toString(16).padStart(4, '0');
 }
 
-export interface WindowDimensions {
-  width: number;
-  height: number;
-}
+// Re-export types from TmuxService for backwards compatibility
+export type { WindowDimensions } from '../types.js';
 
 /**
  * Gets current window dimensions
+ * @deprecated Use TmuxService.getInstance().getWindowDimensionsSync() instead
  */
-export const getWindowDimensions = (): WindowDimensions => {
-  try {
-    const output = execSync(
-      'tmux display-message -p "#{window_width} #{window_height}"',
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
-
-    const [width, height] = output.split(' ').map(n => parseInt(n));
-    return { width, height };
-  } catch {
-    return { width: 120, height: 40 }; // Fallback dimensions
-  }
+export const getWindowDimensions = () => {
+  return TmuxService.getInstance().getWindowDimensionsSync();
 };
 
 /**
  * Gets current terminal (client) dimensions
  * This is the actual terminal size, not the tmux window size
+ * @deprecated Use TmuxService.getInstance().getTerminalDimensionsSync() instead
  */
-export const getTerminalDimensions = (): WindowDimensions => {
-  try {
-    const output = execSync(
-      'tmux display-message -p "#{client_width} #{client_height}"',
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
-
-    const [width, height] = output.split(' ').map(n => parseInt(n));
-    return { width, height };
-  } catch {
-    return { width: 120, height: 40 }; // Fallback dimensions
-  }
+export const getTerminalDimensions = () => {
+  return TmuxService.getInstance().getTerminalDimensionsSync();
 };
 
+/**
+ * Get pane positions for all panes
+ * @deprecated Use TmuxService.getInstance().getPanePositionsSync() instead
+ */
 export const getPanePositions = (): PanePosition[] => {
-  try {
-    const output = execSync(
-      `tmux list-panes -F '#{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height}'`,
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
-
-    return output.split('\n').map(line => {
-      const [paneId, left, top, width, height] = line.split(' ');
-      return {
-        paneId,
-        left: parseInt(left),
-        top: parseInt(top),
-        width: parseInt(width),
-        height: parseInt(height)
-      };
-    });
-  } catch {
-    return [];
-  }
+  return TmuxService.getInstance().getPanePositionsSync();
 };
 
 /**
@@ -95,64 +62,38 @@ export const getPanePositions = (): PanePosition[] => {
  * @param options.cwd - Working directory for new pane (optional)
  * @param options.command - Command to run in new pane (optional)
  * @returns The new pane ID
+ * @deprecated Use TmuxService.getInstance().splitPaneSync() instead
  */
 export const splitPane = (options: {
   targetPane?: string;
   cwd?: string;
   command?: string;
 } = {}): string => {
-  const { targetPane, cwd, command } = options;
-
-  let cmd = 'tmux split-window -h -P -F \'#{pane_id}\'';
-
-  if (targetPane) {
-    cmd += ` -t '${targetPane}'`;
-  }
-
-  if (cwd) {
-    cmd += ` -c "${cwd}"`;
-  }
-
-  if (command) {
-    cmd += ` "${command}"`;
-  }
-
-  return execSync(cmd, {
-    encoding: 'utf-8',
-    stdio: 'pipe',
-  }).trim();
+  return TmuxService.getInstance().splitPaneSync(options);
 };
 
 /**
  * Gets all pane IDs in current window
+ * @deprecated Use TmuxService.getInstance().getAllPaneIdsSync() instead
  */
 export const getAllPaneIds = (): string[] => {
-  try {
-    const output = execSync('tmux list-panes -F "#{pane_id}"', {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-
-    return output.split('\n').filter(id => id.trim());
-  } catch {
-    return [];
-  }
+  return TmuxService.getInstance().getAllPaneIdsSync();
 };
 
 /**
  * Gets content pane IDs (excludes control pane and spacer pane)
+ * This uses synchronous operations to maintain compatibility with existing code
  */
 export const getContentPaneIds = (controlPaneId: string): string[] => {
-  const allPanes = getAllPaneIds();
+  const tmuxService = TmuxService.getInstance();
+  const allPanes = tmuxService.getAllPaneIdsSync();
+
   return allPanes.filter(id => {
     if (id === controlPaneId) return false;
 
     // Filter out spacer pane
     try {
-      const title = execSync(
-        `tmux display-message -t '${id}' -p '#{pane_title}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
+      const title = tmuxService.getPaneTitleSync(id);
       return title !== 'dmux-spacer';
     } catch {
       return true; // Include pane if we can't get title

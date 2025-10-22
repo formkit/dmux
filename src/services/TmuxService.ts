@@ -565,4 +565,15 @@ export class TmuxService {
       // Intentionally silent - UI refresh is optional
     }
   }
+
+  /**
+   * Clear tmux history (sync version for compatibility)
+   */
+  clearHistorySync(): void {
+    try {
+      this.execute('tmux clear-history', { silent: true });
+    } catch {
+      // Intentionally silent - history clearing is optional
+    }
+  }
 }

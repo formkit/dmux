@@ -1,20 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useFocus, useStdout } from 'ink';
 import { wrapText, findCursorInWrappedLines, preprocessPastedContent } from '../../utils/input.js';
-import fs from 'fs';
-import path from 'path';
-
-// Debug logging to file
-const DEBUG_LOG = path.join(process.cwd(), '.dmux', 'file-picker-debug.log')
-function debugLog(message: string, data?: any) {
-  const timestamp = new Date().toISOString()
-  const logLine = `[${timestamp}] ${message} ${data !== undefined ? JSON.stringify(data, null, 2) : ''}\n`
-  try {
-    fs.appendFileSync(DEBUG_LOG, logLine)
-  } catch (e) {
-    // Ignore write errors
-  }
-}
 
 interface CleanTextInputProps {
   value: string;
@@ -261,22 +247,8 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
   };
 
   useInput((input, key) => {
-    debugLog('[CleanTextInput] useInput called', {
-      isFocused,
-      ignoreFocus,
-      input: input?.substring(0, 10),
-      keyPressed: Object.keys(key).filter(k => key[k as keyof typeof key]).join(','),
-      disableEscape,
-      disableArrowKeys
-    });
-
     if (!isFocused && !ignoreFocus) {
-      debugLog('[CleanTextInput] Not focused and not ignoring focus, ignoring input');
       return;
-    }
-
-    if (!isFocused && ignoreFocus) {
-      debugLog('[CleanTextInput] Not focused but ignoring focus check, processing input');
     }
 
     // Note: Ctrl+C (SIGINT) is handled at the process level in newPanePopup, not here
@@ -284,14 +256,10 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
 
     // Escape clears (unless disabled by external control)
     if (key.escape) {
-      debugLog('[CleanTextInput] ESC pressed', { disableEscape, value: value.substring(0, 50) });
       if (!disableEscape) {
-        debugLog('[CleanTextInput] Clearing input');
         onChange('');
         setCursor(0);
         return;
-      } else {
-        debugLog('[CleanTextInput] ESC disabled, ignoring');
       }
     }
 
@@ -609,131 +577,7 @@ const CleanTextInput: React.FC<CleanTextInputProps> = ({
     }
   });
 
-  // Function to wrap text at word boundaries
-  const wrapText = (text: string, width: number): { line: string; isHardBreak: boolean }[] => {
-    if (!text) return [{ line: '', isHardBreak: false }];
-    
-    const hardLines = text.split('\n');
-    const wrappedLines: { line: string; isHardBreak: boolean }[] = [];
-    
-    for (let i = 0; i < hardLines.length; i++) {
-      const hardLine = hardLines[i];
-      const isLastHardLine = i === hardLines.length - 1;
-      
-      if (hardLine.length <= width) {
-        // Line fits within width
-        wrappedLines.push({ line: hardLine, isHardBreak: !isLastHardLine });
-      } else {
-        // Need to wrap this line at word boundaries
-        let remaining = hardLine;
-        
-        while (remaining.length > 0) {
-          if (remaining.length <= width) {
-            // Last segment of this hard line
-            wrappedLines.push({ 
-              line: remaining, 
-              isHardBreak: !isLastHardLine 
-            });
-            break;
-          }
-          
-          // Find last space within width limit
-          let breakPoint = width;
-          
-          // Look for the last space that fits within the width - 1 to wrap before overflow
-          let lastSpace = remaining.lastIndexOf(' ', width - 1);
-          
-          if (lastSpace > 0) {
-            // Found a space to break at
-            breakPoint = lastSpace;
-          } else {
-            // No good space found, break at width or look for first space
-            const firstSpace = remaining.indexOf(' ');
-            if (firstSpace > 0 && firstSpace < width) {
-              breakPoint = firstSpace;
-            } else {
-              // No spaces or space is beyond width, break at width
-              breakPoint = Math.min(width, remaining.length);
-            }
-          }
-          
-          const segment = remaining.slice(0, breakPoint);
-          wrappedLines.push({ 
-            line: segment.trimEnd(), 
-            isHardBreak: false // soft wrap
-          });
-          
-          // Skip the space if we broke at a space
-          const nextChar = remaining[breakPoint];
-          if (nextChar === ' ') {
-            remaining = remaining.slice(breakPoint + 1);
-          } else {
-            remaining = remaining.slice(breakPoint);
-          }
-        }
-      }
-    }
-    
-    return wrappedLines;
-  };
-  
-  // Function to find cursor position in wrapped lines
-  const findCursorInWrappedLines = (wrappedLines: { line: string; isHardBreak: boolean }[], absoluteCursor: number) => {
-    if (wrappedLines.length === 0) {
-      return { line: 0, col: 0 };
-    }
-    
-    let currentPos = 0;
-    
-    // Walk through each wrapped line and track character positions
-    for (let lineIndex = 0; lineIndex < wrappedLines.length; lineIndex++) {
-      const wrappedLine = wrappedLines[lineIndex];
-      const lineLength = wrappedLine.line.length;
-      
-      // Check if cursor is within this wrapped line
-      if (absoluteCursor <= currentPos + lineLength) {
-        const colInLine = absoluteCursor - currentPos;
-        return {
-          line: lineIndex,
-          col: Math.max(0, Math.min(colInLine, lineLength))
-        };
-      }
-      
-      // Move past this line's characters
-      currentPos += lineLength;
-      
-      // Add 1 for newline character if this is a hard break
-      if (wrappedLine.isHardBreak) {
-        currentPos++;
-        // Check if cursor is exactly at the newline position
-        if (absoluteCursor === currentPos - 1) {
-          return {
-            line: lineIndex,
-            col: lineLength
-          };
-        }
-      }
-      // For soft breaks (word wrapping), account for the space that was removed
-      else if (lineIndex < wrappedLines.length - 1) {
-        // Add 1 for the space that was trimmed during word wrapping
-        currentPos++;
-        // Check if cursor is at the space position
-        if (absoluteCursor === currentPos - 1) {
-          return {
-            line: lineIndex,
-            col: lineLength
-          };
-        }
-      }
-    }
-    
-    // Cursor is at the very end
-    const lastLine = wrappedLines[wrappedLines.length - 1];
-    return {
-      line: wrappedLines.length - 1,
-      col: lastLine ? lastLine.line.length : 0
-    };
-  };
+  // wrapText and findCursorInWrappedLines are imported from utils/input.ts
 
   // Helper to render text with highlighted paste tags
   const renderTextWithTags = (text: string, isInverse: boolean = false): React.ReactNode[] => {
