@@ -8,6 +8,7 @@
 import type { ActionResult, ActionContext } from '../types.js';
 import type { DmuxPane } from '../../types.js';
 import { triggerHook } from '../../utils/hooks.js';
+import { TmuxService } from '../../services/TmuxService.js';
 
 /**
  * Execute merge with conflict handling
@@ -217,8 +218,8 @@ export async function executeMerge(
 
       // Kill the tmux pane AFTER removing from state
       try {
-        const { execSync } = await import('child_process');
-        execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
+        const tmuxService = TmuxService.getInstance();
+        await tmuxService.killPane(pane.paneId);
       } catch (error) {
         // Pane may already be closed, ignore errors
         console.error('[mergeExecution] Failed to kill pane:', error);

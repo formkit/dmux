@@ -1,7 +1,6 @@
-import { execSync } from 'child_process';
 import { renderAsciiArt } from './asciiArt.js';
 import { LogService } from '../services/LogService.js';
-import { getTerminalDimensions, splitPane } from './tmux.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
 
 /**
@@ -13,11 +12,12 @@ import { SIDEBAR_WIDTH } from './layoutManager.js';
  */
 export async function createWelcomePane(controlPaneId: string): Promise<string | undefined> {
   const logService = LogService.getInstance();
+  const tmuxService = TmuxService.getInstance();
 
   try {
     // Split horizontally to the right of the control pane
     // This creates a new pane that takes up the rest of the horizontal space
-    const welcomePaneId = splitPane({ targetPane: controlPaneId });
+    const welcomePaneId = await tmuxService.splitPane({ targetPane: controlPaneId });
 
     if (!welcomePaneId) {
       logService.error('Failed to create welcome pane: no pane ID returned', 'WelcomePane');
@@ -28,7 +28,7 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
 
     // Set pane title
     try {
-      execSync(`tmux select-pane -t '${welcomePaneId}' -T "Welcome"`, { stdio: 'pipe' });
+      await tmuxService.setPaneTitle(welcomePaneId, "Welcome");
     } catch {
       // Ignore title errors
     }
@@ -48,14 +48,15 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
     // Welcome pane uses full terminal dimensions
     // CRITICAL: Use main-vertical layout to lock sidebar at fixed width
     try {
-      const dimensions = getTerminalDimensions();
+      const dimensions = await tmuxService.getTerminalDimensions();
 
       // Apply main-vertical layout FIRST (this locks sidebar width)
+      const { execSync } = await import('child_process');
       execSync(`tmux set-window-option main-pane-width ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
       execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
 
       // Refresh to apply layout changes
-      execSync(`tmux refresh-client`, { stdio: 'pipe' });
+      await tmuxService.refreshClient();
 
       logService.debug(`Set welcome pane layout: sidebar=${SIDEBAR_WIDTH}, window=${dimensions.width}x${dimensions.height}`, 'WelcomePane');
     } catch (error) {
@@ -64,6 +65,7 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
 
     // Switch focus back to the control pane (dmux sidebar)
     try {
+      const { execSync } = await import('child_process');
       execSync(`tmux select-pane -t '${controlPaneId}'`, { stdio: 'pipe' });
     } catch {
       // Ignore if focus switch fails
@@ -81,24 +83,27 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
  *
  * @param welcomePaneId - The pane ID of the welcome pane to destroy
  */
-export function destroyWelcomePane(welcomePaneId: string | undefined): void {
+export async function destroyWelcomePane(welcomePaneId: string | undefined): Promise<void> {
   if (!welcomePaneId) {
     return;
   }
 
   const logService = LogService.getInstance();
+  const tmuxService = TmuxService.getInstance();
 
   try {
     // Check if the pane still exists before trying to kill it
-    const paneExists = execSync(`tmux display-message -t '${welcomePaneId}' -p '#{pane_id}'`, {
-      stdio: 'pipe',
-      encoding: 'utf-8'
-    }).trim();
+    const paneExists = await tmuxService.paneExists(welcomePaneId);
 
-    logService.debug(`Found welcome pane ${paneExists}, destroying it`, 'WelcomePane');
+    if (!paneExists) {
+      logService.debug(`Welcome pane ${welcomePaneId} already gone`, 'WelcomePane');
+      return;
+    }
+
+    logService.debug(`Found welcome pane ${welcomePaneId}, destroying it`, 'WelcomePane');
 
     // Kill the pane
-    execSync(`tmux kill-pane -t '${welcomePaneId}'`, { stdio: 'pipe' });
+    await tmuxService.killPane(welcomePaneId);
 
     logService.debug(`Destroyed welcome pane: ${welcomePaneId}`, 'WelcomePane');
   } catch (error) {
@@ -113,22 +118,11 @@ export function destroyWelcomePane(welcomePaneId: string | undefined): void {
  * @param welcomePaneId - The pane ID to check
  * @returns true if the pane exists, false otherwise
  */
-export function welcomePaneExists(welcomePaneId: string | undefined): boolean {
+export async function welcomePaneExists(welcomePaneId: string | undefined): Promise<boolean> {
   if (!welcomePaneId) {
     return false;
   }
 
-  try {
-    // Use list-panes to check if the pane actually exists
-    // This is more reliable than display-message which sometimes succeeds for non-existent panes
-    const paneList = execSync('tmux list-panes -a -F "#{pane_id}"', {
-      encoding: 'utf-8',
-      stdio: 'pipe'
-    }).trim();
-
-    const panes = paneList.split('\n');
-    return panes.includes(welcomePaneId);
-  } catch {
-    return false;
-  }
+  const tmuxService = TmuxService.getInstance();
+  return await tmuxService.paneExists(welcomePaneId);
 }

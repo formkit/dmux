@@ -42,7 +42,7 @@ export async function detectAndAddShellPanes(
     );
 
     const sessionName = ''; // Empty string will make tmux use current session
-    const untrackedPanes = getUntrackedPanes(sessionName, trackedPaneIds, controlPaneId, welcomePaneId);
+    const untrackedPanes = await getUntrackedPanes(sessionName, trackedPaneIds, controlPaneId, welcomePaneId);
 
     if (untrackedPanes.length === 0) {
       return { updatedPanes: activePanes, shellPanesAdded: false };
@@ -58,7 +58,7 @@ export async function detectAndAddShellPanes(
     let nextId = getNextDmuxId(activePanes);
 
     for (const paneInfo of untrackedPanes) {
-      const shellPane = createShellPane(paneInfo.paneId, nextId, paneInfo.title);
+      const shellPane = await createShellPane(paneInfo.paneId, nextId, paneInfo.title);
       newShellPanes.push(shellPane);
       nextId++;
     }

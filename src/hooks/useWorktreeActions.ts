@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import { useCallback } from 'react';
 import type { DmuxPane } from '../types.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
 import { getCurrentBranch } from '../utils/git.js';
@@ -21,11 +22,13 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
 
   const closePane = useCallback(async (pane: DmuxPane) => {
     try {
+      const tmuxService = TmuxService.getInstance();
+
       if (pane.testWindowId) {
-        try { execSync(`tmux kill-window -t '${pane.testWindowId}'`, { stdio: 'pipe' }); } catch {}
+        try { await tmuxService.killWindow(pane.testWindowId); } catch {}
       }
       if (pane.devWindowId) {
-        try { execSync(`tmux kill-window -t '${pane.devWindowId}'`, { stdio: 'pipe' }); } catch {}
+        try { await tmuxService.killWindow(pane.devWindowId); } catch {}
       }
 
       // CRITICAL: Force repaint FIRST to prevent blank screen
@@ -36,10 +39,10 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
       // Minimal clearing to avoid layout shifts
       process.stdout.write('\x1b[2J\x1b[H');
 
-      execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
+      await tmuxService.killPane(pane.paneId);
       // Don't apply global layouts - just enforce sidebar width
       try {
-        const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+        const controlPaneId = await tmuxService.getCurrentPaneId();
         enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
       } catch {}
 
@@ -50,7 +53,7 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
     } catch {
       showTemporary('Failed to close pane', 2000);
     }
-  }, [panes, savePanes, showTemporary]);
+  }, [panes, savePanes, showTemporary, forceRepaint]);
 
   const mergeWorktree = useCallback(async (pane: DmuxPane) => {
     if (!pane.worktreePath) {
@@ -88,7 +91,10 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
           process.stderr.write('\nExiting dmux now...\n\n');
           process.stdout.write('\x1b[2J\x1b[H');
           process.stdout.write('\x1b[3J');
-          try { execSync('tmux clear-history', { stdio: 'pipe' }); } catch {}
+          try {
+            const tmuxService = TmuxService.getInstance();
+            tmuxService.clearHistorySync();
+          } catch {}
           process.exit(1);
         }
         // Don't remove worktree on merge failure
@@ -144,7 +150,10 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
           process.stderr.write('\nExiting dmux now...\n\n');
           process.stdout.write('\x1b[2J\x1b[H');
           process.stdout.write('\x1b[3J');
-          try { execSync('tmux clear-history', { stdio: 'pipe' }); } catch {}
+          try {
+            const tmuxService = TmuxService.getInstance();
+            tmuxService.clearHistorySync();
+          } catch {}
           process.exit(1);
         }
         // Don't remove worktree on merge failure

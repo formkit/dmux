@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane, ProjectSettings } from '../types.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
 
@@ -45,16 +46,18 @@ export default function usePaneRunner({ panes, savePanes, projectSettings, setSt
       setRunningCommand(true);
       setStatusMessage(`Starting ${type} in background window...`);
 
+      const tmuxService = TmuxService.getInstance();
+
       const existingWindowId = type === 'test' ? pane.testWindowId : pane.devWindowId;
       if (existingWindowId) {
-        try { execSync(`tmux kill-window -t '${existingWindowId}'`, { stdio: 'pipe' }); } catch {}
+        try { await tmuxService.killWindow(existingWindowId); } catch {}
       }
 
       const windowName = `${pane.slug}-${type}`;
-      const windowId = execSync(`tmux new-window -d -n '${windowName}' -P -F '#{window_id}'`, { encoding: 'utf-8', stdio: 'pipe' }).trim();
+      const windowId = await tmuxService.newWindow({ name: windowName, detached: true });
       const logFile = `/tmp/dmux-${pane.id}-${type}.log`;
       const fullCommand = `cd "${pane.worktreePath}" && ${command} 2>&1 | tee ${logFile}`;
-      execSync(`tmux send-keys -t '${windowId}' '${fullCommand.replace(/'/g, "'\\''")}' Enter`, { stdio: 'pipe' });
+      await tmuxService.sendKeys(windowId, `'${fullCommand.replace(/'/g, "'\\''")}' Enter`);
 
       const updatedPane: DmuxPane = {
         ...pane,
@@ -135,13 +138,14 @@ export default function usePaneRunner({ panes, savePanes, projectSettings, setSt
       return;
     }
     try {
-      execSync(`tmux join-pane -h -s '${windowId}'`, { stdio: 'pipe' });
+      const tmuxService = TmuxService.getInstance();
+      await tmuxService.joinPane(windowId, true);
       // Don't apply global layouts - just enforce sidebar width
       try {
-        const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
+        const controlPaneId = await tmuxService.getCurrentPaneId();
         enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
       } catch {}
-      execSync(`tmux select-pane -t '{last}'`, { stdio: 'pipe' });
+      await tmuxService.selectPane('{last}');
       setStatusMessage(`Attached ${type} window`);
       setTimeout(() => setStatusMessage(''), 2000);
     } catch {

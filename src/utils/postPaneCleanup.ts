@@ -3,11 +3,11 @@
  * Handles welcome pane recreation and layout recalculation when last pane is removed
  */
 
-import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import type { DmuxConfig } from '../types.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 
 /**
  * Recreate welcome pane and recalculate layout after the last pane is removed
@@ -16,10 +16,13 @@ import { LogService } from '../services/LogService.js';
  * @param projectRoot - The project root directory
  */
 export async function handleLastPaneRemoved(projectRoot: string): Promise<void> {
+  const tmuxService = TmuxService.getInstance();
+
   try {
     // Get the ACTUAL current control pane ID from tmux (don't trust config)
     let controlPaneId: string;
     try {
+      const { execSync } = await import('child_process');
       controlPaneId = execSync('tmux display-message -p "#{pane_id}"', {
         encoding: 'utf-8',
         stdio: 'pipe'
@@ -51,8 +54,7 @@ export async function handleLastPaneRemoved(projectRoot: string): Promise<void> 
 
     // Recalculate layout to fix sidebar size
     const { recalculateAndApplyLayout } = await import('./layoutManager.js');
-    const { getTerminalDimensions } = await import('./tmux.js');
-    const dimensions = getTerminalDimensions();
+    const dimensions = await tmuxService.getTerminalDimensions();
 
     recalculateAndApplyLayout(
       controlPaneId,

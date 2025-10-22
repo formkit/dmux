@@ -6,8 +6,9 @@
  * 2. Triggers cleanup flow
  */
 
-import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
+import { TmuxService } from '../services/TmuxService.js';
+import { execSync } from 'child_process';
 
 export interface ConflictMonitorOptions {
   conflictPaneId: string;  // tmux pane ID to monitor
@@ -30,10 +31,11 @@ export function startConflictMonitoring(options: ConflictMonitorOptions): () => 
     maxChecks = 300,        // Stop after 10 minutes (300 * 2s)
   } = options;
 
+  const tmuxService = TmuxService.getInstance();
   let checkCount = 0;
   let stopped = false;
 
-  const checkInterval = setInterval(() => {
+  const checkInterval = setInterval(async () => {
     if (stopped || checkCount >= maxChecks) {
       clearInterval(checkInterval);
       return;
@@ -43,7 +45,7 @@ export function startConflictMonitoring(options: ConflictMonitorOptions): () => 
 
     try {
       // Check if pane still exists
-      const paneExists = checkPaneExists(conflictPaneId);
+      const paneExists = await checkPaneExists(conflictPaneId, tmuxService);
       if (!paneExists) {
         // Pane was manually closed, stop monitoring
         clearInterval(checkInterval);
@@ -74,15 +76,8 @@ export function startConflictMonitoring(options: ConflictMonitorOptions): () => 
 /**
  * Check if a tmux pane exists
  */
-function checkPaneExists(paneId: string): boolean {
-  try {
-    execSync(`tmux display-message -t '${paneId}' -p '#{pane_id}'`, {
-      stdio: 'pipe',
-    });
-    return true;
-  } catch {
-    return false;
-  }
+async function checkPaneExists(paneId: string, tmuxService: TmuxService): Promise<boolean> {
+  return await tmuxService.paneExists(paneId);
 }
 
 /**

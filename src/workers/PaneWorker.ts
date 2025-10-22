@@ -1,7 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
-import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
+import { TmuxService } from '../services/TmuxService.js';
 import type {
   WorkerConfig,
   InboundMessage,
@@ -23,6 +23,7 @@ class PaneWorker {
   private lastAnalysisTime: number = 0;
   private isShuttingDown: boolean = false;
   private idleConfirmed: boolean = false; // Block LLM requests when idle is confirmed
+  private tmux = TmuxService.getInstance();
 
   constructor(config: WorkerConfig) {
     this.paneId = config.paneId;
@@ -252,10 +253,9 @@ class PaneWorker {
   private async sendKeys(keys: string): Promise<void> {
     if (!keys) return;
 
-    execSync(
-      `tmux send-keys -t '${this.tmuxPaneId}' '${keys.replace(/'/g, "'\\''")}'`,
-      { stdio: 'pipe', timeout: 1000 }
-    );
+    // Escape single quotes in keys
+    const escapedKeys = keys.replace(/'/g, "'\\''");
+    await this.tmux.sendKeys(this.tmuxPaneId, `'${escapedKeys}'`);
 
     // Clear history after sending keys as state will change
     this.captureHistory = [];
@@ -264,17 +264,10 @@ class PaneWorker {
   private async resizePane(width?: number, height?: number): Promise<void> {
     if (!width && !height) return;
 
-    const args: string[] = [];
-    if (width) args.push(`-x ${width}`);
-    if (height) args.push(`-y ${height}`);
-
-    execSync(
-      `tmux resize-pane -t '${this.tmuxPaneId}' ${args.join(' ')}`,
-      { stdio: 'pipe', timeout: 1000 }
-    );
+    await this.tmux.resizePane(this.tmuxPaneId, { width, height });
 
     // Refresh to ensure pane is painted correctly after resize
-    execSync('tmux refresh-client', { stdio: 'pipe', timeout: 1000 });
+    await this.tmux.refreshClient();
   }
 
   private shutdown(): void {

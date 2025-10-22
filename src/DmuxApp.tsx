@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react"
 import { Box, Text, useApp, useStdout } from "ink"
-import { execSync } from "child_process"
 import { createRequire } from "module"
+import { TmuxService } from "./services/TmuxService.js"
 
 // Hooks
 import usePanes from "./hooks/usePanes.js"
@@ -209,9 +209,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   useEffect(() => {
     if (forceRepaintTrigger > 0) {
       // Small delay to ensure terminal is ready
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         try {
-          execSync("tmux refresh-client", { stdio: "pipe" })
+          const tmuxService = TmuxService.getInstance()
+          await tmuxService.refreshClient()
         } catch {}
       }, 50)
       return () => clearTimeout(timer)
@@ -220,22 +221,26 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Get local network IP on mount
   useEffect(() => {
-    try {
-      // Get local IP address (not 127.0.0.1)
-      const result = execSync(
-        `hostname -I 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1`,
-        {
-          encoding: "utf-8",
-          stdio: "pipe",
+    const getLocalIp = async () => {
+      try {
+        // Get local IP address (not 127.0.0.1)
+        const { execSync } = await import("child_process")
+        const result = execSync(
+          `hostname -I 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1`,
+          {
+            encoding: "utf-8",
+            stdio: "pipe",
+          }
+        ).trim()
+        if (result) {
+          setLocalIp(result.split(" ")[0]) // Take first IP if multiple
         }
-      ).trim()
-      if (result) {
-        setLocalIp(result.split(" ")[0]) // Take first IP if multiple
+      } catch {
+        // Fallback to 127.0.0.1
+        setLocalIp("127.0.0.1")
       }
-    } catch {
-      // Fallback to 127.0.0.1
-      setLocalIp("127.0.0.1")
     }
+    getLocalIp()
   }, [])
 
   // Spinner animation and branch detection now handled in hooks
@@ -561,7 +566,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     exit()
 
     // Give Ink a moment to clean up its rendering, then do final cleanup
-    setTimeout(() => {
+    setTimeout(async () => {
       // Multiple aggressive clearing strategies
       process.stdout.write("\x1b[2J\x1b[H") // Clear screen and move cursor to home
       process.stdout.write("\x1b[3J") // Clear scrollback buffer
@@ -569,8 +574,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
       // Clear tmux history and pane
       try {
-        execSync("tmux clear-history", { stdio: "pipe" })
-        execSync("tmux send-keys C-l", { stdio: "pipe" })
+        const tmuxService = TmuxService.getInstance()
+        tmuxService.clearHistorySync()
+        await tmuxService.sendKeys("", "C-l")
       } catch {}
 
       // One more final clear

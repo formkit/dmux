@@ -1,6 +1,5 @@
-import { execSync } from 'child_process';
 import { LogService } from '../services/LogService.js';
-import { getAllPaneIds } from '../utils/tmux.js';
+import { TmuxService } from '../services/TmuxService.js';
 import type { LayoutConfig } from '../utils/layoutManager.js';
 import type { LayoutConfiguration } from './LayoutCalculator.js';
 
@@ -29,6 +28,8 @@ const MIN_SPACER_WIDTH = 20; // Minimum width for spacer pane (tmux may reject l
  * - Manage content panes
  */
 export class SpacerManager {
+  private tmuxService = TmuxService.getInstance();
+
   constructor(private config: LayoutConfig) {}
 
   /**
@@ -37,12 +38,9 @@ export class SpacerManager {
    */
   findSpacerPane(): string | null {
     try {
-      const allPanes = getAllPaneIds();
+      const allPanes = this.tmuxService.getAllPaneIdsSync();
       for (const paneId of allPanes) {
-        const title = execSync(
-          `tmux display-message -t '${paneId}' -p '#{pane_title}'`,
-          { encoding: 'utf-8', stdio: 'pipe' }
-        ).trim();
+        const title = this.tmuxService.getPaneTitleSync(paneId);
         if (title === SPACER_PANE_TITLE) {
           return paneId;
         }
@@ -64,30 +62,24 @@ export class SpacerManager {
   createSpacerPane(lastContentPaneId: string): string {
     try {
       // Store the currently active pane
-      const originalPaneId = execSync(
-        `tmux display-message -p '#{pane_id}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
+      const originalPaneId = this.tmuxService.getCurrentPaneIdSync();
 
       // Switch to the last content pane
-      execSync(`tmux select-pane -t '${lastContentPaneId}'`, { stdio: 'pipe' });
+      this.tmuxService.selectPaneSync(lastContentPaneId);
 
       // Create a new pane running our spacer-pane script (just dots, no ASCII art)
       // This will split from the currently active pane (the last content pane)
       const scriptPath = `${process.cwd()}/dist/spacer-pane.js`;
 
-      const newPaneId = execSync(
-        `tmux split-window -h -P -F '#{pane_id}' "node '${scriptPath}'"`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
-
-      // Set the pane title to identify it as a spacer
-      execSync(`tmux select-pane -t '${newPaneId}' -T '${SPACER_PANE_TITLE}'`, {
-        stdio: 'pipe'
+      const newPaneId = this.tmuxService.splitPaneSync({
+        command: `node '${scriptPath}'`
       });
 
+      // Set the pane title to identify it as a spacer
+      this.tmuxService.setPaneTitleSync(newPaneId, SPACER_PANE_TITLE);
+
       // Return focus to the originally active pane
-      execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+      this.tmuxService.selectPaneSync(originalPaneId);
 
       LogService.getInstance().debug(
         `Created spacer pane: ${newPaneId} (split from ${lastContentPaneId}, restored focus to ${originalPaneId})`,
@@ -106,7 +98,7 @@ export class SpacerManager {
    */
   destroySpacerPane(spacerId: string): void {
     try {
-      execSync(`tmux kill-pane -t '${spacerId}'`, { stdio: 'pipe' });
+      this.tmuxService.killPaneSync(spacerId);
       LogService.getInstance().debug(`Destroyed spacer pane: ${spacerId}`, 'Layout');
     } catch (error) {
       LogService.getInstance().debug(`Failed to destroy spacer pane: ${error}`, 'Layout');

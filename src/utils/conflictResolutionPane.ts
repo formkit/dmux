@@ -4,8 +4,8 @@
  * Utilities for creating a new pane specifically for AI-assisted merge conflict resolution
  */
 
-import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { enforceControlPaneSize, splitPane } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
@@ -27,23 +27,20 @@ export async function createConflictResolutionPane(
   options: ConflictResolutionPaneOptions
 ): Promise<DmuxPane> {
   const { sourceBranch, targetBranch, targetRepoPath, agent, projectName, existingPanes } = options;
+  const tmuxService = TmuxService.getInstance();
 
   // Generate slug for this conflict resolution session
   const slug = `merge-${sourceBranch}-into-${targetBranch}`.substring(0, 50);
 
   // Get current pane info
-  const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', {
-    encoding: 'utf-8',
-  }).trim();
+  const originalPaneId = tmuxService.getCurrentPaneIdSync();
 
   // Get current pane count
-  const paneCount = parseInt(
-    execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
-  );
+  const paneCount = tmuxService.getAllPaneIdsSync().length;
 
   // Enable pane borders to show titles
   try {
-    execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+    tmuxService.setGlobalOptionSync('pane-border-status', 'top');
   } catch {
     // Ignore if already set or fails
   }
@@ -56,24 +53,20 @@ export async function createConflictResolutionPane(
 
   // Set pane title
   try {
-    execSync(`tmux select-pane -t '${paneInfo}' -T "${slug}"`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.setPaneTitle(paneInfo, slug);
   } catch {
     // Ignore if setting title fails
   }
 
   // Don't apply global layouts - just enforce sidebar width
   try {
-    const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    const controlPaneId = tmuxService.getCurrentPaneIdSync();
+    await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
   } catch {}
 
   // CD into the target repository (where we'll resolve conflicts)
   try {
-    execSync(`tmux send-keys -t '${paneInfo}' 'cd "${targetRepoPath}"' Enter`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.sendKeys(paneInfo, `cd "${targetRepoPath}" Enter`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to cd into target repo:', error);
@@ -82,9 +75,7 @@ export async function createConflictResolutionPane(
   // CRITICAL: Ensure clean state before starting merge
   // If a previous merge attempt left MERGE_HEAD, abort it first
   try {
-    execSync(`tmux send-keys -t '${paneInfo}' 'git merge --abort 2>/dev/null || true' Enter`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.sendKeys(paneInfo, 'git merge --abort 2>/dev/null || true Enter');
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to abort previous merge:', error);
@@ -93,9 +84,7 @@ export async function createConflictResolutionPane(
   // CRITICAL: Start the merge to create conflict markers for the agent to resolve
   // This is necessary because pre-validation or failed execution may have aborted the merge
   try {
-    execSync(`tmux send-keys -t '${paneInfo}' 'git merge ${targetBranch} --no-edit || true' Enter`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.sendKeys(paneInfo, `git merge ${targetBranch} --no-edit || true Enter`);
     await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to initiate merge:', error);
@@ -112,44 +101,31 @@ export async function createConflictResolutionPane(
       .replace(/`/g, '\\`')
       .replace(/\$/g, '\\$');
     const claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
-    const escapedCmd = claudeCmd.replace(/'/g, "'\\''");
 
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.sendKeys(paneInfo, claudeCmd);
+    await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
 
     // Auto-approve trust prompts for Claude
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'opencode') {
-    const openCoderCmd = `opencode`;
-    const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\''");
-
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.sendKeys(paneInfo, 'opencode Enter');
 
     // Wait for opencode to start, then paste the prompt
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const bufName = `dmux_prompt_${Date.now()}`;
     const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
 
-    execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}'`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.setBuffer(bufName, promptEsc);
+    await tmuxService.pasteBuffer(bufName, paneInfo);
     await new Promise((resolve) => setTimeout(resolve, 200));
-    execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: 'pipe' });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.deleteBuffer(bufName);
+    await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
   }
 
   // Keep focus on the new pane
-  execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
+  await tmuxService.selectPane(paneInfo);
 
   // Create the pane object
   const newPane: DmuxPane = {
@@ -162,14 +138,11 @@ export async function createConflictResolutionPane(
   };
 
   // Switch back to the original pane
-  execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+  await tmuxService.selectPane(originalPaneId);
 
   // Re-set the title for the dmux pane
   try {
-    execSync(
-      `tmux select-pane -t '${originalPaneId}' -T "dmux-${projectName}"`,
-      { stdio: 'pipe' }
-    );
+    await tmuxService.setPaneTitle(originalPaneId, `dmux-${projectName}`);
   } catch {
     // Ignore if setting title fails
   }
@@ -249,19 +222,15 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
             /Enter to confirm.*Esc to exit/i.test(paneContent);
 
           if (isNewClaudeFormat) {
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            const tmuxService = TmuxService.getInstance();
+            await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
           } else {
-            execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
+            const tmuxService = TmuxService.getInstance();
+            await tmuxService.sendKeys(paneInfo, 'y');
             await new Promise((resolve) => setTimeout(resolve, 50));
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter
             await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            await tmuxService.sendKeys(paneInfo, 'Enter'); // Send Enter again
           }
 
           promptHandled = true;

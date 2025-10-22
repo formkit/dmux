@@ -1,9 +1,9 @@
-import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
 import { splitPane } from '../utils/tmux.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 
 // Separate config structure to match new format
@@ -28,29 +28,31 @@ interface PaneLoadResult {
  * Retries up to maxRetries times with delay between attempts
  */
 export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: string[]; titleToId: Map<string, string> }> {
+  const tmuxService = TmuxService.getInstance();
   let allPaneIds: string[] = [];
   let titleToId = new Map<string, string>();
   let retryCount = 0;
 
   while (retryCount <= maxRetries) {
     try {
-      const output = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: TMUX_COMMAND_TIMEOUT
-      }).trim();
+      // Get all panes in session with their titles
+      const allPanes = await tmuxService.getAllPaneIds();
 
-      if (output) {
-        const lines = output.split('\n');
-        for (const line of lines) {
-          const [id, title] = line.split('::');
+      // Fetch titles for each pane
+      for (const id of allPanes) {
+        try {
+          const title = await tmuxService.getPaneTitle(id);
           // Filter out dmux internal panes (spacer, control pane, etc.)
           if (id && id.startsWith('%') && title !== 'dmux-spacer') {
             allPaneIds.push(id);
             if (title) titleToId.set(title.trim(), id);
           }
+        } catch {
+          // Skip panes we can't get titles for
+          continue;
         }
       }
+
       if (allPaneIds.length > 0 || retryCount === maxRetries) break;
     } catch (error) {
       // Retry on tmux command failure (common during rapid pane creation/destruction)
@@ -102,23 +104,24 @@ export async function recreateMissingPanes(
 ): Promise<void> {
   if (missingPanes.length === 0) return;
 
+  const tmuxService = TmuxService.getInstance();
+
   for (const missingPane of missingPanes) {
     try {
       // Create new pane
       const newPaneId = splitPane({ cwd: missingPane.worktreePath || process.cwd() });
 
       // Set pane title
-      execSync(`tmux select-pane -t '${newPaneId}' -T "${missingPane.slug}"`, { stdio: 'pipe' });
+      await tmuxService.setPaneTitle(newPaneId, missingPane.slug);
 
       // Update the pane with new ID
       missingPane.paneId = newPaneId;
 
       // Send a message to the pane indicating it was restored
-      const slug = missingPane.slug.replace(/'/g, "'\\''");
-      const promptPreview = (missingPane.prompt?.substring(0, 50) || '').replace(/'/g, "'\\''");
-      execSync(`tmux send-keys -t '${newPaneId}' "echo '# Pane restored: ${slug}'" Enter`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${newPaneId}' "echo '# Original prompt: ${promptPreview}...'" Enter`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${newPaneId}' "cd ${missingPane.worktreePath || process.cwd()}" Enter`, { stdio: 'pipe' });
+      await tmuxService.sendKeys(newPaneId, `"echo '# Pane restored: ${missingPane.slug}'" Enter`);
+      const promptPreview = missingPane.prompt?.substring(0, 50) || '';
+      await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
+      await tmuxService.sendKeys(newPaneId, `"cd ${missingPane.worktreePath || process.cwd()}" Enter`);
     } catch (error) {
       // If we can't create the pane, skip it
     }
@@ -126,8 +129,8 @@ export async function recreateMissingPanes(
 
   // Apply even-horizontal layout after creating panes
   try {
-    execSync('tmux select-layout even-horizontal', { stdio: 'pipe' });
-    execSync('tmux refresh-client', { stdio: 'pipe' });
+    await tmuxService.selectLayout('even-horizontal');
+    await tmuxService.refreshClient();
   } catch {}
 }
 
@@ -146,6 +149,8 @@ export async function recreateKilledWorktreePanes(
 
   if (worktreePanesToRecreate.length === 0) return panes;
 
+  const tmuxService = TmuxService.getInstance();
+
   LogService.getInstance().debug(
     `Recreating ${worktreePanesToRecreate.length} killed worktree panes`,
     'shellDetection'
@@ -159,7 +164,7 @@ export async function recreateKilledWorktreePanes(
       const newPaneId = splitPane({ cwd: pane.worktreePath });
 
       // Set pane title
-      execSync(`tmux select-pane -t '${newPaneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+      await tmuxService.setPaneTitle(newPaneId, pane.slug);
 
       // Update the pane with new ID
       const paneIndex = updatedPanes.findIndex(p => p.id === pane.id);
@@ -168,13 +173,12 @@ export async function recreateKilledWorktreePanes(
       }
 
       // Send a message to the pane indicating it was restored
-      const slug = pane.slug.replace(/'/g, "'\\''");
-      const promptPreview = (pane.prompt?.substring(0, 50) || '').replace(/'/g, "'\\''");
-      execSync(`tmux send-keys -t '${newPaneId}' "echo '# Pane restored: ${slug}'" Enter`, { stdio: 'pipe' });
+      await tmuxService.sendKeys(newPaneId, `"echo '# Pane restored: ${pane.slug}'" Enter`);
       if (pane.prompt) {
-        execSync(`tmux send-keys -t '${newPaneId}' "echo '# Original prompt: ${promptPreview}...'" Enter`, { stdio: 'pipe' });
+        const promptPreview = pane.prompt.substring(0, 50) || '';
+        await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       }
-      execSync(`tmux send-keys -t '${newPaneId}' "cd ${pane.worktreePath}" Enter`, { stdio: 'pipe' });
+      await tmuxService.sendKeys(newPaneId, `"cd ${pane.worktreePath}" Enter`);
 
       LogService.getInstance().debug(
         `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,

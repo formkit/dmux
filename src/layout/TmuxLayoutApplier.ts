@@ -1,5 +1,5 @@
-import { execSync } from 'child_process';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { generateSidebarGridLayout } from '../utils/tmux.js';
 import type { LayoutConfig } from '../utils/layoutManager.js';
 import type { LayoutConfiguration } from './LayoutCalculator.js';
@@ -19,6 +19,8 @@ import type { LayoutConfiguration } from './LayoutCalculator.js';
  * - Determine when layouts need recalculation
  */
 export class TmuxLayoutApplier {
+  private tmuxService = TmuxService.getInstance();
+
   constructor(private config: LayoutConfig) {}
 
   /**
@@ -30,8 +32,8 @@ export class TmuxLayoutApplier {
   setWindowDimensions(width: number, height: number): void {
     try {
       // Use manual mode to constrain width, but also set height to match terminal
-      execSync(`tmux set-window-option window-size manual`, { stdio: 'pipe' });
-      execSync(`tmux resize-window -x ${width} -y ${height}`, { stdio: 'pipe' });
+      this.tmuxService.setWindowOptionSync('window-size', 'manual');
+      this.tmuxService.resizeWindowSync({ width, height });
     } catch (error) {
       // Log but don't fail - some tmux versions may not support this
       LogService.getInstance().warn(
@@ -87,7 +89,7 @@ export class TmuxLayoutApplier {
         this.logPaneState();
 
         try {
-          execSync(`tmux select-layout '${layoutString}'`, { stdio: 'pipe' });
+          this.tmuxService.selectLayoutSync(layoutString);
           LogService.getInstance().debug('Layout string applied successfully', 'Layout');
         } catch (layoutError: any) {
           // Log the error for debugging
@@ -118,10 +120,9 @@ export class TmuxLayoutApplier {
    */
   private resizeControlPane(controlPaneId: string): void {
     try {
-      execSync(
-        `tmux resize-pane -t '${controlPaneId}' -x ${this.config.SIDEBAR_WIDTH}`,
-        { stdio: 'pipe' }
-      );
+      this.tmuxService.resizePaneSync(controlPaneId, {
+        width: this.config.SIDEBAR_WIDTH
+      });
     } catch (error) {
       LogService.getInstance().error(
         'Error resizing control pane',
@@ -138,11 +139,8 @@ export class TmuxLayoutApplier {
    */
   private applyMainVerticalFallback(): void {
     try {
-      execSync(
-        `tmux set-window-option main-pane-width ${this.config.SIDEBAR_WIDTH}`,
-        { stdio: 'pipe' }
-      );
-      execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
+      this.tmuxService.setWindowOptionSync('main-pane-width', String(this.config.SIDEBAR_WIDTH));
+      this.tmuxService.selectLayoutSync('main-vertical');
       LogService.getInstance().debug('Fell back to main-vertical layout', 'Layout');
     } catch (error) {
       LogService.getInstance().debug(`Main-vertical fallback failed: ${error}`, 'Layout');
@@ -155,10 +153,7 @@ export class TmuxLayoutApplier {
    */
   private logPaneState(): void {
     try {
-      const paneList = execSync('tmux list-panes -F "#{pane_id}=#{pane_index}"', {
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      }).trim();
+      const paneList = this.tmuxService.listPanesSync('#{pane_id}=#{pane_index}');
       LogService.getInstance().debug(`Panes right before layout apply: ${paneList}`, 'Layout');
     } catch {
       // Ignore errors

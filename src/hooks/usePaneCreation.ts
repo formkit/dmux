@@ -1,8 +1,8 @@
-import { execSync } from 'child_process';
 import path from 'path';
 import type { DmuxPane } from '../types.js';
 import { createPane } from '../utils/paneCreation.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 
 interface Params {
   panes: DmuxPane[];
@@ -101,15 +101,13 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
       // 1. Clear screen with ANSI codes (including scrollback)
       process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
 
+      const tmuxService = TmuxService.getInstance();
+
       // 2. Clear tmux history and scrollback
-      try {
-        execSync('tmux clear-history', { stdio: 'pipe' });
-      } catch {}
+      tmuxService.clearHistorySync();
 
       // 3. Force tmux client refresh
-      try {
-        execSync('tmux refresh-client', { stdio: 'pipe' });
-      } catch {}
+      tmuxService.refreshClientSync();
 
       await loadPanes();
 

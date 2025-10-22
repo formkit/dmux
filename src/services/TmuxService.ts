@@ -148,6 +148,19 @@ export class TmuxService {
   // ===== READ OPERATIONS (IDEMPOTENT - safe to retry) =====
 
   /**
+   * Get current pane ID
+   */
+  async getCurrentPaneId(): Promise<string> {
+    return this.executeWithRetry(
+      () => {
+        return this.execute('tmux display-message -p "#{pane_id}"');
+      },
+      RetryStrategy.IDEMPOTENT,
+      'getCurrentPaneId'
+    );
+  }
+
+  /**
    * Get current window dimensions
    */
   async getWindowDimensions(): Promise<WindowDimensions> {
@@ -192,6 +205,20 @@ export class TmuxService {
       },
       RetryStrategy.IDEMPOTENT,
       'getAllPaneIds'
+    );
+  }
+
+  /**
+   * Get pane count in current window
+   */
+  async getPaneCount(): Promise<number> {
+    return this.executeWithRetry(
+      () => {
+        const output = this.execute('tmux list-panes | wc -l');
+        return parseInt(output, 10);
+      },
+      RetryStrategy.IDEMPOTENT,
+      'getPaneCount'
     );
   }
 
@@ -390,6 +417,32 @@ export class TmuxService {
   }
 
   /**
+   * Select a pane (make it active)
+   */
+  async selectPane(paneId: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux select-pane -t '${paneId}'`);
+      },
+      RetryStrategy.FAST,
+      `selectPane(${paneId})`
+    );
+  }
+
+  /**
+   * Set global tmux option
+   */
+  async setOption(option: string, value: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux set-option -g ${option} ${value}`);
+      },
+      RetryStrategy.FAST,
+      `setOption(${option})`
+    );
+  }
+
+  /**
    * Send keys to a pane
    */
   async sendKeys(paneId: string, keys: string): Promise<void> {
@@ -399,6 +452,47 @@ export class TmuxService {
       },
       RetryStrategy.FAST,
       `sendKeys(${paneId})`
+    );
+  }
+
+  /**
+   * Set a tmux buffer with content
+   */
+  async setBuffer(bufferName: string, content: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        // Escape content for shell
+        const escaped = content.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+        this.execute(`tmux set-buffer -b '${bufferName}' -- '${escaped}'`);
+      },
+      RetryStrategy.FAST,
+      `setBuffer(${bufferName})`
+    );
+  }
+
+  /**
+   * Paste a tmux buffer to a pane
+   */
+  async pasteBuffer(bufferName: string, paneId: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux paste-buffer -b '${bufferName}' -t '${paneId}'`);
+      },
+      RetryStrategy.FAST,
+      `pasteBuffer(${bufferName})`
+    );
+  }
+
+  /**
+   * Delete a tmux buffer
+   */
+  async deleteBuffer(bufferName: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux delete-buffer -b '${bufferName}'`);
+      },
+      RetryStrategy.FAST,
+      `deleteBuffer(${bufferName})`
     );
   }
 
@@ -446,6 +540,64 @@ export class TmuxService {
       RetryStrategy.NONE, // Destructive operation
       `killWindow(${windowId})`
     );
+  }
+
+  /**
+   * Create a new window
+   * Returns the window ID
+   */
+  async newWindow(options: {
+    name?: string;
+    detached?: boolean;
+  } = {}): Promise<string> {
+    return this.executeWithRetry(
+      () => {
+        let cmd = 'tmux new-window';
+        if (options.detached) {
+          cmd += ' -d';
+        }
+        if (options.name) {
+          cmd += ` -n '${options.name}'`;
+        }
+        cmd += " -P -F '#{window_id}'";
+        return this.execute(cmd);
+      },
+      RetryStrategy.FAST,
+      'newWindow'
+    );
+  }
+
+  /**
+   * Join a pane from a window (pulls pane into current window)
+   */
+  async joinPane(sourceWindowId: string, horizontal: boolean = true): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        const direction = horizontal ? '-h' : '-v';
+        this.execute(`tmux join-pane ${direction} -s '${sourceWindowId}'`);
+      },
+      RetryStrategy.FAST,
+      `joinPane(${sourceWindowId})`
+    );
+  }
+
+  /**
+   * Check if a window exists
+   */
+  async windowExists(windowId: string): Promise<boolean> {
+    try {
+      await this.executeWithRetry(
+        () => {
+          this.execute(`tmux list-windows -F '#{window_id}' | grep -q '${windowId}'`, { silent: true });
+          return true;
+        },
+        RetryStrategy.FAST,
+        `windowExists(${windowId})`
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // ===== SYNCHRONOUS FALLBACKS (for gradual migration) =====
@@ -574,6 +726,190 @@ export class TmuxService {
       this.execute('tmux clear-history', { silent: true });
     } catch {
       // Intentionally silent - history clearing is optional
+    }
+  }
+
+  /**
+   * Get tmux version string
+   */
+  getVersionSync(): string {
+    try {
+      return this.execute('tmux -V');
+    } catch (error) {
+      this.logger.warn('Failed to get tmux version', 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
+   * Get a session option value
+   */
+  getSessionOptionSync(sessionName: string, option: string): string {
+    try {
+      return this.execute(`tmux show -t ${sessionName} ${option}`);
+    } catch (error) {
+      this.logger.warn(`Failed to get session option ${option} for ${sessionName}`, 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
+   * Set a session option
+   */
+  setSessionOptionSync(sessionName: string, option: string, value: string): void {
+    try {
+      this.execute(`tmux set -t ${sessionName} ${option} ${value}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to set session option ${option} for ${sessionName}`, 'TmuxService');
+    }
+  }
+
+  /**
+   * Get current pane ID (sync version for compatibility)
+   */
+  getCurrentPaneIdSync(): string {
+    try {
+      return this.execute('tmux display-message -p "#{pane_id}"');
+    } catch (error) {
+      this.logger.warn('Failed to get current pane ID', 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * Set window option (sync version for compatibility)
+   */
+  setWindowOptionSync(option: string, value: string): void {
+    try {
+      this.execute(`tmux set-window-option ${option} ${value}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to set window option ${option}`, 'TmuxService');
+    }
+  }
+
+  /**
+   * Select layout by name (sync version for compatibility)
+   */
+  selectLayoutSync(layout: string): void {
+    try {
+      this.execute(`tmux select-layout '${layout}'`);
+    } catch (error) {
+      this.logger.warn(`Failed to select layout ${layout}`, 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * Resize pane (sync version for compatibility)
+   */
+  resizePaneSync(paneId: string, dimensions: { width?: number; height?: number }): void {
+    try {
+      if (dimensions.width !== undefined) {
+        this.execute(`tmux resize-pane -t '${paneId}' -x ${dimensions.width}`);
+      }
+      if (dimensions.height !== undefined) {
+        this.execute(`tmux resize-pane -t '${paneId}' -y ${dimensions.height}`);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to resize pane ${paneId}`, 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * Resize window (sync version for compatibility)
+   */
+  resizeWindowSync(dimensions: { width: number; height: number }): void {
+    try {
+      this.execute(`tmux resize-window -x ${dimensions.width} -y ${dimensions.height}`);
+    } catch (error) {
+      this.logger.warn('Failed to resize window', 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * Select pane (sync version for compatibility)
+   */
+  selectPaneSync(paneId: string): void {
+    try {
+      this.execute(`tmux select-pane -t '${paneId}'`);
+    } catch (error) {
+      this.logger.warn(`Failed to select pane ${paneId}`, 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * Set pane title (sync version for compatibility)
+   */
+  setPaneTitleSync(paneId: string, title: string): void {
+    try {
+      this.execute(`tmux select-pane -t '${paneId}' -T '${title}'`);
+    } catch (error) {
+      this.logger.warn(`Failed to set pane title for ${paneId}`, 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * Kill pane (sync version for compatibility)
+   */
+  killPaneSync(paneId: string): void {
+    try {
+      this.execute(`tmux kill-pane -t '${paneId}'`);
+    } catch (error) {
+      this.logger.warn(`Failed to kill pane ${paneId}`, 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
+   * List panes formatted (sync version for compatibility)
+   */
+  listPanesSync(format?: string): string {
+    try {
+      const formatStr = format || '#{pane_id}=#{pane_index}';
+      return this.execute(`tmux list-panes -F "${formatStr}"`);
+    } catch (error) {
+      this.logger.warn('Failed to list panes', 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
+   * Set global tmux option (sync version for compatibility)
+   */
+  setGlobalOptionSync(option: string, value: string): void {
+    try {
+      this.execute(`tmux set-option -g ${option} ${value}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to set global option ${option}`, 'TmuxService');
+    }
+  }
+
+  /**
+   * Get pane width (sync version for compatibility)
+   */
+  getPaneWidthSync(paneId: string): number {
+    try {
+      const output = this.execute(`tmux display-message -t '${paneId}' -p '#{pane_width}'`);
+      return parseInt(output, 10);
+    } catch (error) {
+      this.logger.warn(`Failed to get pane width for ${paneId}`, 'TmuxService');
+      return 0;
+    }
+  }
+
+  /**
+   * Get current layout string (sync version for compatibility)
+   */
+  getCurrentLayoutSync(): string {
+    try {
+      return this.execute('tmux display-message -p "#{window_layout}"');
+    } catch (error) {
+      this.logger.warn('Failed to get current layout', 'TmuxService');
+      return '';
     }
   }
 }

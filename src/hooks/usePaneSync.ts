@@ -1,8 +1,8 @@
-import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { DmuxPane } from '../types.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { TMUX_COMMAND_TIMEOUT } from '../constants/timing.js';
 import type { DmuxConfig } from './usePaneLoading.js';
 
@@ -14,18 +14,17 @@ export async function enforcePaneTitles(
   panes: DmuxPane[],
   allPaneIds: string[]
 ): Promise<void> {
+  const tmuxService = TmuxService.getInstance();
+
   for (const pane of panes) {
     if (allPaneIds.includes(pane.paneId)) {
       try {
         // Get current title to check if update is needed
-        const currentTitle = execSync(
-          `tmux display-message -t '${pane.paneId}' -p '#{pane_title}'`,
-          { encoding: 'utf-8', stdio: 'pipe' }
-        ).trim();
+        const currentTitle = await tmuxService.getPaneTitle(pane.paneId);
 
         // Only update if title doesn't match slug (avoids unnecessary tmux commands)
         if (currentTitle !== pane.slug) {
-          execSync(`tmux select-pane -t '${pane.paneId}' -T "${pane.slug}"`, { stdio: 'pipe' });
+          await tmuxService.setPaneTitle(pane.paneId, pane.slug);
           LogService.getInstance().debug(
             `Synced pane title: ${pane.id} "${currentTitle}" → "${pane.slug}"`,
             'shellDetection'
@@ -56,20 +55,22 @@ export async function savePanesToFile(
 
     // Try to update pane IDs if they've changed (rebinding)
     try {
-      const out = execSync(`tmux list-panes -s -F '#{pane_id}::#{pane_title}'`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: TMUX_COMMAND_TIMEOUT
-      }).trim();
+      const tmuxService = TmuxService.getInstance();
+      const allPanes = await tmuxService.getAllPaneIds();
       const titleToId = new Map<string, string>();
-      if (out) {
-        out.split('\n').forEach(line => {
-          const [id, title] = line.split('::');
+
+      // Fetch titles for each pane
+      for (const id of allPanes) {
+        try {
+          const title = await tmuxService.getPaneTitle(id);
           // Filter out dmux internal panes (spacer, control pane, etc.)
           if (id && id.startsWith('%') && title && title !== 'dmux-spacer') {
             titleToId.set(title.trim(), id);
           }
-        });
+        } catch {
+          // Skip panes we can't get titles for
+          continue;
+        }
       }
 
       // Only rebind IDs, don't filter out panes
@@ -247,7 +248,7 @@ export async function destroyWelcomePaneIfNeeded(
         'shellDetection'
       );
       const { destroyWelcomePane } = await import('../utils/welcomePane.js');
-      destroyWelcomePane(config.welcomePaneId);
+      await destroyWelcomePane(config.welcomePaneId);
       // Clear welcomePaneId from config (will be saved by caller)
       config.welcomePaneId = undefined;
       // Write the config immediately to clear welcomePaneId

@@ -1,8 +1,10 @@
 import { eventHandler, readBody } from 'h3';
 import { StateManager } from '../../shared/StateManager.js';
 import { LogService } from '../../services/LogService.js';
+import { TmuxService } from '../../services/TmuxService.js';
 
 const stateManager = StateManager.getInstance();
+const tmuxService = TmuxService.getInstance();
 
 export function createKeysRoutes() {
   return [
@@ -40,8 +42,6 @@ export function createKeysRoutes() {
         }
 
         try {
-          const { execSync } = await import('child_process');
-
           // Map special keys to tmux send-keys format
           const key = body.key;
           let tmuxKey = key;
@@ -81,10 +81,10 @@ export function createKeysRoutes() {
           // Handle Shift+Enter - send the escape sequence using printf to handle escape character
           else if (body.shiftKey && key === 'Enter') {
             // Send ESC[13;2~ which is the standard Shift+Enter sequence
-            execSync(`printf '\\033[13;2~' | tmux load-buffer - && tmux paste-buffer -t ${pane.paneId}`, {
-              stdio: 'pipe',
-              shell: '/bin/bash'
-            });
+            const bufferName = 'dmux-shift-enter';
+            await tmuxService.setBuffer(bufferName, '\x1b[13;2~');
+            await tmuxService.pasteBuffer(bufferName, pane.paneId);
+            await tmuxService.deleteBuffer(bufferName);
             return { success: true, key: 'Shift+Enter (CSI sequence)' };
           }
           // Handle Ctrl+ with special keys
@@ -99,18 +99,14 @@ export function createKeysRoutes() {
           else if (specialKeys[key]) {
             tmuxKey = specialKeys[key];
           }
-          // Regular character - use -l flag to send literally
+          // Regular character - use sendKeys which handles literal flag
           else if (key.length === 1) {
-            execSync(`tmux send-keys -t ${pane.paneId} -l ${JSON.stringify(key)}`, {
-              stdio: 'pipe'
-            });
+            await tmuxService.sendKeys(pane.paneId, `-l ${JSON.stringify(key)}`);
             return { success: true, key: key };
           }
 
           // Send the key to tmux (for all non-literal keys)
-          execSync(`tmux send-keys -t ${pane.paneId} ${tmuxKey}`, {
-            stdio: 'pipe'
-          });
+          await tmuxService.sendKeys(pane.paneId, tmuxKey);
 
           return { success: true, key: tmuxKey };
         } catch (error: any) {

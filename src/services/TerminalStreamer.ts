@@ -5,6 +5,7 @@ import { Readable } from 'stream';
 import { StringDecoder } from 'string_decoder';
 import type { InitMessage, PatchMessage, ResizeMessage } from '../shared/StreamProtocol.js';
 import { formatStreamMessage } from '../shared/StreamProtocol.js';
+import { TmuxService } from './TmuxService.js';
 
 // Stream interface - now using Node.js Readable stream
 type StreamClient = Readable;
@@ -35,6 +36,7 @@ interface PaneDimensions {
 export class TerminalStreamer extends EventEmitter {
   private streams = new Map<string, StreamInfo>();
   private isShuttingDown = false;
+  private tmux = TmuxService.getInstance();
 
   /**
    * Start streaming a pane to a client
@@ -92,10 +94,10 @@ export class TerminalStreamer extends EventEmitter {
     tmuxPaneId: string
   ): Promise<StreamInfo> {
     // Get pane dimensions
-    const dimensions = this.getPaneDimensions(tmuxPaneId);
+    const dimensions = await this.getPaneDimensions(tmuxPaneId);
 
     // Capture current state
-    const content = this.capturePaneContent(tmuxPaneId);
+    const content = await this.capturePaneContent(tmuxPaneId);
 
     // Create pipe path
     const pipePath = `/tmp/dmux-pipe-${paneId}-${Date.now()}`;
@@ -120,7 +122,7 @@ export class TerminalStreamer extends EventEmitter {
     client: StreamClient
   ): Promise<void> {
     // Get cursor position from tmux
-    const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+    const cursorPos = await this.getCursorPosition(stream.tmuxPaneId);
 
     // Send raw content with ANSI codes - frontend will parse
     const initMessage: InitMessage = {
@@ -144,7 +146,7 @@ export class TerminalStreamer extends EventEmitter {
   /**
    * Get cursor position from tmux
    */
-  private getCursorPosition(tmuxPaneId: string): { row: number; col: number } {
+  private async getCursorPosition(tmuxPaneId: string): Promise<{ row: number; col: number }> {
     try {
       const output = execSync(
         `tmux display-message -p -t ${tmuxPaneId} -F "#{cursor_y},#{cursor_x}"`,
@@ -309,15 +311,15 @@ export class TerminalStreamer extends EventEmitter {
       // Periodic full refresh to fix drift from patch-based streaming
       // Patches work well for simple terminal output, but complex TUI apps (Ink, etc.)
       // use cursor positioning that doesn't replay correctly. Full refresh keeps in sync.
-      stream.refreshInterval = setInterval(() => {
-        const content = this.capturePaneContent(stream.tmuxPaneId);
+      stream.refreshInterval = setInterval(async () => {
+        const content = await this.capturePaneContent(stream.tmuxPaneId);
 
         // Skip refresh if content is empty (pane might be closed or capture failed)
         if (!content || content.trim().length === 0) {
           return;
         }
 
-        const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+        const cursorPos = await this.getCursorPosition(stream.tmuxPaneId);
 
         // Send full refresh as INIT message to reset buffer
         const refreshMessage: InitMessage = {
@@ -391,9 +393,9 @@ export class TerminalStreamer extends EventEmitter {
   /**
    * Process output and send updates to clients
    */
-  private processAndSendUpdates(stream: StreamInfo, output: string): void {
+  private async processAndSendUpdates(stream: StreamInfo, output: string): Promise<void> {
     // Get current cursor position for accurate rendering
-    const cursorPos = this.getCursorPosition(stream.tmuxPaneId);
+    const cursorPos = await this.getCursorPosition(stream.tmuxPaneId);
 
     // DEBUG: Log patch details (disabled)
     // const first100 = output.substring(0, 100).replace(/\x1b/g, '\\x1b').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
@@ -434,8 +436,8 @@ export class TerminalStreamer extends EventEmitter {
   /**
    * Check if pane has been resized
    */
-  private checkForResize(stream: StreamInfo): void {
-    const dimensions = this.getPaneDimensions(stream.tmuxPaneId);
+  private async checkForResize(stream: StreamInfo): Promise<void> {
+    const dimensions = await this.getPaneDimensions(stream.tmuxPaneId);
 
     if (dimensions.width !== stream.width || dimensions.height !== stream.height) {
       // Pane was resized
@@ -443,7 +445,7 @@ export class TerminalStreamer extends EventEmitter {
       stream.height = dimensions.height;
 
       // Capture new full state
-      const content = this.capturePaneContent(stream.tmuxPaneId);
+      const content = await this.capturePaneContent(stream.tmuxPaneId);
       stream.lastContent = content;
 
       // Send resize message with raw content - frontend will parse
@@ -509,7 +511,7 @@ export class TerminalStreamer extends EventEmitter {
   /**
    * Get pane dimensions from tmux
    */
-  private getPaneDimensions(tmuxPaneId: string): PaneDimensions {
+  private async getPaneDimensions(tmuxPaneId: string): Promise<PaneDimensions> {
     try {
       const output = execSync(
         `tmux display-message -p -t ${tmuxPaneId} -F "#{pane_width}x#{pane_height}"`,
@@ -529,7 +531,7 @@ export class TerminalStreamer extends EventEmitter {
    * Capture current pane content with ANSI codes
    * Only captures the visible area (no scrollback) so cursor position matches
    */
-  private capturePaneContent(tmuxPaneId: string): string {
+  private async capturePaneContent(tmuxPaneId: string): Promise<string> {
     try {
       // -p: print to stdout
       // -e: include escape sequences

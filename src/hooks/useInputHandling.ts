@@ -1,8 +1,8 @@
 import { useInput } from "ink"
-import { execSync } from "child_process"
 import type { DmuxPane } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
 import { LogService } from "../services/LogService.js"
+import { TmuxService } from "../services/TmuxService.js"
 import {
   STATUS_MESSAGE_DURATION_SHORT,
   STATUS_MESSAGE_DURATION_LONG,
@@ -358,11 +358,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
         setIsCreatingPane(true)
         setStatusMessage("Creating terminal pane...")
 
+        const tmuxService = TmuxService.getInstance()
+
         // Create a simple tmux pane split
-        execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
-          encoding: "utf-8",
-          stdio: "pipe",
-        })
+        await tmuxService.splitPane({})
 
         // Wait for pane creation to settle
         await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))

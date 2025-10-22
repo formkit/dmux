@@ -132,7 +132,7 @@ export async function createWelcomePaneCoordinated(
     const config: DmuxConfig = JSON.parse(configContent);
 
     // Check if we already have a valid welcome pane
-    if (config.welcomePaneId && welcomePaneExists(config.welcomePaneId)) {
+    if (config.welcomePaneId && await welcomePaneExists(config.welcomePaneId)) {
       logService.debug(`Welcome pane ${config.welcomePaneId} already exists`, 'WelcomePaneManager');
       return true; // Already exists, that's fine
     }

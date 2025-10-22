@@ -16,6 +16,7 @@ import readline from 'readline';
 import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
+import { TmuxService } from './services/TmuxService.js';
 import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
 import { TMUX_COLORS } from './theme/colors.js';
 import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
@@ -171,10 +172,8 @@ class Dmux {
 
     try {
       // Get current pane ID
-      controlPaneId = execSync('tmux display-message -p "#{pane_id}"', {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      }).trim();
+      const tmuxService = TmuxService.getInstance();
+      controlPaneId = await tmuxService.getCurrentPaneId();
 
       // Load existing config
       const configContent = await fs.readFile(this.panesFile, 'utf-8');
@@ -194,9 +193,9 @@ class Dmux {
       // If this is initial load or control pane changed, resize the sidebar
       if (needsUpdate) {
         // Resize control pane to sidebar width
-        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
+        await tmuxService.resizePane(controlPaneId, { width: SIDEBAR_WIDTH });
         // Refresh client
-        execSync('tmux refresh-client', { stdio: 'pipe' });
+        await tmuxService.refreshClient();
         // Save updated config
         config.lastUpdated = new Date().toISOString();
         await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
@@ -223,10 +222,11 @@ class Dmux {
 
           // Apply correct layout: sidebar (40) | welcome pane (rest)
           // Use "latest" mode so window auto-follows terminal size
+          // Note: setOption doesn't have window-specific options yet, using execSync for these
           execSync(`tmux set-window-option window-size latest`, { stdio: 'pipe' });
           execSync(`tmux set-window-option main-pane-width ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
           execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
-          execSync(`tmux refresh-client`, { stdio: 'pipe' });
+          await tmuxService.refreshClient();
         }
       }
     } catch (error) {
@@ -611,7 +611,7 @@ class Dmux {
   }
 
   private setupGlobalSignalHandlers() {
-    const cleanTerminalExit = () => {
+    const cleanTerminalExit = async () => {
       // Clean up hooks
       if (process.env.TMUX) {
         this.cleanupResizeHook();
@@ -626,8 +626,9 @@ class Dmux {
       // Clear tmux pane if we're in tmux
       if (process.env.TMUX) {
         try {
-          execSync('tmux clear-history', { stdio: 'pipe' });
-          execSync('tmux send-keys C-l', { stdio: 'pipe' });
+          const tmuxService = TmuxService.getInstance();
+          tmuxService.clearHistorySync();
+          await tmuxService.sendKeys('', 'C-l');
         } catch {
           // Intentionally silent - cleanup is best-effort
         }

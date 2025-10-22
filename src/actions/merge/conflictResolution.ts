@@ -7,6 +7,7 @@
 
 import type { ActionResult, ActionContext } from '../types.js';
 import type { DmuxPane } from '../../types.js';
+import { TmuxService } from '../../services/TmuxService.js';
 
 /**
  * Create a new pane for AI-assisted conflict resolution
@@ -109,10 +110,10 @@ async function createAndLaunchConflictPane(
       onResolved: async () => {
         // Conflicts resolved! Close the conflict pane and trigger cleanup
         try {
-          const { execSync } = await import('child_process');
+          const tmuxService = TmuxService.getInstance();
 
           // Kill the conflict pane
-          execSync(`tmux kill-pane -t '${conflictPane.paneId}'`, { stdio: 'pipe' });
+          await tmuxService.killPane(conflictPane.paneId);
 
           // Remove conflict pane from state
           const panesWithoutConflictPane = context.panes.filter(p => p.id !== conflictPane.id);

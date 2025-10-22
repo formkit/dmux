@@ -1,5 +1,5 @@
-import { execSync } from 'child_process';
 import { getWindowDimensions } from './tmux.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { LogService } from '../services/LogService.js';
 import { TMUX_PANE_CREATION_DELAY, TMUX_SIDEBAR_SETTLE_DELAY } from '../constants/timing.js';
 
@@ -54,13 +54,13 @@ let lastLayoutDimensions: { width: number; height: number; paneCount: number } |
  * 8. Re-enforce sidebar width (after window resize)
  * 9. Apply layout to tmux
  */
-export function recalculateAndApplyLayout(
+export async function recalculateAndApplyLayout(
   controlPaneId: string,
   contentPaneIds: string[],
   terminalWidth: number,
   terminalHeight: number,
   config: LayoutConfig = DEFAULT_LAYOUT_CONFIG
-): void {
+): Promise<void> {
   // Create class instances with config
   const calculator = new LayoutCalculator(config);
   const spacerManager = new SpacerManager(config);
@@ -128,18 +128,16 @@ export function recalculateAndApplyLayout(
       LogService.getInstance().debug(`Created fresh spacer pane: ${spacerId}`, 'Layout');
 
       // CRITICAL: Wait for tmux to fully register the new pane before applying layout
-      execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: 'pipe' });
+      await new Promise(resolve => setTimeout(resolve, TMUX_PANE_CREATION_DELAY));
 
       // Verify the pane appears in list-panes output
+      const tmuxService = TmuxService.getInstance();
       let paneVerified = false;
       for (let attempts = 0; attempts < 3; attempts++) {
         try {
-          const output = execSync('tmux list-panes -F "#{pane_id}"', {
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          }).trim();
+          const allPaneIds = tmuxService.getAllPaneIdsSync();
 
-          if (output.includes(spacerId)) {
+          if (allPaneIds.includes(spacerId)) {
             paneVerified = true;
             LogService.getInstance().debug(
               `Verified spacer pane ${spacerId} in list-panes (attempt ${attempts + 1})`,
@@ -149,7 +147,7 @@ export function recalculateAndApplyLayout(
           }
         } catch {
           // Pane not ready yet, wait a bit
-          if (attempts < 2) execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: 'pipe' });
+          if (attempts < 2) await new Promise(resolve => setTimeout(resolve, TMUX_PANE_CREATION_DELAY));
         }
       }
 
@@ -173,14 +171,16 @@ export function recalculateAndApplyLayout(
   // Tmux applies layout geometry by pane index order!
   const paneIndices = new Map<string, number>();
   try {
-    const output = execSync(`tmux list-panes -F '#{pane_index} #{pane_id}'`, {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
+    const tmuxService = TmuxService.getInstance();
+    // Get pane index from tmux (pane_index format variable)
+    const indexOutput = tmuxService.listPanesSync('#{pane_id}=#{pane_index}');
+    const indexLines = indexOutput.split('\n').filter(l => l.trim());
 
-    output.split('\n').forEach(line => {
-      const [index, id] = line.split(' ');
-      if (id) paneIndices.set(id, parseInt(index));
+    indexLines.forEach(line => {
+      const [paneId, indexStr] = line.split('=');
+      if (paneId && indexStr) {
+        paneIndices.set(paneId, parseInt(indexStr, 10));
+      }
     });
 
     // Sort by index, but force spacer to the end
@@ -210,14 +210,12 @@ export function recalculateAndApplyLayout(
 
   // Log current tmux state before applying layout
   try {
-    const currentPanes = execSync(
-      'tmux list-panes -F "#{pane_id} #{pane_width}x#{pane_height} @#{pane_left},#{pane_top}"',
-      {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      }
-    ).trim();
-    LogService.getInstance().debug(`Current pane positions before layout:\n${currentPanes}`, 'Layout');
+    const tmuxService = TmuxService.getInstance();
+    const positions = tmuxService.getPanePositionsSync();
+    const positionsStr = positions.map(p =>
+      `${p.paneId} ${p.width}x${p.height} @${p.left},${p.top}`
+    ).join('\n');
+    LogService.getInstance().debug(`Current pane positions before layout:\n${positionsStr}`, 'Layout');
   } catch {}
 
   // CRITICAL ORDER: Resize sidebar FIRST (before window), then window
@@ -225,31 +223,22 @@ export function recalculateAndApplyLayout(
 
   // Step 7: Find and verify the actual control pane
   // The control pane ID may change after layout operations, so we need to find it by position
+  const tmuxService = TmuxService.getInstance();
   let actualControlPaneId = controlPaneId;
   try {
     // First, verify the provided controlPaneId still exists
-    execSync(`tmux display-message -t '${controlPaneId}' -p '#{pane_id}'`, {
-      encoding: 'utf-8',
-      stdio: 'pipe'
-    });
+    await tmuxService.paneExists(controlPaneId);
   } catch {
     // Control pane ID is stale, find it by position (leftmost pane at x=0)
     // Use the smallest pane at x=0 as the sidebar (allows for slight width variations)
     try {
-      const allPanes = execSync(
-        `tmux list-panes -F '#{pane_id} #{pane_left} #{pane_width}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim().split('\n');
-
+      const positions = tmuxService.getPanePositionsSync();
       let smallestPaneAtLeft: { id: string; width: number } | null = null;
 
-      for (const paneInfo of allPanes) {
-        const [paneId, left, width] = paneInfo.split(' ');
-        const paneWidth = parseInt(width);
-
+      for (const pos of positions) {
         // Find the smallest pane at x=0 (likely the sidebar)
-        if (left === '0' && (!smallestPaneAtLeft || paneWidth < smallestPaneAtLeft.width)) {
-          smallestPaneAtLeft = { id: paneId, width: paneWidth };
+        if (pos.left === 0 && (!smallestPaneAtLeft || pos.width < smallestPaneAtLeft.width)) {
+          smallestPaneAtLeft = { id: pos.paneId, width: pos.width };
         }
       }
 
@@ -268,12 +257,9 @@ export function recalculateAndApplyLayout(
   // Step 8: Check sidebar width (but DON'T resize yet)
   // We'll let the layout application handle the sizing to avoid pane swapping
   try {
-    const currentSidebarWidth = execSync(
-      `tmux display-message -t '${actualControlPaneId}' -p '#{pane_width}'`,
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
+    const currentSidebarWidth = tmuxService.getPaneWidthSync(actualControlPaneId);
 
-    if (currentSidebarWidth !== String(config.SIDEBAR_WIDTH)) {
+    if (currentSidebarWidth !== config.SIDEBAR_WIDTH) {
       LogService.getInstance().debug(
         `Sidebar width mismatch: ${currentSidebarWidth} (current) vs ${config.SIDEBAR_WIDTH} (target), will fix via layout`,
         'Layout'
@@ -300,9 +286,7 @@ export function recalculateAndApplyLayout(
     layoutApplier.setWindowDimensions(finalLayout.windowWidth, terminalHeight);
 
     // Wait for tmux to complete the window resize
-    try {
-      execSync(`sleep ${TMUX_PANE_CREATION_DELAY / 1000}`, { stdio: 'pipe' });
-    } catch {}
+    await new Promise(resolve => setTimeout(resolve, TMUX_PANE_CREATION_DELAY));
 
     // Note: We don't re-enforce sidebar width here anymore
     // The layout application below will set the correct dimensions for all panes
@@ -315,14 +299,12 @@ export function recalculateAndApplyLayout(
 
   // Log window state after sidebar enforcement
   try {
-    const windowInfo = execSync(
-      'tmux display-message -p "Window: #{window_width}x#{window_height}, Layout: #{window_layout}"',
-      {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      }
-    ).trim();
-    LogService.getInstance().debug(`After sidebar enforcement: ${windowInfo}`, 'Layout');
+    const windowDims = tmuxService.getWindowDimensionsSync();
+    const layout = tmuxService.getCurrentLayoutSync();
+    LogService.getInstance().debug(
+      `After sidebar enforcement: Window: ${windowDims.width}x${windowDims.height}, Layout: ${layout}`,
+      'Layout'
+    );
   } catch {}
 
   // Step 9: Apply the layout to tmux
