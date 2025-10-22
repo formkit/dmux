@@ -17,6 +17,9 @@ import useActionSystem from "./hooks/useActionSystem.js"
 import { useStatusMessages } from "./hooks/useStatusMessages.js"
 import { useLayoutManagement } from "./hooks/useLayoutManagement.js"
 import { useInputHandling } from "./hooks/useInputHandling.js"
+import { useDialogState } from "./hooks/useDialogState.js"
+import { useTunnelManagement } from "./hooks/useTunnelManagement.js"
+import { useDebugInfo } from "./hooks/useDebugInfo.js"
 
 // Utils
 import { SIDEBAR_WIDTH } from "./utils/layoutManager.js"
@@ -37,6 +40,7 @@ import {
 import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { getMainBranch } from "./utils/git.js"
+import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 
@@ -82,20 +86,39 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Spinner state - shows for a few frames to force render
   const [showRepaintSpinner, setShowRepaintSpinner] = useState(false)
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile)
-  const [showCommandPrompt, setShowCommandPrompt] = useState<
-    "test" | "dev" | null
-  >(null)
-  const [commandInput, setCommandInput] = useState("")
-  const [showFileCopyPrompt, setShowFileCopyPrompt] = useState(false)
-  const [currentCommandType, setCurrentCommandType] = useState<
-    "test" | "dev" | null
-  >(null)
-  const [runningCommand, setRunningCommand] = useState(false)
-  const [quitConfirmMode, setQuitConfirmMode] = useState(false)
-  // Debug message state - for temporary logging messages
-  const [debugMessage, setDebugMessage] = useState<string>("")
-  // Current git branch state (for dev builds)
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null)
+
+  // Dialog state management
+  const dialogState = useDialogState()
+  const {
+    showCommandPrompt,
+    setShowCommandPrompt,
+    commandInput,
+    setCommandInput,
+    showFileCopyPrompt,
+    setShowFileCopyPrompt,
+    currentCommandType,
+    setCurrentCommandType,
+    runningCommand,
+    setRunningCommand,
+    quitConfirmMode,
+    setQuitConfirmMode,
+  } = dialogState
+
+  // Tunnel/network state management
+  const tunnelState = useTunnelManagement()
+  const {
+    tunnelUrl,
+    setTunnelUrl,
+    tunnelCreating,
+    setTunnelCreating,
+    tunnelCopied,
+    setTunnelCopied,
+    localIp,
+    setLocalIp,
+  } = tunnelState
+
+  // Debug/development info
+  const { debugMessage, setDebugMessage, currentBranch } = useDebugInfo(__dirname)
   // Update state handled by hook
   const {
     updateInfo,
@@ -123,13 +146,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const [unreadErrorCount, setUnreadErrorCount] = useState(0)
   const [unreadWarningCount, setUnreadWarningCount] = useState(0)
 
-  // Tunnel state
-  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null)
-  const [tunnelCreating, setTunnelCreating] = useState(false)
-  const [tunnelSpinnerFrame, setTunnelSpinnerFrame] = useState(0)
-  const [localIp, setLocalIp] = useState<string>("127.0.0.1")
-  const [tunnelCopied, setTunnelCopied] = useState(false)
-
   // Subscribe to StateManager for unread error/warning count updates
   useEffect(() => {
     const stateManager = StateManager.getInstance()
@@ -156,10 +172,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     false
   )
 
-  // Track intentionally closed panes to prevent race condition
-  // When a user closes a pane, we add it to this set. If the worker detects
-  // the pane is gone (which it will), we check this set first before re-saving.
-  const intentionallyClosedPanes = React.useRef<Set<string>>(new Set())
+  // Pane lifecycle manager - handles locking to prevent race conditions
+  // Replaces the old timeout-based intentionallyClosedPanes Set
+  const lifecycleManager = React.useMemo(() => PaneLifecycleManager.getInstance(), [])
+
+  // Clean up stale lifecycle operations periodically
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      lifecycleManager.cleanupStaleOperations()
+    }, 60000) // Every 60 seconds
+
+    return () => clearInterval(cleanupInterval)
+  }, [lifecycleManager])
 
   // Pane runner
   const {
@@ -214,35 +238,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     }
   }, [])
 
-  // Spinner animation for tunnel creation
-  useEffect(() => {
-    if (!tunnelCreating) return
-
-    const spinnerInterval = setInterval(() => {
-      setTunnelSpinnerFrame((prev) => (prev + 1) % 10)
-    }, 80) // Update every 80ms
-
-    return () => clearInterval(spinnerInterval)
-  }, [tunnelCreating])
-
-  // Get current git branch on mount (only for dev builds)
-  useEffect(() => {
-    const isDev =
-      process.env.DMUX_DEV === "true" || __dirname.includes("dist") === false
-    if (isDev) {
-      try {
-        const branch = execSync("git rev-parse --abbrev-ref HEAD", {
-          encoding: "utf-8",
-          stdio: "pipe",
-          cwd: projectRoot,
-        }).trim()
-        setCurrentBranch(branch)
-      } catch {
-        // Not in a git repo or git not available
-        setCurrentBranch(null)
-      }
-    }
-  }, [projectRoot])
+  // Spinner animation and branch detection now handled in hooks
 
   // Pane creation
   const { createNewPane: createNewPaneHook } = usePaneCreation({
@@ -455,18 +451,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     savePanes,
     sessionName,
     projectName,
-    onPaneRemove: (paneId) => {
-      // Mark the pane as intentionally closed to prevent race condition with worker
-      intentionallyClosedPanes.current.add(paneId)
+    onPaneRemove: async (paneId) => {
+      // Mark pane as closing to prevent race condition with worker
+      await lifecycleManager.beginClose(paneId, 'user requested')
 
       // Remove from panes list
       const updatedPanes = panes.filter((p) => p.paneId !== paneId)
       savePanes(updatedPanes)
 
-      // Clean up after a delay
-      setTimeout(() => {
-        intentionallyClosedPanes.current.delete(paneId)
-      }, 5000)
+      // Mark close as completed (no more lock needed)
+      await lifecycleManager.completeClose(paneId)
     },
     onActionResult: async (result: ActionResult) => {
       // Handle ActionResults from background callbacks (e.g., conflict resolution completion)
@@ -539,9 +533,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       !!showCommandPrompt ||
       showFileCopyPrompt,
     onPaneRemoved: (paneId: string) => {
-      // Check if this pane was intentionally closed
+      // Check if this pane is being closed intentionally or is locked
       // If so, don't re-save - the close action already handled it
-      if (intentionallyClosedPanes.current.has(paneId)) {
+      if (lifecycleManager.isClosing(paneId) || lifecycleManager.isLocked(paneId)) {
         return
       }
 
@@ -740,21 +734,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         tunnelUrl={tunnelUrl}
         tunnelCreating={tunnelCreating}
         tunnelCopied={tunnelCopied}
-        tunnelSpinner={(() => {
-          const spinnerFrames = [
-            "⠋",
-            "⠙",
-            "⠹",
-            "⠸",
-            "⠼",
-            "⠴",
-            "⠦",
-            "⠧",
-            "⠇",
-            "⠏",
-          ]
-          return spinnerFrames[tunnelSpinnerFrame]
-        })()}
+        tunnelSpinner={tunnelState.getSpinnerChar()}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined
           const cols = Math.max(1, Math.floor(terminalWidth / 37))
