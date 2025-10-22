@@ -22,7 +22,7 @@ export async function handleWorktreeUncommitted(
   return {
     type: 'choice',
     title: 'Worktree Has Uncommitted Changes',
-    message: `Changes in:\n${issue.files.slice(0, 5).join('\n')}${issue.files.length > 5 ? '\n...' : ''}`,
+    message: `Changes in:\n${issue.files.slice(0, 5).map(f => ` •  ${f}`).join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`,
     options: [
       {
         id: 'commit_automatic',

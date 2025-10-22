@@ -53,8 +53,10 @@ const ConfirmPopupApp: React.FC<ConfirmPopupProps> = ({
     <PopupWrapper resultFile={resultFile} allowEscapeToCancel={false}>
       <PopupContainer footer={PopupFooters.confirm('y', 'n')}>
         {/* Message */}
-        <Box marginBottom={1}>
-          <Text>{message}</Text>
+        <Box marginBottom={1} flexDirection="column">
+          {message.split('\n').map((line, idx) => (
+            <Text key={idx} wrap="truncate-end">{line}</Text>
+          ))}
         </Box>
 
         {/* Options */}

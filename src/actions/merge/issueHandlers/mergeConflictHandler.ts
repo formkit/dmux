@@ -22,7 +22,7 @@ export async function handleMergeConflict(
   return {
     type: 'choice',
     title: 'Merge Conflicts Detected',
-    message: `Conflicts will occur in:\n${issue.files.slice(0, 5).join('\n')}${issue.files.length > 5 ? '\n...' : ''}`,
+    message: `Conflicts will occur in:\n${issue.files.slice(0, 5).map(f => ` •  ${f}`).join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`,
     options: [
       {
         id: 'ai_merge',

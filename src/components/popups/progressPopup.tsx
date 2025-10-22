@@ -46,8 +46,10 @@ const ProgressPopupApp: React.FC<ProgressPopupProps> = ({
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
       {/* Message */}
-      <Box>
-        <Text>{message}</Text>
+      <Box flexDirection="column">
+        {message.split('\n').map((line, idx) => (
+          <Text key={idx} wrap="truncate-end">{line}</Text>
+        ))}
       </Box>
     </Box>
   );

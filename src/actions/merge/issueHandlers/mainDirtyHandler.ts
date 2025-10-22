@@ -6,6 +6,7 @@
 import type { ActionResult, ActionContext } from '../../types.js';
 import type { DmuxPane } from '../../../types.js';
 import { handleCommitWithOptions } from '../commitMessageHandler.js';
+import { LogService } from '../../../services/LogService.js';
 
 export interface MainDirtyIssue {
   type: 'main_dirty';
@@ -23,10 +24,19 @@ export async function handleMainDirty(
 ): Promise<ActionResult> {
   const { stashChanges } = await import('../../../utils/mergeValidation.js');
 
+  LogService.getInstance().info(`Issue files: ${JSON.stringify(issue.files)}`, 'mainDirtyHandler');
+  const formattedFiles = issue.files.slice(0, 5).map(f => {
+    const formatted = ` •  ${f}`;
+    LogService.getInstance().info(`File: "${f}" → "${formatted}"`, 'mainDirtyHandler');
+    return formatted;
+  });
+  const message = `${mainBranch} has uncommitted changes in:\n${formattedFiles.join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`;
+  LogService.getInstance().info(`Final message: ${JSON.stringify(message)}`, 'mainDirtyHandler');
+
   return {
     type: 'choice',
     title: 'Main Branch Has Uncommitted Changes',
-    message: `${mainBranch} has uncommitted changes in:\n${issue.files.slice(0, 5).join('\n')}${issue.files.length > 5 ? '\n...' : ''}`,
+    message,
     options: [
       {
         id: 'commit_automatic',

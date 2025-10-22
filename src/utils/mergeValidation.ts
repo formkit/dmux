@@ -5,6 +5,7 @@
  */
 
 import { execSync } from 'child_process';
+import { LogService } from '../services/LogService.js';
 import { getCurrentBranch as getCurrentBranchUtil } from './git.js';
 
 export interface MergeValidationResult {
@@ -42,7 +43,19 @@ export function getGitStatus(repoPath: string): GitStatus {
       .trim()
       .split('\n')
       .filter(line => line.trim())
-      .map(line => line.substring(3)); // Remove status prefix (e.g., "M ", "A ", etc.)
+      .map(line => {
+        // Git status porcelain format can vary:
+        // Standard: " M filename" (2 status chars + space + filename)
+        // Sometimes: "M filename" (1 status char + space + filename)
+        // Solution: trim leading spaces, find first space, take everything after it and trim again
+        const trimmed = line.trimStart();
+        const spaceIndex = trimmed.indexOf(' ');
+        const filename = spaceIndex >= 0 ? trimmed.slice(spaceIndex + 1).trim() : trimmed;
+        LogService.getInstance().info(`Git status: "${line}" → "${filename}"`, 'mergeValidation');
+        return filename;
+      });
+
+    LogService.getInstance().info(`Final files: ${JSON.stringify(files)}`, 'mergeValidation');
 
     return {
       hasChanges: files.length > 0,

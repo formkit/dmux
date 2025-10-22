@@ -38,8 +38,10 @@ const InputPopupApp: React.FC<InputPopupProps> = ({
     <PopupWrapper resultFile={resultFile}>
       <PopupContainer footer={PopupFooters.input()}>
         {/* Message */}
-        <Box marginBottom={1}>
-          <Text>{message}</Text>
+        <Box marginBottom={1} flexDirection="column">
+          {message.split('\n').map((line, idx) => (
+            <Text key={idx} wrap="truncate-end">{line}</Text>
+          ))}
         </Box>
 
         {/* Input with themed border */}

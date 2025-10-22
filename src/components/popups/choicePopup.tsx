@@ -54,8 +54,12 @@ const ChoicePopupApp: React.FC<ChoicePopupProps> = ({
       <PopupContainer footer={PopupFooters.choice()}>
         {/* Message */}
         {message && (
-          <Box marginBottom={1}>
-            <Text>{message}</Text>
+          <Box marginBottom={1} flexDirection="column">
+            {message.split('\n').map((line, idx) => (
+              <Box key={idx}>
+                <Text wrap="truncate-end">{line}</Text>
+              </Box>
+            ))}
           </Box>
         )}
 
