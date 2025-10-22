@@ -130,9 +130,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
     const logService = LogService.getInstance()
 
     // Log all input for debugging (only first 50 chars to avoid spam)
-    const inputPreview =
-      input.length > 50 ? input.substring(0, 50) + "..." : input
-    logService.debug(`Input: "${inputPreview}"`, "InputDebug")
+    // Commented out to reduce log noise
+    // const inputPreview =
+    //   input.length > 50 ? input.substring(0, 50) + "..." : input
+    // logService.debug(`Input: "${inputPreview}"`, "InputDebug")
 
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {

@@ -46,10 +46,10 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
 
       // For initial load, set the loaded panes and mark as complete
       if (!initialLoadComplete.current) {
-        LogService.getInstance().debug(
-          `Initial load: panes.length=${panes.length}, loadedPanes.length=${loadedPanes.length}`,
-          'shellDetection'
-        );
+        // LogService.getInstance().debug(
+        //   `Initial load: panes.length=${panes.length}, loadedPanes.length=${loadedPanes.length}`,
+        //   'shellDetection'
+        // );
         setPanes(loadedPanes);
         initialLoadComplete.current = true;
         return; // Exit early for initial load

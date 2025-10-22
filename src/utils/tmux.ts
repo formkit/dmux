@@ -198,10 +198,10 @@ export const generateSidebarGridLayout = (
   // Extract numeric ID from controlPaneId (e.g., %1 -> 1)
   const sidebarId = controlPaneId.replace('%', '');
 
-  // Debug logging
-  LogService.getInstance().debug(`generateSidebarGridLayout: ${numContentPanes} panes, ${cols} cols x ${rows} rows`, 'Layout');
-  LogService.getInstance().debug(`Window: ${windowWidth}x${windowHeight}, Content: ${contentWidth}x${windowHeight} starting at X=${contentStartX}`, 'Layout');
-  LogService.getInstance().debug(`Pane width: ${paneWidth}, borders: ${bordersWidth}`, 'Layout');
+  // Debug logging (commented out to reduce log noise)
+  // LogService.getInstance().debug(`generateSidebarGridLayout: ${numContentPanes} panes, ${cols} cols x ${rows} rows`, 'Layout');
+  // LogService.getInstance().debug(`Window: ${windowWidth}x${windowHeight}, Content: ${contentWidth}x${windowHeight} starting at X=${contentStartX}`, 'Layout');
+  // LogService.getInstance().debug(`Pane width: ${paneWidth}, borders: ${bordersWidth}`, 'Layout');
 
   // Build grid rows (vertical splits within content area)
   // Use ABSOLUTE coordinates everywhere (tmux requirement - yes, even inside containers!)
@@ -246,14 +246,14 @@ export const generateSidebarGridLayout = (
       const totalContentWidth = numContentPanesInRow * contentPaneWidth;
       const remainingWidth = contentWidth - totalContentWidth - bordersInRow;
 
-      LogService.getInstance().debug(
-        `Row ${row} with spacer: ${numContentPanesInRow} content panes @ ${contentPaneWidth} = ${totalContentWidth}, borders=${bordersInRow}, spacer=${remainingWidth}`,
-        'Layout'
-      );
+      // LogService.getInstance().debug(
+      //   `Row ${row} with spacer: ${numContentPanesInRow} content panes @ ${contentPaneWidth} = ${totalContentWidth}, borders=${bordersInRow}, spacer=${remainingWidth}`,
+      //   'Layout'
+      // );
 
       if (remainingWidth < 0) {
-        LogService.getInstance().debug(
-          `WARNING: Negative spacer width! contentWidth=${contentWidth}, totalContent=${totalContentWidth}, borders=${bordersInRow}`,
+        LogService.getInstance().warn(
+          `Negative spacer width! contentWidth=${contentWidth}, totalContent=${totalContentWidth}, borders=${bordersInRow}`,
           'Layout'
         );
       }
@@ -296,7 +296,7 @@ export const generateSidebarGridLayout = (
       // Horizontal split = use curly braces {}
       // Row container also uses ABSOLUTE coordinates
       const rowString = `${contentWidth}x${rowHeight},${contentStartX},${currentY}{${rowPanes.join(',')}}`;
-      LogService.getInstance().debug(`Row ${row}: ${rowPanes.length} panes → ${rowString}`, 'Layout');
+      // LogService.getInstance().debug(`Row ${row}: ${rowPanes.length} panes → ${rowString}`, 'Layout');
       gridRows.push(rowString);
     } else if (rowPanes.length === 1) {
       // Single pane - no container needed, use ABSOLUTE coordinates
@@ -305,7 +305,7 @@ export const generateSidebarGridLayout = (
       parts[1] = contentStartX.toString(); // X absolute
       parts[2] = currentY.toString(); // Y absolute
       const singlePaneString = parts.join(',');
-      LogService.getInstance().debug(`Row ${row}: 1 pane → ${singlePaneString}`, 'Layout');
+      // LogService.getInstance().debug(`Row ${row}: 1 pane → ${singlePaneString}`, 'Layout');
       gridRows.push(singlePaneString);
     }
 
@@ -332,7 +332,7 @@ export const generateSidebarGridLayout = (
     const contentArea = row.replace(/^(\d+x\d+),0,/, `$1,${contentStartX},`);
     layoutWithoutChecksum = `${windowWidth}x${windowHeight},0,0{${sidebar},${contentArea}}`;
 
-    LogService.getInstance().debug(`Single row layout: {sidebar, content}`, 'Layout');
+    // LogService.getInstance().debug(`Single row layout: {sidebar, content}`, 'Layout');
   } else {
     // No content panes
     return '';
@@ -342,7 +342,7 @@ export const generateSidebarGridLayout = (
   const checksum = calculateLayoutChecksum(layoutWithoutChecksum);
   const finalLayout = `${checksum},${layoutWithoutChecksum}`;
 
-  LogService.getInstance().debug(`Generated layout string: ${finalLayout}`, 'Layout');
+  // LogService.getInstance().debug(`Generated layout string: ${finalLayout}`, 'Layout');
 
   return finalLayout;
 };
@@ -423,7 +423,7 @@ export const enforceControlPaneSize = async (
 
   try {
     const contentPanes = getContentPaneIds(controlPaneId);
-    logService.debug(`enforceControlPaneSize called: ${contentPanes.length} content panes`, 'Layout');
+    // logService.debug(`enforceControlPaneSize called: ${contentPanes.length} content panes`, 'Layout');
 
     // If we only have the control pane, nothing to enforce
     if (contentPanes.length === 0) {
@@ -464,7 +464,7 @@ export const enforceControlPaneSize = async (
     // Use the new layout manager for regular content panes
     // Read terminal dimensions (not window dimensions which may be stale in manual mode)
     const dimensions = getTerminalDimensions();
-    logService.debug(`Terminal dimensions: ${dimensions.width}x${dimensions.height}`, 'Layout');
+    // logService.debug(`Terminal dimensions: ${dimensions.width}x${dimensions.height}`, 'Layout');
 
     await recalculateAndApplyLayout(
       controlPaneId,

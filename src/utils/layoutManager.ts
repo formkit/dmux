@@ -106,14 +106,14 @@ export async function recalculateAndApplyLayout(
   // ALWAYS destroy existing spacer on layout recalc to ensure fresh positioning
   let spacerId: string | null = null;
 
-  LogService.getInstance().debug(
-    `Spacer management: needs=${needsSpacer}, existing=${existingSpacerId || 'none'}`,
-    'Layout'
-  );
+  // LogService.getInstance().debug(
+  //   `Spacer management: needs=${needsSpacer}, existing=${existingSpacerId || 'none'}`,
+  //   'Layout'
+  // );
 
   // Destroy existing spacer if present (we'll recreate if needed)
   if (existingSpacerId) {
-    LogService.getInstance().debug(`Destroying existing spacer for recreation: ${existingSpacerId}`, 'Layout');
+    // LogService.getInstance().debug(`Destroying existing spacer for recreation: ${existingSpacerId}`, 'Layout');
     spacerManager.destroySpacerPane(existingSpacerId);
   }
 
@@ -125,7 +125,7 @@ export async function recalculateAndApplyLayout(
         throw new Error('No content panes available to split from');
       }
       spacerId = spacerManager.createSpacerPane(lastContentPaneId);
-      LogService.getInstance().debug(`Created fresh spacer pane: ${spacerId}`, 'Layout');
+      // LogService.getInstance().debug(`Created fresh spacer pane: ${spacerId}`, 'Layout');
 
       // CRITICAL: Wait for tmux to fully register the new pane before applying layout
       await new Promise(resolve => setTimeout(resolve, TMUX_PANE_CREATION_DELAY));
@@ -139,10 +139,10 @@ export async function recalculateAndApplyLayout(
 
           if (allPaneIds.includes(spacerId)) {
             paneVerified = true;
-            LogService.getInstance().debug(
-              `Verified spacer pane ${spacerId} in list-panes (attempt ${attempts + 1})`,
-              'Layout'
-            );
+            // LogService.getInstance().debug(
+            //   `Verified spacer pane ${spacerId} in list-panes (attempt ${attempts + 1})`,
+            //   'Layout'
+            // );
             break;
           }
         } catch {
@@ -152,14 +152,14 @@ export async function recalculateAndApplyLayout(
       }
 
       if (!paneVerified) {
-        LogService.getInstance().debug(
-          `WARNING: Spacer pane ${spacerId} not verified, continuing anyway`,
+        LogService.getInstance().warn(
+          `Spacer pane ${spacerId} not verified, continuing anyway`,
           'Layout'
         );
         // Don't throw - continue and let it fail with better logs
       }
     } catch (error) {
-      LogService.getInstance().debug(`Continuing without spacer pane: ${error}`, 'Layout');
+      // LogService.getInstance().debug(`Continuing without spacer pane: ${error}`, 'Layout');
       spacerId = null;
     }
   }
@@ -195,12 +195,12 @@ export async function recalculateAndApplyLayout(
       return indexA - indexB;
     });
 
-    LogService.getInstance().debug(
-      `Pane order sorted by index: ${finalContentPanes.map(p => `${p}(idx:${paneIndices.get(p)})`).join(', ')}`,
-      'Layout'
-    );
+    // LogService.getInstance().debug(
+    //   `Pane order sorted by index: ${finalContentPanes.map(p => `${p}(idx:${paneIndices.get(p)})`).join(', ')}`,
+    //   'Layout'
+    // );
   } catch (err) {
-    LogService.getInstance().debug(`Failed to sort by index: ${err}`, 'Layout');
+    // LogService.getInstance().debug(`Failed to sort by index: ${err}`, 'Layout');
   }
 
   // Step 6: Recalculate layout with spacer included if present
@@ -208,15 +208,15 @@ export async function recalculateAndApplyLayout(
     ? calculator.calculateOptimalLayout(finalContentPanes.length, terminalWidth, terminalHeight)
     : layout;
 
-  // Log current tmux state before applying layout
-  try {
-    const tmuxService = TmuxService.getInstance();
-    const positions = tmuxService.getPanePositionsSync();
-    const positionsStr = positions.map(p =>
-      `${p.paneId} ${p.width}x${p.height} @${p.left},${p.top}`
-    ).join('\n');
-    LogService.getInstance().debug(`Current pane positions before layout:\n${positionsStr}`, 'Layout');
-  } catch {}
+  // Log current tmux state before applying layout (commented out to reduce noise)
+  // try {
+  //   const tmuxService = TmuxService.getInstance();
+  //   const positions = tmuxService.getPanePositionsSync();
+  //   const positionsStr = positions.map(p =>
+  //     `${p.paneId} ${p.width}x${p.height} @${p.left},${p.top}`
+  //   ).join('\n');
+  //   LogService.getInstance().debug(`Current pane positions before layout:\n${positionsStr}`, 'Layout');
+  // } catch {}
 
   // CRITICAL ORDER: Resize sidebar FIRST (before window), then window
   // This prevents tmux from redistributing window width changes to the sidebar
@@ -244,32 +244,33 @@ export async function recalculateAndApplyLayout(
 
       if (smallestPaneAtLeft) {
         actualControlPaneId = smallestPaneAtLeft.id;
-        LogService.getInstance().debug(
-          `Control pane ID updated: ${controlPaneId} → ${actualControlPaneId} (width: ${smallestPaneAtLeft.width})`,
-          'Layout'
-        );
+        // LogService.getInstance().debug(
+        //   `Control pane ID updated: ${controlPaneId} → ${actualControlPaneId} (width: ${smallestPaneAtLeft.width})`,
+        //   'Layout'
+        // );
       }
     } catch (findError) {
-      LogService.getInstance().debug(`Failed to find control pane by position: ${findError}`, 'Layout');
+      // LogService.getInstance().debug(`Failed to find control pane by position: ${findError}`, 'Layout');
     }
   }
 
   // Step 8: Check sidebar width (but DON'T resize yet)
   // We'll let the layout application handle the sizing to avoid pane swapping
-  try {
-    const currentSidebarWidth = tmuxService.getPaneWidthSync(actualControlPaneId);
-
-    if (currentSidebarWidth !== config.SIDEBAR_WIDTH) {
-      LogService.getInstance().debug(
-        `Sidebar width mismatch: ${currentSidebarWidth} (current) vs ${config.SIDEBAR_WIDTH} (target), will fix via layout`,
-        'Layout'
-      );
-    } else {
-      LogService.getInstance().debug(`Sidebar width already correct: ${config.SIDEBAR_WIDTH}`, 'Layout');
-    }
-  } catch (error) {
-    LogService.getInstance().debug(`Failed to check sidebar width: ${error}`, 'Layout');
-  }
+  // Commented out to reduce log noise
+  // try {
+  //   const currentSidebarWidth = tmuxService.getPaneWidthSync(actualControlPaneId);
+  //
+  //   if (currentSidebarWidth !== config.SIDEBAR_WIDTH) {
+  //     LogService.getInstance().debug(
+  //       `Sidebar width mismatch: ${currentSidebarWidth} (current) vs ${config.SIDEBAR_WIDTH} (target), will fix via layout`,
+  //       'Layout'
+  //     );
+  //   } else {
+  //     LogService.getInstance().debug(`Sidebar width already correct: ${config.SIDEBAR_WIDTH}`, 'Layout');
+  //   }
+  // } catch (error) {
+  //   LogService.getInstance().debug(`Failed to check sidebar width: ${error}`, 'Layout');
+  // }
 
   // Step 8: Check window dimensions and resize if needed
   // Do this AFTER sidebar resize so sidebar width is locked
@@ -279,10 +280,10 @@ export async function recalculateAndApplyLayout(
     currentWindowDims.height !== terminalHeight;
 
   if (needsWindowResize) {
-    LogService.getInstance().debug(
-      `Resizing window: ${currentWindowDims.width}x${currentWindowDims.height} → ${finalLayout.windowWidth}x${terminalHeight}`,
-      'Layout'
-    );
+    // LogService.getInstance().debug(
+    //   `Resizing window: ${currentWindowDims.width}x${currentWindowDims.height} → ${finalLayout.windowWidth}x${terminalHeight}`,
+    //   'Layout'
+    // );
     layoutApplier.setWindowDimensions(finalLayout.windowWidth, terminalHeight);
 
     // Wait for tmux to complete the window resize
@@ -291,21 +292,21 @@ export async function recalculateAndApplyLayout(
     // Note: We don't re-enforce sidebar width here anymore
     // The layout application below will set the correct dimensions for all panes
   } else {
-    LogService.getInstance().debug(
-      `Window dimensions already correct: ${finalLayout.windowWidth}x${terminalHeight}`,
-      'Layout'
-    );
+    // LogService.getInstance().debug(
+    //   `Window dimensions already correct: ${finalLayout.windowWidth}x${terminalHeight}`,
+    //   'Layout'
+    // );
   }
 
-  // Log window state after sidebar enforcement
-  try {
-    const windowDims = tmuxService.getWindowDimensionsSync();
-    const layout = tmuxService.getCurrentLayoutSync();
-    LogService.getInstance().debug(
-      `After sidebar enforcement: Window: ${windowDims.width}x${windowDims.height}, Layout: ${layout}`,
-      'Layout'
-    );
-  } catch {}
+  // Log window state after sidebar enforcement (commented out to reduce noise)
+  // try {
+  //   const windowDims = tmuxService.getWindowDimensionsSync();
+  //   const layout = tmuxService.getCurrentLayoutSync();
+  //   LogService.getInstance().debug(
+  //     `After sidebar enforcement: Window: ${windowDims.width}x${windowDims.height}, Layout: ${layout}`,
+  //     'Layout'
+  //   );
+  // } catch {}
 
   // Step 9: Apply the layout to tmux
   layoutApplier.applyPaneLayout(actualControlPaneId, finalContentPanes, finalLayout, terminalHeight);
