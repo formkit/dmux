@@ -138,8 +138,42 @@ export function detectMergeConflicts(
 
     return { hasConflicts, conflictFiles };
   } catch (error) {
-    // If git merge-tree fails, assume there might be conflicts
-    return { hasConflicts: true, conflictFiles: [] };
+    // If git merge-tree fails, try a simpler approach
+    try {
+      // Check if branches have diverged (different commits)
+      const diverged = execSync(
+        `git rev-list --left-right --count ${targetBranch}...${sourceBranch}`,
+        {
+          cwd: repoPath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        }
+      );
+
+      const [behind, ahead] = diverged.trim().split('\t').map(Number);
+
+      // If both branches have commits (diverged), there might be conflicts
+      // If only one side has commits, it's a fast-forward merge (no conflicts)
+      if (behind > 0 && ahead > 0) {
+        // Get list of changed files on both sides
+        const changedFiles = execSync(
+          `git diff --name-only ${targetBranch}...${sourceBranch}`,
+          {
+            cwd: repoPath,
+            encoding: 'utf-8',
+            stdio: 'pipe',
+          }
+        ).trim().split('\n').filter(Boolean);
+
+        return { hasConflicts: true, conflictFiles: changedFiles };
+      }
+
+      // Fast-forward merge, no conflicts
+      return { hasConflicts: false, conflictFiles: [] };
+    } catch {
+      // If everything fails, be conservative but don't claim conflicts
+      return { hasConflicts: false, conflictFiles: [] };
+    }
   }
 }
 

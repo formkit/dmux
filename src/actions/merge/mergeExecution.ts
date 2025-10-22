@@ -212,40 +212,49 @@ export async function executeMerge(
 
       console.error(`[mergeExecution] Git cleanup successful, removing pane from state`);
 
-      // Remove pane from state FIRST (before killing tmux pane)
-      // This prevents race conditions with auto-cleanup detecting dead panes
-      // IMPORTANT: Read current panes from StateManager, don't use context.panes (might be stale)
+      // CRITICAL: Pause ConfigWatcher to prevent race condition where
+      // the watcher reloads the pane list from disk before our save completes
       const { StateManager } = await import('../../shared/StateManager.js');
       const stateManager = StateManager.getInstance();
-      const currentPanes = stateManager.getPanes();
-      console.error(`[mergeExecution] Current panes in StateManager: ${currentPanes.map(p => p.id).join(', ')}`);
+      stateManager.pauseConfigWatcher();
 
-      const updatedPanes = currentPanes.filter((p: DmuxPane) => p.id !== pane.id);
-      console.error(`[mergeExecution] Saving updated panes (removed ${pane.id}): ${updatedPanes.map(p => p.id).join(', ')}`);
-      await context.savePanes(updatedPanes);
-
-      // Kill the tmux pane AFTER removing from state
       try {
-        const tmuxService = TmuxService.getInstance();
-        console.error(`[mergeExecution] Killing tmux pane ${pane.paneId}`);
-        await tmuxService.killPane(pane.paneId);
-      } catch (error) {
-        // Pane may already be closed, ignore errors
-        console.error('[mergeExecution] Failed to kill pane:', error);
-      }
+        // Kill the tmux pane FIRST (before saving to file)
+        // This prevents savePanes from rebinding and re-adding the pane
+        try {
+          const tmuxService = TmuxService.getInstance();
+          console.error(`[mergeExecution] Killing tmux pane ${pane.paneId}`);
+          await tmuxService.killPane(pane.paneId);
+        } catch (error) {
+          // Pane may already be closed, ignore errors
+          console.error('[mergeExecution] Failed to kill pane:', error);
+        }
 
-      // Notify about pane removal if callback exists
-      if (context.onPaneRemove) {
-        console.error(`[mergeExecution] Notifying about pane removal via callback`);
-        context.onPaneRemove(pane.id);
-      }
+        // Now remove from state and save to file
+        // IMPORTANT: Read current panes from StateManager, don't use context.panes (might be stale)
+        const currentPanes = stateManager.getPanes();
+        console.error(`[mergeExecution] Current panes in StateManager: ${currentPanes.map(p => p.id).join(', ')}`);
 
-      console.error(`[mergeExecution] Cleanup complete for ${pane.slug}`);
-      return {
-        type: 'success',
-        message: `Successfully merged and cleaned up "${pane.slug}"`,
-        dismissable: true,
-      };
+        const updatedPanes = currentPanes.filter((p: DmuxPane) => p.id !== pane.id);
+        console.error(`[mergeExecution] Saving updated panes (removed ${pane.id}): ${updatedPanes.map(p => p.id).join(', ')}`);
+        await context.savePanes(updatedPanes);
+
+        // Notify about pane removal if callback exists
+        if (context.onPaneRemove) {
+          console.error(`[mergeExecution] Notifying about pane removal via callback`);
+          context.onPaneRemove(pane.id);
+        }
+
+        console.error(`[mergeExecution] Cleanup complete for ${pane.slug}`);
+        return {
+          type: 'success',
+          message: `Successfully merged and cleaned up "${pane.slug}"`,
+          dismissable: true,
+        };
+      } finally {
+        // CRITICAL: Always resume watcher, even if there was an error
+        stateManager.resumeConfigWatcher();
+      }
     },
     onCancel: async () => {
       return {

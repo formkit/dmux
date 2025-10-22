@@ -19,10 +19,17 @@ export async function handleMergeConflict(
   pane: DmuxPane,
   context: ActionContext
 ): Promise<ActionResult> {
+  // Check if we have the fallback message
+  const hasRealFiles = issue.files.length > 0 && !issue.files[0].includes('conflict detection incomplete');
+
+  const message = hasRealFiles
+    ? `Conflicts detected in:\n${issue.files.slice(0, 5).map(f => ` •  ${f}`).join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`
+    : `Potential conflicts detected between ${mainBranch} and ${pane.slug}.\n\nThe branches have diverged and may have conflicting changes.\nYou can try AI-assisted merge or resolve manually.`;
+
   return {
     type: 'choice',
     title: 'Merge Conflicts Detected',
-    message: `Conflicts will occur in:\n${issue.files.slice(0, 5).map(f => ` •  ${f}`).join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`,
+    message,
     options: [
       {
         id: 'ai_merge',

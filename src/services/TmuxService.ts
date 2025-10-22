@@ -572,15 +572,27 @@ export class TmuxService {
 
   /**
    * Kill a pane (DESTRUCTIVE - no retry)
+   * Gracefully handles case where pane doesn't exist (considered success)
    */
   async killPane(paneId: string): Promise<void> {
-    await this.executeWithRetry(
-      () => {
-        this.execute(`tmux kill-pane -t '${paneId}'`);
-      },
-      RetryStrategy.NONE, // Destructive operation
-      `killPane(${paneId})`
-    );
+    try {
+      await this.executeWithRetry(
+        () => {
+          this.execute(`tmux kill-pane -t '${paneId}'`);
+        },
+        RetryStrategy.NONE, // Destructive operation
+        `killPane(${paneId})`
+      );
+    } catch (error) {
+      // If pane doesn't exist, consider it success (already killed)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("can't find pane")) {
+        this.logger.debug(`Pane ${paneId} already gone, treating as success`, 'killPane');
+        return;
+      }
+      // Re-throw other errors
+      throw error;
+    }
   }
 
   /**
