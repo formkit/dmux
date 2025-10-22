@@ -28,29 +28,16 @@ export async function handleLastPaneRemoved(projectRoot: string): Promise<void> 
         stdio: 'pipe'
       }).trim();
     } catch (error) {
-      LogService.getInstance().debug('Failed to get current pane ID from tmux', 'postPaneCleanup');
       return;
     }
 
     if (!controlPaneId) {
-      LogService.getInstance().debug('No controlPaneId from tmux, skipping welcome pane recreation', 'postPaneCleanup');
       return;
     }
 
-    LogService.getInstance().debug(
-      `Last pane removed, recreating welcome pane and recalculating layout (controlPaneId: ${controlPaneId})`,
-      'postPaneCleanup'
-    );
-
     // Recreate welcome pane
     const { createWelcomePaneCoordinated } = await import('./welcomePaneManager.js');
-    const created = await createWelcomePaneCoordinated(projectRoot, controlPaneId);
-
-    if (created) {
-      LogService.getInstance().debug('Recreated welcome pane after last pane removed', 'postPaneCleanup');
-    } else {
-      LogService.getInstance().debug('Failed to recreate welcome pane', 'postPaneCleanup');
-    }
+    await createWelcomePaneCoordinated(projectRoot, controlPaneId);
 
     // Recalculate layout to fix sidebar size
     const { recalculateAndApplyLayout } = await import('./layoutManager.js');
@@ -62,8 +49,6 @@ export async function handleLastPaneRemoved(projectRoot: string): Promise<void> 
       dimensions.width,
       dimensions.height
     );
-
-    LogService.getInstance().debug('Recalculated layout after last pane removed', 'postPaneCleanup');
   } catch (error) {
     LogService.getInstance().error(
       'Failed to handle last pane removal',

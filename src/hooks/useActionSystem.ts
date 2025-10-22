@@ -109,9 +109,9 @@ async function handleResultWithPopups(
 
   // Handle non-interactive results (success, error, info, etc.)
   // Use toast notification for better UX
-  const { default: toastService } = await import('../services/ToastService.js');
+  const { default: stateManager } = await import('../shared/StateManager.js');
   const type = result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info';
-  toastService.showToast(result.message, type);
+  stateManager.showToast(result.message, type);
 
   // Force repaint after showing toast
   if (context.forceRepaint) {

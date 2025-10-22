@@ -61,8 +61,6 @@ export function destroyWelcomePaneCoordinated(projectRoot: string): boolean {
     const config: DmuxConfig = JSON.parse(configContent);
 
     if (config.welcomePaneId) {
-      logService.debug(`Destroying welcome pane: ${config.welcomePaneId}`, 'WelcomePaneManager');
-
       // Destroy the pane
       destroyWelcomePane(config.welcomePaneId);
 
@@ -70,8 +68,6 @@ export function destroyWelcomePaneCoordinated(projectRoot: string): boolean {
       delete config.welcomePaneId;
       config.lastUpdated = new Date().toISOString();
       atomicWriteJsonSync(configPath, config);
-
-      logService.debug('Welcome pane destroyed and cleared from config', 'WelcomePaneManager');
 
       // DO NOT recalculate layout here - layout was already calculated in paneCreation.ts
       // before this function was called. Recalculating now would cause a mismatch because
@@ -121,11 +117,8 @@ export async function createWelcomePaneCoordinated(
 
     // Check if we already have a valid welcome pane
     if (config.welcomePaneId && await welcomePaneExists(config.welcomePaneId)) {
-      logService.debug(`Welcome pane ${config.welcomePaneId} already exists`, 'WelcomePaneManager');
       return true; // Already exists, that's fine
     }
-
-    logService.debug('Creating new welcome pane', 'WelcomePaneManager');
 
     // Create the welcome pane
     const welcomePaneId = await createWelcomePane(controlPaneId);
@@ -135,11 +128,8 @@ export async function createWelcomePaneCoordinated(
       config.welcomePaneId = welcomePaneId;
       config.lastUpdated = new Date().toISOString();
       atomicWriteJsonSync(configPath, config);
-
-      logService.debug(`Created welcome pane: ${welcomePaneId}`, 'WelcomePaneManager');
       return true;
     } else {
-      logService.debug('createWelcomePane returned undefined', 'WelcomePaneManager');
       return false;
     }
   } catch (error) {

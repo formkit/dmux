@@ -540,8 +540,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       result.type === "error"
     ) {
       // Use toast notification instead of popup for better UX
-      const { default: toastService } = await import("./services/ToastService.js")
-      toastService.showToast(
+      const { default: stateManager } = await import("./shared/StateManager.js")
+      stateManager.showToast(
         result.message,
         result.type as "success" | "error" | "info"
       )

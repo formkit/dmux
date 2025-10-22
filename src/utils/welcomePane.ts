@@ -24,8 +24,6 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
       return undefined;
     }
 
-    logService.debug(`Created welcome pane: ${welcomePaneId}`, 'WelcomePane');
-
     // Set pane title
     try {
       await tmuxService.setPaneTitle(welcomePaneId, "Welcome");
@@ -57,10 +55,8 @@ export async function createWelcomePane(controlPaneId: string): Promise<string |
 
       // Refresh to apply layout changes
       await tmuxService.refreshClient();
-
-      logService.debug(`Set welcome pane layout: sidebar=${SIDEBAR_WIDTH}, window=${dimensions.width}x${dimensions.height}`, 'WelcomePane');
     } catch (error) {
-      logService.debug('Failed to set welcome pane layout', 'WelcomePane');
+      // Silently ignore layout errors
     }
 
     // Switch focus back to the control pane (dmux sidebar)
@@ -96,19 +92,13 @@ export async function destroyWelcomePane(welcomePaneId: string | undefined): Pro
     const paneExists = await tmuxService.paneExists(welcomePaneId);
 
     if (!paneExists) {
-      logService.debug(`Welcome pane ${welcomePaneId} already gone`, 'WelcomePane');
       return;
     }
 
-    logService.debug(`Found welcome pane ${welcomePaneId}, destroying it`, 'WelcomePane');
-
     // Kill the pane
     await tmuxService.killPane(welcomePaneId);
-
-    logService.debug(`Destroyed welcome pane: ${welcomePaneId}`, 'WelcomePane');
   } catch (error) {
     // Pane doesn't exist or already killed - that's fine
-    logService.debug(`Welcome pane ${welcomePaneId} already gone or couldn't be destroyed`, 'WelcomePane');
   }
 }
 
