@@ -13,4 +13,4 @@ frontend/node_modules
 .archive/
 src/server/embedded-assets.ts
 src/utils/generated-agents-doc.ts
-embedded-assets.js
+embedded-assets.js/coverage/

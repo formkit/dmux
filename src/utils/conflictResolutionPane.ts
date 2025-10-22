@@ -4,11 +4,12 @@
  * Utilities for creating a new pane specifically for AI-assisted merge conflict resolution
  */
 
-import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
-import { enforceControlPaneSize } from './tmux.js';
+import { TmuxService } from '../services/TmuxService.js';
+import { enforceControlPaneSize, splitPane } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
+import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
@@ -26,62 +27,74 @@ export async function createConflictResolutionPane(
   options: ConflictResolutionPaneOptions
 ): Promise<DmuxPane> {
   const { sourceBranch, targetBranch, targetRepoPath, agent, projectName, existingPanes } = options;
+  const tmuxService = TmuxService.getInstance();
 
   // Generate slug for this conflict resolution session
   const slug = `merge-${sourceBranch}-into-${targetBranch}`.substring(0, 50);
 
   // Get current pane info
-  const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', {
-    encoding: 'utf-8',
-  }).trim();
+  const originalPaneId = tmuxService.getCurrentPaneIdSync();
 
   // Get current pane count
-  const paneCount = parseInt(
-    execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
-  );
+  const paneCount = tmuxService.getAllPaneIdsSync().length;
 
   // Enable pane borders to show titles
   try {
-    execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+    tmuxService.setGlobalOptionSync('pane-border-status', 'top');
   } catch {
     // Ignore if already set or fails
   }
 
   // Create new pane
-  const paneInfo = execSync(`tmux split-window -h -P -F '#{pane_id}'`, {
-    encoding: 'utf-8',
-  }).trim();
+  const paneInfo = splitPane();
 
   // Wait for pane creation to settle
   await new Promise((resolve) => setTimeout(resolve, 500));
 
   // Set pane title
   try {
-    execSync(`tmux select-pane -t '${paneInfo}' -T "${slug}"`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.setPaneTitle(paneInfo, slug);
   } catch {
     // Ignore if setting title fails
   }
 
   // Don't apply global layouts - just enforce sidebar width
   try {
-    const controlPaneId = execSync('tmux display-message -p "#{pane_id}"', { encoding: 'utf-8' }).trim();
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    const controlPaneId = tmuxService.getCurrentPaneIdSync();
+    await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
   } catch {}
 
   // CD into the target repository (where we'll resolve conflicts)
   try {
-    execSync(`tmux send-keys -t '${paneInfo}' 'cd "${targetRepoPath}"' Enter`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.sendShellCommand(paneInfo, `cd "${targetRepoPath}"`);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to cd into target repo:', error);
   }
 
+  // CRITICAL: Ensure clean state before starting merge
+  // If a previous merge attempt left MERGE_HEAD, abort it first
+  try {
+    await tmuxService.sendShellCommand(paneInfo, 'git merge --abort 2>/dev/null || true');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  } catch (error) {
+    console.error('[conflictResolutionPane] Failed to abort previous merge:', error);
+  }
+
+  // CRITICAL: Start the merge to create conflict markers for the agent to resolve
+  // This is necessary because pre-validation or failed execution may have aborted the merge
+  try {
+    await tmuxService.sendShellCommand(paneInfo, `git merge ${targetBranch} --no-edit || true`);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
+  } catch (error) {
+    console.error('[conflictResolutionPane] Failed to initiate merge:', error);
+  }
+
   // Construct the AI prompt for conflict resolution
-  const prompt = `There are conflicts merging ${sourceBranch} into ${targetBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes.`;
+  const prompt = `There are conflicts merging ${targetBranch} into ${sourceBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes. Once all conflicts are resolved, commit the merge.`;
 
   // Launch agent with the conflict resolution prompt
   if (agent === 'claude') {
@@ -91,44 +104,33 @@ export async function createConflictResolutionPane(
       .replace(/`/g, '\\`')
       .replace(/\$/g, '\\$');
     const claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
-    const escapedCmd = claudeCmd.replace(/'/g, "'\\''");
 
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
-    // Auto-approve trust prompts for Claude
+    // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
+    // Note: --permission-mode=acceptEdits handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'opencode') {
-    const openCoderCmd = `opencode`;
-    const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\''");
-
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.sendShellCommand(paneInfo, 'opencode');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Wait for opencode to start, then paste the prompt
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const bufName = `dmux_prompt_${Date.now()}`;
     const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
 
-    execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}'`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.setBuffer(bufName, promptEsc);
+    await tmuxService.pasteBuffer(bufName, paneInfo);
     await new Promise((resolve) => setTimeout(resolve, 200));
-    execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: 'pipe' });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.deleteBuffer(bufName);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 
   // Keep focus on the new pane
-  execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
+  await tmuxService.selectPane(paneInfo);
 
   // Create the pane object
   const newPane: DmuxPane = {
@@ -141,14 +143,11 @@ export async function createConflictResolutionPane(
   };
 
   // Switch back to the original pane
-  execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+  await tmuxService.selectPane(originalPaneId);
 
   // Re-set the title for the dmux pane
   try {
-    execSync(
-      `tmux select-pane -t '${originalPaneId}' -T "dmux-${projectName}"`,
-      { stdio: 'pipe' }
-    );
+    await tmuxService.setPaneTitle(originalPaneId, `dmux-${projectName}`);
   } catch {
     // Ignore if setting title fails
   }
@@ -160,8 +159,8 @@ export async function createConflictResolutionPane(
  * Auto-approve Claude trust prompts (reused from paneCreation.ts)
  */
 async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
-  // Wait for Claude to start up before checking for prompts
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  // Wait longer for Claude to start up before checking for prompts
+  await new Promise((resolve) => setTimeout(resolve, 1200));
 
   const maxChecks = 100;
   const checkInterval = 100;
@@ -169,28 +168,19 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
   let stableContentCount = 0;
   let promptHandled = false;
 
+  // Trust prompt patterns - made more specific to avoid false positives
   const trustPromptPatterns = [
+    // Specific trust/permission questions
     /Do you trust the files in this folder\?/i,
     /Trust the files in this workspace\?/i,
     /Do you trust the authors of the files/i,
     /Do you want to trust this workspace\?/i,
     /trust.*files.*folder/i,
     /trust.*workspace/i,
-    /Do you trust/i,
     /Trust this folder/i,
     /trust.*directory/i,
-    /permission.*grant/i,
-    /allow.*access/i,
     /workspace.*trust/i,
-    /accept.*edits/i,
-    /permission.*mode/i,
-    /allow.*claude/i,
-    /\[y\/n\]/i,
-    /\(y\/n\)/i,
-    /Yes\/No/i,
-    /\[Y\/n\]/i,
-    /press.*enter.*accept/i,
-    /press.*enter.*continue/i,
+    // Claude-specific numbered menu format
     /❯\s*1\.\s*Yes,\s*proceed/i,
     /Enter to confirm.*Esc to exit/i,
     /1\.\s*Yes,\s*proceed/i,
@@ -203,6 +193,15 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
     try {
       const paneContent = capturePaneContent(paneInfo, 30);
 
+      // Early exit: If Claude is already running (prompt has been processed), we're done
+      if (
+        paneContent.includes('Claude') ||
+        paneContent.includes('Assistant') ||
+        paneContent.includes('claude>')
+      ) {
+        break;
+      }
+
       if (paneContent === lastContent) {
         stableContentCount++;
       } else {
@@ -210,37 +209,29 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
         lastContent = paneContent;
       }
 
+      // Look for trust prompt using specific patterns only
       const hasTrustPrompt = trustPromptPatterns.some((pattern) =>
         pattern.test(paneContent)
       );
 
-      const hasClaudePermissionPrompt =
-        paneContent.includes('Do you trust') ||
-        paneContent.includes('trust the files') ||
-        paneContent.includes('permission') ||
-        paneContent.includes('allow') ||
-        (paneContent.includes('folder') && paneContent.includes('?'));
-
-      if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
-        if (stableContentCount >= 2) {
+      // Only act if we have high confidence it's a trust prompt
+      if (hasTrustPrompt && !promptHandled) {
+        // Require content to be stable for longer to avoid false positives
+        if (stableContentCount >= 5) {
           const isNewClaudeFormat =
             /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
             /Enter to confirm.*Esc to exit/i.test(paneContent);
 
           if (isNewClaudeFormat) {
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            const tmuxService = TmuxService.getInstance();
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           } else {
-            execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
+            const tmuxService = TmuxService.getInstance();
+            await tmuxService.sendTmuxKeys(paneInfo, 'y');
             await new Promise((resolve) => setTimeout(resolve, 50));
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+            await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           }
 
           promptHandled = true;
@@ -256,14 +247,6 @@ async function autoApproveTrustPrompt(paneInfo: string): Promise<void> {
             break;
           }
         }
-      }
-
-      if (
-        !hasTrustPrompt &&
-        !hasClaudePermissionPrompt &&
-        (paneContent.includes('Claude') || paneContent.includes('Assistant'))
-      ) {
-        break;
       }
     } catch {
       // Continue checking

@@ -53,6 +53,21 @@ export function getMainBranch(): string {
 }
 
 /**
+ * Gets the current branch name
+ */
+export function getCurrentBranch(cwd?: string): string {
+  try {
+    return execSync('git branch --show-current', {
+      cwd,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+  } catch {
+    return 'main';
+  }
+}
+
+/**
  * Checks if there are uncommitted changes in the repository
  */
 export function hasUncommittedChanges(cwd?: string): boolean {

@@ -3,11 +3,12 @@
  * Requires tmux 3.2+
  */
 
-import { execSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { POPUP_CONFIG } from '../popups/config.js';
+import { POPUP_CONFIG } from '../components/popups/config.js';
+import { TmuxService } from '../services/TmuxService.js';
 
 export interface PopupOptions {
   width?: number;
@@ -61,12 +62,9 @@ function calculatePopupBounds(options: PopupOptions): { x: number; y: number; wi
   } = options;
 
   try {
-    // Get tmux client dimensions
-    const dims = execSync('tmux display-message -p "#{client_width},#{client_height}"', {
-      encoding: 'utf-8',
-      stdio: 'pipe'
-    }).trim();
-    const [clientWidth, clientHeight] = dims.split(',').map(Number);
+    // Get tmux client dimensions using TmuxService
+    const tmuxService = TmuxService.getInstance();
+    const { width: clientWidth, height: clientHeight } = tmuxService.getTerminalDimensionsSync();
 
     let posX: number;
     let posY: number;
@@ -469,10 +467,6 @@ export function launchNodePopupNonBlocking<T = any>(
   const escapedCommand = command.replace(/'/g, "'\\''");
   const fullCommand = `tmux ${tmuxArgs.join(' ')} '${escapedCommand}'`;
 
-  // DEBUG: Log the actual tmux command
-  console.error('[DEBUG popup.ts launchNodePopupNonBlocking] Full tmux command:', fullCommand);
-  console.error('[DEBUG popup.ts] tmuxBorderColor:', POPUP_CONFIG.tmuxBorderColor);
-
   // Launch popup with spawn (non-blocking)
   const child = spawn('sh', ['-c', fullCommand], {
     stdio: 'inherit',
@@ -552,15 +546,14 @@ export function launchNodePopupNonBlocking<T = any>(
  */
 export function ensureMouseMode(sessionName: string): void {
   try {
+    const tmuxService = TmuxService.getInstance();
+
     // Check if mouse mode is already enabled for this session
-    const mouseStatus = execSync(`tmux show -t ${sessionName} mouse`, {
-      encoding: 'utf-8',
-      stdio: 'pipe'
-    }).trim();
+    const mouseStatus = tmuxService.getSessionOptionSync(sessionName, 'mouse');
 
     // If mouse is off, enable it for this session only (not global)
     if (mouseStatus.includes('off')) {
-      execSync(`tmux set -t ${sessionName} mouse on`, { stdio: 'pipe' });
+      tmuxService.setSessionOptionSync(sessionName, 'mouse', 'on');
     }
   } catch {
     // Ignore errors - might not be in tmux session or session doesn't exist yet
@@ -572,7 +565,9 @@ export function ensureMouseMode(sessionName: string): void {
  */
 export function supportsPopups(): boolean {
   try {
-    const version = execSync('tmux -V', { encoding: 'utf-8' }).trim();
+    const tmuxService = TmuxService.getInstance();
+    const version = tmuxService.getVersionSync();
+
     // Extract version number (e.g., "tmux 3.2" -> "3.2")
     const match = version.match(/tmux (\d+\.\d+)/);
     if (match) {

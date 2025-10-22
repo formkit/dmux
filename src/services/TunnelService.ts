@@ -1,5 +1,6 @@
 import { startTunnel } from 'untun';
 import { LogService } from './LogService.js';
+import { TUNNEL_RETRY_DELAY } from '../constants/timing.js';
 
 export class TunnelService {
   private tunnel: any = null;
@@ -18,7 +19,7 @@ export class TunnelService {
       LogService.getInstance().info('Tunnel creation already in progress, waiting...', 'TunnelService');
       // Wait up to 45 seconds for existing creation to finish
       for (let i = 0; i < 45; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, TUNNEL_RETRY_DELAY));
         if (this.tunnelUrl) {
           return this.tunnelUrl;
         }

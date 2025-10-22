@@ -11,14 +11,16 @@ import React from 'react';
 import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import DmuxApp from './DmuxApp.js';
-import { AutoUpdater } from './AutoUpdater.js';
+import { AutoUpdater } from './services/AutoUpdater.js';
 import readline from 'readline';
 import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
+import { TmuxService } from './services/TmuxService.js';
 import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
 import { TMUX_COLORS } from './theme/colors.js';
 import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
+import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -109,7 +111,7 @@ class Dmux {
         execSync(`tmux has-session -t ${this.sessionName} 2>/dev/null`, { stdio: 'pipe' });
         // Session exists, will attach
       } catch {
-        // Create new session
+        // Expected - session doesn't exist, create new one
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
         // Enable pane borders to show titles
@@ -160,22 +162,18 @@ class Dmux {
     // }
 
     // Set pane title for the current pane running dmux
-    // NOTE: Temporarily disabled to test if title updates cause UI shifts
-    // try {
-    //   execSync(`tmux select-pane -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'pipe' });
-    // } catch {
-    //   // Ignore if it fails (might not have permission or tmux version doesn't support it)
-    // }
+    // TODO(future): Re-enable control pane title once UI shift issue is resolved
+    // Setting the title can cause visual artifacts in some tmux configurations
+    // Original code: execSync(`tmux select-pane -T "dmux v${version} - ${project}"`)
+    // See: Title updates are currently handled by enforcePaneTitles() in usePaneSync.ts
 
     // Get current pane ID (control pane for left sidebar)
     let controlPaneId: string | undefined;
 
     try {
       // Get current pane ID
-      controlPaneId = execSync('tmux display-message -p "#{pane_id}"', {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      }).trim();
+      const tmuxService = TmuxService.getInstance();
+      controlPaneId = await tmuxService.getCurrentPaneId();
 
       // Load existing config
       const configContent = await fs.readFile(this.panesFile, 'utf-8');
@@ -195,9 +193,9 @@ class Dmux {
       // If this is initial load or control pane changed, resize the sidebar
       if (needsUpdate) {
         // Resize control pane to sidebar width
-        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
+        await tmuxService.resizePane(controlPaneId, { width: SIDEBAR_WIDTH });
         // Refresh client
-        execSync('tmux refresh-client', { stdio: 'pipe' });
+        await tmuxService.refreshClient();
         // Save updated config
         config.lastUpdated = new Date().toISOString();
         await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
@@ -224,10 +222,11 @@ class Dmux {
 
           // Apply correct layout: sidebar (40) | welcome pane (rest)
           // Use "latest" mode so window auto-follows terminal size
+          // Note: setOption doesn't have window-specific options yet, using execSync for these
           execSync(`tmux set-window-option window-size latest`, { stdio: 'pipe' });
           execSync(`tmux set-window-option main-pane-width ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
           execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
-          execSync(`tmux refresh-client`, { stdio: 'pipe' });
+          await tmuxService.refreshClient();
         }
       }
     } catch (error) {
@@ -303,6 +302,7 @@ class Dmux {
       await fs.access(path);
       return true;
     } catch {
+      // Expected - file doesn't exist
       return false;
     }
   }
@@ -325,6 +325,7 @@ class Dmux {
 
       return false;
     } catch {
+      // Expected - errors during git/file checks
       return false;
     }
   }
@@ -444,7 +445,9 @@ class Dmux {
         try {
           const oldPanesContent = await fs.readFile(oldPanesFile, 'utf-8');
           panes = JSON.parse(oldPanesContent);
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
       
       // Try to read old settings file
@@ -452,7 +455,9 @@ class Dmux {
         try {
           const oldSettingsContent = await fs.readFile(oldSettingsFile, 'utf-8');
           settings = JSON.parse(oldSettingsContent);
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
       
       // Try to read old update settings file
@@ -460,7 +465,9 @@ class Dmux {
         try {
           const oldUpdateContent = await fs.readFile(oldUpdateSettingsFile, 'utf-8');
           updateSettings = JSON.parse(oldUpdateContent);
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
       
       // Check for config from previous parent directory location
@@ -470,7 +477,9 @@ class Dmux {
           if (oldConfig.panes) panes = oldConfig.panes;
           if (oldConfig.settings) settings = oldConfig.settings;
           if (oldConfig.updateSettings) updateSettings = oldConfig.updateSettings;
-        } catch {}
+        } catch {
+          // Intentionally silent - migration is best-effort
+        }
       }
 
       // If we found old config, migrate it
@@ -489,16 +498,24 @@ class Dmux {
         // Clean up old files after successful migration
         try {
           await fs.unlink(oldPanesFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
         try {
           await fs.unlink(oldSettingsFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
         try {
           await fs.unlink(oldUpdateSettingsFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
         try {
           await fs.unlink(oldParentConfigFile);
-        } catch {}
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
       }
     }
   }
@@ -582,7 +599,7 @@ class Dmux {
   }
 
   private setupGlobalSignalHandlers() {
-    const cleanTerminalExit = () => {
+    const cleanTerminalExit = async () => {
       // Clean up hooks
       if (process.env.TMUX) {
         this.cleanupResizeHook();
@@ -597,9 +614,12 @@ class Dmux {
       // Clear tmux pane if we're in tmux
       if (process.env.TMUX) {
         try {
-          execSync('tmux clear-history', { stdio: 'pipe' });
-          execSync('tmux send-keys C-l', { stdio: 'pipe' });
-        } catch {}
+          const tmuxService = TmuxService.getInstance();
+          tmuxService.clearHistorySync();
+          await tmuxService.sendKeys('', 'C-l');
+        } catch {
+          // Intentionally silent - cleanup is best-effort
+        }
       }
 
       // Wait a moment for clearing to settle, then show goodbye message
@@ -636,5 +656,12 @@ class Dmux {
   }
 }
 
-const dmux = new Dmux();
-dmux.init().catch(() => process.exit(1));
+// Validate system requirements before starting
+const validationResult = validateSystemRequirements();
+printValidationResults(validationResult);
+
+// Only proceed if system requirements are met
+if (validationResult.canRun) {
+  const dmux = new Dmux();
+  dmux.init().catch(() => process.exit(1));
+}

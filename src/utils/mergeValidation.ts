@@ -5,6 +5,8 @@
  */
 
 import { execSync } from 'child_process';
+import { LogService } from '../services/LogService.js';
+import { getCurrentBranch as getCurrentBranchUtil } from './git.js';
 
 export interface MergeValidationResult {
   canMerge: boolean;
@@ -41,7 +43,19 @@ export function getGitStatus(repoPath: string): GitStatus {
       .trim()
       .split('\n')
       .filter(line => line.trim())
-      .map(line => line.substring(3)); // Remove status prefix (e.g., "M ", "A ", etc.)
+      .map(line => {
+        // Git status porcelain format can vary:
+        // Standard: " M filename" (2 status chars + space + filename)
+        // Sometimes: "M filename" (1 status char + space + filename)
+        // Solution: trim leading spaces, find first space, take everything after it and trim again
+        const trimmed = line.trimStart();
+        const spaceIndex = trimmed.indexOf(' ');
+        const filename = spaceIndex >= 0 ? trimmed.slice(spaceIndex + 1).trim() : trimmed;
+        LogService.getInstance().info(`Git status: "${line}" → "${filename}"`, 'mergeValidation');
+        return filename;
+      });
+
+    LogService.getInstance().info(`Final files: ${JSON.stringify(files)}`, 'mergeValidation');
 
     return {
       hasChanges: files.length > 0,
@@ -61,15 +75,7 @@ export function getGitStatus(repoPath: string): GitStatus {
  * Get current branch name
  */
 export function getCurrentBranch(repoPath: string): string {
-  try {
-    return execSync('git branch --show-current', {
-      cwd: repoPath,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-  } catch {
-    return 'main';
-  }
+  return getCurrentBranchUtil(repoPath);
 }
 
 /**
@@ -132,8 +138,42 @@ export function detectMergeConflicts(
 
     return { hasConflicts, conflictFiles };
   } catch (error) {
-    // If git merge-tree fails, assume there might be conflicts
-    return { hasConflicts: true, conflictFiles: [] };
+    // If git merge-tree fails, try a simpler approach
+    try {
+      // Check if branches have diverged (different commits)
+      const diverged = execSync(
+        `git rev-list --left-right --count ${targetBranch}...${sourceBranch}`,
+        {
+          cwd: repoPath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        }
+      );
+
+      const [behind, ahead] = diverged.trim().split('\t').map(Number);
+
+      // If both branches have commits (diverged), there might be conflicts
+      // If only one side has commits, it's a fast-forward merge (no conflicts)
+      if (behind > 0 && ahead > 0) {
+        // Get list of changed files on both sides
+        const changedFiles = execSync(
+          `git diff --name-only ${targetBranch}...${sourceBranch}`,
+          {
+            cwd: repoPath,
+            encoding: 'utf-8',
+            stdio: 'pipe',
+          }
+        ).trim().split('\n').filter(Boolean);
+
+        return { hasConflicts: true, conflictFiles: changedFiles };
+      }
+
+      // Fast-forward merge, no conflicts
+      return { hasConflicts: false, conflictFiles: [] };
+    } catch {
+      // If everything fails, be conservative but don't claim conflicts
+      return { hasConflicts: false, conflictFiles: [] };
+    }
   }
 }
 

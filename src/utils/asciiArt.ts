@@ -1,4 +1,5 @@
-import { execSync } from "child_process"
+import { TmuxService } from "../services/TmuxService.js"
+import { ASCII_ART_RENDER_DELAY } from "../constants/timing.js"
 
 export interface RenderAsciiArtOptions {
   paneId: string
@@ -6,23 +7,6 @@ export interface RenderAsciiArtOptions {
   fillChar?: string
   centerVertically?: boolean
   centerHorizontally?: boolean
-}
-
-/**
- * Get dimensions of a tmux pane
- */
-function getPaneDimensions(paneId: string): { width: number; height: number } {
-  try {
-    const output = execSync(
-      `tmux display-message -t '${paneId}' -p '#{pane_width} #{pane_height}'`,
-      { encoding: "utf-8", stdio: "pipe" }
-    ).trim()
-
-    const [width, height] = output.split(" ").map((n) => parseInt(n))
-    return { width, height }
-  } catch {
-    return { width: 80, height: 24 } // Fallback
-  }
 }
 
 /**
@@ -40,6 +24,7 @@ export async function renderAsciiArt(
   options: RenderAsciiArtOptions
 ): Promise<void> {
   const { paneId } = options
+  const tmuxService = TmuxService.getInstance()
 
   // Find the decorative pane script - check both dist and src directories
   const path = await import("path")
@@ -74,19 +59,17 @@ export async function renderAsciiArt(
 
   // Kill any existing process in the pane
   try {
-    execSync(`tmux send-keys -t '${paneId}' C-c`, { stdio: "pipe" })
+    await tmuxService.sendKeys(paneId, 'C-c')
   } catch {
     // Pane might not have a running process, that's okay
   }
-  await new Promise((resolve) => setTimeout(resolve, 100))
+  await new Promise((resolve) => setTimeout(resolve, ASCII_ART_RENDER_DELAY))
 
   // Run the decorative pane script with absolute path
   const absolutePath = path.isAbsolute(scriptPath)
     ? scriptPath
     : path.resolve(scriptPath)
-  execSync(`tmux send-keys -t '${paneId}' 'node "${absolutePath}"' Enter`, {
-    stdio: "pipe",
-  })
+  await tmuxService.sendKeys(paneId, `'node "${absolutePath}"' Enter`)
   await new Promise((resolve) => setTimeout(resolve, 150))
 }
 

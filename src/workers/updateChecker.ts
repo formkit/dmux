@@ -1,5 +1,5 @@
 import { parentPort } from 'worker_threads';
-import { AutoUpdater } from '../AutoUpdater.js';
+import { AutoUpdater } from '../services/AutoUpdater.js';
 import os from 'os';
 import path from 'path';
 

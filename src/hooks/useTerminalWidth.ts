@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { execSync } from 'child_process';
+import { TmuxService } from '../services/TmuxService.js';
 
 export default function useTerminalWidth() {
+  const tmuxService = TmuxService.getInstance();
   const [terminalWidth, setTerminalWidth] = useState<number>(process.stdout.columns || 80);
   // Repaint trigger forces Ink to re-render after resize clearing
   const [repaintTrigger, setRepaintTrigger] = useState(0);
@@ -17,18 +18,12 @@ export default function useTerminalWidth() {
 
       // Clear screen artifacts when terminal is resized
       // This happens when tmux panes are closed/opened, causing layout shifts
-      try {
-        // Clear screen with ANSI codes
-        process.stdout.write('\x1b[2J\x1b[H');
+      // Clear screen with ANSI codes
+      process.stdout.write('\x1b[2J\x1b[H');
 
-        // Clear tmux history
-        execSync('tmux clear-history', { stdio: 'pipe' });
-
-        // Force tmux to refresh the display
-        execSync('tmux refresh-client', { stdio: 'pipe' });
-      } catch {
-        // Ignore errors if not in tmux or commands fail
-      }
+      // Clear tmux history and refresh (using TmuxService for proper error handling)
+      tmuxService.clearHistorySync();
+      tmuxService.refreshClientSync();
     };
 
     process.stdout.on('resize', handleResize);

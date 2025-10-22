@@ -1,7 +1,8 @@
-import { execSync } from 'child_process';
 import type { PanePosition } from '../types.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 import { recalculateAndApplyLayout } from './layoutManager.js';
+import { execSync } from 'child_process';
 
 // Layout configuration - adjust these to change layout behavior
 export const SIDEBAR_WIDTH = 40;
@@ -26,98 +27,73 @@ function calculateLayoutChecksum(layout: string): string {
   return checksum.toString(16).padStart(4, '0');
 }
 
-export interface WindowDimensions {
-  width: number;
-  height: number;
-}
+// Re-export types from TmuxService for backwards compatibility
+export type { WindowDimensions } from '../types.js';
 
 /**
  * Gets current window dimensions
+ * @deprecated Use TmuxService.getInstance().getWindowDimensionsSync() instead
  */
-export const getWindowDimensions = (): WindowDimensions => {
-  try {
-    const output = execSync(
-      'tmux display-message -p "#{window_width} #{window_height}"',
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
-
-    const [width, height] = output.split(' ').map(n => parseInt(n));
-    return { width, height };
-  } catch {
-    return { width: 120, height: 40 }; // Fallback dimensions
-  }
+export const getWindowDimensions = () => {
+  return TmuxService.getInstance().getWindowDimensionsSync();
 };
 
 /**
  * Gets current terminal (client) dimensions
  * This is the actual terminal size, not the tmux window size
+ * @deprecated Use TmuxService.getInstance().getTerminalDimensionsSync() instead
  */
-export const getTerminalDimensions = (): WindowDimensions => {
-  try {
-    const output = execSync(
-      'tmux display-message -p "#{client_width} #{client_height}"',
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
-
-    const [width, height] = output.split(' ').map(n => parseInt(n));
-    return { width, height };
-  } catch {
-    return { width: 120, height: 40 }; // Fallback dimensions
-  }
+export const getTerminalDimensions = () => {
+  return TmuxService.getInstance().getTerminalDimensionsSync();
 };
 
+/**
+ * Get pane positions for all panes
+ * @deprecated Use TmuxService.getInstance().getPanePositionsSync() instead
+ */
 export const getPanePositions = (): PanePosition[] => {
-  try {
-    const output = execSync(
-      `tmux list-panes -F '#{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height}'`,
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
+  return TmuxService.getInstance().getPanePositionsSync();
+};
 
-    return output.split('\n').map(line => {
-      const [paneId, left, top, width, height] = line.split(' ');
-      return {
-        paneId,
-        left: parseInt(left),
-        top: parseInt(top),
-        width: parseInt(width),
-        height: parseInt(height)
-      };
-    });
-  } catch {
-    return [];
-  }
+/**
+ * Creates a new tmux pane by splitting horizontally
+ * @param options - Split pane options
+ * @param options.targetPane - Pane to split from (optional)
+ * @param options.cwd - Working directory for new pane (optional)
+ * @param options.command - Command to run in new pane (optional)
+ * @returns The new pane ID
+ * @deprecated Use TmuxService.getInstance().splitPaneSync() instead
+ */
+export const splitPane = (options: {
+  targetPane?: string;
+  cwd?: string;
+  command?: string;
+} = {}): string => {
+  return TmuxService.getInstance().splitPaneSync(options);
 };
 
 /**
  * Gets all pane IDs in current window
+ * @deprecated Use TmuxService.getInstance().getAllPaneIdsSync() instead
  */
 export const getAllPaneIds = (): string[] => {
-  try {
-    const output = execSync('tmux list-panes -F "#{pane_id}"', {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-
-    return output.split('\n').filter(id => id.trim());
-  } catch {
-    return [];
-  }
+  return TmuxService.getInstance().getAllPaneIdsSync();
 };
 
 /**
  * Gets content pane IDs (excludes control pane and spacer pane)
+ * This uses synchronous operations to maintain compatibility with existing code
  */
 export const getContentPaneIds = (controlPaneId: string): string[] => {
-  const allPanes = getAllPaneIds();
+  const tmuxService = TmuxService.getInstance();
+  const allPanes = tmuxService.getAllPaneIdsSync();
+
   return allPanes.filter(id => {
     if (id === controlPaneId) return false;
 
     // Filter out spacer pane
     try {
-      const title = execSync(
-        `tmux display-message -t '${id}' -p '#{pane_title}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
+      const title = tmuxService.getPaneTitleSync(id);
       return title !== 'dmux-spacer';
     } catch {
       return true; // Include pane if we can't get title
@@ -132,20 +108,37 @@ export const getContentPaneIds = (controlPaneId: string): string[] => {
  */
 export const setupSidebarLayout = (controlPaneId: string): string => {
   try {
+    const tmuxService = TmuxService.getInstance();
+
+    // Defensive check: verify the control pane still exists before splitting
+    try {
+      // Try to get the pane title - this will throw if the pane doesn't exist
+      tmuxService.getPaneTitleSync(controlPaneId);
+    } catch (error) {
+      throw new Error(`Control pane ${controlPaneId} does not exist. Cannot create sidebar layout.`);
+    }
+
     // Split horizontally (left-right) from control pane
-    const newPaneId = execSync(
-      `tmux split-window -h -t '${controlPaneId}' -P -F '#{pane_id}'`,
-      { encoding: 'utf-8', stdio: 'pipe' }
-    ).trim();
+    const newPaneId = tmuxService.splitPaneSync({
+      targetPane: controlPaneId,
+    });
 
     // Wait for split to settle
-    execSync('sleep 0.1', { stdio: 'pipe' });
+    const waitMs = 100;
+    const startTime = Date.now();
+    while (Date.now() - startTime < waitMs) {
+      // Busy wait
+    }
 
-    // Resize control pane to fixed width
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    // Resize control pane to fixed width (sync version for initial setup)
+    try {
+      tmuxService.resizePaneSync(controlPaneId, { width: SIDEBAR_WIDTH });
+    } catch {
+      // Ignore resize errors during initial setup
+    }
 
     // Refresh to ensure panes are painted correctly after layout
-    execSync('tmux refresh-client', { stdio: 'pipe' });
+    tmuxService.refreshClientSync();
 
     return newPaneId;
   } catch (error) {
@@ -185,13 +178,11 @@ export const generateSidebarGridLayout = (
   const paneWidth = Math.floor(availableWidth / cols);
 
   // Check if last pane is a spacer
+  const tmuxService = TmuxService.getInstance();
   const lastPaneIsSpacer = contentPanes.length > 0 && (() => {
     try {
       const lastPaneId = contentPanes[contentPanes.length - 1];
-      const title = execSync(
-        `tmux display-message -t '${lastPaneId}' -p '#{pane_title}'`,
-        { encoding: 'utf-8', stdio: 'pipe' }
-      ).trim();
+      const title = tmuxService.getPaneTitleSync(lastPaneId);
       return title === 'dmux-spacer';
     } catch {
       return false;
@@ -423,11 +414,12 @@ export const calculateOptimalColumns = (
  * @deprecated This function now delegates to the centralized layout manager.
  * Consider using recalculateAndApplyLayout() directly from layoutManager.ts
  */
-export const enforceControlPaneSize = (
+export const enforceControlPaneSize = async (
   controlPaneId: string,
   width: number
-): void => {
+): Promise<void> => {
   const logService = LogService.getInstance();
+  const tmuxService = TmuxService.getInstance();
 
   try {
     const contentPanes = getContentPaneIds(controlPaneId);
@@ -437,7 +429,7 @@ export const enforceControlPaneSize = (
     if (contentPanes.length === 0) {
       // Just resize the sidebar
       try {
-        execSync(`tmux resize-pane -t '${controlPaneId}' -x ${width}`, { stdio: 'pipe' });
+        await tmuxService.resizePane(controlPaneId, { width });
       } catch {
         // Ignore errors
       }
@@ -447,10 +439,7 @@ export const enforceControlPaneSize = (
     // Check if we have only the welcome pane (should not be width-constrained)
     if (contentPanes.length === 1) {
       try {
-        const title = execSync(`tmux display-message -t '${contentPanes[0]}' -p '#{pane_title}'`, {
-          encoding: 'utf-8',
-          stdio: 'pipe'
-        }).trim();
+        const title = tmuxService.getPaneTitleSync(contentPanes[0]);
 
         if (title === 'Welcome') {
           // Welcome pane should use full terminal width, not be constrained
@@ -458,13 +447,13 @@ export const enforceControlPaneSize = (
           const termDims = getTerminalDimensions();
 
           // Set window size to match terminal (manual mode but always tracking terminal)
-          execSync(`tmux set-window-option window-size manual`, { stdio: 'pipe' });
-          execSync(`tmux resize-window -x ${termDims.width} -y ${termDims.height}`, { stdio: 'pipe' });
+          tmuxService.setWindowOptionSync('window-size', 'manual');
+          await tmuxService.resizeWindow({ width: termDims.width, height: termDims.height });
 
           // Apply main-vertical layout with fixed sidebar width
-          execSync(`tmux set-window-option main-pane-width ${width}`, { stdio: 'pipe' });
-          execSync('tmux select-layout main-vertical', { stdio: 'pipe' });
-          execSync('tmux refresh-client', { stdio: 'pipe' });
+          tmuxService.setWindowOptionSync('main-pane-width', String(width));
+          await tmuxService.selectLayout('main-vertical');
+          await tmuxService.refreshClient();
           return;
         }
       } catch {
@@ -477,7 +466,7 @@ export const enforceControlPaneSize = (
     const dimensions = getTerminalDimensions();
     logService.debug(`Terminal dimensions: ${dimensions.width}x${dimensions.height}`, 'Layout');
 
-    recalculateAndApplyLayout(
+    await recalculateAndApplyLayout(
       controlPaneId,
       contentPanes,
       dimensions.width,
@@ -485,7 +474,7 @@ export const enforceControlPaneSize = (
     );
 
     // Refresh to apply changes (but don't select the pane - don't steal focus!)
-    execSync('tmux refresh-client', { stdio: 'pipe' });
+    await tmuxService.refreshClient();
   } catch (error) {
     // Log error for debugging but don't crash
     const msg = 'Layout enforcement failed';

@@ -4,18 +4,20 @@
  * Detects manually-created tmux panes and determines their shell type.
  */
 
-import { execSync } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import { LogService } from '../services/LogService.js';
+import { TmuxService } from '../services/TmuxService.js';
 
 /**
  * Detects the shell type running in a tmux pane
  * @param paneId The tmux pane ID (e.g., %1)
  * @returns Shell type (bash, zsh, fish, etc) or 'shell' as fallback
  */
-export function detectShellType(paneId: string): string {
+export async function detectShellType(paneId: string): Promise<string> {
+  const tmuxService = TmuxService.getInstance();
   try {
     // Get the command running in the pane
+    const { execSync } = await import('child_process');
     const command = execSync(
       `tmux display-message -t '${paneId}' -p '#{pane_current_command}'`,
       { encoding: 'utf-8', stdio: 'pipe' }
@@ -91,14 +93,15 @@ export interface UntrackedPaneInfo {
  * @param welcomePaneId Optional welcome pane ID to exclude
  * @returns Array of untracked pane information
  */
-export function getUntrackedPanes(
+export async function getUntrackedPanes(
   sessionName: string,
   trackedPaneIds: string[],
   controlPaneId?: string,
   welcomePaneId?: string
-): UntrackedPaneInfo[] {
+): Promise<UntrackedPaneInfo[]> {
   try {
     // Get all panes in the current session with ID, title, and current command
+    const { execSync } = await import('child_process');
     const output = execSync(
       `tmux list-panes -s -F '#{pane_id}::#{pane_title}::#{pane_current_command}'`,
       { encoding: 'utf-8', stdio: 'pipe' }
@@ -168,8 +171,9 @@ export function getUntrackedPanes(
  * @param existingTitle Optional existing title to preserve
  * @returns DmuxPane object for the shell pane
  */
-export function createShellPane(paneId: string, nextId: number, existingTitle?: string): DmuxPane {
-  const shellType = detectShellType(paneId);
+export async function createShellPane(paneId: string, nextId: number, existingTitle?: string): Promise<DmuxPane> {
+  const tmuxService = TmuxService.getInstance();
+  const shellType = await detectShellType(paneId);
 
   // Use existing title if available and it's not a dmux internal title
   // Otherwise generate shell-N naming
@@ -183,7 +187,7 @@ export function createShellPane(paneId: string, nextId: number, existingTitle?: 
     slug = `shell-${nextId}`;
     // Only set the title if we're generating a new one
     try {
-      execSync(`tmux select-pane -t '${paneId}' -T "${slug}"`, { stdio: 'pipe' });
+      await tmuxService.setPaneTitle(paneId, slug);
     } catch (error) {
       LogService.getInstance().debug(
         `Failed to set title for shell pane ${paneId}`,

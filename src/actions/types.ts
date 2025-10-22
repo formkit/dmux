@@ -80,6 +80,7 @@ export interface ActionContext {
   onPaneUpdate?: (pane: DmuxPane) => void;
   onPaneRemove?: (paneId: string) => void;
   forceRepaint?: () => void;
+  onActionResult?: (result: ActionResult) => Promise<void>;
 }
 
 /**

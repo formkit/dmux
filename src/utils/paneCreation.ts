@@ -1,16 +1,19 @@
-import { execSync } from 'child_process';
 import path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'child_process';
 import type { DmuxPane, DmuxConfig } from '../types.js';
+import { TmuxService } from '../services/TmuxService.js';
 import {
   setupSidebarLayout,
   getContentPaneIds,
   getTerminalDimensions,
+  splitPane,
 } from './tmux.js';
 import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
 import { triggerHook } from './hooks.js';
+import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -102,11 +105,10 @@ export async function createPane(
 
   // Generate slug
   const slug = await generateSlug(prompt);
+  const tmuxService = TmuxService.getInstance();
 
   const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
-  const originalPaneId = execSync('tmux display-message -p "#{pane_id}"', {
-    encoding: 'utf-8',
-  }).trim();
+  const originalPaneId = tmuxService.getCurrentPaneIdSync();
 
   // Load config to get control pane info
   const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
@@ -119,20 +121,17 @@ export async function createPane(
 
     // Verify the control pane ID from config still exists
     if (controlPaneId) {
-      try {
-        execSync(`tmux display-message -t '${controlPaneId}' -p '#{pane_id}'`, {
-          encoding: 'utf-8',
-          stdio: 'pipe'
-        });
-        // Pane exists, we can use it
-      } catch {
+      const exists = await tmuxService.paneExists(controlPaneId);
+      if (!exists) {
         // Pane doesn't exist anymore, use current pane and update config
+        console.error(`[dmux] Control pane ${controlPaneId} no longer exists, updating to ${originalPaneId}`);
         controlPaneId = originalPaneId;
         config.controlPaneId = controlPaneId;
         config.controlPaneSize = SIDEBAR_WIDTH;
         config.lastUpdated = new Date().toISOString();
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       }
+      // Else: Pane exists, we can use it
     }
 
     // If control pane ID is missing, save it
@@ -150,13 +149,11 @@ export async function createPane(
   }
 
   // Get current pane count
-  const paneCount = parseInt(
-    execSync('tmux list-panes | wc -l', { encoding: 'utf-8' }).trim()
-  );
+  const paneCount = tmuxService.getAllPaneIdsSync().length;
 
   // Enable pane borders to show titles
   try {
-    execSync(`tmux set-option -g pane-border-status top`, { stdio: 'pipe' });
+    tmuxService.setGlobalOptionSync('pane-border-status', 'top');
   } catch {
     // Ignore if already set or fails
   }
@@ -167,24 +164,59 @@ export async function createPane(
 
   let paneInfo: string;
 
-  if (isFirstContentPane) {
-    // First, create the tmux pane but DON'T destroy welcome pane yet
-    // This way we can save the pane to config first, THEN destroy welcome pane
-    paneInfo = setupSidebarLayout(controlPaneId);
+  // Self-healing: Try to create pane, if it fails due to stale controlPaneId, fix and retry
+  try {
+    if (isFirstContentPane) {
+      // First, create the tmux pane but DON'T destroy welcome pane yet
+      // This way we can save the pane to config first, THEN destroy welcome pane
+      paneInfo = setupSidebarLayout(controlPaneId);
 
-    // Wait for pane creation to settle
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  } else {
-    // Subsequent panes - always split horizontally, let layout manager organize
-    // Get actual dmux pane IDs (not welcome pane) from existingPanes
-    const dmuxPaneIds = existingPanes.map(p => p.paneId);
-    const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
+      // Wait for pane creation to settle
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } else {
+      // Subsequent panes - always split horizontally, let layout manager organize
+      // Get actual dmux pane IDs (not welcome pane) from existingPanes
+      const dmuxPaneIds = existingPanes.map(p => p.paneId);
+      const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
-    // Always split horizontally - the layout manager will organize panes optimally
-    paneInfo = execSync(
-      `tmux split-window -h -t '${targetPane}' -P -F '#{pane_id}'`,
-      { encoding: 'utf-8' }
-    ).trim();
+      // Always split horizontally - the layout manager will organize panes optimally
+      paneInfo = splitPane({ targetPane });
+    }
+  } catch (error) {
+    // Check if error is due to stale pane ID (can't find pane)
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes("can't find pane")) {
+      console.error(`[dmux] Pane creation failed with stale ID, self-healing...`);
+
+      // Fix: Update controlPaneId to current pane and save to config
+      const currentPaneId = originalPaneId; // We got this at the start of createPane
+      console.error(`[dmux] Updating controlPaneId from ${controlPaneId} to ${currentPaneId}`);
+
+      try {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config: DmuxConfig = JSON.parse(configContent);
+        config.controlPaneId = currentPaneId;
+        config.lastUpdated = new Date().toISOString();
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        controlPaneId = currentPaneId; // Update local variable
+      } catch (configError) {
+        console.error('[dmux] Failed to update config:', configError);
+        throw error; // Re-throw original error
+      }
+
+      // Retry pane creation with corrected controlPaneId
+      if (isFirstContentPane) {
+        paneInfo = setupSidebarLayout(controlPaneId);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } else {
+        const dmuxPaneIds = existingPanes.map(p => p.paneId);
+        const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1];
+        paneInfo = splitPane({ targetPane });
+      }
+    } else {
+      // Different error, re-throw
+      throw error;
+    }
   }
 
   // Wait for pane creation to settle
@@ -192,9 +224,7 @@ export async function createPane(
 
   // Set pane title to match the slug
   try {
-    execSync(`tmux select-pane -t '${paneInfo}' -T "${slug}"`, {
-      stdio: 'pipe',
-    });
+    await tmuxService.setPaneTitle(paneInfo, slug);
   } catch {
     // Ignore if setting title fails
   }
@@ -204,7 +234,7 @@ export async function createPane(
     const dimensions = getTerminalDimensions();
     const allContentPaneIds = [...existingPanes.map(p => p.paneId), paneInfo];
 
-    recalculateAndApplyLayout(
+    await recalculateAndApplyLayout(
       controlPaneId,
       allContentPaneIds,
       dimensions.width,
@@ -212,7 +242,7 @@ export async function createPane(
     );
 
     // Refresh tmux to apply changes
-    execSync('tmux refresh-client', { stdio: 'pipe' });
+    await tmuxService.refreshClient();
   }
 
   // Trigger pane_created hook (after pane created, before worktree)
@@ -261,9 +291,9 @@ export async function createPane(
       ? `git worktree add "${worktreePath}" ${slug} && cd "${worktreePath}"`
       : `git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"`;
 
-    execSync(`tmux send-keys -t '${paneInfo}' '${worktreeCmd}' Enter`, {
-      stdio: 'pipe',
-    });
+    // Send the git worktree command (auto-quoted by sendShellCommand)
+    await tmuxService.sendShellCommand(paneInfo, worktreeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Wait for worktree to actually exist on the filesystem
     const maxWaitTime = 5000; // 5 seconds max
@@ -304,15 +334,17 @@ export async function createPane(
   } catch (error) {
     // Worktree creation failed - send helpful error message to the pane
     const errorMsg = error instanceof Error ? error.message : String(error);
-    execSync(
-      `tmux send-keys -t '${paneInfo}' 'echo "❌ Failed to create worktree: ${errorMsg}"' Enter`,
-      { stdio: 'pipe' }
+    await tmuxService.sendShellCommand(
+      paneInfo,
+      `echo "❌ Failed to create worktree: ${errorMsg}"`
     );
-    execSync(
-      `tmux send-keys -t '${paneInfo}' 'echo "Tip: Try running: git worktree prune && git branch -D ${slug}"' Enter`,
-      { stdio: 'pipe' }
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    await tmuxService.sendShellCommand(
+      paneInfo,
+      `echo "Tip: Try running: git worktree prune && git branch -D ${slug}"`
     );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
 
     // Don't throw - let the pane stay open so user can debug
   }
@@ -330,42 +362,33 @@ export async function createPane(
     } else {
       claudeCmd = `claude --permission-mode=acceptEdits`;
     }
-    const escapedCmd = claudeCmd.replace(/'/g, "'\\''");
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedCmd}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    // Send the claude command (auto-quoted by sendShellCommand)
+    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
-    // Auto-approve trust prompts for Claude
+    // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
+    // Note: --permission-mode=acceptEdits handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo, prompt).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'opencode') {
-    const openCoderCmd = `opencode`;
-    const escapedOpenCmd = openCoderCmd.replace(/'/g, "'\\''");
-    execSync(`tmux send-keys -t '${paneInfo}' '${escapedOpenCmd}'`, {
-      stdio: 'pipe',
-    });
-    execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+    await tmuxService.sendShellCommand(paneInfo, 'opencode');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     if (prompt && prompt.trim()) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       const bufName = `dmux_prompt_${Date.now()}`;
       const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-      execSync(`tmux set-buffer -b '${bufName}' -- '${promptEsc}'`, {
-        stdio: 'pipe',
-      });
-      execSync(`tmux paste-buffer -b '${bufName}' -t '${paneInfo}'`, {
-        stdio: 'pipe',
-      });
+      await tmuxService.setBuffer(bufName, promptEsc);
+      await tmuxService.pasteBuffer(bufName, paneInfo);
       await new Promise((resolve) => setTimeout(resolve, 200));
-      execSync(`tmux delete-buffer -b '${bufName}'`, { stdio: 'pipe' });
-      execSync(`tmux send-keys -t '${paneInfo}' Enter`, { stdio: 'pipe' });
+      await tmuxService.deleteBuffer(bufName);
+      await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     }
   }
 
   // Keep focus on the new pane
-  execSync(`tmux select-pane -t '${paneInfo}'`, { stdio: 'pipe' });
+  await tmuxService.selectPane(paneInfo);
 
   // Create the pane object
   const newPane: DmuxPane = {
@@ -403,14 +426,11 @@ export async function createPane(
   await triggerHook('worktree_created', projectRoot, newPane);
 
   // Switch back to the original pane
-  execSync(`tmux select-pane -t '${originalPaneId}'`, { stdio: 'pipe' });
+  await tmuxService.selectPane(originalPaneId);
 
   // Re-set the title for the dmux pane
   try {
-    execSync(
-      `tmux select-pane -t '${originalPaneId}' -T "dmux-${projectName}"`,
-      { stdio: 'pipe' }
-    );
+    await tmuxService.setPaneTitle(originalPaneId, `dmux-${projectName}`);
   } catch {
     // Ignore if setting title fails
   }
@@ -428,8 +448,8 @@ async function autoApproveTrustPrompt(
   paneInfo: string,
   prompt: string
 ): Promise<void> {
-  // Wait for Claude to start up before checking for prompts
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  // Wait longer for Claude to start up before checking for prompts
+  await new Promise((resolve) => setTimeout(resolve, 1200));
 
   const maxChecks = 100; // 100 checks * 100ms = 10 seconds total
   const checkInterval = 100; // Check every 100ms
@@ -437,29 +457,19 @@ async function autoApproveTrustPrompt(
   let stableContentCount = 0;
   let promptHandled = false;
 
-  // Trust prompt patterns
+  // Trust prompt patterns - made more specific to avoid false positives
   const trustPromptPatterns = [
+    // Specific trust/permission questions
     /Do you trust the files in this folder\?/i,
     /Trust the files in this workspace\?/i,
     /Do you trust the authors of the files/i,
     /Do you want to trust this workspace\?/i,
     /trust.*files.*folder/i,
     /trust.*workspace/i,
-    /Do you trust/i,
     /Trust this folder/i,
     /trust.*directory/i,
-    /permission.*grant/i,
-    /allow.*access/i,
     /workspace.*trust/i,
-    /accept.*edits/i,
-    /permission.*mode/i,
-    /allow.*claude/i,
-    /\[y\/n\]/i,
-    /\(y\/n\)/i,
-    /Yes\/No/i,
-    /\[Y\/n\]/i,
-    /press.*enter.*accept/i,
-    /press.*enter.*continue/i,
+    // Claude-specific numbered menu format
     /❯\s*1\.\s*Yes,\s*proceed/i,
     /Enter to confirm.*Esc to exit/i,
     /1\.\s*Yes,\s*proceed/i,
@@ -473,6 +483,15 @@ async function autoApproveTrustPrompt(
       // Capture the pane content
       const paneContent = capturePaneContent(paneInfo, 30);
 
+      // Early exit: If Claude is already running (prompt has been processed), we're done
+      if (
+        paneContent.includes('Claude') ||
+        paneContent.includes('Assistant') ||
+        paneContent.includes('claude>')
+      ) {
+        break;
+      }
+
       // Check if content has stabilized
       if (paneContent === lastContent) {
         stableContentCount++;
@@ -481,42 +500,31 @@ async function autoApproveTrustPrompt(
         lastContent = paneContent;
       }
 
-      // Look for trust prompt
+      // Look for trust prompt using specific patterns only
       const hasTrustPrompt = trustPromptPatterns.some((pattern) =>
         pattern.test(paneContent)
       );
 
-      const hasClaudePermissionPrompt =
-        paneContent.includes('Do you trust') ||
-        paneContent.includes('trust the files') ||
-        paneContent.includes('permission') ||
-        paneContent.includes('allow') ||
-        (paneContent.includes('folder') && paneContent.includes('?'));
-
-      if ((hasTrustPrompt || hasClaudePermissionPrompt) && !promptHandled) {
-        // Content is stable and we found a prompt
-        if (stableContentCount >= 2) {
+      // Only act if we have high confidence it's a trust prompt
+      if (hasTrustPrompt && !promptHandled) {
+        // Require content to be stable for longer to avoid false positives
+        if (stableContentCount >= 5) {
           // Check if this is the new Claude numbered menu format
           const isNewClaudeFormat =
             /❯\s*1\.\s*Yes,\s*proceed/i.test(paneContent) ||
             /Enter to confirm.*Esc to exit/i.test(paneContent);
 
+          const tmuxService = TmuxService.getInstance();
           if (isNewClaudeFormat) {
             // For new Claude format, just press Enter
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           } else {
             // Try multiple response methods for older formats
-            execSync(`tmux send-keys -t '${paneInfo}' 'y'`, { stdio: 'pipe' });
+            await tmuxService.sendTmuxKeys(paneInfo, 'y');
             await new Promise((resolve) => setTimeout(resolve, 50));
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            execSync(`tmux send-keys -t '${paneInfo}' Enter`, {
-              stdio: 'pipe',
-            });
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+            await new Promise((resolve) => setTimeout(resolve, TMUX_SPLIT_DELAY));
+            await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
           }
 
           promptHandled = true;
@@ -552,15 +560,6 @@ async function autoApproveTrustPrompt(
             break;
           }
         }
-      }
-
-      // If Claude is already running, we're done
-      if (
-        !hasTrustPrompt &&
-        !hasClaudePermissionPrompt &&
-        (paneContent.includes('Claude') || paneContent.includes('Assistant'))
-      ) {
-        break;
       }
     } catch (error) {
       // Continue checking, errors are non-fatal

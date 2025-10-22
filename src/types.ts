@@ -51,6 +51,11 @@ export interface PanePosition {
   height: number;
 }
 
+export interface WindowDimensions {
+  width: number;
+  height: number;
+}
+
 export interface ProjectSettings {
   testCommand?: string;
   devCommand?: string;

@@ -33,8 +33,12 @@ export function mergeMainIntoWorktree(
 
     // Check if it's a merge conflict
     if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
-      // Get list of conflicting files
+      // Get list of conflicting files BEFORE aborting
       const conflictFiles = getConflictingFiles(worktreePath);
+
+      // CRITICAL: Abort the merge to return worktree to clean state
+      // This prevents conflict markers from being left in files
+      abortMerge(worktreePath);
 
       return {
         success: false,
@@ -42,6 +46,11 @@ export function mergeMainIntoWorktree(
         conflictFiles,
         needsManualResolution: true,
       };
+    }
+
+    // For non-conflict errors, also abort if we're in merge state
+    if (isInMergeState(worktreePath)) {
+      abortMerge(worktreePath);
     }
 
     return {
