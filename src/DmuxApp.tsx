@@ -539,10 +539,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       result.type === "success" ||
       result.type === "error"
     ) {
-      await popupManager.launchProgressPopup(
+      // Use toast notification instead of popup for better UX
+      const { default: toastService } = await import("./services/ToastService.js")
+      toastService.showToast(
         result.message,
-        result.type as "info" | "success" | "error",
-        3000
+        result.type as "success" | "error" | "info"
       )
     }
   }

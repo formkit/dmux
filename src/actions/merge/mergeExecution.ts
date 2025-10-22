@@ -235,7 +235,17 @@ export async function executeMerge(
   console.error(
     `[mergeExecution] Merge complete for ${pane.slug}, showing cleanup options via closePane`
   )
+  console.error(
+    `[mergeExecution] Context has ${context.panes.length} panes: ${context.panes.map(p => p.id).join(', ')}`
+  )
+  console.error(
+    `[mergeExecution] Pane to close: ${pane.id} (slug: ${pane.slug})`
+  )
 
   const { closePane } = await import("../implementations/closeAction.js")
-  return closePane(pane, context)
+  const closeResult = await closePane(pane, context)
+  console.error(
+    `[mergeExecution] closePane returned result type: ${closeResult.type}`
+  )
+  return closeResult
 }

@@ -108,31 +108,16 @@ async function handleResultWithPopups(
   }
 
   // Handle non-interactive results (success, error, info, etc.)
-  if (popupLaunchers?.launchProgressPopup) {
-    const type = result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info';
-    await popupLaunchers.launchProgressPopup(result.message, type, 1000);
+  // Use toast notification for better UX
+  const { default: toastService } = await import('../services/ToastService.js');
+  const type = result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info';
+  toastService.showToast(result.message, type);
 
-    // Force repaint after popup dismisses (with a slight delay to avoid layout issues)
-    if (context.forceRepaint) {
-      setTimeout(() => {
-        context.forceRepaint!();
-      }, 300);
-    }
-  } else {
-    // Fallback to inline status message
-    setActionState(prev => ({
-      ...prev,
-      statusMessage: result.message,
-      statusType: result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info',
-    }));
-
-    // Auto-clear after 3 seconds
+  // Force repaint after showing toast
+  if (context.forceRepaint) {
     setTimeout(() => {
-      setActionState(prev => ({
-        ...prev,
-        statusMessage: '',
-      }));
-    }, 3000);
+      context.forceRepaint!();
+    }, 100);
   }
 }
 

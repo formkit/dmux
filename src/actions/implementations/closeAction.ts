@@ -66,6 +66,9 @@ async function executeCloseOption(
   context: ActionContext,
   option: string
 ): Promise<ActionResult> {
+  console.error(`[closeAction] executeCloseOption called for pane ${pane.id} (slug: ${pane.slug}) with option: ${option}`);
+  console.error(`[closeAction] Context has ${context.panes.length} panes: ${context.panes.map(p => p.id).join(', ')}`);
+
   try {
     // Get project root for hooks
     const state = StateManager.getInstance().getState();
@@ -147,7 +150,9 @@ async function executeCloseOption(
 
       // Remove from panes list
       const updatedPanes = context.panes.filter(p => p.id !== pane.id);
+      console.error(`[closeAction] Filtering pane ${pane.id} from context.panes, result: ${updatedPanes.length} panes`);
       await context.savePanes(updatedPanes);
+      console.error(`[closeAction] Panes saved successfully`);
 
       if (context.onPaneRemove) {
         context.onPaneRemove(pane.paneId); // Pass tmux pane ID, not dmux ID
