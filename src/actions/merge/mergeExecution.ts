@@ -5,9 +5,9 @@
  * conflict handling, cleanup, and post-merge actions.
  */
 
-import type { ActionResult, ActionContext } from '../types.js';
-import type { DmuxPane } from '../../types.js';
-import { triggerHook } from '../../utils/hooks.js';
+import type { ActionResult, ActionContext } from "../types.js"
+import type { DmuxPane } from "../../types.js"
+import { triggerHook } from "../../utils/hooks.js"
 
 /**
  * Execute merge with conflict handling
@@ -17,64 +17,76 @@ export async function executeMergeWithConflictHandling(
   context: ActionContext,
   mainBranch: string,
   mainRepoPath: string,
-  strategy: 'manual' | 'ai'
+  strategy: "manual" | "ai"
 ): Promise<ActionResult> {
-  const { mergeMainIntoWorktree, completeMerge } = await import('../../utils/mergeExecution.js');
+  const { mergeMainIntoWorktree, completeMerge } = await import(
+    "../../utils/mergeExecution.js"
+  )
 
   // Step 1: Merge main into worktree
-  const result = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
+  const result = mergeMainIntoWorktree(pane.worktreePath!, mainBranch)
 
   if (!result.success && result.needsManualResolution) {
-    if (strategy === 'ai') {
+    if (strategy === "ai") {
       // Try AI resolution
-      const { aiResolveAllConflicts } = await import('../../utils/aiMerge.js');
-      const aiResult = await aiResolveAllConflicts(pane.worktreePath!, result.conflictFiles || []);
+      const { aiResolveAllConflicts } = await import("../../utils/aiMerge.js")
+      const aiResult = await aiResolveAllConflicts(
+        pane.worktreePath!,
+        result.conflictFiles || []
+      )
 
       if (aiResult.success) {
         // AI resolved all conflicts, complete the merge
-        const completeResult = completeMerge(pane.worktreePath!, 'Merge with AI-resolved conflicts');
+        const completeResult = completeMerge(
+          pane.worktreePath!,
+          "Merge with AI-resolved conflicts"
+        )
 
         if (completeResult.success) {
           // Continue with the second phase of merge
-          return executeMerge(pane, context, mainBranch, mainRepoPath);
+          return executeMerge(pane, context, mainBranch, mainRepoPath)
         } else {
           return {
-            type: 'error',
+            type: "error",
             message: `Failed to complete merge: ${completeResult.error}`,
             dismissable: true,
-          };
+          }
         }
       } else {
         // AI couldn't resolve, fall back to manual
         return {
-          type: 'error',
-          title: 'AI Merge Failed',
-          message: `AI couldn't resolve conflicts in: ${aiResult.failedFiles.join(', ')}.\nPlease resolve manually.`,
+          type: "error",
+          title: "AI Merge Failed",
+          message: `AI couldn't resolve conflicts in: ${aiResult.failedFiles.join(
+            ", "
+          )}.\nPlease resolve manually.`,
           dismissable: true,
-        };
+        }
       }
     } else {
       // Manual resolution - jump to pane
       return {
-        type: 'navigation',
-        title: 'Manual Conflict Resolution',
-        message: `Conflicts in: ${result.conflictFiles?.join(', ')}.\nResolve in the pane, then try merge again.`,
+        type: "navigation",
+        title: "Manual Conflict Resolution",
+        message: `Conflicts in: ${result.conflictFiles?.join(
+          ", "
+        )}.\nResolve in the pane, then try merge again.`,
         targetPaneId: pane.id,
         dismissable: true,
-      };
+      }
     }
   }
 
   if (!result.success) {
     return {
-      type: 'error',
+      type: "error",
       message: `Merge failed: ${result.error}`,
       dismissable: true,
-    };
+    }
   }
 
   // No conflicts, proceed with the main merge
-  return executeMerge(pane, context, mainBranch, mainRepoPath);
+  return executeMerge(pane, context, mainBranch, mainRepoPath)
 }
 
 /**
@@ -92,139 +104,170 @@ export async function executeMerge(
   mainRepoPath: string,
   skipWorktreeMerge: boolean = false
 ): Promise<ActionResult> {
-  const { mergeMainIntoWorktree, mergeWorktreeIntoMain } = await import('../../utils/mergeExecution.js');
+  const { mergeMainIntoWorktree, mergeWorktreeIntoMain } = await import(
+    "../../utils/mergeExecution.js"
+  )
 
   // Step 1: Merge main into worktree first (get latest changes from main)
   // Skip this if we're resuming after conflict resolution (already done by agent)
   if (!skipWorktreeMerge) {
-    const step1 = mergeMainIntoWorktree(pane.worktreePath!, mainBranch);
+    const step1 = mergeMainIntoWorktree(pane.worktreePath!, mainBranch)
 
-  if (!step1.success) {
-    // Check if this is a conflict that needs manual resolution
-    if (step1.needsManualResolution && step1.conflictFiles && step1.conflictFiles.length > 0) {
-      // Offer AI/manual conflict resolution
+    if (!step1.success) {
+      // Check if this is a conflict that needs manual resolution
+      if (
+        step1.needsManualResolution &&
+        step1.conflictFiles &&
+        step1.conflictFiles.length > 0
+      ) {
+        // Offer AI/manual conflict resolution
+        return {
+          type: "choice",
+          title: "Merge Conflicts Detected",
+          message: `Conflicts occurred while merging ${mainBranch} into worktree:\n${step1.conflictFiles
+            .slice(0, 5)
+            .join("\n")}${step1.conflictFiles.length > 5 ? "\n..." : ""}`,
+          options: [
+            {
+              id: "ai_merge",
+              label: "Try AI-assisted merge",
+              description: "Let AI intelligently combine both versions",
+              default: true,
+            },
+            {
+              id: "manual_merge",
+              label: "Manual resolution",
+              description: "Resolve conflicts yourself in the pane",
+            },
+            {
+              id: "abort",
+              label: "Abort merge",
+              description: "Cancel and clean up",
+            },
+          ],
+          onSelect: async (optionId: string) => {
+            if (optionId === "abort") {
+              // Abort the merge
+              const { abortMerge } = await import(
+                "../../utils/mergeExecution.js"
+              )
+              abortMerge(pane.worktreePath!)
+              return {
+                type: "info",
+                message: "Merge aborted",
+                dismissable: true,
+              }
+            }
+
+            if (optionId === "manual_merge") {
+              // Jump to the pane so user can resolve manually
+              return {
+                type: "navigation",
+                title: "Manual Conflict Resolution",
+                message: `Conflicts in: ${step1.conflictFiles?.join(
+                  ", "
+                )}.\nResolve in the pane, then try merge again.`,
+                targetPaneId: pane.id,
+                dismissable: true,
+              }
+            }
+
+            if (optionId === "ai_merge") {
+              // Create conflict resolution pane with AI
+              const { createConflictResolutionPaneForMerge } = await import(
+                "./conflictResolution.js"
+              )
+              return createConflictResolutionPaneForMerge(
+                pane,
+                context,
+                mainBranch,
+                mainRepoPath
+              )
+            }
+
+            return {
+              type: "info",
+              message: "Unknown option",
+              dismissable: true,
+            }
+          },
+          dismissable: true,
+        }
+      }
+
+      // Non-conflict error (e.g., permission denied, git failure)
       return {
-        type: 'choice',
-        title: 'Merge Conflicts Detected',
-        message: `Conflicts occurred while merging ${mainBranch} into worktree:\n${step1.conflictFiles.slice(0, 5).join('\n')}${step1.conflictFiles.length > 5 ? '\n...' : ''}`,
-        options: [
-          {
-            id: 'ai_merge',
-            label: 'Try AI-assisted merge',
-            description: 'Let AI intelligently combine both versions',
-            default: true,
-          },
-          {
-            id: 'manual_merge',
-            label: 'Manual resolution',
-            description: 'Resolve conflicts yourself in the pane',
-          },
-          {
-            id: 'abort',
-            label: 'Abort merge',
-            description: 'Cancel and clean up',
-          },
-        ],
-        onSelect: async (optionId: string) => {
-          if (optionId === 'abort') {
-            // Abort the merge
-            const { abortMerge } = await import('../../utils/mergeExecution.js');
-            abortMerge(pane.worktreePath!);
-            return {
-              type: 'info',
-              message: 'Merge aborted',
-              dismissable: true,
-            };
-          }
-
-          if (optionId === 'manual_merge') {
-            // Jump to the pane so user can resolve manually
-            return {
-              type: 'navigation',
-              title: 'Manual Conflict Resolution',
-              message: `Conflicts in: ${step1.conflictFiles?.join(', ')}.\nResolve in the pane, then try merge again.`,
-              targetPaneId: pane.id,
-              dismissable: true,
-            };
-          }
-
-          if (optionId === 'ai_merge') {
-            // Create conflict resolution pane with AI
-            const { createConflictResolutionPaneForMerge } = await import('./conflictResolution.js');
-            return createConflictResolutionPaneForMerge(pane, context, mainBranch, mainRepoPath);
-          }
-
-          return { type: 'info', message: 'Unknown option', dismissable: true };
-        },
+        type: "error",
+        title: "Merge Failed",
+        message: `Failed to merge ${mainBranch} into worktree: ${step1.error}`,
         dismissable: true,
-      };
-    }
-
-    // Non-conflict error (e.g., permission denied, git failure)
-    return {
-      type: 'error',
-      title: 'Merge Failed',
-      message: `Failed to merge ${mainBranch} into worktree: ${step1.error}`,
-      dismissable: true,
-    };
+      }
     }
   }
 
   // Step 2: Merge worktree into main (bring changes back to main)
-  const step2 = mergeWorktreeIntoMain(mainRepoPath, pane.slug);
+  const step2 = mergeWorktreeIntoMain(mainRepoPath, pane.slug)
 
   if (!step2.success) {
     return {
-      type: 'error',
-      title: 'Merge Failed',
+      type: "error",
+      title: "Merge Failed",
       message: `Failed to merge into ${mainBranch}: ${step2.error}`,
       dismissable: true,
-    };
+    }
   }
 
   // Trigger post_merge hook after successful merge
-  console.error(`[mergeExecution] About to trigger post_merge hook for ${pane.slug}`);
-  await triggerHook('post_merge', mainRepoPath, pane, {
+  console.error(
+    `[mergeExecution] About to trigger post_merge hook for ${pane.slug}`
+  )
+  await triggerHook("post_merge", mainRepoPath, pane, {
     DMUX_TARGET_BRANCH: mainBranch,
-  });
-  console.error(`[mergeExecution] post_merge hook completed for ${pane.slug}`);
+  })
+  console.error(`[mergeExecution] post_merge hook completed for ${pane.slug}`)
 
   // Merge successful! Ask about cleanup
-  console.error(`[mergeExecution] Returning confirm dialog for cleanup of ${pane.slug}`);
+  console.error(
+    `[mergeExecution] Returning confirm dialog for cleanup of ${pane.slug}`
+  )
   return {
-    type: 'confirm',
-    title: 'Merge Complete',
-    message: `Successfully merged "${pane.slug}" into ${mainBranch}. Close the pane and cleanup worktree?`,
-    confirmLabel: 'Yes, close it',
-    cancelLabel: 'No, keep it',
+    type: "confirm",
+    title: "Merge Complete",
+    message: `Successfully merged "${pane.slug}" into ${mainBranch}. Close the pane and delete worktree?`,
+    confirmLabel: "Yes, close it",
+    cancelLabel: "No, keep it",
     onConfirm: async () => {
-      console.error(`[mergeExecution] Starting cleanup for pane ${pane.id} (${pane.slug}) by calling closeAction`);
+      console.error(
+        `[mergeExecution] Starting cleanup for pane ${pane.id} (${pane.slug}) by calling closeAction`
+      )
 
       // Use the CLOSE action which handles everything properly:
       // - Hooks (before_pane_close, before_worktree_remove, worktree_removed, pane_closed)
       // - Layout recalculation after pane removal
       // - Last pane handling (recreates welcome pane)
       // - Terminal clearing to prevent artifacts
-      const { closePane } = await import('../implementations/closeAction.js');
+      const { closePane } = await import("../implementations/closeAction.js")
 
       // First execute the close action to get the choice dialog
-      const closeResult = await closePane(pane, context);
+      const closeResult = await closePane(pane, context)
 
       // If it's a choice dialog, auto-select the "kill_clean_branch" option
-      if (closeResult.type === 'choice' && closeResult.onSelect) {
-        console.error(`[mergeExecution] Auto-selecting kill_clean_branch option for ${pane.slug}`);
-        return closeResult.onSelect('kill_clean_branch');
+      if (closeResult.type === "choice" && closeResult.onSelect) {
+        console.error(
+          `[mergeExecution] Auto-selecting kill_clean_branch option for ${pane.slug}`
+        )
+        return closeResult.onSelect("kill_clean_branch")
       }
 
       // For shell panes or if something unexpected happened, just return the result
-      return closeResult;
+      return closeResult
     },
     onCancel: async () => {
       return {
-        type: 'success',
-        message: 'Merge complete. Pane kept open.',
+        type: "success",
+        message: "Merge complete. Pane kept open.",
         dismissable: true,
-      };
+      }
     },
-  };
+  }
 }
