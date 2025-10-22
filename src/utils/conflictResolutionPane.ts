@@ -66,7 +66,8 @@ export async function createConflictResolutionPane(
 
   // CD into the target repository (where we'll resolve conflicts)
   try {
-    await tmuxService.sendKeys(paneInfo, `cd "${targetRepoPath}" Enter`);
+    const cdCmd = `'cd "${targetRepoPath}"'`;
+    await tmuxService.sendKeys(paneInfo, `${cdCmd} Enter`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to cd into target repo:', error);
@@ -75,7 +76,7 @@ export async function createConflictResolutionPane(
   // CRITICAL: Ensure clean state before starting merge
   // If a previous merge attempt left MERGE_HEAD, abort it first
   try {
-    await tmuxService.sendKeys(paneInfo, 'git merge --abort 2>/dev/null || true Enter');
+    await tmuxService.sendKeys(paneInfo, `'git merge --abort 2>/dev/null || true' Enter`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to abort previous merge:', error);
@@ -84,7 +85,8 @@ export async function createConflictResolutionPane(
   // CRITICAL: Start the merge to create conflict markers for the agent to resolve
   // This is necessary because pre-validation or failed execution may have aborted the merge
   try {
-    await tmuxService.sendKeys(paneInfo, `git merge ${targetBranch} --no-edit || true Enter`);
+    const mergeCmd = `'git merge ${targetBranch} --no-edit || true'`;
+    await tmuxService.sendKeys(paneInfo, `${mergeCmd} Enter`);
     await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
   } catch (error) {
     console.error('[conflictResolutionPane] Failed to initiate merge:', error);

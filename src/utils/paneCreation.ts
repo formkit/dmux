@@ -256,7 +256,9 @@ export async function createPane(
       ? `git worktree add "${worktreePath}" ${slug} && cd "${worktreePath}"`
       : `git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"`;
 
-    await tmuxService.sendKeys(paneInfo, `${worktreeCmd} Enter`);
+    // Properly quote the command for tmux send-keys, escaping any single quotes
+    const quotedCmd = `'${worktreeCmd.replace(/'/g, "'\\''")}'`;
+    await tmuxService.sendKeys(paneInfo, `${quotedCmd} Enter`);
 
     // Wait for worktree to actually exist on the filesystem
     const maxWaitTime = 5000; // 5 seconds max
