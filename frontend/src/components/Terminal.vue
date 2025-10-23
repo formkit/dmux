@@ -681,7 +681,7 @@ function focusMobileInput() {
   }
 }
 
-function handleMobileInput(event: Event) {
+async function handleMobileInput(event: Event) {
   const target = event.target as HTMLInputElement;
   const newValue = target.value;
   const oldValue = mobileInputValue.value;
@@ -690,9 +690,20 @@ function handleMobileInput(event: Event) {
     // Characters were added
     const addedChars = newValue.substring(oldValue.length);
 
-    // Send each character
-    for (const char of addedChars) {
-      sendKey(char);
+    // If multiple characters added at once (paste), send as bulk text for efficiency
+    if (addedChars.length > 1) {
+      try {
+        await fetch(`/api/keys/${actualPaneId.value}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: addedChars })
+        });
+      } catch (error) {
+        // Silently ignore
+      }
+    } else {
+      // Single character - send normally
+      sendKey(addedChars);
     }
   } else if (newValue.length < oldValue.length) {
     // Characters were deleted - send backspace

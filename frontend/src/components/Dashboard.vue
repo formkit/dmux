@@ -519,14 +519,12 @@ const sendPrompt = async (pane: any) => {
     sendingPrompts.value.add(pane.id);
     sendingPrompts.value = new Set(sendingPrompts.value);
 
-    // Send each character individually
-    for (const char of prompt) {
-      await fetch(`/api/keys/${pane.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: char })
-      });
-    }
+    // Send the entire prompt text in a single request (much faster!)
+    await fetch(`/api/keys/${pane.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: prompt })
+    });
 
     // Send Enter key to submit
     await fetch(`/api/keys/${pane.id}`, {

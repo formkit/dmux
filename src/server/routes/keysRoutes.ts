@@ -36,9 +36,27 @@ export function createKeysRoutes() {
 
         // Read the keystroke data from the request body
         const body = await readBody(event);
+
+        // Support bulk text input (for sending multiple characters at once)
+        if (body && typeof body.text === 'string') {
+          try {
+            // Send the entire text at once using literal mode
+            // This is much more efficient than sending character-by-character from the frontend
+            await tmuxService.sendKeys(pane.paneId, `-l ${JSON.stringify(body.text)}`);
+            return { success: true, text: body.text, characterCount: body.text.length };
+          } catch (error: any) {
+            const msg = 'Failed to send text to pane';
+            console.error(msg, error);
+            LogService.getInstance().error(msg, 'routes', pane.id, error instanceof Error ? error : undefined);
+            event.node.res.statusCode = 500;
+            return { error: 'Failed to send text', details: error.message };
+          }
+        }
+
+        // Original single-key handling
         if (!body || typeof body.key !== 'string') {
           event.node.res.statusCode = 400;
-          return { error: 'Missing or invalid key data' };
+          return { error: 'Missing or invalid key/text data' };
         }
 
         try {
