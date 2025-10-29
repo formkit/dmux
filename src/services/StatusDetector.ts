@@ -163,8 +163,8 @@ export class StatusDetector extends EventEmitter {
           throw new Error(`No tmux pane ID found for ${paneId}`);
         }
 
-        // Run LLM analysis with abort signal
-        const analysis = await this.paneAnalyzer.analyzePane(tmuxPaneId, controller.signal);
+        // Run LLM analysis with abort signal (pass dmux pane ID for friendly logging)
+        const analysis = await this.paneAnalyzer.analyzePane(tmuxPaneId, controller.signal, paneId);
 
         // Clear the timeout since analysis completed
         clearTimeout(timeoutId);
@@ -313,40 +313,80 @@ export class StatusDetector extends EventEmitter {
     analysis: PaneAnalysis,
     finalStatus: AgentStatus
   ): Promise<void> {
-    // Only proceed if status is 'waiting' (option dialog detected)
-    if (finalStatus !== 'waiting') return;
+    const logService = LogService.getInstance();
 
-    // Get pane data to check autopilot setting
+    // Get pane data early for friendly naming in logs
     const stateManager = StateManager.getInstance();
     const pane = stateManager.getPaneById(paneId);
+    const paneName = pane?.slug || paneId;
 
-    if (!pane || !pane.autopilot) return;
+    // Log entry into autopilot handler
+    logService.debug(`Autopilot: Evaluating "${paneName}" (status: ${finalStatus}, state: ${analysis.state})`, 'autopilot', paneId);
+
+    // Only proceed if status is 'waiting' (option dialog detected)
+    if (finalStatus !== 'waiting') {
+      logService.debug(`Autopilot: Skipping "${paneName}" - status is '${finalStatus}' (expected 'waiting')`, 'autopilot', paneId);
+      return;
+    }
+
+    if (!pane) {
+      logService.debug(`Autopilot: Pane ${paneId} not found in state manager`, 'autopilot', paneId);
+      return;
+    }
+
+    if (!pane.autopilot) {
+      logService.debug(`Autopilot: "${paneName}" has autopilot disabled`, 'autopilot', paneId);
+      return;
+    }
+
+    logService.debug(`Autopilot: "${paneName}" has autopilot enabled - checking analysis results`, 'autopilot', paneId);
 
     // Check if there's a risk - don't auto-accept risky options
     if (analysis.potentialHarm?.hasRisk) {
+      logService.info(
+        `Autopilot: Refusing to auto-accept for "${paneName}" - risk detected: ${analysis.potentialHarm.description || 'unknown risk'}`,
+        'autopilot',
+        paneId
+      );
       return;
     }
 
+    logService.debug(`Autopilot: No risk detected for "${paneName}"`, 'autopilot', paneId);
+
     // Check if we have options
     if (!analysis.options || analysis.options.length === 0) {
+      logService.debug(`Autopilot: No options available for "${paneName}"`, 'autopilot', paneId);
       return;
     }
+
+    logService.debug(`Autopilot: Found ${analysis.options.length} options for "${paneName}": ${JSON.stringify(analysis.options.map(o => o.action))}`, 'autopilot', paneId);
 
     // Get the first option (typically the "accept" or "continue" option)
     const firstOption = analysis.options[0];
     if (!firstOption.keys || firstOption.keys.length === 0) {
+      logService.debug(`Autopilot: First option has no keys for "${paneName}"`, 'autopilot', paneId);
       return;
     }
 
     // Send the first key of the first option
     const keyToSend = firstOption.keys[0];
-    LogService.getInstance().info(`Autopilot: Auto-accepting option for pane ${paneId}: ${firstOption.action} (key: ${keyToSend})`, 'autopilot', paneId);
+    logService.info(
+      `Autopilot: Auto-accepting option for "${paneName}": "${firstOption.action}" (key: ${keyToSend})`,
+      'autopilot',
+      paneId
+    );
 
     try {
       // Send the key through the worker manager
       await this.sendKeysToPane(paneId, keyToSend);
+      logService.debug(`Autopilot: Successfully sent key '${keyToSend}' to "${paneName}"`, 'autopilot', paneId);
     } catch (error) {
-      LogService.getInstance().error(`Autopilot: Failed to send keys for pane ${paneId}: ${error}`, 'autopilot', paneId, error instanceof Error ? error : undefined);
+      logService.error(
+        `Autopilot: Failed to send keys for "${paneName}": ${error}`,
+        'autopilot',
+        paneId,
+        error instanceof Error ? error : undefined
+      );
     }
   }
 

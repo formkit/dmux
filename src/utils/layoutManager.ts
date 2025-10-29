@@ -80,16 +80,14 @@ export async function recalculateAndApplyLayout(
   if (dimensionsUnchanged) {
     // Layout unchanged - skip ALL layout operations to prevent Ink redraw
     // This prevents the dmux UI from being cleared on resize when nothing changed
-    LogService.getInstance().debug(
-      `Layout unchanged (${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes), skipping layout application`,
-      'ResizeDebug'
-    );
+    // (Removed noisy debug log that fires on every check)
     return;
   }
 
-  LogService.getInstance().debug(
-    `Dimensions changed, applying layout: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
-    'ResizeDebug'
+  // Only log when dimensions actually change (much less noisy)
+  LogService.getInstance().info(
+    `Layout dimensions changed: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
+    'layout'
   );
 
   // Update last layout dimensions

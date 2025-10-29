@@ -358,9 +358,10 @@ export class PopupManager {
       const logsData = {
         logs: stateManager.getLogs(),
         stats: stateManager.getLogStats(),
+        panes: stateManager.getPanes(), // Include panes for slug lookup
       }
 
-      const result = await this.launchPopup<void>(
+      const result = await this.launchPopup<{ clearLogs?: boolean }>(
         "logsPopup.js",
         [],
         {
@@ -372,6 +373,12 @@ export class PopupManager {
 
       if (result.success) {
         stateManager.markAllLogsAsRead()
+
+        // Check if user requested to clear logs
+        if (result.data?.clearLogs) {
+          LogService.getInstance().clearAll()
+          this.showTempMessage('✓ Logs cleared', 2000)
+        }
       }
     } catch (error: any) {
       this.showTempMessage(`Failed to launch popup: ${error.message}`)

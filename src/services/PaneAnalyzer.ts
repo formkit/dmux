@@ -1,4 +1,5 @@
 import { capturePaneContent } from '../utils/paneCapture.js';
+import { LogService } from './LogService.js';
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';
@@ -91,10 +92,16 @@ export class PaneAnalyzer {
 
   /**
    * Stage 1: Determines the state of the pane
+   * @param content - Captured pane content
+   * @param signal - Optional abort signal
+   * @param paneName - Optional friendly pane name for logging
    */
-  async determineState(content: string, signal?: AbortSignal): Promise<PaneState> {
+  async determineState(content: string, signal?: AbortSignal, paneName?: string): Promise<PaneState> {
+    const logService = LogService.getInstance();
+
     if (!this.apiKey) {
       // API key not set
+      logService.debug(`PaneAnalyzer: No API key set, defaulting to in_progress state${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
       return 'in_progress';
     }
 
@@ -135,6 +142,8 @@ CRITICAL:
 3. When uncertain, default to "open_prompt"`;
 
     try {
+      logService.debug(`PaneAnalyzer: Requesting state determination${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
+
       const data = await this.makeRequestWithFallback(
         systemPrompt,
         `Analyze this terminal output and return a JSON object with the state:\n\n${content}`,
@@ -143,15 +152,19 @@ CRITICAL:
       );
 
       const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+      logService.debug(`PaneAnalyzer: LLM response for state determination${paneName ? ` ("${paneName}")` : ''}: ${JSON.stringify(result)}`, 'paneAnalyzer');
 
       // Validate the state
       const state = result.state;
       if (state === 'option_dialog' || state === 'open_prompt' || state === 'in_progress') {
+        logService.debug(`PaneAnalyzer: Determined state${paneName ? ` for "${paneName}"` : ''}: ${state}`, 'paneAnalyzer');
         return state;
       }
 
+      logService.debug(`PaneAnalyzer: Invalid state received${paneName ? ` for "${paneName}"` : ''} (${state}), defaulting to in_progress`, 'paneAnalyzer');
       return 'in_progress';
     } catch (error) {
+      logService.error(`PaneAnalyzer: Failed to determine state${paneName ? ` for "${paneName}"` : ''}: ${error}`, 'paneAnalyzer', undefined, error instanceof Error ? error : undefined);
       // Failed to determine state - throw error to be handled by caller
       throw error;
     }
@@ -159,9 +172,15 @@ CRITICAL:
 
   /**
    * Stage 2: Extract option details if state is option_dialog
+   * @param content - Captured pane content
+   * @param signal - Optional abort signal
+   * @param paneName - Optional friendly pane name for logging
    */
-  async extractOptions(content: string, signal?: AbortSignal): Promise<Omit<PaneAnalysis, 'state'>> {
+  async extractOptions(content: string, signal?: AbortSignal, paneName?: string): Promise<Omit<PaneAnalysis, 'state'>> {
+    const logService = LogService.getInstance();
+
     if (!this.apiKey) {
+      logService.debug(`PaneAnalyzer: No API key set, cannot extract options${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
       return {};
     }
 
@@ -210,6 +229,8 @@ Output: {
 }`;
 
     try {
+      logService.debug(`PaneAnalyzer: Requesting options extraction${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
+
       const data = await this.makeRequestWithFallback(
         systemPrompt,
         `Extract the option details from this dialog and return as JSON:\n\n${content}`,
@@ -218,8 +239,9 @@ Output: {
       );
 
       const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+      logService.debug(`PaneAnalyzer: LLM response for options extraction${paneName ? ` ("${paneName}")` : ''}: ${JSON.stringify(result)}`, 'paneAnalyzer');
 
-      return {
+      const parsedOptions = {
         question: result.question,
         options: result.options?.map((opt: any) => ({
           action: opt.action,
@@ -231,7 +253,16 @@ Output: {
           description: result.potential_harm.description
         } : undefined
       };
+
+      logService.debug(
+        `PaneAnalyzer: Extracted ${parsedOptions.options?.length || 0} options${paneName ? ` for "${paneName}"` : ''}` +
+        (parsedOptions.potentialHarm?.hasRisk ? ` (RISK: ${parsedOptions.potentialHarm.description})` : ''),
+        'paneAnalyzer'
+      );
+
+      return parsedOptions;
     } catch (error) {
+      logService.error(`PaneAnalyzer: Failed to extract options${paneName ? ` for "${paneName}"` : ''}: ${error}`, 'paneAnalyzer', undefined, error instanceof Error ? error : undefined);
       // Failed to extract options - throw error to be handled by caller
       throw error;
     }
@@ -285,31 +316,62 @@ If there's no meaningful content or the output is unclear, return an empty summa
 
   /**
    * Main analysis function that captures and analyzes a pane
+   * @param tmuxPaneId - The tmux pane ID (e.g., "%38")
+   * @param signal - Optional abort signal
+   * @param dmuxPaneId - Optional dmux pane ID for friendly logging (e.g., "dmux-123")
    */
-  async analyzePane(paneId: string, signal?: AbortSignal): Promise<PaneAnalysis> {
+  async analyzePane(tmuxPaneId: string, signal?: AbortSignal, dmuxPaneId?: string): Promise<PaneAnalysis> {
+    const logService = LogService.getInstance();
+
+    // For logging, try to get friendly name from StateManager
+    let paneName = tmuxPaneId;
+    if (dmuxPaneId) {
+      try {
+        // Import dynamically to avoid circular dependency
+        const { StateManager } = await import('../shared/StateManager.js');
+        const pane = StateManager.getInstance().getPaneById(dmuxPaneId);
+        paneName = pane?.slug || dmuxPaneId;
+      } catch {
+        paneName = dmuxPaneId;
+      }
+    }
+
+    logService.debug(`PaneAnalyzer: Starting analysis for "${paneName}"`, 'paneAnalyzer', dmuxPaneId);
+
     // Capture the pane content (50 lines for state detection)
-    const content = capturePaneContent(paneId, 50);
+    const content = capturePaneContent(tmuxPaneId, 50);
 
     if (!content) {
+      logService.debug(`PaneAnalyzer: No content captured for "${paneName}", defaulting to in_progress`, 'paneAnalyzer', dmuxPaneId);
       return { state: 'in_progress' };
     }
 
     try {
       // Stage 1: Determine the state
-      const state = await this.determineState(content, signal);
+      const state = await this.determineState(content, signal, paneName);
 
       // If it's an option dialog, extract option details
       if (state === 'option_dialog') {
-        const optionDetails = await this.extractOptions(content, signal);
-        return {
+        logService.debug(`PaneAnalyzer: Detected option_dialog for "${paneName}", extracting options...`, 'paneAnalyzer', dmuxPaneId);
+        const optionDetails = await this.extractOptions(content, signal, paneName);
+        const analysis = {
           state,
           ...optionDetails
         };
+        logService.info(
+          `PaneAnalyzer: Analysis complete for "${paneName}": option_dialog with ${analysis.options?.length || 0} options` +
+          (analysis.potentialHarm?.hasRisk ? ' (RISK DETECTED)' : ''),
+          'paneAnalyzer',
+          dmuxPaneId
+        );
+        return analysis;
       }
 
       // If it's open_prompt (idle), extract summary
       if (state === 'open_prompt') {
+        logService.debug(`PaneAnalyzer: Detected open_prompt for "${paneName}", extracting summary...`, 'paneAnalyzer', dmuxPaneId);
         const summary = await this.extractSummary(content, signal);
+        logService.debug(`PaneAnalyzer: Analysis complete for "${paneName}": open_prompt${summary ? ` (summary: ${summary.substring(0, 50)}...)` : ''}`, 'paneAnalyzer', dmuxPaneId);
         return {
           state,
           summary
@@ -317,8 +379,10 @@ If there's no meaningful content or the output is unclear, return an empty summa
       }
 
       // Otherwise just return the state (in_progress)
+      logService.debug(`PaneAnalyzer: Analysis complete for "${paneName}": in_progress`, 'paneAnalyzer', dmuxPaneId);
       return { state };
     } catch (error) {
+      logService.error(`PaneAnalyzer: Analysis failed for "${paneName}": ${error}`, 'paneAnalyzer', dmuxPaneId, error instanceof Error ? error : undefined);
       // All models failed or other error occurred
       // Return open_prompt as fallback (idle state) and let error be handled by caller
       throw error;

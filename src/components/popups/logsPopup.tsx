@@ -19,7 +19,7 @@ import { execSync } from 'child_process';
 import { POPUP_CONFIG } from './config.js';
 import { PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 
-type FilterMode = 'all' | 'errors' | 'warnings' | 'pane';
+type FilterMode = 'all' | 'errors' | 'warnings' | 'info' | 'pane';
 
 interface LogsPopupProps {
   allLogs: LogEntry[];
@@ -30,13 +30,14 @@ interface LogsPopupProps {
     unreadErrors: number;
     unreadWarnings: number;
   };
+  panes?: Array<{ id: string; slug: string }>; // For looking up friendly pane names
 }
 
 interface LogsPopupAppProps extends LogsPopupProps {
   resultFile: string;
 }
 
-const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile }) => {
+const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, panes = [], resultFile }) => {
   const { stdout } = useStdout();
   const { exit } = useApp();
   const terminalHeight = stdout?.rows || 50;
@@ -84,6 +85,9 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
       case 'warnings':
         filtered = filtered.filter(log => log.level === 'warn');
         break;
+      case 'info':
+        filtered = filtered.filter(log => log.level === 'info');
+        break;
       case 'pane':
         // When in pane mode, only show logs with pane IDs
         if (selectedPane) {
@@ -109,6 +113,12 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
   }, [filterMode, filteredLogs, availableLogLines]);
 
   const halfPageSize = Math.floor(availableLogLines / 2);
+
+  // Helper to get friendly pane name from paneId
+  const getPaneName = (paneId: string): string => {
+    const pane = panes.find(p => p.id === paneId);
+    return pane?.slug || paneId;
+  };
 
   useInput((input, key) => {
     if (key.escape) {
@@ -201,17 +211,26 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
       return;
     }
 
+    // Clear logs
+    if (input === 'x') {
+      writeSuccessAndExit(resultFile, { clearLogs: true }, exit);
+      return;
+    }
+
     // Filter mode selection
     if (input === '1') {
       setFilterMode('all');
       setSelectedPane(null);
     } else if (input === '2') {
-      setFilterMode('errors');
+      setFilterMode('info');
       setSelectedPane(null);
     } else if (input === '3') {
       setFilterMode('warnings');
       setSelectedPane(null);
     } else if (input === '4') {
+      setFilterMode('errors');
+      setSelectedPane(null);
+    } else if (input === '5') {
       setFilterMode('pane');
       // Start with first pane if available
       if (availablePanes.length > 0 && !selectedPane) {
@@ -285,9 +304,10 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
   const renderFilterTabs = () => {
     const tabs = [
       { key: '1', label: 'All', mode: 'all' as FilterMode },
-      { key: '2', label: 'Errors', mode: 'errors' as FilterMode },
+      { key: '2', label: 'Info', mode: 'info' as FilterMode },
       { key: '3', label: 'Warnings', mode: 'warnings' as FilterMode },
-      { key: '4', label: filterMode === 'pane' && selectedPane ? `Pane: ${selectedPane}` : 'By Pane', mode: 'pane' as FilterMode },
+      { key: '4', label: 'Errors', mode: 'errors' as FilterMode },
+      { key: '5', label: filterMode === 'pane' && selectedPane ? `Pane: ${getPaneName(selectedPane)}` : 'By Pane', mode: 'pane' as FilterMode },
     ];
 
     return (
@@ -330,7 +350,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
         {log.paneId && (
           <Box marginLeft={2}>
             <Text dimColor>
-              └─ Pane: {log.paneId}
+              └─ Pane: {getPaneName(log.paneId)}
             </Text>
           </Box>
         )}
@@ -407,11 +427,11 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, resultFile 
         {/* Footer - always at bottom */}
         <Box borderStyle="single" borderColor={POPUP_CONFIG.borderColor} paddingX={1}>
           <Text dimColor>
-            ↑↓: Scroll • 1-4: Filter
+            ↑↓: Scroll • 1-5: Filter
             {filterMode === 'pane' && availablePanes.length > 0 && (
-              <Text dimColor> • ←→: {selectedPane || 'All Panes'}</Text>
+              <Text dimColor> • ←→: {selectedPane ? getPaneName(selectedPane) : 'All Panes'}</Text>
             )}
-            {' • [c]: Copy • [o]: Open in editor'}
+            {' • [c]: Copy • [o]: Open • [x]: Clear'}
             {' • ESC: Close'}
             {filteredLogs.length > availableLogLines && (
               <Text dimColor> • Showing {scrollOffset + 1}-{Math.min(scrollOffset + availableLogLines, filteredLogs.length)} of {filteredLogs.length}</Text>
@@ -435,7 +455,7 @@ function main() {
     process.exit(1);
   }
 
-  let logsData: { logs: LogEntry[]; stats: any };
+  let logsData: { logs: LogEntry[]; stats: any; panes?: Array<{ id: string; slug: string }> };
   try {
     const dataJson = fs.readFileSync(dataFile, 'utf-8');
     logsData = JSON.parse(dataJson);
@@ -444,7 +464,7 @@ function main() {
     process.exit(1);
   }
 
-  render(<LogsPopupApp allLogs={logsData.logs} stats={logsData.stats} resultFile={resultFile} />);
+  render(<LogsPopupApp allLogs={logsData.logs} stats={logsData.stats} panes={logsData.panes} resultFile={resultFile} />);
 }
 
 main();
