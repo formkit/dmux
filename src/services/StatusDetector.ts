@@ -325,7 +325,7 @@ export class StatusDetector extends EventEmitter {
 
     // Only proceed if status is 'waiting' (option dialog detected)
     if (finalStatus !== 'waiting') {
-      logService.debug(`Autopilot: Skipping "${paneName}" - status is '${finalStatus}' (expected 'waiting')`, 'autopilot', paneId);
+      logService.debug(`Autopilot: Not applicable for "${paneName}" - agent is ${finalStatus}, no decision needed`, 'autopilot', paneId);
       return;
     }
 

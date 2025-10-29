@@ -333,7 +333,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, panes = [],
     const isCritical = log.level === 'error' || log.level === 'warn';
 
     return (
-      <Box key={log.id} flexDirection="column" marginBottom={0}>
+      <Box key={log.id} flexDirection="column">
         <Text>
           <Text dimColor>{time}</Text>
           <Text color={color} bold={isCritical}>
@@ -348,18 +348,16 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, panes = [],
           </Text>
         </Text>
         {log.paneId && (
-          <Box marginLeft={2}>
-            <Text dimColor>
-              └─ Pane: {getPaneName(log.paneId)}
-            </Text>
-          </Box>
+          <Text dimColor>
+            {'  └─ Pane: '}
+            {getPaneName(log.paneId)}
+          </Text>
         )}
         {log.stack && (
-          <Box marginLeft={2}>
-            <Text color="red">
-              Stack: {log.stack.split('\n')[0]}
-            </Text>
-          </Box>
+          <Text color="red">
+            {'  Stack: '}
+            {log.stack.split('\n')[0]}
+          </Text>
         )}
       </Box>
     );
