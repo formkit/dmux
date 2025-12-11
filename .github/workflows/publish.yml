@@ -24,6 +24,9 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
+      - name: Update npm
+        run: npm install -g npm@latest
+
       - run: pnpm install
       - run: pnpm build
       - run: pnpm publish --no-git-checks --provenance --access public
