@@ -91,7 +91,15 @@ async function executeCloseOption(
     StateManager.getInstance().pauseConfigWatcher();
 
     try {
-      // Kill the tmux pane - use a more robust approach
+      // CRITICAL: Remove from config FIRST, before killing tmux pane
+      // This prevents the race condition where polling detects "missing" pane
+      // and recreates it before we finish closing
+      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
+      console.error(`[closeAction] Removing pane ${pane.id} from config FIRST, result: ${updatedPanes.length} panes`);
+      await context.savePanes(updatedPanes);
+      console.error(`[closeAction] Config saved, now killing tmux pane`);
+
+      // NOW kill the tmux pane (after config is updated)
       try {
         // First, try to kill any running process in the pane (like Claude)
         try {
@@ -156,12 +164,6 @@ async function executeCloseOption(
           }
         }
       }
-
-      // Remove from panes list
-      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
-      console.error(`[closeAction] Filtering pane ${pane.id} from context.panes, result: ${updatedPanes.length} panes`);
-      await context.savePanes(updatedPanes);
-      console.error(`[closeAction] Panes saved successfully`);
 
       if (context.onPaneRemove) {
         context.onPaneRemove(pane.paneId); // Pass tmux pane ID, not dmux ID

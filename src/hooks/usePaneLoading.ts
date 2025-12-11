@@ -1,16 +1,10 @@
 import fs from 'fs/promises';
-import path from 'path';
 import type { DmuxPane } from '../types.js';
 import { splitPane } from '../utils/tmux.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
 import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
-import {
-  scanForOrphanedWorktrees,
-  createPanesForOrphanedWorktrees,
-  getNextDmuxIdNumber,
-} from '../utils/worktreeScanner.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 
 // Separate config structure to match new format
@@ -155,24 +149,16 @@ export async function recreateKilledWorktreePanes(
 ): Promise<DmuxPane[]> {
   const lifecycleManager = PaneLifecycleManager.getInstance();
 
-  // Filter out panes that are being intentionally closed or are orphaned
+  // Filter out panes that are being intentionally closed
   const worktreePanesToRecreate = panes.filter(pane => {
     // Pane must be missing from tmux and have a worktree path
     if (allPaneIds.includes(pane.paneId) || !pane.worktreePath) {
       return false;
     }
 
-    // Don't recreate orphaned panes - they were never open, user must explicitly open them
-    if (pane.orphaned) {
-      LogService.getInstance().debug(
-        `Skipping recreation of orphaned pane ${pane.id} (${pane.slug}) - awaiting user action`,
-        'shellDetection'
-      );
-      return false;
-    }
-
     // CRITICAL: Check if this pane is being intentionally closed
-    // This prevents race condition where close action removes pane but polling recreates it
+    // This is a safety belt - the main protection is that close action
+    // removes pane from config BEFORE killing tmux pane
     if (lifecycleManager.isClosing(pane.id) || lifecycleManager.isClosing(pane.paneId)) {
       LogService.getInstance().debug(
         `Skipping recreation of pane ${pane.id} (${pane.slug}) - intentionally being closed`,
@@ -263,50 +249,22 @@ export async function recreateKilledWorktreePanes(
 
 /**
  * Loads panes from config file, rebinds IDs, and recreates missing panes
- * Also scans filesystem for orphaned worktrees (exist on disk but not in config)
  * Returns the loaded and processed panes along with tmux state
  */
 export async function loadAndProcessPanes(
   panesFile: string,
   isInitialLoad: boolean
 ): Promise<PaneLoadResult> {
-  let loadedPanes = await loadPanesFromFile(panesFile);
+  const loadedPanes = await loadPanesFromFile(panesFile);
   let { allPaneIds, titleToId } = await fetchTmuxPaneIds();
-
-  // On initial load, scan for orphaned worktrees on filesystem
-  // These are worktrees that exist in .dmux/worktrees/ but aren't tracked in config
-  if (isInitialLoad) {
-    try {
-      // Get project root from panesFile path (strip .dmux/dmux.config.json)
-      const projectRoot = path.dirname(path.dirname(panesFile));
-      const orphanedWorktrees = await scanForOrphanedWorktrees(projectRoot, loadedPanes);
-
-      if (orphanedWorktrees.length > 0) {
-        const nextId = getNextDmuxIdNumber(loadedPanes);
-        const orphanedPanes = createPanesForOrphanedWorktrees(orphanedWorktrees, nextId);
-        loadedPanes = [...loadedPanes, ...orphanedPanes];
-
-        LogService.getInstance().info(
-          `Added ${orphanedPanes.length} orphaned worktree(s) to pane list`,
-          'usePaneLoading'
-        );
-      }
-    } catch (error) {
-      LogService.getInstance().debug(
-        `Error scanning for orphaned worktrees: ${error instanceof Error ? error.message : String(error)}`,
-        'usePaneLoading'
-      );
-    }
-  }
 
   // Attempt to rebind panes whose IDs changed by matching on title (slug)
   const reboundPanes = loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
 
   // Only attempt to recreate missing panes on initial load
-  // Skip orphaned panes (they don't have tmux panes yet, that's expected)
   const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && isInitialLoad)
     ? reboundPanes.filter(pane =>
-        !allPaneIds.includes(pane.paneId) && pane.type !== 'shell' && !pane.orphaned
+        !allPaneIds.includes(pane.paneId) && pane.type !== 'shell'
       )
     : [];
 

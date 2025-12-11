@@ -170,23 +170,13 @@ export function rebindAndFilterPanes(
       }
 
       // For worktree panes after initial load, queue them for recreation
-      // BUT: Don't recreate orphaned panes - they were never open in the first place
-      if (!isInitialLoad && pane.worktreePath && !pane.orphaned) {
+      if (!isInitialLoad && pane.worktreePath) {
         LogService.getInstance().debug(
           `Worktree pane ${pane.id} (${pane.slug}) was killed, will recreate it`,
           'shellDetection'
         );
         worktreePanesToRecreate.push(pane);
         return true; // Keep it in the list
-      }
-
-      // Keep orphaned panes in the list (user needs to manually open them)
-      if (pane.orphaned) {
-        LogService.getInstance().debug(
-          `Keeping orphaned pane: ${pane.id} (${pane.slug}) - awaiting user action`,
-          'shellDetection'
-        );
-        return true;
       }
 
       // Keep worktree panes (they can be recreated on restart)
