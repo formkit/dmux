@@ -950,20 +950,25 @@ export class TmuxService {
 
   /**
    * Select layout by name (sync version for compatibility)
+   * Note: Does NOT throw on error - logs warning and returns false instead
+   * This prevents crashes during rapid resize events
    */
-  selectLayoutSync(layout: string): void {
+  selectLayoutSync(layout: string): boolean {
     try {
       this.execute(`tmux select-layout '${layout}'`);
+      return true;
     } catch (error) {
       this.logger.warn(`Failed to select layout ${layout}`, 'TmuxService');
-      throw error;
+      return false;
     }
   }
 
   /**
    * Resize pane (sync version for compatibility)
+   * Note: Does NOT throw on error - logs warning and returns false instead
+   * This prevents crashes during rapid resize events
    */
-  resizePaneSync(paneId: string, dimensions: { width?: number; height?: number }): void {
+  resizePaneSync(paneId: string, dimensions: { width?: number; height?: number }): boolean {
     try {
       if (dimensions.width !== undefined) {
         this.execute(`tmux resize-pane -t '${paneId}' -x ${dimensions.width}`);
@@ -971,21 +976,25 @@ export class TmuxService {
       if (dimensions.height !== undefined) {
         this.execute(`tmux resize-pane -t '${paneId}' -y ${dimensions.height}`);
       }
+      return true;
     } catch (error) {
       this.logger.warn(`Failed to resize pane ${paneId}`, 'TmuxService');
-      throw error;
+      return false;
     }
   }
 
   /**
    * Resize window (sync version for compatibility)
+   * Note: Does NOT throw on error - logs warning and returns false instead
+   * This prevents crashes during rapid resize events
    */
-  resizeWindowSync(dimensions: { width: number; height: number }): void {
+  resizeWindowSync(dimensions: { width: number; height: number }): boolean {
     try {
       this.execute(`tmux resize-window -x ${dimensions.width} -y ${dimensions.height}`);
+      return true;
     } catch (error) {
       this.logger.warn('Failed to resize window', 'TmuxService');
-      throw error;
+      return false;
     }
   }
 
