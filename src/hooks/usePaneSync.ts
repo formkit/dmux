@@ -3,6 +3,7 @@ import type { DmuxPane } from '../types.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
+import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT } from '../constants/timing.js';
 import type { DmuxConfig } from './usePaneLoading.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
@@ -110,6 +111,9 @@ export async function savePanesToFile(
 /**
  * Rebinds all panes and filters out dead shell panes
  * Keeps worktree panes even if not found (they can be recreated)
+ *
+ * IMPORTANT: Checks PaneLifecycleManager to avoid queuing panes for recreation
+ * if they are being intentionally closed (prevents race condition)
  */
 export function rebindAndFilterPanes(
   loadedPanes: DmuxPane[],
@@ -118,6 +122,7 @@ export function rebindAndFilterPanes(
   isInitialLoad: boolean
 ): { activePanes: DmuxPane[]; shellPanesRemoved: boolean; worktreePanesToRecreate: DmuxPane[] } {
   const worktreePanesToRecreate: DmuxPane[] = [];
+  const lifecycleManager = PaneLifecycleManager.getInstance();
 
   // LogService.getInstance().debug(
   //   `Checking panes: loaded=${loadedPanes.length}, allPaneIds=[${allPaneIds.join(', ')}]`,
@@ -140,6 +145,16 @@ export function rebindAndFilterPanes(
   const activePanes = reboundPanes.filter(pane => {
     // If we have tmux data and this pane is not found
     if (allPaneIds.length > 0 && !allPaneIds.includes(pane.paneId)) {
+      // CRITICAL: Check if pane is being intentionally closed
+      // If so, remove it from tracking (don't recreate, don't keep)
+      if (lifecycleManager.isClosing(pane.id) || lifecycleManager.isClosing(pane.paneId)) {
+        LogService.getInstance().debug(
+          `Pane ${pane.id} (${pane.slug}) is being intentionally closed - removing from list`,
+          'shellDetection'
+        );
+        return false; // Remove from list entirely
+      }
+
       LogService.getInstance().debug(
         `Pane ${pane.id} (${pane.paneId}) not in tmux. Type: ${pane.type}`,
         'shellDetection'
@@ -155,13 +170,23 @@ export function rebindAndFilterPanes(
       }
 
       // For worktree panes after initial load, queue them for recreation
-      if (!isInitialLoad && pane.worktreePath) {
+      // BUT: Don't recreate orphaned panes - they were never open in the first place
+      if (!isInitialLoad && pane.worktreePath && !pane.orphaned) {
         LogService.getInstance().debug(
           `Worktree pane ${pane.id} (${pane.slug}) was killed, will recreate it`,
           'shellDetection'
         );
         worktreePanesToRecreate.push(pane);
         return true; // Keep it in the list
+      }
+
+      // Keep orphaned panes in the list (user needs to manually open them)
+      if (pane.orphaned) {
+        LogService.getInstance().debug(
+          `Keeping orphaned pane: ${pane.id} (${pane.slug}) - awaiting user action`,
+          'shellDetection'
+        );
+        return true;
       }
 
       // Keep worktree panes (they can be recreated on restart)

@@ -41,6 +41,8 @@ export interface DmuxPane {
   autopilot?: boolean;
   // Error message if pane analyzer encounters issues
   analyzerError?: string;
+  // Orphaned worktree - exists on filesystem but not in tmux (can be reopened)
+  orphaned?: boolean;
 }
 
 export interface PanePosition {
