@@ -61,14 +61,34 @@ export async function recalculateAndApplyLayout(
   terminalHeight: number,
   config: LayoutConfig = DEFAULT_LAYOUT_CONFIG
 ): Promise<void> {
-  // Create class instances with config
-  const calculator = new LayoutCalculator(config);
-  const spacerManager = new SpacerManager(config);
-  const layoutApplier = new TmuxLayoutApplier(config);
+  // Wrap entire function in try-catch to prevent crashes during resize
+  try {
+    // Validate inputs to prevent crashes from bad data
+    if (!controlPaneId || typeof controlPaneId !== 'string') {
+      LogService.getInstance().warn('Invalid controlPaneId, skipping layout', 'Layout');
+      return;
+    }
+    if (terminalWidth <= 0 || terminalHeight <= 0) {
+      LogService.getInstance().warn(
+        `Invalid terminal dimensions: ${terminalWidth}x${terminalHeight}, skipping layout`,
+        'Layout'
+      );
+      return;
+    }
 
-  // Step 1: Filter out any existing spacer from content panes
-  const existingSpacerId = spacerManager.findSpacerPane();
-  const realContentPanes = contentPaneIds.filter(id => id !== existingSpacerId);
+    // Create class instances with config
+    const calculator = new LayoutCalculator(config);
+    const spacerManager = new SpacerManager(config);
+    const layoutApplier = new TmuxLayoutApplier(config);
+
+    // Step 1: Filter out any existing spacer from content panes
+    let existingSpacerId: string | null = null;
+    try {
+      existingSpacerId = spacerManager.findSpacerPane();
+    } catch (error) {
+      LogService.getInstance().debug(`Failed to find spacer pane: ${error}`, 'Layout');
+    }
+    const realContentPanes = contentPaneIds.filter(id => id !== existingSpacerId);
 
   // Check if dimensions and pane count have changed since last layout
   const dimensionsUnchanged =
@@ -320,6 +340,16 @@ export async function recalculateAndApplyLayout(
 
   // Step 9: Apply the layout to tmux
   layoutApplier.applyPaneLayout(actualControlPaneId, finalContentPanes, finalLayout, terminalHeight);
+  } catch (error) {
+    // Catch-all for any errors during layout recalculation
+    // Log but don't crash - layout will be retried on next resize event
+    LogService.getInstance().error(
+      `Layout recalculation failed: ${error}`,
+      'Layout',
+      undefined,
+      error instanceof Error ? error : undefined
+    );
+  }
 }
 
 /**

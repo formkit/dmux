@@ -102,18 +102,10 @@ export class TmuxLayoutApplier {
         // Log pane state right before applying layout
         this.logPaneState();
 
-        try {
-          this.tmuxService.selectLayoutSync(layoutString);
-          // LogService.getInstance().debug('Layout string applied successfully', 'Layout');
-        } catch (layoutError: any) {
-          // Log the error for debugging
-          const errorMsg = layoutError?.message || String(layoutError);
-          LogService.getInstance().error(
-            `Layout string application failed: ${errorMsg}`,
-            'Layout'
-          );
-          // LogService.getInstance().debug(`Failed layout string: ${layoutString}`, 'Layout');
-
+        // selectLayoutSync returns false on failure (doesn't throw)
+        const success = this.tmuxService.selectLayoutSync(layoutString);
+        if (!success) {
+          // LogService.getInstance().debug('Layout application failed, using fallback', 'Layout');
           // Fallback to main-vertical if custom layout fails
           this.applyMainVerticalFallback();
         }
