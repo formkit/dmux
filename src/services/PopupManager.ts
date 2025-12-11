@@ -478,7 +478,7 @@ export class PopupManager {
 
       if (result.success) {
         // Check if this is an action result
-        if ((result as any).action === "hooks") {
+        if (result.data?.action === "hooks") {
           await onLaunchHooks()
           return null
         } else if (result.data) {
