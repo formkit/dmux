@@ -58,9 +58,9 @@
     "test": "vitest --run",
     "prepublishOnly": "pnpm run build",
     "prerelease": "run-s clean build typecheck",
-    "release": "bumpp --commit --push --tag && pnpm publish",
-    "release:minor": "bumpp minor --commit --push --tag && pnpm publish",
-    "release:major": "bumpp major --commit --push --tag && pnpm publish"
+    "release": "bumpp --commit --push --tag",
+    "release:minor": "bumpp minor --commit --push --tag",
+    "release:major": "bumpp major --commit --push --tag"
   },
   "bin": {
     "dmux": "./dmux"
