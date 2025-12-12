@@ -35,6 +35,8 @@ export async function buildMergeQueue(
     const hasNothingToMerge = validation.issues.some(i => i.type === 'nothing_to_merge');
     const hasOnlyNothingToMerge = validation.issues.length === 1 && hasNothingToMerge;
 
+    console.error(`[buildMergeQueue] ${worktree.repoName}: canMerge=${validation.canMerge}, issues=[${validation.issues.map(i => i.type).join(', ')}], included=${!hasOnlyNothingToMerge}`);
+
     if (!hasOnlyNothingToMerge) {
       queue.push({
         worktree,
@@ -44,6 +46,7 @@ export async function buildMergeQueue(
     }
   }
 
+  console.error(`[buildMergeQueue] Final queue: ${queue.map(q => q.worktree.repoName).join(', ')}`);
   return queue;
 }
 
@@ -69,20 +72,16 @@ function showMultiMergeConfirmation(
   queue: MergeQueueItem[]
 ): ActionResult {
   const worktreeList = queue
-    .map((item, idx) => {
-      const label = getWorktreeDisplayLabel(item.worktree);
-      const issues = item.validation.issues
-        .filter(i => i.type !== 'nothing_to_merge')
-        .map(i => i.type.replace(/_/g, ' '))
-        .join(', ');
-      return ` ${idx + 1}. ${label}${issues ? ` [${issues}]` : ''}`;
+    .map((item) => {
+      // Use just the repo name for cleaner display
+      return ` • ${item.worktree.repoName}`;
     })
     .join('\n');
 
   return {
     type: 'confirm',
     title: 'Multi-Repository Merge',
-    message: `Merge ${queue.length} repositor${queue.length === 1 ? 'y' : 'ies'}?\n\n${worktreeList}`,
+    message: `Changes detected in ${queue.length} repositor${queue.length === 1 ? 'y' : 'ies'}:\n\n${worktreeList}`,
     confirmLabel: 'Start Merge',
     cancelLabel: 'Cancel',
     onConfirm: async () => {
@@ -138,7 +137,8 @@ async function processNextInQueue(
     context,
     item,
     currentIndex,
-    queue.length,
+    queue,
+    result,
     async (success: boolean, error?: string) => {
       // Record result
       if (success) {
@@ -180,12 +180,13 @@ async function executeSingleWorktreeMerge(
   context: ActionContext,
   item: MergeQueueItem,
   currentIndex: number,
-  totalCount: number,
+  queue: MergeQueueItem[],
+  result: MultiMergeResult,
   onComplete: (success: boolean, error?: string) => Promise<ActionResult>
 ): Promise<ActionResult> {
   const { validation, worktree } = item;
   const worktreeLabel = getWorktreeDisplayLabel(worktree);
-  const progressPrefix = `[${currentIndex + 1}/${totalCount}] ${worktreeLabel}`;
+  const progressPrefix = `[${currentIndex + 1}/${queue.length}] ${worktreeLabel}`;
 
   // Handle issues first (same as single merge flow)
   if (!validation.canMerge) {
@@ -194,6 +195,9 @@ async function executeSingleWorktreeMerge(
       context,
       item,
       progressPrefix,
+      queue,
+      currentIndex,
+      result,
       onComplete
     );
   }
@@ -206,7 +210,7 @@ async function executeSingleWorktreeMerge(
     confirmLabel: 'Merge',
     cancelLabel: 'Skip',
     onConfirm: async () => {
-      return performWorktreeMerge(pane, context, item, progressPrefix, onComplete);
+      return performWorktreeMerge(pane, context, item, progressPrefix, onComplete, queue, currentIndex, result);
     },
     onCancel: async () => {
       // Skip this worktree, continue with others
@@ -223,6 +227,9 @@ async function handleWorktreeMergeIssues(
   context: ActionContext,
   item: MergeQueueItem,
   progressPrefix: string,
+  queue: MergeQueueItem[],
+  currentIndex: number,
+  result: MultiMergeResult,
   onComplete: (success: boolean, error?: string) => Promise<ActionResult>
 ): Promise<ActionResult> {
   const { validation, worktree } = item;
@@ -239,9 +246,9 @@ async function handleWorktreeMergeIssues(
     );
 
     if (item.validation.canMerge) {
-      return performWorktreeMerge(pane, context, item, progressPrefix, onComplete);
+      return performWorktreeMerge(pane, context, item, progressPrefix, onComplete, queue, currentIndex, result);
     } else {
-      return handleWorktreeMergeIssues(pane, context, item, progressPrefix, onComplete);
+      return handleWorktreeMergeIssues(pane, context, item, progressPrefix, queue, currentIndex, result, onComplete);
     }
   };
 
@@ -283,6 +290,9 @@ async function handleWorktreeMergeIssues(
       item,
       progressPrefix,
       mainBranch,
+      queue,
+      currentIndex,
+      result,
       onComplete
     );
   }
@@ -304,6 +314,8 @@ async function handleMainDirtyForWorktree(
   const { worktree, validation } = item;
   const issue = validation.issues.find(i => i.type === 'main_dirty')!;
   const files = issue.files || [];
+
+  console.error(`[multiMerge] handleMainDirtyForWorktree - parentRepoPath: ${worktree.parentRepoPath}, worktreePath: ${worktree.worktreePath}`);
 
   return {
     type: 'choice',
@@ -369,6 +381,8 @@ async function handleUncommittedForWorktree(
   const issue = validation.issues.find(i => i.type === 'worktree_uncommitted')!;
   const files = issue.files || [];
 
+  console.error(`[multiMerge] handleUncommittedForWorktree - worktreePath: ${worktree.worktreePath}, parentRepoPath: ${worktree.parentRepoPath}`);
+
   return {
     type: 'choice',
     title: `${progressPrefix}: Uncommitted Changes`,
@@ -406,6 +420,7 @@ async function handleUncommittedForWorktree(
         optionId === 'commit_ai_editable' ||
         optionId === 'commit_manual'
       ) {
+        console.error(`[multiMerge] Committing to worktree path: ${worktree.worktreePath}`);
         const { handleCommitWithOptions } = await import('./commitMessageHandler.js');
         return handleCommitWithOptions(
           worktree.worktreePath,
@@ -429,22 +444,37 @@ async function handleConflictForWorktree(
   item: MergeQueueItem,
   progressPrefix: string,
   mainBranch: string,
+  queue: MergeQueueItem[],
+  currentIndex: number,
+  result: MultiMergeResult,
   onComplete: (success: boolean, error?: string) => Promise<ActionResult>
 ): Promise<ActionResult> {
   const { worktree, validation } = item;
   const issue = validation.issues.find(i => i.type === 'merge_conflict')!;
   const files = issue.files || [];
 
+  // Check for real file list vs fallback message
+  const hasRealFiles = files.length > 0 && !files[0].includes('conflict detection incomplete');
+
+  const conflictMessage = hasRealFiles
+    ? `Conflicts detected in ${worktree.repoName}:\n${files.slice(0, 3).map(f => ` • ${f}`).join('\n')}${files.length > 3 ? '\n  ...' : ''}`
+    : `Potential conflicts detected in ${worktree.repoName} between ${mainBranch} and ${worktree.branch}.\n\nThe branches have diverged and may have conflicting changes.`;
+
   return {
     type: 'choice',
     title: `${progressPrefix}: Merge Conflicts`,
-    message: `Conflicts detected in ${worktree.repoName}:\n${files.slice(0, 3).map(f => ` • ${f}`).join('\n')}${files.length > 3 ? '\n  ...' : ''}`,
+    message: conflictMessage,
     options: [
+      {
+        id: 'ai_merge',
+        label: 'AI-assisted merge',
+        description: 'Launch agent to resolve conflicts, then continue',
+        default: true,
+      },
       {
         id: 'skip',
         label: 'Skip this repo',
         description: 'Resolve conflicts manually later',
-        default: true,
       },
       {
         id: 'abort',
@@ -464,10 +494,214 @@ async function handleConflictForWorktree(
           dismissable: true,
         };
       }
+      if (optionId === 'ai_merge') {
+        return launchConflictResolutionForSubWorktree(
+          pane,
+          context,
+          item,
+          queue,
+          currentIndex,
+          result,
+          onComplete
+        );
+      }
       return onComplete(false, 'Unknown option');
     },
     dismissable: false,
   };
+}
+
+/**
+ * Launch AI-assisted conflict resolution for a sub-worktree
+ * Creates a new pane with an agent to resolve conflicts, then continues the multi-merge
+ */
+async function launchConflictResolutionForSubWorktree(
+  pane: DmuxPane,
+  context: ActionContext,
+  item: MergeQueueItem,
+  queue: MergeQueueItem[],
+  currentIndex: number,
+  result: MultiMergeResult,
+  onComplete: (success: boolean, error?: string) => Promise<ActionResult>
+): Promise<ActionResult> {
+  const { worktree, validation } = item;
+  const { mainBranch } = validation;
+
+  // Check which agents are available
+  const { findClaudeCommand, findOpencodeCommand } = await import('../../utils/agentDetection.js');
+
+  const availableAgents: Array<'claude' | 'opencode'> = [];
+  if (await findClaudeCommand()) availableAgents.push('claude');
+  if (await findOpencodeCommand()) availableAgents.push('opencode');
+
+  if (availableAgents.length === 0) {
+    return {
+      type: 'error',
+      message: 'No AI agents available. Please install claude or opencode.',
+      dismissable: true,
+    };
+  }
+
+  // Helper to create pane with chosen agent
+  const createPaneWithAgent = async (agent: 'claude' | 'opencode'): Promise<ActionResult> => {
+    return createAndMonitorConflictPane(
+      pane,
+      context,
+      item,
+      queue,
+      currentIndex,
+      result,
+      agent,
+      onComplete
+    );
+  };
+
+  // If multiple agents available, ask user to choose
+  if (availableAgents.length > 1) {
+    return {
+      type: 'choice',
+      title: 'Choose AI Agent for Conflict Resolution',
+      message: `Which agent should resolve conflicts in ${worktree.repoName}?`,
+      options: availableAgents.map(agent => ({
+        id: agent,
+        label: agent === 'claude' ? 'Claude Code' : 'OpenCode',
+        description: agent === 'claude' ? 'Anthropic Claude' : 'Open-source alternative',
+        default: agent === 'claude',
+      })),
+      onSelect: async (agentId: string) => {
+        return createPaneWithAgent(agentId as 'claude' | 'opencode');
+      },
+      dismissable: true,
+    };
+  }
+
+  // Only one agent available, use it directly
+  return createPaneWithAgent(availableAgents[0]);
+}
+
+/**
+ * Create a conflict resolution pane and monitor for completion
+ */
+async function createAndMonitorConflictPane(
+  pane: DmuxPane,
+  context: ActionContext,
+  item: MergeQueueItem,
+  queue: MergeQueueItem[],
+  currentIndex: number,
+  result: MultiMergeResult,
+  agent: 'claude' | 'opencode',
+  onComplete: (success: boolean, error?: string) => Promise<ActionResult>
+): Promise<ActionResult> {
+  const { worktree, validation } = item;
+  const { mainBranch } = validation;
+
+  try {
+    const { createConflictResolutionPane } = await import('../../utils/conflictResolutionPane.js');
+    const { TmuxService } = await import('../../services/TmuxService.js');
+
+    // Create the conflict resolution pane
+    // NOTE: For sub-worktrees, we pass the worktree path as the target
+    const conflictPane = await createConflictResolutionPane({
+      sourceBranch: worktree.branch,
+      targetBranch: mainBranch,
+      targetRepoPath: worktree.worktreePath,
+      agent,
+      projectName: context.projectName,
+      existingPanes: context.panes,
+    });
+
+    // Add the new pane to the panes list
+    const updatedPanes = [...context.panes, conflictPane];
+    await context.savePanes(updatedPanes);
+
+    // Notify about the new pane
+    if (context.onPaneUpdate) {
+      context.onPaneUpdate(conflictPane);
+    }
+
+    // Start monitoring for conflict resolution completion
+    const { startConflictMonitoring } = await import('../../utils/conflictMonitor.js');
+    startConflictMonitoring({
+      conflictPaneId: conflictPane.paneId,
+      repoPath: worktree.worktreePath,
+      onResolved: async () => {
+        // Conflicts resolved! Clean up and continue with multi-merge
+        try {
+          console.error(`[multiMerge] Conflicts resolved for ${worktree.repoName}, cleaning up conflict pane`);
+          const tmuxService = TmuxService.getInstance();
+
+          // Kill the conflict pane
+          await tmuxService.killPane(conflictPane.paneId);
+
+          // Remove conflict pane from state
+          const { StateManager } = await import('../../shared/StateManager.js');
+          const stateManager = StateManager.getInstance();
+          const currentPanes = stateManager.getPanes();
+          const panesWithoutConflictPane = currentPanes.filter((p: DmuxPane) => p.id !== conflictPane.id);
+          await context.savePanes(panesWithoutConflictPane);
+
+          // Mark this worktree as completed
+          item.status = 'completed';
+          result.successful++;
+          result.results.push({
+            worktree: item.worktree,
+            status: 'completed',
+          });
+
+          // Now complete the merge (worktree -> main)
+          const { mergeWorktreeIntoMain } = await import('../../utils/mergeExecution.js');
+          const { triggerHook } = await import('../../utils/hooks.js');
+
+          const mergeResult = mergeWorktreeIntoMain(worktree.parentRepoPath, worktree.branch);
+
+          if (!mergeResult.success) {
+            console.error(`[multiMerge] Failed to merge ${worktree.branch} into ${mainBranch}: ${mergeResult.error}`);
+            // Update status to failed
+            item.status = 'failed';
+            item.error = mergeResult.error;
+            result.successful--; // Undo the increment above
+            result.failed++;
+            result.results[result.results.length - 1] = {
+              worktree: item.worktree,
+              status: 'failed',
+              error: mergeResult.error,
+            };
+          } else {
+            // Trigger post_merge hook
+            await triggerHook('post_merge', worktree.parentRepoPath, pane, {
+              DMUX_TARGET_BRANCH: mainBranch,
+              DMUX_WORKTREE_PATH: worktree.worktreePath,
+              DMUX_REPO_NAME: worktree.repoName,
+            });
+          }
+
+          // Continue with next item in queue
+          const nextResult = await processNextInQueue(pane, context, queue, currentIndex + 1, result);
+
+          // Show the result to user if we have the callback
+          if (context.onActionResult) {
+            await context.onActionResult(nextResult);
+          }
+        } catch (error) {
+          console.error('[multiMerge] Error in conflict resolution onResolved:', error);
+        }
+      },
+    });
+
+    return {
+      type: 'navigation',
+      title: 'Conflict Resolution Started',
+      message: `Created pane "${conflictPane.slug}" with ${agent} to resolve conflicts in ${worktree.repoName}.\n\nMulti-merge will continue automatically when conflicts are resolved.`,
+      targetPaneId: conflictPane.id,
+      dismissable: true,
+    };
+  } catch (error) {
+    return {
+      type: 'error',
+      message: `Failed to create conflict resolution pane: ${error instanceof Error ? error.message : String(error)}`,
+      dismissable: true,
+    };
+  }
 }
 
 /**
@@ -478,7 +712,10 @@ async function performWorktreeMerge(
   context: ActionContext,
   item: MergeQueueItem,
   progressPrefix: string,
-  onComplete: (success: boolean, error?: string) => Promise<ActionResult>
+  onComplete: (success: boolean, error?: string) => Promise<ActionResult>,
+  queue?: MergeQueueItem[],
+  currentIndex?: number,
+  result?: MultiMergeResult
 ): Promise<ActionResult> {
   const { worktree, validation } = item;
   const { mainBranch } = validation;
@@ -500,25 +737,52 @@ async function performWorktreeMerge(
 
   if (!step1.success) {
     if (step1.needsManualResolution && step1.conflictFiles?.length) {
-      // Conflict occurred during merge
+      // Conflict occurred during merge - offer AI resolution if queue info available
+      const hasQueueInfo = queue && typeof currentIndex === 'number' && result;
+
+      const options: Array<{id: string; label: string; description: string; default?: boolean}> = [];
+
+      if (hasQueueInfo) {
+        options.push({
+          id: 'ai_merge',
+          label: 'AI-assisted merge',
+          description: 'Launch agent to resolve conflicts, then continue',
+          default: true,
+        });
+      }
+
+      options.push({
+        id: 'skip',
+        label: 'Skip this repo',
+        description: 'Abort this merge, continue with others',
+        default: !hasQueueInfo, // Default if no AI option
+      });
+
+      options.push({
+        id: 'abort_all',
+        label: 'Stop multi-merge',
+        description: 'Stop processing remaining repos',
+      });
+
       return {
         type: 'choice',
         title: `${progressPrefix}: Merge Conflict`,
         message: `Conflict while merging ${mainBranch} into worktree:\n${step1.conflictFiles.slice(0, 3).map(f => ` • ${f}`).join('\n')}`,
-        options: [
-          {
-            id: 'skip',
-            label: 'Skip this repo',
-            description: 'Abort this merge, continue with others',
-            default: true,
-          },
-          {
-            id: 'abort_all',
-            label: 'Stop multi-merge',
-            description: 'Stop processing remaining repos',
-          },
-        ],
+        options,
         onSelect: async (optionId: string) => {
+          if (optionId === 'ai_merge' && hasQueueInfo) {
+            // Don't abort - let the agent resolve the conflicts that are already in place
+            return launchConflictResolutionForSubWorktree(
+              pane,
+              context,
+              item,
+              queue,
+              currentIndex,
+              result,
+              onComplete
+            );
+          }
+
           const { abortMerge } = await import('../../utils/mergeExecution.js');
           abortMerge(worktree.worktreePath);
 
@@ -566,10 +830,10 @@ function showMultiMergeSummary(
   result: MultiMergeResult
 ): ActionResult {
   const summaryLines = result.results.map(r => {
-    const label = getWorktreeDisplayLabel(r.worktree);
+    const name = r.worktree.repoName;
     const icon = r.status === 'completed' ? '✓' : r.status === 'skipped' ? '○' : '✗';
-    const suffix = r.error && r.status === 'failed' ? ` (${r.error})` : '';
-    return ` ${icon} ${label}${suffix}`;
+    const suffix = r.error && r.status === 'failed' ? `: ${r.error}` : '';
+    return ` ${icon} ${name}${suffix}`;
   });
 
   const message = [

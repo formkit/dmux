@@ -257,12 +257,20 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return false
 
     try {
+      // Calculate height based on message content
+      // Count newlines + estimate wrapped lines (assuming ~75 chars per line for width 80)
+      const messageLines = message.split('\n').reduce((count, line) => {
+        return count + Math.max(1, Math.ceil(line.length / 75))
+      }, 0)
+      // Add space for title, buttons, padding (about 6 lines)
+      const calculatedHeight = Math.min(35, Math.max(12, messageLines + 6))
+
       const result = await this.launchPopup<boolean>(
         "confirmPopup.js",
         [],
         {
-          width: 60,
-          height: 12,
+          width: 80,
+          height: calculatedHeight,
           title: title || "Confirm",
         },
         { title, message, yesLabel, noLabel }

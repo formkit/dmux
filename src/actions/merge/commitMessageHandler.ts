@@ -55,9 +55,18 @@ export async function promptForCommitMessage(
   const { stageAllChanges } = await import('../../utils/mergeValidation.js');
   const { getComprehensiveDiff } = await import('../../utils/aiMerge.js');
 
+  LogService.getInstance().info(
+    `promptForCommitMessage called - repoPath: ${repoPath}, mode: ${mode}`,
+    'commitMessageHandler'
+  );
+
   // Stage all changes first
   const stageResult = stageAllChanges(repoPath);
   if (!stageResult.success) {
+    LogService.getInstance().error(
+      `Failed to stage changes in ${repoPath}: ${stageResult.error}`,
+      'commitMessageHandler'
+    );
     return {
       type: 'error',
       message: `Failed to stage changes: ${stageResult.error}`,
@@ -84,10 +93,23 @@ export async function promptForCommitMessage(
 
   // AI modes - generate message
   const { diff, summary } = getComprehensiveDiff(repoPath);
+  LogService.getInstance().info(
+    `getComprehensiveDiff for ${repoPath} - diff length: ${diff.length}, summary: ${summary.substring(0, 100)}`,
+    'commitMessageHandler'
+  );
+
   const generatedMessage = await generateCommitMessageSafe(repoPath);
+  LogService.getInstance().info(
+    `AI generated message for ${repoPath}: ${generatedMessage || '(null - generation failed)'}`,
+    'commitMessageHandler'
+  );
 
   // If AI generation failed, fall back to manual with explanation
   if (!generatedMessage) {
+    LogService.getInstance().warn(
+      `AI commit message generation failed for ${repoPath}, falling back to manual input`,
+      'commitMessageHandler'
+    );
     return {
       type: 'input',
       title: 'Enter Commit Message',
@@ -136,12 +158,21 @@ export async function handleCommitWithOptions(
 ): Promise<ActionResult> {
   const { commitChanges } = await import('../../utils/mergeValidation.js');
 
+  LogService.getInstance().info(
+    `handleCommitWithOptions called with repoPath: ${repoPath}, optionId: ${optionId}`,
+    'commitMessageHandler'
+  );
+
   const mode =
     optionId === 'commit_automatic' ? 'ai_automatic' :
     optionId === 'commit_ai_editable' ? 'ai_editable' :
     'manual';
 
   return promptForCommitMessage(repoPath, mode, async (message: string) => {
+    LogService.getInstance().info(
+      `Executing commit in: ${repoPath} with message: ${message.substring(0, 50)}...`,
+      'commitMessageHandler'
+    );
     const result = commitChanges(repoPath, message);
     if (!result.success) {
       return { type: 'error', message: `Commit failed: ${result.error}`, dismissable: true };
