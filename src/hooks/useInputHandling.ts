@@ -10,7 +10,7 @@ import {
   ANIMATION_DELAY,
 } from "../constants/timing.js"
 import { PaneAction } from "../actions/index.js"
-import { getMainBranch } from "../utils/git.js"
+import { getMainBranch, getOrphanedWorktrees } from "../utils/git.js"
 import { enforceControlPaneSize } from "../utils/tmux.js"
 import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
 import { suggestCommand } from "../utils/commands.js"
@@ -73,8 +73,12 @@ interface UseInputHandlingParams {
   copyNonGitFiles: (worktreePath: string) => Promise<void>
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string) => Promise<void>
+  handleReopenWorktree: (slug: string, worktreePath: string) => Promise<void>
   loadPanes: () => Promise<void>
   cleanExit: () => void
+
+  // Project info
+  projectRoot: string
 
   // Navigation
   findCardInDirection: (currentIndex: number, direction: "up" | "down" | "left" | "right") => number | null
@@ -121,19 +125,20 @@ export function useInputHandling(params: UseInputHandlingParams) {
     copyNonGitFiles,
     runCommandInternal,
     handlePaneCreationWithAgent,
+    handleReopenWorktree,
     loadPanes,
     cleanExit,
+    projectRoot,
     findCardInDirection,
   } = params
 
   useInput(async (input: string, key: any) => {
     const logService = LogService.getInstance()
 
-    // Log all input for debugging (only first 50 chars to avoid spam)
-    // Commented out to reduce log noise
-    // const inputPreview =
-    //   input.length > 50 ? input.substring(0, 50) + "..." : input
-    // logService.debug(`Input: "${inputPreview}"`, "InputDebug")
+    // DEBUG: Log all input to help diagnose key handling issues
+    const inputPreview =
+      input.length > 50 ? input.substring(0, 50) + "..." : input
+    logService.debug(`Input: "${inputPreview}" charCode=${input.charCodeAt(0)}`, "InputDebug")
 
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
@@ -304,6 +309,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       }
     } else if (input === "l") {
       // Open logs popup
+      logService.debug("MATCHED 'l' - opening logs", "InputDebug")
       await popupManager.launchLogsPopup()
     } else if (input === "?") {
       // Open keyboard shortcuts popup
@@ -326,8 +332,25 @@ export function useInputHandling(params: UseInputHandlingParams) {
       demos.forEach(demo => stateManager.showToast(demo.msg, demo.severity))
     } else if (input === "q") {
       cleanExit()
-    } else if (input === "r" && server) {
-      // Handle remote tunnel
+    } else if (input === "r") {
+      // Reopen closed worktree popup
+      logService.debug("MATCHED 'r' - opening reopen popup", "InputDebug")
+      const activeSlugs = panes.map((p) => p.slug)
+      const orphanedWorktrees = getOrphanedWorktrees(projectRoot, activeSlugs)
+
+      if (orphanedWorktrees.length === 0) {
+        setStatusMessage("No closed worktrees to reopen")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        return
+      }
+
+      const result = await popupManager.launchReopenWorktreePopup(orphanedWorktrees)
+      if (result) {
+        await handleReopenWorktree(result.slug, result.path)
+      }
+      return
+    } else if (input === "R" && server) {
+      // Handle remote tunnel (Shift+R)
       if (tunnelUrl) {
         // Tunnel exists - open popup with QR code
         await popupManager.launchRemotePopup(tunnelUrl, () => {

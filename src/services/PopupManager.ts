@@ -593,4 +593,40 @@ export class PopupManager {
       this.showTempMessage(message, timeout)
     }
   }
+
+  async launchReopenWorktreePopup(
+    worktrees: Array<{
+      slug: string
+      path: string
+      lastModified: Date
+      branch: string
+      hasUncommittedChanges: boolean
+    }>
+  ): Promise<{ slug: string; path: string } | null> {
+    if (!this.checkPopupSupport()) return null
+
+    try {
+      // Convert Date objects to ISO strings for JSON serialization
+      const worktreesData = worktrees.map((wt) => ({
+        ...wt,
+        lastModified: wt.lastModified.toISOString(),
+      }))
+
+      const result = await this.launchPopup<{ slug: string; path: string }>(
+        "reopenWorktreePopup.js",
+        [],
+        {
+          width: 70,
+          height: Math.min(25, worktrees.length * 3 + 8),
+          title: "📂 Reopen Closed Worktree",
+        },
+        { worktrees: worktreesData }
+      )
+
+      return this.handleResult(result)
+    } catch (error: any) {
+      this.showTempMessage(`Failed to launch popup: ${error.message}`)
+      return null
+    }
+  }
 }

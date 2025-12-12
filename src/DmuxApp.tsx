@@ -41,6 +41,7 @@ import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { getMainBranch } from "./utils/git.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
+import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 
@@ -479,6 +480,51 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     }
   }
 
+  // Helper function to reopen a closed worktree
+  const handleReopenWorktree = async (slug: string, worktreePath: string) => {
+    // Force repaint first
+    forceRepaint()
+
+    // Minimal clearing
+    process.stdout.write('\x1b[2J\x1b[H')
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(`Reopening ${slug}...`)
+
+      const result = await reopenWorktree({
+        slug,
+        worktreePath,
+        projectRoot: projectRoot || process.cwd(),
+        existingPanes: panes,
+      })
+
+      // Save the pane
+      const updatedPanes = [...panes, result.pane]
+      await savePanes(updatedPanes)
+
+      // Force repaint and refresh
+      forceRepaint()
+      process.stdout.write('\x1b[2J\x1b[3J\x1b[H')
+
+      const tmuxService = TmuxService.getInstance()
+      tmuxService.clearHistorySync()
+      tmuxService.refreshClientSync()
+
+      await loadPanes()
+
+      setStatusMessage(`Reopened ${slug}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+
+      forceRepaint()
+    } catch (error: any) {
+      setStatusMessage(`Failed to reopen: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), 3000)
+    } finally {
+      setIsCreatingPane(false)
+    }
+  }
+
   // Helper function to handle action results recursively
   const handleActionResult = async (result: ActionResult): Promise<void> => {
     // Handle ActionResults from background callbacks (e.g., conflict resolution completion)
@@ -716,8 +762,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     copyNonGitFiles,
     runCommandInternal,
     handlePaneCreationWithAgent,
+    handleReopenWorktree,
     loadPanes,
     cleanExit,
+    projectRoot: projectRoot || process.cwd(),
     findCardInDirection,
   })
 

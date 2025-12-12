@@ -165,12 +165,12 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
             ) : tunnelUrl ? (
               <>
                 <Text color="green">Connected. </Text>
-                <Text color="cyan">[r]</Text>
+                <Text color="cyan">[R]</Text>
                 <Text> to view</Text>
               </>
             ) : (
               <>
-                <Text color="cyan">[r]</Text>
+                <Text color="cyan">[R]</Text>
                 <Text>emote tunnel</Text>
               </>
             )}
