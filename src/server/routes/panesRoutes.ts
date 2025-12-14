@@ -86,7 +86,7 @@ export function createPanesRoutes() {
 
       console.error('[API] After normalization, agent =', agent);
 
-      if (agent && agent !== 'claude' && agent !== 'opencode') {
+      if (agent && agent !== 'claude' && agent !== 'opencode' && agent !== 'vibe') {
         event.node.res.statusCode = 400;
         return { error: 'Invalid agent. Must be "claude" or "opencode"' };
       }
@@ -94,7 +94,7 @@ export function createPanesRoutes() {
       // Get available agents using robust detection (same as TUI)
       const { execSync } = await import('child_process');
       const fsPromises = await import('fs/promises');
-      const availableAgents: Array<'claude' | 'opencode'> = [];
+      const availableAgents: Array<'claude' | 'opencode' | 'vibe'> = [];
 
       // Check for Claude
       const hasClaude = await (async () => {

@@ -15,7 +15,7 @@ export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
   targetBranch: string;      // Branch merging into (usually main)
   targetRepoPath: string;    // Path to the target repository (where merge will happen)
-  agent: 'claude' | 'opencode';
+  agent: 'claude' | 'opencode' | 'vibe';
   projectName: string;
   existingPanes: DmuxPane[];
 }
@@ -126,6 +126,17 @@ export async function createConflictResolutionPane(
     await tmuxService.pasteBuffer(bufName, paneInfo);
     await new Promise((resolve) => setTimeout(resolve, 200));
     await tmuxService.deleteBuffer(bufName);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  } else if (agent === 'vibe') {
+    // Mistral Vibe conflict resolution
+    const escapedPrompt = prompt
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/`/g, '\\`')
+      .replace(/\$/g, '\\\$');
+    const vibeCmd = `vibe "${escapedPrompt}"`;
+
+    await tmuxService.sendShellCommand(paneInfo, vibeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 

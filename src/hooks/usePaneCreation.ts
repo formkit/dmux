@@ -12,7 +12,7 @@ interface Params {
   setStatusMessage: (msg: string) => void;
   loadPanes: () => Promise<void>;
   panesFile: string;
-  availableAgents: Array<'claude' | 'opencode'>;
+  availableAgents: Array<'claude' | 'opencode' | 'vibe'>;
   forceRepaint?: () => void;
 }
 
@@ -38,7 +38,7 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
     } catch {}
   };
 
-  const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode') => {
+  const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode' | 'vibe') => {
     // CRITICAL: Force repaint FIRST to prevent blank screen
     if (forceRepaint) {
       forceRepaint();

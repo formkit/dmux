@@ -9,8 +9,8 @@ interface UseServicesProps {
   popupsSupported: boolean
   terminalWidth: number
   terminalHeight: number
-  availableAgents: Array<"claude" | "opencode">
-  agentChoice: "claude" | "opencode" | null
+  availableAgents: Array<"claude" | "opencode" | "vibe">
+  agentChoice: "claude" | "opencode" | "vibe" | null
   serverPort?: number
   server?: any
   settingsManager: any

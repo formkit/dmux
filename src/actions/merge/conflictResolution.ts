@@ -21,7 +21,7 @@ export async function createConflictResolutionPaneForMerge(
   // First, check which agents are available
   const { findClaudeCommand, findOpencodeCommand } = await import('../../utils/agentDetection.js');
 
-  const availableAgents: Array<'claude' | 'opencode'> = [];
+  const availableAgents: Array<'claude' | 'opencode' | 'vibe'> = [];
   if (await findClaudeCommand()) availableAgents.push('claude');
   if (await findOpencodeCommand()) availableAgents.push('opencode');
 
@@ -41,8 +41,8 @@ export async function createConflictResolutionPaneForMerge(
       message: 'Which agent would you like to use to resolve merge conflicts?',
       options: availableAgents.map(agent => ({
         id: agent,
-        label: agent === 'claude' ? 'Claude Code' : 'OpenCode',
-        description: agent === 'claude' ? 'Anthropic Claude' : 'Open-source alternative',
+        label: agent === 'claude' ? 'Claude Code' : agent === 'opencode' ? 'OpenCode' : 'Mistral Vibe',
+        description: agent === 'claude' ? 'Anthropic Claude' : agent === 'opencode' ? 'Open-source alternative' : 'Vibe by Mistral AI',
         default: agent === 'claude',
       })),
       onSelect: async (agentId: string) => {
@@ -51,7 +51,7 @@ export async function createConflictResolutionPaneForMerge(
           context,
           targetBranch,
           targetRepoPath,
-          agentId as 'claude' | 'opencode'
+          agentId as 'claude' | 'opencode' | 'vibe'
         );
       },
       dismissable: true,
@@ -76,7 +76,7 @@ async function createAndLaunchConflictPane(
   context: ActionContext,
   targetBranch: string,
   targetRepoPath: string,
-  agent: 'claude' | 'opencode'
+  agent: 'claude' | 'opencode' | 'vibe'
 ): Promise<ActionResult> {
   try {
     const { createConflictResolutionPane } = await import('../../utils/conflictResolutionPane.js');

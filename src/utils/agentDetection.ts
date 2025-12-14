@@ -1,7 +1,7 @@
 /**
  * Agent Detection Utilities
  *
- * Utilities to detect available AI agents (claude, opencode)
+ * Utilities to detect available AI agents (claude, opencode, vibe)
  */
 
 import { execSync } from 'child_process';
@@ -70,13 +70,45 @@ export async function findOpencodeCommand(): Promise<string | null> {
 }
 
 /**
+ * Find Mistral Vibe CLI command
+ */
+export async function findVibeCommand(): Promise<string | null> {
+  try {
+    const userShell = process.env.SHELL || '/bin/bash';
+    const result = execSync(
+      `${userShell} -i -c "command -v vibe 2>/dev/null || which vibe 2>/dev/null"`,
+      { encoding: 'utf-8', stdio: 'pipe' }
+    ).trim();
+    if (result) return result.split('\n')[0];
+  } catch {}
+
+  const commonPaths = [
+    `${process.env.HOME}/.local/bin/vibe`,
+    '/usr/local/bin/vibe',
+    '/opt/homebrew/bin/vibe',
+    '/usr/bin/vibe',
+    `${process.env.HOME}/bin/vibe`,
+  ];
+
+  for (const p of commonPaths) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
  * Get all available agents
  */
-export async function getAvailableAgents(): Promise<Array<'claude' | 'opencode'>> {
-  const agents: Array<'claude' | 'opencode'> = [];
+export async function getAvailableAgents(): Promise<Array<'claude' | 'opencode' | 'vibe'>> {
+  const agents: Array<'claude' | 'opencode' | 'vibe'> = [];
 
   if (await findClaudeCommand()) agents.push('claude');
   if (await findOpencodeCommand()) agents.push('opencode');
+  if (await findVibeCommand()) agents.push('vibe');
 
   return agents;
 }

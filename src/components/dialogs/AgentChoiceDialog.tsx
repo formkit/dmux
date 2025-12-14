@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 
 interface AgentChoiceDialogProps {
-  agentChoice: 'claude' | 'opencode' | null;
+  agentChoice: 'claude' | 'opencode' | 'vibe' | null;
 }
 
 const AgentChoiceDialog: React.FC<AgentChoiceDialogProps> = ({ agentChoice }) => {
@@ -16,6 +16,9 @@ const AgentChoiceDialog: React.FC<AgentChoiceDialogProps> = ({ agentChoice }) =>
           </Text>
           <Text color={agentChoice === 'opencode' ? 'cyan' : 'white'}>
             {agentChoice === 'opencode' ? '▶ opencode' : '  opencode'}
+          </Text>
+          <Text color={agentChoice === 'vibe' ? 'cyan' : 'white'}>
+            {agentChoice === 'vibe' ? '▶ Mistral Vibe' : '  Mistral Vibe'}
           </Text>
         </Box>
       </Box>

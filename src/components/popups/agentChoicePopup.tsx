@@ -12,8 +12,8 @@ import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface AgentChoicePopupProps {
   resultFile: string;
-  availableAgents: Array<'claude' | 'opencode'>;
-  defaultAgent?: 'claude' | 'opencode';
+  availableAgents: Array<'claude' | 'opencode' | 'vibe'>;
+  defaultAgent?: 'claude' | 'opencode' | 'vibe';
 }
 
 const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
@@ -42,6 +42,10 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
       // Find opencode index
       const opencodeIdx = availableAgents.indexOf('opencode');
       if (opencodeIdx >= 0) setSelectedIndex(opencodeIdx);
+    } else if (input === '3' || input.toLowerCase() === 'm') {
+      // Find vibe index
+      const vibeIdx = availableAgents.indexOf('vibe');
+      if (vibeIdx >= 0) setSelectedIndex(vibeIdx);
     } else if (key.return) {
       // User confirmed choice
       writeSuccessAndExit(resultFile, selectedAgent, exit);
@@ -55,7 +59,7 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
         <Box flexDirection="column">
           {availableAgents.map((agent, index) => {
             const isSelected = index === selectedIndex;
-            const label = agent === 'claude' ? 'Claude Code' : 'opencode';
+            const label = agent === 'claude' ? 'Claude Code' : agent === 'opencode' ? 'OpenCode' : 'Mistral Vibe';
             return (
               <Box key={agent} marginBottom={index < availableAgents.length - 1 ? 1 : 0}>
                 <Text
@@ -78,14 +82,14 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
 function main() {
   const resultFile = process.argv[2];
   const agentsJson = process.argv[3];
-  const defaultAgent = process.argv[4] as 'claude' | 'opencode' | undefined;
+  const defaultAgent = process.argv[4] as 'claude' | 'opencode' | 'vibe' | undefined;
 
   if (!resultFile || !agentsJson) {
     console.error('Error: Result file and agents JSON required');
     process.exit(1);
   }
 
-  let availableAgents: Array<'claude' | 'opencode'>;
+  let availableAgents: Array<'claude' | 'opencode' | 'vibe'>;
   try {
     availableAgents = JSON.parse(agentsJson);
   } catch (error) {

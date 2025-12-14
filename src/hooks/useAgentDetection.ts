@@ -3,16 +3,18 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 
 export default function useAgentDetection() {
-  const [availableAgents, setAvailableAgents] = useState<Array<'claude' | 'opencode'>>([]);
+  const [availableAgents, setAvailableAgents] = useState<Array<'claude' | 'opencode' | 'vibe'>>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const agents: Array<'claude' | 'opencode'> = [];
+        const agents: Array<'claude' | 'opencode' | 'vibe'> = [];
         const hasClaude = await findClaudeCommand();
         if (hasClaude) agents.push('claude');
         const hasopencode = await findopencodeCommand();
         if (hasopencode) agents.push('opencode');
+        const hasVibe = await findVibeCommand();
+        if (hasVibe) agents.push('vibe');
         setAvailableAgents(agents);
       } catch {}
     })();
@@ -65,6 +67,33 @@ const findopencodeCommand = async (): Promise<string | null> => {
     '/usr/local/bin/opencode',
     `${process.env.HOME}/.local/bin/opencode`,
     `${process.env.HOME}/bin/opencode`,
+  ];
+  for (const p of commonPaths) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
+  }
+
+  return null;
+};
+
+const findVibeCommand = async (): Promise<string | null> => {
+  try {
+    const userShell = process.env.SHELL || '/bin/bash';
+    const result = execSync(
+      `${userShell} -i -c "command -v vibe 2>/dev/null || which vibe 2>/dev/null"`,
+      { encoding: 'utf-8', stdio: 'pipe' }
+    ).trim();
+    if (result) return result.split('\n')[0];
+  } catch {}
+
+  const commonPaths = [
+    `${process.env.HOME}/.local/bin/vibe`,
+    '/usr/local/bin/vibe',
+    '/opt/homebrew/bin/vibe',
+    '/usr/bin/vibe',
+    `${process.env.HOME}/bin/vibe`,
   ];
   for (const p of commonPaths) {
     try {

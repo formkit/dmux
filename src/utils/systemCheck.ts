@@ -149,9 +149,9 @@ export async function validateSystemRequirements(): Promise<ValidationResult> {
 
   // Warnings for missing agents
   if (checks.agents.length === 0) {
-    warnings.push('No agents found (claude or opencode). You will not be able to use AI features.');
+    warnings.push('No agents found (claude, opencode, or vibe). You will not be able to use AI features.');
   } else if (checks.agents.length === 1) {
-    const allAgents: Array<'claude' | 'opencode'> = ['claude', 'opencode'];
+    const allAgents: Array<'claude' | 'opencode' | 'vibe'> = ['claude', 'opencode', 'vibe'];
     const missing = allAgents.find(a => !checks.agents.includes(a));
     warnings.push(`Agent '${missing}' not found. Only '${checks.agents[0]}' is available.`);
   }

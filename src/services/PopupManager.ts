@@ -24,8 +24,8 @@ export interface PopupManagerConfig {
   popupsSupported: boolean
   terminalWidth: number
   terminalHeight: number
-  availableAgents: Array<"claude" | "opencode">
-  agentChoice: "claude" | "opencode" | null
+  availableAgents: Array<"claude" | "opencode" | "vibe">
+  agentChoice: "claude" | "opencode" | "vibe" | null
   serverPort?: number
   server?: any
   settingsManager: any
@@ -281,7 +281,7 @@ export class PopupManager {
     try {
       const agentsJson = JSON.stringify(this.config.availableAgents)
       const defaultAgent =
-        this.config.agentChoice || this.config.availableAgents[0] || "claude"
+        this.config.agentChoice || this.config.availableAgents[0] || "vibe"
 
       const result = await this.launchPopup<"claude" | "opencode">(
         "agentChoicePopup.js",

@@ -14,7 +14,7 @@ import type {
 class PaneWorker {
   private paneId: string;
   private tmuxPaneId: string;
-  private agent?: 'claude' | 'opencode';
+  private agent?: 'claude' | 'opencode' | 'vibe';
   private captureHistory: string[] = [];
   private pollInterval: NodeJS.Timeout | null = null;
   private pollIntervalMs: number;
@@ -352,6 +352,16 @@ class PaneWorker {
         /⏳.*processing/i
       ];
       return opencodeWorkingPatterns.some(pattern => pattern.test(content));
+    } else if (this.agent === 'vibe') {
+      // Mistral Vibe specific working indicators
+      const vibeWorkingPatterns = [
+        /working\.\.\./i,
+        /processing\.\.\./i,
+        /thinking\.\.\./i,
+        /⏳.*working/i,
+        /⏳.*processing/i
+      ];
+      return vibeWorkingPatterns.some(pattern => pattern.test(content));
     }
 
     return false;

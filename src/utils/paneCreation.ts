@@ -18,7 +18,7 @@ import { atomicWriteJsonSync } from './atomicWrite.js';
 
 export interface CreatePaneOptions {
   prompt: string;
-  agent?: 'claude' | 'opencode';
+  agent?: 'claude' | 'opencode' | 'vibe';
   projectName: string;
   existingPanes: DmuxPane[];
   projectRoot?: string;
@@ -35,7 +35,7 @@ export interface CreatePaneResult {
  */
 export async function createPane(
   options: CreatePaneOptions,
-  availableAgents: Array<'claude' | 'opencode'>
+  availableAgents: Array<'claude' | 'opencode' | 'vibe'>
 ): Promise<CreatePaneResult> {
   const { prompt, projectName, existingPanes } = options;
   let { agent, projectRoot: optionsProjectRoot } = options;
@@ -386,6 +386,20 @@ export async function createPane(
       await tmuxService.deleteBuffer(bufName);
       await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     }
+  } else if (agent === 'vibe') {
+    // Mistral Vibe command execution
+    if (prompt && prompt.trim()) {
+      const escapedPrompt = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\\$');
+      const vibeCmd = `vibe "${escapedPrompt}"`;
+      await tmuxService.sendShellCommand(paneInfo, vibeCmd);
+    } else {
+      await tmuxService.sendShellCommand(paneInfo, 'vibe');
+    }
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 
   // Keep focus on the new pane

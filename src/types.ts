@@ -26,7 +26,7 @@ export interface DmuxPane {
   devWindowId?: string;   // Background window for dev server
   devStatus?: 'running' | 'stopped';
   devUrl?: string;        // Detected dev server URL
-  agent?: 'claude' | 'opencode';
+  agent?: 'claude' | 'opencode' | 'vibe';
   agentStatus?: AgentStatus;  // Agent working/attention status
   lastAgentCheck?: number;  // Timestamp of last status check
   lastDeterministicStatus?: 'ambiguous' | 'working';  // For LLM detection coordination
@@ -67,7 +67,7 @@ export interface DmuxSettings {
   // Autopilot settings
   enableAutopilotByDefault?: boolean;
   // Agent selection
-  defaultAgent?: 'claude' | 'opencode';
+  defaultAgent?: 'claude' | 'opencode' | 'vibe';
 }
 
 export type SettingsScope = 'global' | 'project';
