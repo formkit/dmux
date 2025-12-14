@@ -25,7 +25,7 @@ Tools for running agents in parallel are too complex. `dmux` makes running paral
 - **Node.js** 18 or higher  
 - **Git** 2.20 or higher (with worktree support)
 - **Agent CLI**: Claude Code (`claude`) or opencode (`opencode`)
-- **OpenRouter API Key** (optional but recommended for AI features)
+- **AI API Key** (optional but recommended for AI features): OpenRouter or Mistral AI
 
 ## Installation
 
@@ -37,7 +37,9 @@ npm install -g dmux
 
 ### 2. Enable AI Features
 
-For AI-powered branch naming and commit messages:
+For AI-powered branch naming and commit messages, you can use either OpenRouter or Mistral AI:
+
+#### Option A: OpenRouter (default, multiple models with fallback)
 
 ```bash
 # Add to your ~/.bashrc or ~/.zshrc
@@ -45,6 +47,22 @@ export OPENROUTER_API_KEY="your-api-key-here"
 ```
 
 Get your API key from [OpenRouter](https://openrouter.ai/).
+
+#### Option B: Mistral AI (direct API, faster for some features)
+
+```bash
+# Add to your ~/.bashrc or ~/.zshrc
+export MISTRAL_API_KEY="your-api-key-here"
+
+# Optional: Configure specific models for different features
+export MISTRAL_SLUG_MODELS="mistral-small-latest"
+export MISTRAL_COMMIT_MODELS="mistral-small-latest"
+export MISTRAL_ANALYSIS_MODELS="codestral-2501"
+```
+
+Get your API key from [Mistral AI](https://mistral.ai/).
+
+If both `OPENROUTER_API_KEY` and `MISTRAL_API_KEY` are set, dmux will use OpenRouter as the default but can use Mistral for specific features.
 
 ## Quick Start
 

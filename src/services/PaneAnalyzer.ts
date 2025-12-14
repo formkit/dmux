@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
 import { LogService } from './LogService.js';
+import { createProviderManagerFromEnv } from '../utils/aiProvider.js';
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';
@@ -27,12 +28,7 @@ interface CacheEntry {
 }
 
 export class PaneAnalyzer {
-  private apiKey: string;
-  private modelStack: string[] = [
-    'google/gemini-2.5-flash',
-    'x-ai/grok-4-fast:free',
-    'openai/gpt-4o-mini'
-  ];
+  private providerManager: ReturnType<typeof createProviderManagerFromEnv>;
 
   // Content-hash based cache to avoid repeated API calls for identical content
   private cache = new Map<string, CacheEntry>();
@@ -43,7 +39,7 @@ export class PaneAnalyzer {
   private pendingRequests = new Map<string, Promise<PaneAnalysis>>();
 
   constructor() {
-    this.apiKey = process.env.OPENROUTER_API_KEY || '';
+    this.providerManager = createProviderManagerFromEnv();
   }
 
   /**
@@ -87,52 +83,8 @@ export class PaneAnalyzer {
     this.cache.clear();
   }
 
-
   /**
-   * Make a single API request to a specific model
-   */
-  private async tryModel(
-    model: string,
-    systemPrompt: string,
-    userPrompt: string,
-    maxTokens: number,
-    signal?: AbortSignal
-  ): Promise<any> {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/dmux/dmux',
-        'X-Title': 'dmux',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-      }),
-      signal
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API error (${model}): ${response.status} ${errorText}`);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Makes a request to OpenRouter API with PARALLEL model fallback
-   * Uses Promise.any to race all models - first success wins
-   *
-   * Performance improvement: Previously could take 6+ seconds if models failed sequentially.
-   * Now returns as soon as ANY model responds successfully (typically <1s).
+   * Makes a request to AI provider with fallback support
    */
   private async makeRequestWithFallback(
     systemPrompt: string,
@@ -140,42 +92,37 @@ export class PaneAnalyzer {
     maxTokens: number,
     signal?: AbortSignal
   ): Promise<any> {
-    if (!this.apiKey) {
-      throw new Error('API key not available');
+    if (!this.providerManager.hasProviders()) {
+      throw new Error('No AI providers available');
     }
 
-    const logService = LogService.getInstance();
-
-    // Create an AbortController with timeout
+    // Create controller for abort signal if provided
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s total timeout
-
-    // Combine external signal with our timeout
-    const combinedSignal = signal
-      ? AbortSignal.any([signal, controller.signal])
-      : controller.signal;
+    if (signal) {
+      signal.addEventListener('abort', () => controller.abort());
+    }
 
     try {
-      // Race all models in parallel - first success wins
-      const result = await Promise.any(
-        this.modelStack.map(model =>
-          this.tryModel(model, systemPrompt, userPrompt, maxTokens, combinedSignal)
-            .then(data => {
-              logService.debug(`PaneAnalyzer: Model ${model} succeeded`, 'paneAnalyzer');
-              return data;
-            })
-        )
-      );
+      const response = await this.providerManager.generateText(userPrompt, {
+        feature: 'analysis',
+        maxTokens,
+        temperature: 0.1,
+        systemPrompt
+      });
 
-      return result;
-    } catch (error) {
-      if (error instanceof AggregateError) {
-        // All models failed - throw the first error for context
-        throw error.errors[0] || new Error('All models in fallback stack failed');
+      if (!response) {
+        throw new Error('AI provider returned no response');
       }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
+
+      // Parse JSON response (for structured outputs)
+      try {
+        return JSON.parse(response);
+      } catch {
+        // If not JSON, wrap in expected format
+        return { choices: [{ message: { content: response } }] };
+      }
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('AI provider request failed');
     }
   }
 
@@ -188,9 +135,9 @@ export class PaneAnalyzer {
   async determineState(content: string, signal?: AbortSignal, paneName?: string): Promise<PaneState> {
     const logService = LogService.getInstance();
 
-    if (!this.apiKey) {
-      // API key not set
-      logService.debug(`PaneAnalyzer: No API key set, defaulting to in_progress state${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
+    if (!this.providerManager.hasProviders()) {
+      // No AI providers available
+      logService.debug(`PaneAnalyzer: No AI providers available, defaulting to in_progress state${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
       return 'in_progress';
     }
 
@@ -268,8 +215,8 @@ CRITICAL:
   async extractOptions(content: string, signal?: AbortSignal, paneName?: string): Promise<Omit<PaneAnalysis, 'state'>> {
     const logService = LogService.getInstance();
 
-    if (!this.apiKey) {
-      logService.debug(`PaneAnalyzer: No API key set, cannot extract options${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
+    if (!this.providerManager.hasProviders()) {
+      logService.debug(`PaneAnalyzer: No AI providers available, cannot extract options${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
       return {};
     }
 
@@ -361,7 +308,7 @@ Output: {
    * Stage 3: Extract summary when state is open_prompt (idle)
    */
   async extractSummary(content: string, signal?: AbortSignal): Promise<string | undefined> {
-    if (!this.apiKey) {
+    if (!this.providerManager.hasProviders()) {
       return undefined;
     }
 
