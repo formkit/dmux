@@ -20,6 +20,7 @@ import { createWelcomePane, destroyWelcomePane } from './utils/welcomePane.js';
 import { TMUX_COLORS } from './theme/colors.js';
 import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
+import { getUntrackedPanes } from './utils/shellPaneDetection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -247,7 +248,19 @@ class Dmux {
         }
       }
 
-      if (controlPaneId && config.panes && config.panes.length === 0) {
+      // Check for untracked panes (terminal panes created outside dmux tracking)
+      const trackedPaneIds = config.panes?.map((p: any) => p.paneId) ?? [];
+      const untrackedPanes = await getUntrackedPanes(
+        this.sessionName,
+        trackedPaneIds,
+        controlPaneId,
+        config.welcomePaneId
+      );
+
+      // Only show welcome pane if there are no tracked AND no untracked panes
+      const hasAnyPanes = (config.panes?.length ?? 0) > 0 || untrackedPanes.length > 0;
+
+      if (controlPaneId && !hasAnyPanes) {
         if (!hasValidWelcomePane) {
           // Create new welcome pane
           const welcomePaneId = await createWelcomePane(controlPaneId);
@@ -269,6 +282,13 @@ class Dmux {
           execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
           await tmuxService.refreshClient();
         }
+      } else if (hasValidWelcomePane && hasAnyPanes) {
+        // If welcome pane exists but there are other panes, destroy it
+        LogService.getInstance().info('Destroying welcome pane because other panes exist', 'Setup');
+        await destroyWelcomePane(config.welcomePaneId);
+        config.welcomePaneId = undefined;
+        config.lastUpdated = new Date().toISOString();
+        await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
       }
     } catch (error) {
       // Ignore errors in sidebar setup - will work without it
