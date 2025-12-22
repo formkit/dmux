@@ -33,9 +33,17 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const initialLoadComplete = useRef(false);
+  const isLoadingPanes = useRef(false); // Guard against concurrent loadPanes calls
 
   const loadPanes = async () => {
     if (skipLoading) return;
+
+    // Prevent concurrent loadPanes calls which can cause race conditions
+    // and duplicate pane detection
+    if (isLoadingPanes.current) {
+      return;
+    }
+    isLoadingPanes.current = true;
 
     try {
       // Load panes from file and rebind IDs based on tmux state
@@ -140,6 +148,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         'usePanes'
       );
     } finally {
+      isLoadingPanes.current = false;
       if (isLoading) setIsLoading(false);
     }
   };

@@ -157,32 +157,27 @@ export async function getUntrackedPanes(
  * Creates a DmuxPane object for a shell pane
  * @param paneId The tmux pane ID
  * @param nextId The next available dmux ID number
- * @param existingTitle Optional existing title to preserve
+ * @param existingTitle Optional existing title (used for display but not for tracking)
  * @returns DmuxPane object for the shell pane
  */
 export async function createShellPane(paneId: string, nextId: number, existingTitle?: string): Promise<DmuxPane> {
   const tmuxService = TmuxService.getInstance();
   const shellType = await detectShellType(paneId);
 
-  // Use existing title if available and it's not a dmux internal title
-  // Otherwise generate shell-N naming
-  let slug: string;
-  if (existingTitle &&
-      existingTitle !== 'dmux-spacer' &&
-      !existingTitle.startsWith('dmux v') &&
-      existingTitle !== 'Welcome') {
-    slug = existingTitle;
-  } else {
-    slug = `shell-${nextId}`;
-    // Only set the title if we're generating a new one
-    try {
-      await tmuxService.setPaneTitle(paneId, slug);
-    } catch (error) {
-  //       LogService.getInstance().debug(
-  //         `Failed to set title for shell pane ${paneId}`,
-  //         'shellDetection'
-  //       );
-    }
+  // CRITICAL: Always generate unique shell-N slugs for shell panes.
+  // Using existing titles (like hostname "Gigablaster.local") causes tracking bugs
+  // because multiple panes can have the same title, and titleToId Map can only
+  // store one mapping per title. This leads to duplicate pane entries.
+  const slug = `shell-${nextId}`;
+
+  // Always set the title to ensure unique titles for proper rebinding
+  try {
+    await tmuxService.setPaneTitle(paneId, slug);
+  } catch (error) {
+    // LogService.getInstance().debug(
+    //   `Failed to set title for shell pane ${paneId}`,
+    //   'shellDetection'
+    // );
   }
 
   return {
