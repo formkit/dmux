@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { DmuxPane } from '../../types.js';
 import { COLORS } from '../../theme/colors.js';
@@ -11,7 +11,7 @@ interface PaneCardProps {
   isNextSelected: boolean;
 }
 
-const PaneCard: React.FC<PaneCardProps> = ({ pane, selected, isFirstPane, isLastPane, isNextSelected }) => {
+const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, isLastPane, isNextSelected }) => {
   // Get status indicator
   const getStatusIcon = () => {
     if (pane.agentStatus === 'working') return { icon: '✻', color: COLORS.working };
@@ -64,6 +64,23 @@ const PaneCard: React.FC<PaneCardProps> = ({ pane, selected, isFirstPane, isLast
       </Box>
     </Box>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for memoization - only re-render if relevant props changed
+  return (
+    prevProps.pane.id === nextProps.pane.id &&
+    prevProps.pane.slug === nextProps.pane.slug &&
+    prevProps.pane.agentStatus === nextProps.pane.agentStatus &&
+    prevProps.pane.testStatus === nextProps.pane.testStatus &&
+    prevProps.pane.devStatus === nextProps.pane.devStatus &&
+    prevProps.pane.autopilot === nextProps.pane.autopilot &&
+    prevProps.pane.type === nextProps.pane.type &&
+    prevProps.pane.shellType === nextProps.pane.shellType &&
+    prevProps.pane.agent === nextProps.pane.agent &&
+    prevProps.selected === nextProps.selected &&
+    prevProps.isFirstPane === nextProps.isFirstPane &&
+    prevProps.isLastPane === nextProps.isLastPane &&
+    prevProps.isNextSelected === nextProps.isNextSelected
+  );
+});
 
 export default PaneCard;

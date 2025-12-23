@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react"
-import { Box, Text, useApp, useStdout } from "ink"
+import { Box, Text, useApp, useStdout, useInput } from "ink"
 import { createRequire } from "module"
 import { TmuxService } from "./services/TmuxService.js"
 
@@ -60,6 +60,8 @@ import LoadingIndicator from "./components/indicators/LoadingIndicator.js"
 import RunningIndicator from "./components/indicators/RunningIndicator.js"
 import UpdatingIndicator from "./components/indicators/UpdatingIndicator.js"
 import FooterHelp from "./components/ui/FooterHelp.js"
+import TmuxHooksPromptDialog from "./components/dialogs/TmuxHooksPromptDialog.js"
+import { PaneEventService } from "./services/PaneEventService.js"
 
 const DmuxApp: React.FC<DmuxAppProps> = ({
   panesFile,
@@ -153,6 +155,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const [toastQueueLength, setToastQueueLength] = useState(0)
   const [toastQueuePosition, setToastQueuePosition] = useState<number | null>(null)
 
+  // Tmux hooks prompt state
+  const [showHooksPrompt, setShowHooksPrompt] = useState(false)
+  const [hooksPromptIndex, setHooksPromptIndex] = useState(0)
+  // undefined = not yet determined, true = use hooks, false = use polling
+  const [useHooks, setUseHooks] = useState<boolean | undefined>(undefined)
+
   // Subscribe to StateManager for unread error/warning count and toast updates
   useEffect(() => {
     const stateManager = StateManager.getInstance()
@@ -178,10 +186,45 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   }, [])
 
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
-  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(
+  const { panes, setPanes, isLoading, loadPanes, savePanes, eventMode } = usePanes(
     panesFile,
-    false
+    false,
+    sessionName,
+    controlPaneId,
+    useHooks
   )
+
+  // Check for tmux hooks preference on startup
+  useEffect(() => {
+    const checkHooksPreference = async () => {
+      // Check if user already has a preference
+      const settings = settingsManager.getSettings()
+
+      if (settings.useTmuxHooks !== undefined) {
+        // User has already decided
+        setUseHooks(settings.useTmuxHooks)
+        return
+      }
+
+      // Check if hooks are already installed (from previous session)
+      const paneEventService = PaneEventService.getInstance()
+      paneEventService.initialize({ sessionName, controlPaneId })
+
+      const hooksInstalled = await paneEventService.canUseHooks()
+
+      if (hooksInstalled) {
+        // Hooks already installed, use them automatically
+        setUseHooks(true)
+        // Save the preference
+        settingsManager.updateSetting('useTmuxHooks', true, 'global')
+      } else {
+        // Need to ask user - show prompt
+        setShowHooksPrompt(true)
+      }
+    }
+
+    checkHooksPreference()
+  }, [sessionName, controlPaneId, settingsManager])
 
   // Pane lifecycle manager - handles locking to prevent race conditions
   // Replaces the old timeout-based intentionallyClosedPanes Set
@@ -725,6 +768,36 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     }, 100)
   }
 
+  // Handle tmux hooks prompt input
+  useInput(
+    (input, key) => {
+      if (!showHooksPrompt) return
+
+      if (key.upArrow || input === 'k') {
+        setHooksPromptIndex(Math.max(0, hooksPromptIndex - 1))
+      } else if (key.downArrow || input === 'j') {
+        setHooksPromptIndex(Math.min(1, hooksPromptIndex + 1))
+      } else if (input === 'y') {
+        // Yes - install hooks
+        setShowHooksPrompt(false)
+        setUseHooks(true)
+        settingsManager.updateSetting('useTmuxHooks', true, 'global')
+      } else if (input === 'n') {
+        // No - use polling
+        setShowHooksPrompt(false)
+        setUseHooks(false)
+        settingsManager.updateSetting('useTmuxHooks', false, 'global')
+      } else if (key.return) {
+        // Select current option
+        setShowHooksPrompt(false)
+        const selected = hooksPromptIndex === 0
+        setUseHooks(selected)
+        settingsManager.updateSetting('useTmuxHooks', selected, 'global')
+      }
+    },
+    { isActive: showHooksPrompt }
+  )
+
   // Input handling - extracted to dedicated hook
   useInputHandling({
     panes,
@@ -735,7 +808,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     runningCommand,
     isUpdating,
     isLoading,
-    ignoreInput,
+    ignoreInput: ignoreInput || showHooksPrompt, // Block other input when hooks prompt is shown
     quitConfirmMode,
     setQuitConfirmMode,
     showCommandPrompt,
@@ -854,6 +927,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         {runningCommand && <RunningIndicator />}
 
         {isUpdating && <UpdatingIndicator />}
+
+        {/* Tmux hooks prompt - shown on first startup */}
+        {showHooksPrompt && (
+          <TmuxHooksPromptDialog selectedIndex={hooksPromptIndex} />
+        )}
       </Box>
 
       {/* Status messages - only render when present */}

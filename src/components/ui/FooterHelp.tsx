@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { Toast } from '../../services/ToastService.js';
 import ToastNotification from './ToastNotification.js';
@@ -22,7 +22,7 @@ interface FooterHelpProps {
   toastQueuePosition?: number | null;
 }
 
-const FooterHelp: React.FC<FooterHelpProps> = ({
+const FooterHelp: React.FC<FooterHelpProps> = memo(({
   show,
   gridInfo,
   showRemoteKey = false,
@@ -190,6 +190,6 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
       )}
     </Box>
   );
-};
+});
 
 export default FooterHelp;

@@ -114,15 +114,16 @@ class Dmux {
         // Expected - session doesn't exist, create new one
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
-        // Enable pane borders to show titles
-        execSync(`tmux set-option -t ${this.sessionName} pane-border-status top`, { stdio: 'inherit' });
-        // Set border colors (foreground only - respects user's terminal background)
-        execSync(`tmux set-option -t ${this.sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`, { stdio: 'inherit' });
-        execSync(`tmux set-option -t ${this.sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`, { stdio: 'inherit' });
-        // Set pane border format
-        execSync(`tmux set-option -t ${this.sessionName} pane-border-format " #{pane_title} "`, { stdio: 'inherit' });
-        // Set pane title for the main dmux pane
-        execSync(`tmux select-pane -t ${this.sessionName} -T "dmux v${packageJson.version} - ${this.projectName}"`, { stdio: 'inherit' });
+        // Batch all session configuration commands into a single tmux call for faster startup
+        // This reduces 5 process spawns to 1, significantly improving startup time
+        const sessionOptions = [
+          `set-option -t ${this.sessionName} pane-border-status top`,
+          `set-option -t ${this.sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
+          `set-option -t ${this.sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
+          `set-option -t ${this.sessionName} pane-border-format " #{pane_title} "`,
+          `select-pane -t ${this.sessionName} -T "dmux v${packageJson.version} - ${this.projectName}"`,
+        ].join(' \\; ');
+        execSync(`tmux ${sessionOptions}`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)
         // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
         let devDirectory = this.projectRoot;
@@ -276,10 +277,8 @@ class Dmux {
 
           // Apply correct layout: sidebar (40) | welcome pane (rest)
           // Use "latest" mode so window auto-follows terminal size
-          // Note: setOption doesn't have window-specific options yet, using execSync for these
-          execSync(`tmux set-window-option window-size latest`, { stdio: 'pipe' });
-          execSync(`tmux set-window-option main-pane-width ${SIDEBAR_WIDTH}`, { stdio: 'pipe' });
-          execSync(`tmux select-layout main-vertical`, { stdio: 'pipe' });
+          // Batch layout commands into single tmux call for better performance
+          execSync(`tmux set-window-option window-size latest \\; set-window-option main-pane-width ${SIDEBAR_WIDTH} \\; select-layout main-vertical`, { stdio: 'pipe' });
           await tmuxService.refreshClient();
         }
       } else if (hasValidWelcomePane && hasAnyPanes) {
@@ -613,13 +612,19 @@ class Dmux {
 
   private setupPaneSplitHook() {
     try {
-      // Set up hook that sends SIGUSR2 to dmux process when a pane is split
-      // This allows us to detect manually created panes via Ctrl+b %
+      // Set up hooks that send SIGUSR2 to dmux process for pane events
+      // This allows immediate detection of pane changes
       const pid = process.pid;
+
+      // Detect manually created panes via Ctrl+b %
       execSync(`tmux set-hook -t '${this.sessionName}' after-split-window 'run-shell "kill -USR2 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
-      // LogService.getInstance().debug(`Set up pane split detection hook for session ${this.sessionName}`, 'Setup');
+
+      // Detect pane closures via Ctrl+b x or process exit
+      execSync(`tmux set-hook -t '${this.sessionName}' pane-exited 'run-shell "kill -USR2 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
+
+      // LogService.getInstance().debug(`Set up pane detection hooks for session ${this.sessionName}`, 'Setup');
     } catch (error) {
-      LogService.getInstance().warn('Failed to set up pane split hook', 'Setup');
+      LogService.getInstance().warn('Failed to set up pane hooks', 'Setup');
     }
   }
 
@@ -635,9 +640,10 @@ class Dmux {
 
   private cleanupPaneSplitHook() {
     try {
-      // Remove pane split hook
+      // Remove pane hooks
       execSync(`tmux set-hook -u -t '${this.sessionName}' after-split-window`, { stdio: 'pipe' });
-      LogService.getInstance().debug('Cleaned up pane split hook', 'Setup');
+      execSync(`tmux set-hook -u -t '${this.sessionName}' pane-exited`, { stdio: 'pipe' });
+      LogService.getInstance().debug('Cleaned up pane hooks', 'Setup');
     } catch {
       // Ignore cleanup errors
     }

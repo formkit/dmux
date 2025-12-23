@@ -1,6 +1,5 @@
 import path from "path"
 import fs from "fs/promises"
-import { execSync } from "child_process"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 import {
@@ -10,6 +9,7 @@ import {
 } from "../utils/popup.js"
 import { StateManager } from "../shared/StateManager.js"
 import { LogService } from "./LogService.js"
+import { TmuxService } from "./TmuxService.js"
 import { SETTING_DEFINITIONS } from "../utils/settingsManager.js"
 import type { DmuxPane, ProjectSettings } from "../types.js"
 import { getAvailableActions, type PaneAction } from "../actions/index.js"
@@ -115,15 +115,13 @@ export class PopupManager {
       // Get positioning
       let positioning
       if (options.positioning === "large") {
-        const tmuxDims = execSync(
-          'tmux display-message -p "#{client_width},#{client_height}"',
-          { encoding: "utf-8" }
-        ).trim()
-        const [termWidth, termHeight] = tmuxDims.split(",").map(Number)
+        // Use async dimension fetching for better performance
+        const tmuxService = TmuxService.getInstance()
+        const dims = await tmuxService.getAllDimensions()
         positioning = POPUP_POSITIONING.large(
           this.config.sidebarWidth,
-          termWidth,
-          termHeight
+          dims.clientWidth,
+          dims.clientHeight
         )
       } else if (options.positioning === "centered") {
         positioning = POPUP_POSITIONING.centeredWithSidebar(

@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
 import { LogService } from './LogService.js';
 
@@ -20,6 +21,11 @@ export interface PaneAnalysis {
   summary?: string; // Brief summary when state is 'open_prompt' (idle)
 }
 
+interface CacheEntry {
+  result: PaneAnalysis;
+  timestamp: number;
+}
+
 export class PaneAnalyzer {
   private apiKey: string;
   private modelStack: string[] = [
@@ -28,13 +34,105 @@ export class PaneAnalyzer {
     'openai/gpt-4o-mini'
   ];
 
+  // Content-hash based cache to avoid repeated API calls for identical content
+  private cache = new Map<string, CacheEntry>();
+  private readonly CACHE_TTL = 5000; // 5 seconds TTL
+  private readonly MAX_CACHE_SIZE = 100; // Prevent unbounded growth
+
+  // Request deduplication - prevent multiple concurrent requests for same pane
+  private pendingRequests = new Map<string, Promise<PaneAnalysis>>();
+
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY || '';
   }
 
+  /**
+   * Hash content for cache key
+   */
+  private hashContent(content: string): string {
+    return createHash('md5').update(content).digest('hex');
+  }
 
   /**
-   * Makes a request to OpenRouter API with model fallback
+   * Get cached result if still valid
+   */
+  private getCached(hash: string): PaneAnalysis | null {
+    const entry = this.cache.get(hash);
+    if (entry && Date.now() - entry.timestamp < this.CACHE_TTL) {
+      return entry.result;
+    }
+    // Clean up expired entry
+    if (entry) {
+      this.cache.delete(hash);
+    }
+    return null;
+  }
+
+  /**
+   * Store result in cache with LRU eviction
+   */
+  private setCache(hash: string, result: PaneAnalysis): void {
+    // Evict oldest entries if cache is full
+    if (this.cache.size >= this.MAX_CACHE_SIZE) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest) this.cache.delete(oldest);
+    }
+    this.cache.set(hash, { result, timestamp: Date.now() });
+  }
+
+  /**
+   * Clear all cache entries (useful for testing)
+   */
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+
+  /**
+   * Make a single API request to a specific model
+   */
+  private async tryModel(
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    maxTokens: number,
+    signal?: AbortSignal
+  ): Promise<any> {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/dmux/dmux',
+        'X-Title': 'dmux',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.1,
+        max_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+      }),
+      signal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API error (${model}): ${response.status} ${errorText}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Makes a request to OpenRouter API with PARALLEL model fallback
+   * Uses Promise.any to race all models - first success wins
+   *
+   * Performance improvement: Previously could take 6+ seconds if models failed sequentially.
+   * Now returns as soon as ANY model responds successfully (typically <1s).
    */
   private async makeRequestWithFallback(
     systemPrompt: string,
@@ -46,48 +144,39 @@ export class PaneAnalyzer {
       throw new Error('API key not available');
     }
 
-    let lastError: Error | null = null;
+    const logService = LogService.getInstance();
 
-    // Try each model in the stack
-    for (const model of this.modelStack) {
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://github.com/dmux/dmux',
-            'X-Title': 'dmux',
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            temperature: 0.1,
-            max_tokens: maxTokens,
-            response_format: { type: 'json_object' },
-          }),
-          signal
-        });
+    // Create an AbortController with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s total timeout
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`API error (${model}): ${response.status} ${errorText}`);
-        }
+    // Combine external signal with our timeout
+    const combinedSignal = signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal;
 
-        const data: any = await response.json();
-        return data;
-      } catch (error) {
-        lastError = error as Error;
-        // Continue to next model in stack
-        continue;
+    try {
+      // Race all models in parallel - first success wins
+      const result = await Promise.any(
+        this.modelStack.map(model =>
+          this.tryModel(model, systemPrompt, userPrompt, maxTokens, combinedSignal)
+            .then(data => {
+              logService.debug(`PaneAnalyzer: Model ${model} succeeded`, 'paneAnalyzer');
+              return data;
+            })
+        )
+      );
+
+      return result;
+    } catch (error) {
+      if (error instanceof AggregateError) {
+        // All models failed - throw the first error for context
+        throw error.errors[0] || new Error('All models in fallback stack failed');
       }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    // All models failed
-    throw lastError || new Error('All models in fallback stack failed');
   }
 
   /**
@@ -315,7 +404,53 @@ If there's no meaningful content or the output is unclear, return an empty summa
   }
 
   /**
+   * Internal analysis implementation (no caching/deduplication)
+   */
+  private async doAnalyzePane(
+    tmuxPaneId: string,
+    content: string,
+    paneName: string,
+    dmuxPaneId: string | undefined,
+    signal?: AbortSignal
+  ): Promise<PaneAnalysis> {
+    const logService = LogService.getInstance();
+
+    try {
+      // Stage 1: Determine the state
+      const state = await this.determineState(content, signal, paneName);
+
+      // If it's an option dialog, extract option details
+      if (state === 'option_dialog') {
+        logService.debug(`PaneAnalyzer: Detected option_dialog for "${paneName}", extracting options...`, 'paneAnalyzer', dmuxPaneId);
+        const optionDetails = await this.extractOptions(content, signal, paneName);
+        return {
+          state,
+          ...optionDetails
+        };
+      }
+
+      // If it's open_prompt (idle), extract summary
+      if (state === 'open_prompt') {
+        logService.debug(`PaneAnalyzer: Detected open_prompt for "${paneName}", extracting summary...`, 'paneAnalyzer', dmuxPaneId);
+        const summary = await this.extractSummary(content, signal);
+        return {
+          state,
+          summary
+        };
+      }
+
+      // Otherwise just return the state (in_progress)
+      return { state };
+    } catch (error) {
+      logService.error(`PaneAnalyzer: Analysis failed for "${paneName}": ${error}`, 'paneAnalyzer', dmuxPaneId, error instanceof Error ? error : undefined);
+      throw error;
+    }
+  }
+
+  /**
    * Main analysis function that captures and analyzes a pane
+   * Includes caching and request deduplication for performance.
+   *
    * @param tmuxPaneId - The tmux pane ID (e.g., "%38")
    * @param signal - Optional abort signal
    * @param dmuxPaneId - Optional dmux pane ID for friendly logging (e.g., "dmux-123")
@@ -346,43 +481,39 @@ If there's no meaningful content or the output is unclear, return an empty summa
       return { state: 'in_progress' };
     }
 
+    // Check cache first
+    const contentHash = this.hashContent(content);
+    const cached = this.getCached(contentHash);
+    if (cached) {
+      logService.debug(`PaneAnalyzer: Cache hit for "${paneName}"`, 'paneAnalyzer', dmuxPaneId);
+      return cached;
+    }
+
+    // Check for pending request (deduplication)
+    const pendingKey = `${tmuxPaneId}:${contentHash}`;
+    if (this.pendingRequests.has(pendingKey)) {
+      logService.debug(`PaneAnalyzer: Deduplicating request for "${paneName}"`, 'paneAnalyzer', dmuxPaneId);
+      return this.pendingRequests.get(pendingKey)!;
+    }
+
+    // Start new analysis
+    const analysisPromise = this.doAnalyzePane(tmuxPaneId, content, paneName, dmuxPaneId, signal)
+      .then(result => {
+        // Cache successful result
+        this.setCache(contentHash, result);
+        logService.debug(`PaneAnalyzer: Analysis complete for "${paneName}": ${result.state}`, 'paneAnalyzer', dmuxPaneId);
+        return result;
+      })
+      .finally(() => {
+        // Clean up pending request
+        this.pendingRequests.delete(pendingKey);
+      });
+
+    this.pendingRequests.set(pendingKey, analysisPromise);
+
     try {
-      // Stage 1: Determine the state
-      const state = await this.determineState(content, signal, paneName);
-
-      // If it's an option dialog, extract option details
-      if (state === 'option_dialog') {
-        logService.debug(`PaneAnalyzer: Detected option_dialog for "${paneName}", extracting options...`, 'paneAnalyzer', dmuxPaneId);
-        const optionDetails = await this.extractOptions(content, signal, paneName);
-        const analysis = {
-          state,
-          ...optionDetails
-        };
-        logService.info(
-          `PaneAnalyzer: Analysis complete for "${paneName}": option_dialog with ${analysis.options?.length || 0} options` +
-          (analysis.potentialHarm?.hasRisk ? ' (RISK DETECTED)' : ''),
-          'paneAnalyzer',
-          dmuxPaneId
-        );
-        return analysis;
-      }
-
-      // If it's open_prompt (idle), extract summary
-      if (state === 'open_prompt') {
-        logService.debug(`PaneAnalyzer: Detected open_prompt for "${paneName}", extracting summary...`, 'paneAnalyzer', dmuxPaneId);
-        const summary = await this.extractSummary(content, signal);
-        logService.debug(`PaneAnalyzer: Analysis complete for "${paneName}": open_prompt${summary ? ` (summary: ${summary.substring(0, 50)}...)` : ''}`, 'paneAnalyzer', dmuxPaneId);
-        return {
-          state,
-          summary
-        };
-      }
-
-      // Otherwise just return the state (in_progress)
-      logService.debug(`PaneAnalyzer: Analysis complete for "${paneName}": in_progress`, 'paneAnalyzer', dmuxPaneId);
-      return { state };
+      return await analysisPromise;
     } catch (error) {
-      logService.error(`PaneAnalyzer: Analysis failed for "${paneName}": ${error}`, 'paneAnalyzer', dmuxPaneId, error instanceof Error ? error : undefined);
       // All models failed or other error occurred
       // Return open_prompt as fallback (idle state) and let error be handled by caller
       throw error;

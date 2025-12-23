@@ -68,6 +68,9 @@ export interface DmuxSettings {
   enableAutopilotByDefault?: boolean;
   // Agent selection
   defaultAgent?: 'claude' | 'opencode';
+  // Tmux hooks for event-driven updates (low CPU)
+  // true = use hooks, false = use polling, undefined = not yet asked
+  useTmuxHooks?: boolean;
 }
 
 export type SettingsScope = 'global' | 'project';
