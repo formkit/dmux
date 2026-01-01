@@ -25,6 +25,12 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     ],
   },
   {
+    key: 'useTmuxHooks',
+    label: 'Use Tmux Hooks',
+    description: 'Use tmux hooks for event-driven updates (lower CPU). If disabled, uses polling in a worker thread.',
+    type: 'boolean',
+  },
+  {
     key: 'hooks' as any,
     label: 'Manage Hooks',
     description: 'View and edit dmux lifecycle hooks',

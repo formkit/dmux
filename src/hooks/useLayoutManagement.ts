@@ -21,18 +21,28 @@ export function useLayoutManagement({
   // Use refs to track state across resize events
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isApplyingLayoutRef = useRef(false);
+  // Track if component is still mounted to avoid state updates after unmount
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     if (!controlPaneId) {
       return; // No sidebar layout configured
     }
 
-    // Enforce sidebar width immediately on mount
-    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+    // Enforce sidebar width immediately on mount (with error handling)
+    enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH).catch(error => {
+      LogService.getInstance().warn(
+        `Initial layout enforcement failed: ${error}`,
+        'ResizeDebug'
+      );
+    });
 
     const handleResize = () => {
-      // Skip if we're already applying a layout (prevents loops)
+      // Skip if we're already applying a layout (prevents loops and race conditions)
       if (isApplyingLayoutRef.current) {
+        LogService.getInstance().debug('Skipping resize - layout already in progress', 'ResizeDebug');
         return;
       }
 
@@ -43,27 +53,51 @@ export function useLayoutManagement({
 
       // Debounce: wait 500ms after last resize event (prevents excessive recalculations)
       resizeTimeoutRef.current = setTimeout(async () => {
+        // Check if component is still mounted
+        if (!isMountedRef.current) {
+          return;
+        }
+
         // Only enforce if not showing dialogs (to avoid interference)
         if (!hasActiveDialog) {
+          // Double-check we're not already applying (race condition protection)
+          if (isApplyingLayoutRef.current) {
+            return;
+          }
           isApplyingLayoutRef.current = true;
 
           LogService.getInstance().debug('Starting resize handler', 'ResizeDebug');
 
-          // Only enforce sidebar width when terminal resizes
-          await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+          try {
+            // Only enforce sidebar width when terminal resizes
+            await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
 
-          LogService.getInstance().debug('enforceControlPaneSize complete, calling onForceRepaint', 'ResizeDebug');
+            // Check if still mounted before updating UI
+            if (!isMountedRef.current) {
+              return;
+            }
 
-          // CRITICAL: Force Ink to repaint AFTER layout changes complete
-          // This ensures the dmux UI redraws last, preventing blank pane
-          onForceRepaint();
+            LogService.getInstance().debug('enforceControlPaneSize complete, calling onForceRepaint', 'ResizeDebug');
 
-          LogService.getInstance().debug('onForceRepaint called', 'ResizeDebug');
+            // CRITICAL: Force Ink to repaint AFTER layout changes complete
+            // This ensures the dmux UI redraws last, preventing blank pane
+            onForceRepaint();
 
-          // Reset flag after a brief delay
-          setTimeout(() => {
-            isApplyingLayoutRef.current = false;
-          }, 100);
+            LogService.getInstance().debug('onForceRepaint called', 'ResizeDebug');
+          } catch (error) {
+            // Log error but don't crash - layout will be retried on next resize
+            LogService.getInstance().warn(
+              `Layout enforcement failed during resize: ${error}`,
+              'ResizeDebug'
+            );
+          } finally {
+            // Reset flag after a brief delay (always reset, even on error)
+            setTimeout(() => {
+              if (isMountedRef.current) {
+                isApplyingLayoutRef.current = false;
+              }
+            }, 100);
+          }
         }
       }, 500);
     };
@@ -76,6 +110,7 @@ export function useLayoutManagement({
     process.on('SIGUSR1', handleResize);
 
     return () => {
+      isMountedRef.current = false;
       process.stdout.off('resize', handleResize);
       process.off('SIGWINCH', handleResize);
       process.off('SIGUSR1', handleResize);

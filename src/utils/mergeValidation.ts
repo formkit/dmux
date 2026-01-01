@@ -261,16 +261,33 @@ export function validateMerge(
  */
 export function stageAllChanges(repoPath: string): { success: boolean; error?: string } {
   try {
+    LogService.getInstance().info(`Staging all changes in: ${repoPath}`, 'stageAllChanges');
+
     execSync('git add -A', {
       cwd: repoPath,
       stdio: 'pipe',
     });
 
+    // Check if anything was actually staged
+    try {
+      execSync('git diff --cached --quiet', {
+        cwd: repoPath,
+        stdio: 'pipe',
+      });
+      // If this succeeds, nothing is staged
+      LogService.getInstance().warn(`No changes were staged in: ${repoPath}`, 'stageAllChanges');
+    } catch {
+      // Good - there are staged changes
+      LogService.getInstance().info(`Changes staged successfully in: ${repoPath}`, 'stageAllChanges');
+    }
+
     return { success: true };
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    LogService.getInstance().error(`Failed to stage changes in ${repoPath}: ${errorMsg}`, 'stageAllChanges');
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMsg,
     };
   }
 }
@@ -283,16 +300,47 @@ export function commitChanges(
   message: string
 ): { success: boolean; error?: string } {
   try {
+    LogService.getInstance().info(`Committing changes in: ${repoPath}`, 'commitChanges');
+    LogService.getInstance().info(`Commit message: ${message}`, 'commitChanges');
+
+    // Check if there are staged changes before committing
+    const stagedCheck = execSync('git diff --cached --quiet', {
+      cwd: repoPath,
+      stdio: 'pipe',
+    });
+  } catch (stagedError) {
+    // git diff --cached --quiet exits with 1 if there ARE staged changes (which is good)
+    // This is expected behavior - continue with commit
+  }
+
+  try {
     execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
       cwd: repoPath,
       stdio: 'pipe',
     });
 
+    LogService.getInstance().info(`Commit successful in: ${repoPath}`, 'commitChanges');
     return { success: true };
-  } catch (error) {
+  } catch (error: unknown) {
+    // Try to get more detailed error info
+    let errorMessage = 'Unknown error';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      // execSync errors have stderr in the error object
+      const execError = error as Error & { stderr?: Buffer | string };
+      if (execError.stderr) {
+        const stderr = typeof execError.stderr === 'string'
+          ? execError.stderr
+          : execError.stderr.toString();
+        if (stderr.trim()) {
+          errorMessage = stderr.trim();
+        }
+      }
+    }
+    LogService.getInstance().error(`Commit failed in ${repoPath}: ${errorMessage}`, 'commitChanges');
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     };
   }
 }

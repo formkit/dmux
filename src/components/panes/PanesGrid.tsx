@@ -1,4 +1,4 @@
-import React from "react"
+import React, { memo, useMemo } from "react"
 import { Box, Text } from "ink"
 import type { DmuxPane } from "../../types.js"
 import type { AgentStatusMap } from "../../hooks/useAgentStatus.js"
@@ -12,7 +12,7 @@ interface PanesGridProps {
   agentStatuses?: AgentStatusMap
 }
 
-const PanesGrid: React.FC<PanesGridProps> = ({
+const PanesGrid: React.FC<PanesGridProps> = memo(({
   panes,
   selectedIndex,
   isLoading,
@@ -109,6 +109,6 @@ const PanesGrid: React.FC<PanesGridProps> = ({
       )}
     </Box>
   )
-}
+})
 
 export default PanesGrid

@@ -21,16 +21,108 @@ export interface LogEntry {
 }
 
 /**
+ * Efficient circular buffer for log entries
+ * Provides O(1) insertion and bounded memory usage
+ */
+class CircularBuffer<T> {
+  private buffer: (T | undefined)[];
+  private head = 0; // Next write position
+  private size = 0; // Current number of items
+
+  constructor(private readonly capacity: number) {
+    this.buffer = new Array(capacity);
+  }
+
+  push(item: T): void {
+    this.buffer[this.head] = item;
+    this.head = (this.head + 1) % this.capacity;
+    if (this.size < this.capacity) {
+      this.size++;
+    }
+  }
+
+  /**
+   * Get all items in order (oldest to newest)
+   */
+  toArray(): T[] {
+    if (this.size === 0) return [];
+
+    const result: T[] = [];
+    const start = this.size < this.capacity ? 0 : this.head;
+
+    for (let i = 0; i < this.size; i++) {
+      const idx = (start + i) % this.capacity;
+      const item = this.buffer[idx];
+      if (item !== undefined) {
+        result.push(item);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Filter items matching a predicate
+   */
+  filter(predicate: (item: T) => boolean): T[] {
+    return this.toArray().filter(predicate);
+  }
+
+  /**
+   * Find and modify items in place
+   */
+  forEach(fn: (item: T) => void): void {
+    for (let i = 0; i < this.capacity; i++) {
+      const item = this.buffer[i];
+      if (item !== undefined) {
+        fn(item);
+      }
+    }
+  }
+
+  getSize(): number {
+    return this.size;
+  }
+
+  clear(): void {
+    this.buffer = new Array(this.capacity);
+    this.head = 0;
+    this.size = 0;
+  }
+
+  /**
+   * Remove items matching predicate (creates new buffer - O(n))
+   * Used for clearForPane which is rare
+   */
+  removeMatching(predicate: (item: T) => boolean): number {
+    const kept = this.filter(item => !predicate(item));
+    const removed = this.size - kept.length;
+
+    if (removed > 0) {
+      this.clear();
+      kept.forEach(item => this.push(item));
+    }
+
+    return removed;
+  }
+}
+
+/**
  * LogService singleton - central logging hub for dmux
+ *
+ * Performance optimizations:
+ * - Uses circular buffer for O(1) log insertion
+ * - Bounded memory usage (1000 entries max)
+ * - No array shifting on overflow
  */
 export class LogService extends EventEmitter {
   private static instance: LogService;
-  private logs: LogEntry[] = [];
-  private maxLogs: number = 1000; // Circular buffer size
+  private logs: CircularBuffer<LogEntry>;
+  private readonly maxLogs: number = 1000; // Circular buffer size
   private logCounter: number = 0;
 
   private constructor() {
     super();
+    this.logs = new CircularBuffer(this.maxLogs);
   }
 
   static getInstance(): LogService {
@@ -50,7 +142,7 @@ export class LogService extends EventEmitter {
   }
 
   /**
-   * Add a log entry
+   * Add a log entry (O(1) operation with circular buffer)
    */
   private addLog(level: LogLevel, message: string, source?: string, paneId?: string, stack?: string): void {
     const entry: LogEntry = {
@@ -64,12 +156,8 @@ export class LogService extends EventEmitter {
       stack,
     };
 
+    // O(1) insertion - circular buffer handles overflow automatically
     this.logs.push(entry);
-
-    // Maintain circular buffer - remove oldest logs when limit exceeded
-    if (this.logs.length > this.maxLogs) {
-      this.logs.shift();
-    }
 
     // Emit event for listeners (StateManager will pick this up)
     this.emit('log-added', entry);
@@ -133,7 +221,7 @@ export class LogService extends EventEmitter {
     paneId?: string;
     unreadOnly?: boolean;
   }): LogEntry[] {
-    let filtered = [...this.logs];
+    let filtered = this.logs.toArray();
 
     if (filter) {
       if (filter.level) {
@@ -215,7 +303,7 @@ export class LogService extends EventEmitter {
    * Clear all logs
    */
   clearAll(): void {
-    this.logs = [];
+    this.logs.clear();
     this.emit('logs-cleared');
   }
 
@@ -223,11 +311,10 @@ export class LogService extends EventEmitter {
    * Clear logs for a specific pane
    */
   clearForPane(paneId: string): void {
-    const before = this.logs.length;
-    this.logs = this.logs.filter(log => log.paneId !== paneId);
-    const after = this.logs.length;
-    if (before !== after) {
-      this.emit('logs-cleared', { paneId, count: before - after });
+    const before = this.logs.getSize();
+    const removed = this.logs.removeMatching(log => log.paneId === paneId);
+    if (removed > 0) {
+      this.emit('logs-cleared', { paneId, count: removed });
     }
   }
 
@@ -241,10 +328,11 @@ export class LogService extends EventEmitter {
     unreadErrors: number;
     unreadWarnings: number;
   } {
+    const allLogs = this.logs.toArray();
     return {
-      total: this.logs.length,
-      errors: this.logs.filter(l => l.level === 'error').length,
-      warnings: this.logs.filter(l => l.level === 'warn').length,
+      total: allLogs.length,
+      errors: allLogs.filter(l => l.level === 'error').length,
+      warnings: allLogs.filter(l => l.level === 'warn').length,
       unreadErrors: this.getUnreadErrorCount(),
       unreadWarnings: this.getUnreadWarningCount(),
     };
@@ -254,7 +342,7 @@ export class LogService extends EventEmitter {
    * Reset the service (for testing)
    */
   reset(): void {
-    this.logs = [];
+    this.logs.clear();
     this.logCounter = 0;
     this.removeAllListeners();
   }

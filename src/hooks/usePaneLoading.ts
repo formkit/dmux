@@ -4,6 +4,7 @@ import { splitPane } from '../utils/tmux.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
+import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 
 // Separate config structure to match new format
@@ -137,15 +138,37 @@ export async function recreateMissingPanes(
 /**
  * Recreates worktree panes that were killed by the user (e.g., via Ctrl+b x)
  * Called during periodic polling after initial load
+ *
+ * IMPORTANT: Checks PaneLifecycleManager to avoid recreating panes that are
+ * being intentionally closed (prevents race condition with close/merge actions)
  */
 export async function recreateKilledWorktreePanes(
   panes: DmuxPane[],
   allPaneIds: string[],
   panesFile: string
 ): Promise<DmuxPane[]> {
-  const worktreePanesToRecreate = panes.filter(pane =>
-    !allPaneIds.includes(pane.paneId) && pane.worktreePath
-  );
+  const lifecycleManager = PaneLifecycleManager.getInstance();
+
+  // Filter out panes that are being intentionally closed
+  const worktreePanesToRecreate = panes.filter(pane => {
+    // Pane must be missing from tmux and have a worktree path
+    if (allPaneIds.includes(pane.paneId) || !pane.worktreePath) {
+      return false;
+    }
+
+    // CRITICAL: Check if this pane is being intentionally closed
+    // This is a safety belt - the main protection is that close action
+    // removes pane from config BEFORE killing tmux pane
+    if (lifecycleManager.isClosing(pane.id) || lifecycleManager.isClosing(pane.paneId)) {
+      LogService.getInstance().debug(
+        `Skipping recreation of pane ${pane.id} (${pane.slug}) - intentionally being closed`,
+        'shellDetection'
+      );
+      return false;
+    }
+
+    return true;
+  });
 
   if (worktreePanesToRecreate.length === 0) return panes;
 

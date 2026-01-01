@@ -119,47 +119,36 @@ export async function getUntrackedPanes(
 
       // CRITICAL: Skip internal dmux panes by title
       if (title === 'dmux-spacer') {
-  //   //         LogService.getInstance().debug(`Excluding spacer pane: ${paneId}`, 'shellDetection');
-  //         continue;
-  //       }
-  //       if (title && title.startsWith('dmux v')) {
-  //   //         LogService.getInstance().debug(`Excluding control pane by title: ${paneId} (${title})`, 'shellDetection');
+        continue;
+      }
+      if (title && title.startsWith('dmux v')) {
         continue;
       }
       if (title === 'Welcome') {
-  //   //         LogService.getInstance().debug(`Excluding welcome pane: ${paneId}`, 'shellDetection');
-  //         continue;
-  //       }
-  // 
-  //       // CRITICAL: Skip control and welcome panes by ID (most reliable method)
-  //       if (controlPaneId && paneId === controlPaneId) {
-  //   //         LogService.getInstance().debug(`Excluding control pane by ID: ${paneId}`, 'shellDetection');
+        continue;
+      }
+
+      // CRITICAL: Skip control and welcome panes by ID (most reliable method)
+      if (controlPaneId && paneId === controlPaneId) {
         continue;
       }
       if (welcomePaneId && paneId === welcomePaneId) {
-  //   //         LogService.getInstance().debug(`Excluding welcome pane by ID: ${paneId}`, 'shellDetection');
-  //         continue;
-  //       }
-  // 
-  //       // CRITICAL: Skip panes running dmux itself (node process running dmux)
-  //       if (command && (command === 'node' || command.includes('dmux'))) {
-  //   //         LogService.getInstance().debug(`Excluding dmux process pane: ${paneId} (command: ${command})`, 'shellDetection');
+        continue;
+      }
+
+      // CRITICAL: Skip panes running dmux itself (node process running dmux)
+      if (command && (command === 'node' || command.includes('dmux'))) {
         continue;
       }
 
       // Skip already tracked panes
       if (trackedPaneIds.includes(paneId)) continue;
 
-  //   //       LogService.getInstance().debug(`Found untracked pane: ${paneId} (title: ${title}, command: ${command})`, 'shellDetection');
-  //       untrackedPanes.push({ paneId, title: title || '', command: command || '' });
+      untrackedPanes.push({ paneId, title: title || '', command: command || '' });
     }
 
     return untrackedPanes;
   } catch (error) {
-  //     LogService.getInstance().debug(
-  //       'Failed to get untracked panes',
-  //       'shellDetection'
-  //     );
     return [];
   }
 }
@@ -168,32 +157,27 @@ export async function getUntrackedPanes(
  * Creates a DmuxPane object for a shell pane
  * @param paneId The tmux pane ID
  * @param nextId The next available dmux ID number
- * @param existingTitle Optional existing title to preserve
+ * @param existingTitle Optional existing title (used for display but not for tracking)
  * @returns DmuxPane object for the shell pane
  */
 export async function createShellPane(paneId: string, nextId: number, existingTitle?: string): Promise<DmuxPane> {
   const tmuxService = TmuxService.getInstance();
   const shellType = await detectShellType(paneId);
 
-  // Use existing title if available and it's not a dmux internal title
-  // Otherwise generate shell-N naming
-  let slug: string;
-  if (existingTitle &&
-      existingTitle !== 'dmux-spacer' &&
-      !existingTitle.startsWith('dmux v') &&
-      existingTitle !== 'Welcome') {
-    slug = existingTitle;
-  } else {
-    slug = `shell-${nextId}`;
-    // Only set the title if we're generating a new one
-    try {
-      await tmuxService.setPaneTitle(paneId, slug);
-    } catch (error) {
-  //       LogService.getInstance().debug(
-  //         `Failed to set title for shell pane ${paneId}`,
-  //         'shellDetection'
-  //       );
-    }
+  // CRITICAL: Always generate unique shell-N slugs for shell panes.
+  // Using existing titles (like hostname "Gigablaster.local") causes tracking bugs
+  // because multiple panes can have the same title, and titleToId Map can only
+  // store one mapping per title. This leads to duplicate pane entries.
+  const slug = `shell-${nextId}`;
+
+  // Always set the title to ensure unique titles for proper rebinding
+  try {
+    await tmuxService.setPaneTitle(paneId, slug);
+  } catch (error) {
+    // LogService.getInstance().debug(
+    //   `Failed to set title for shell pane ${paneId}`,
+    //   'shellDetection'
+    // );
   }
 
   return {

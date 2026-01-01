@@ -1,6 +1,19 @@
 import { execSync } from 'child_process';
 import { LogService } from './LogService.js';
+import { execAsync, execAsyncAll } from '../utils/execAsync.js';
 import type { PanePosition, WindowDimensions } from '../types.js';
+
+/**
+ * Comprehensive dimension info from a single tmux query
+ */
+export interface DimensionInfo {
+  windowWidth: number;
+  windowHeight: number;
+  clientWidth: number;
+  clientHeight: number;
+  statusEnabled: boolean;
+  statusFormatLines: number;
+}
 
 /**
  * Retry strategy for tmux operations
@@ -116,6 +129,7 @@ export class TmuxService {
 
   /**
    * Execute a synchronous tmux command (most common case)
+   * @deprecated Use executeNonBlocking for new code
    */
   private execute(
     command: string,
@@ -143,6 +157,95 @@ export class TmuxService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Execute a tmux command asynchronously (non-blocking)
+   * This is the preferred method for new code.
+   */
+  private async executeNonBlocking(
+    command: string,
+    options: {
+      silent?: boolean;
+      timeout?: number;
+    } = {}
+  ): Promise<string> {
+    const { silent = false, timeout = 5000 } = options;
+
+    try {
+      return await execAsync(command, { timeout, silent });
+    } catch (error) {
+      if (!silent) {
+        this.logger.debug(
+          `tmux command failed: ${command}`,
+          'error',
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+      throw error;
+    }
+  }
+
+  // ===== BATCHED QUERIES (Performance optimization) =====
+
+  /**
+   * Get all dimension info in a single tmux command.
+   * This replaces multiple calls to getWindowDimensions, getTerminalDimensions, etc.
+   *
+   * Performance: 1 command instead of 4+
+   */
+  async getAllDimensions(): Promise<DimensionInfo> {
+    const output = await this.executeNonBlocking(
+      `tmux display-message -p "#{window_width}|#{window_height}|#{client_width}|#{client_height}|#{status}"`
+    );
+    const [ww, wh, cw, ch, status] = output.split('|');
+
+    // Get status format lines (requires separate command due to newlines)
+    let statusFormatLines = 0;
+    if (status === 'on') {
+      try {
+        const formats = await this.executeNonBlocking(
+          `tmux show-options -gv status-format`,
+          { silent: true }
+        );
+        statusFormatLines = formats.split('\n').filter(line => line.trim()).length;
+      } catch {
+        statusFormatLines = 1; // Default assumption
+      }
+    }
+
+    return {
+      windowWidth: parseInt(ww, 10),
+      windowHeight: parseInt(wh, 10),
+      clientWidth: parseInt(cw, 10),
+      clientHeight: parseInt(ch, 10),
+      statusEnabled: status === 'on',
+      statusFormatLines,
+    };
+  }
+
+  /**
+   * Get all pane info in a single tmux command.
+   * Returns pane ID, title, position, and dimensions for all panes.
+   *
+   * Performance: 1 command instead of N * 3+ (where N = pane count)
+   */
+  async getAllPaneInfo(): Promise<Array<PanePosition & { title: string }>> {
+    const output = await this.executeNonBlocking(
+      `tmux list-panes -F '#{pane_id}|#{pane_title}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}'`
+    );
+
+    return output.split('\n').filter(Boolean).map(line => {
+      const [paneId, title, left, top, width, height] = line.split('|');
+      return {
+        paneId,
+        title,
+        left: parseInt(left, 10),
+        top: parseInt(top, 10),
+        width: parseInt(width, 10),
+        height: parseInt(height, 10),
+      };
+    });
   }
 
   // ===== READ OPERATIONS (IDEMPOTENT - safe to retry) =====
@@ -950,20 +1053,25 @@ export class TmuxService {
 
   /**
    * Select layout by name (sync version for compatibility)
+   * Note: Does NOT throw on error - logs warning and returns false instead
+   * This prevents crashes during rapid resize events
    */
-  selectLayoutSync(layout: string): void {
+  selectLayoutSync(layout: string): boolean {
     try {
       this.execute(`tmux select-layout '${layout}'`);
+      return true;
     } catch (error) {
       this.logger.warn(`Failed to select layout ${layout}`, 'TmuxService');
-      throw error;
+      return false;
     }
   }
 
   /**
    * Resize pane (sync version for compatibility)
+   * Note: Does NOT throw on error - logs warning and returns false instead
+   * This prevents crashes during rapid resize events
    */
-  resizePaneSync(paneId: string, dimensions: { width?: number; height?: number }): void {
+  resizePaneSync(paneId: string, dimensions: { width?: number; height?: number }): boolean {
     try {
       if (dimensions.width !== undefined) {
         this.execute(`tmux resize-pane -t '${paneId}' -x ${dimensions.width}`);
@@ -971,21 +1079,25 @@ export class TmuxService {
       if (dimensions.height !== undefined) {
         this.execute(`tmux resize-pane -t '${paneId}' -y ${dimensions.height}`);
       }
+      return true;
     } catch (error) {
       this.logger.warn(`Failed to resize pane ${paneId}`, 'TmuxService');
-      throw error;
+      return false;
     }
   }
 
   /**
    * Resize window (sync version for compatibility)
+   * Note: Does NOT throw on error - logs warning and returns false instead
+   * This prevents crashes during rapid resize events
    */
-  resizeWindowSync(dimensions: { width: number; height: number }): void {
+  resizeWindowSync(dimensions: { width: number; height: number }): boolean {
     try {
       this.execute(`tmux resize-window -x ${dimensions.width} -y ${dimensions.height}`);
+      return true;
     } catch (error) {
       this.logger.warn('Failed to resize window', 'TmuxService');
-      throw error;
+      return false;
     }
   }
 

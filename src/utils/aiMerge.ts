@@ -7,6 +7,7 @@
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
+import { LogService } from '../services/LogService.js';
 
 /**
  * Fetch with timeout wrapper
@@ -98,6 +99,8 @@ async function callClaudeCode(prompt: string, timeoutMs: number = 15000): Promis
  * Get comprehensive git diff with context for commit message generation
  */
 export function getComprehensiveDiff(repoPath: string): { diff: string; summary: string } {
+  LogService.getInstance().info(`getComprehensiveDiff called for: ${repoPath}`, 'aiMerge');
+
   try {
     // Get staged changes first, then fall back to unstaged if nothing staged
     let diff = execSync('git diff --cached', {
@@ -107,6 +110,7 @@ export function getComprehensiveDiff(repoPath: string): { diff: string; summary:
     });
 
     let staged = true;
+    LogService.getInstance().info(`git diff --cached length: ${diff.length}`, 'aiMerge');
 
     // If nothing staged, check unstaged changes
     if (!diff.trim()) {
@@ -116,6 +120,7 @@ export function getComprehensiveDiff(repoPath: string): { diff: string; summary:
         stdio: 'pipe',
       });
       staged = false;
+      LogService.getInstance().info(`git diff (unstaged) length: ${diff.length}`, 'aiMerge');
     }
 
     // Get file summary
@@ -126,8 +131,10 @@ export function getComprehensiveDiff(repoPath: string): { diff: string; summary:
       stdio: 'pipe',
     });
 
+    LogService.getInstance().info(`getComprehensiveDiff result - diff: ${diff.length} chars, summary: ${summary.trim().substring(0, 100)}`, 'aiMerge');
     return { diff, summary };
-  } catch {
+  } catch (error) {
+    LogService.getInstance().error(`getComprehensiveDiff failed for ${repoPath}: ${error}`, 'aiMerge');
     return { diff: '', summary: '' };
   }
 }

@@ -1,7 +1,53 @@
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
+import * as path from 'path';
+import { execAsync, execAsyncRace } from './execAsync.js';
+
+/**
+ * Detects the main/master branch name for the repository (async version)
+ * Uses Promise.any for efficient fallback - first successful result wins
+ */
+export async function getMainBranchAsync(): Promise<string> {
+  // Try the most reliable method first
+  try {
+    const originHead = await execAsync('git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null', { silent: true });
+    if (originHead) {
+      const match = originHead.match(/refs\/remotes\/origin\/(.+)/);
+      if (match) {
+        return match[1];
+      }
+    }
+  } catch {
+    // Continue to fallbacks
+  }
+
+  // Race between checking main and master
+  try {
+    return await execAsyncRace([
+      'git show-ref --verify --quiet refs/heads/main && echo main',
+      'git show-ref --verify --quiet refs/heads/master && echo master',
+    ]);
+  } catch {
+    // Neither exists, try current branch
+  }
+
+  try {
+    const branches = await execAsync('git branch --list', { silent: true });
+    const match = branches.match(/^\* (.+)$/m);
+    if (match) {
+      return match[1].trim();
+    }
+  } catch {
+    // Failed to get any branch
+  }
+
+  return 'main'; // Default fallback
+}
 
 /**
  * Detects the main/master branch name for the repository
+ * @deprecated Use getMainBranchAsync for non-blocking operation
  */
 export function getMainBranch(): string {
   try {
@@ -53,7 +99,19 @@ export function getMainBranch(): string {
 }
 
 /**
+ * Gets the current branch name (async version)
+ */
+export async function getCurrentBranchAsync(cwd?: string): Promise<string> {
+  try {
+    return await execAsync('git branch --show-current', { cwd, silent: true });
+  } catch {
+    return 'main';
+  }
+}
+
+/**
  * Gets the current branch name
+ * @deprecated Use getCurrentBranchAsync for non-blocking operation
  */
 export function getCurrentBranch(cwd?: string): string {
   try {
@@ -68,7 +126,20 @@ export function getCurrentBranch(cwd?: string): string {
 }
 
 /**
+ * Checks if there are uncommitted changes in the repository (async version)
+ */
+export async function hasUncommittedChangesAsync(cwd?: string): Promise<boolean> {
+  try {
+    const status = await execAsync('git status --porcelain', { cwd, silent: true });
+    return status.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Checks if there are uncommitted changes in the repository
+ * @deprecated Use hasUncommittedChangesAsync for non-blocking operation
  */
 export function hasUncommittedChanges(cwd?: string): boolean {
   try {
@@ -84,7 +155,25 @@ export function hasUncommittedChanges(cwd?: string): boolean {
 }
 
 /**
+ * Gets the list of conflicted files (async version)
+ */
+export async function getConflictedFilesAsync(cwd?: string): Promise<string[]> {
+  try {
+    const status = await execAsync('git status --porcelain', { cwd, silent: true });
+
+    return status
+      .split('\n')
+      .filter(line => line.startsWith('UU ') || line.startsWith('AA '))
+      .map(line => line.substring(3).trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Gets the list of conflicted files
+ * @deprecated Use getConflictedFilesAsync for non-blocking operation
  */
 export function getConflictedFiles(cwd?: string): string[] {
   try {
@@ -102,4 +191,173 @@ export function getConflictedFiles(cwd?: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Represents an orphaned worktree (exists on filesystem but no active pane)
+ */
+export interface OrphanedWorktree {
+  slug: string;
+  path: string;
+  lastModified: Date;
+  branch: string;
+  hasUncommittedChanges: boolean;
+}
+
+/**
+ * Gets a list of orphaned worktrees (async version)
+ * Uses parallel operations for better performance with many worktrees
+ */
+export async function getOrphanedWorktreesAsync(
+  projectRoot: string,
+  activePaneSlugs: string[]
+): Promise<OrphanedWorktree[]> {
+  const worktreesDir = path.join(projectRoot, '.dmux', 'worktrees');
+
+  try {
+    await fsPromises.access(worktreesDir);
+  } catch {
+    return [];
+  }
+
+  const orphaned: OrphanedWorktree[] = [];
+
+  try {
+    const entries = await fsPromises.readdir(worktreesDir, { withFileTypes: true });
+
+    // Process worktrees in parallel for better performance
+    const worktreePromises = entries
+      .filter(entry => entry.isDirectory() && !activePaneSlugs.includes(entry.name))
+      .map(async (entry) => {
+        const slug = entry.name;
+        const worktreePath = path.join(worktreesDir, slug);
+        const gitFile = path.join(worktreePath, '.git');
+
+        // Check if it's a valid git worktree
+        try {
+          await fsPromises.access(gitFile);
+        } catch {
+          return null;
+        }
+
+        // Get last modified time
+        let lastModified = new Date(0);
+        try {
+          const [stats, gitStats] = await Promise.all([
+            fsPromises.stat(worktreePath),
+            fsPromises.stat(gitFile)
+          ]);
+          lastModified = stats.mtime > gitStats.mtime ? stats.mtime : gitStats.mtime;
+        } catch {
+          // Use default date if stat fails
+        }
+
+        // Get branch name and check for changes in parallel
+        const [branch, hasChanges] = await Promise.all([
+          getCurrentBranchAsync(worktreePath).then(b => b || slug),
+          hasUncommittedChangesAsync(worktreePath)
+        ]);
+
+        return {
+          slug,
+          path: worktreePath,
+          lastModified,
+          branch,
+          hasUncommittedChanges: hasChanges,
+        };
+      });
+
+    const results = await Promise.all(worktreePromises);
+    orphaned.push(...results.filter((r): r is OrphanedWorktree => r !== null));
+
+    // Sort by most recently modified first
+    orphaned.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+  } catch {
+    // Return empty array if directory read fails
+  }
+
+  return orphaned;
+}
+
+/**
+ * Gets a list of orphaned worktrees - worktrees that exist in .dmux/worktrees
+ * but don't have an active pane tracking them
+ * @deprecated Use getOrphanedWorktreesAsync for non-blocking operation
+ */
+export function getOrphanedWorktrees(
+  projectRoot: string,
+  activePaneSlugs: string[]
+): OrphanedWorktree[] {
+  const worktreesDir = path.join(projectRoot, '.dmux', 'worktrees');
+
+  if (!fs.existsSync(worktreesDir)) {
+    return [];
+  }
+
+  const orphaned: OrphanedWorktree[] = [];
+
+  try {
+    const entries = fs.readdirSync(worktreesDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const slug = entry.name;
+      const worktreePath = path.join(worktreesDir, slug);
+
+      // Skip if this worktree has an active pane
+      if (activePaneSlugs.includes(slug)) continue;
+
+      // Check if it's a valid git worktree
+      const gitFile = path.join(worktreePath, '.git');
+      if (!fs.existsSync(gitFile)) continue;
+
+      // Get last modified time (use most recent mtime from key files)
+      let lastModified = new Date(0);
+      try {
+        const stats = fs.statSync(worktreePath);
+        lastModified = stats.mtime;
+
+        // Also check .git file modification time as a proxy for last activity
+        const gitStats = fs.statSync(gitFile);
+        if (gitStats.mtime > lastModified) {
+          lastModified = gitStats.mtime;
+        }
+      } catch {
+        // Use default date if stat fails
+      }
+
+      // Get the branch name
+      let branch = slug; // Default to slug
+      try {
+        branch = execSync('git branch --show-current', {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        }).trim() || slug;
+      } catch {
+        // Use slug as fallback
+      }
+
+      // Check for uncommitted changes
+      const hasChanges = hasUncommittedChanges(worktreePath);
+
+      orphaned.push({
+        slug,
+        path: worktreePath,
+        lastModified,
+        branch,
+        hasUncommittedChanges: hasChanges,
+      });
+    }
+
+    // Sort by most recently modified first
+    orphaned.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+  } catch {
+    // Return empty array if directory read fails
+  }
+
+  return orphaned;
 }

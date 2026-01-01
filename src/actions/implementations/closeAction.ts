@@ -8,6 +8,7 @@ import path from 'path';
 import type { DmuxPane, DmuxConfig } from '../../types.js';
 import type { ActionResult, ActionContext, ActionOption } from '../types.js';
 import { StateManager } from '../../shared/StateManager.js';
+import { PaneLifecycleManager } from '../../services/PaneLifecycleManager.js';
 import { triggerHook } from '../../utils/hooks.js';
 import { LogService } from '../../services/LogService.js';
 import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
@@ -69,7 +70,15 @@ async function executeCloseOption(
   console.error(`[closeAction] executeCloseOption called for pane ${pane.id} (slug: ${pane.slug}) with option: ${option}`);
   console.error(`[closeAction] Context has ${context.panes.length} panes: ${context.panes.map(p => p.id).join(', ')}`);
 
+  const lifecycleManager = PaneLifecycleManager.getInstance();
+
   try {
+    // CRITICAL: Mark pane as closing FIRST to prevent race condition with polling
+    // This prevents usePanes from recreating the pane while we're closing it
+    await lifecycleManager.beginClose(pane.id, `close action: ${option}`);
+    // Also mark by paneId in case polling checks that
+    await lifecycleManager.beginClose(pane.paneId, `close action: ${option}`);
+
     // Get project root for hooks
     const state = StateManager.getInstance().getState();
     const projectRoot = state.projectRoot || process.cwd();
@@ -82,7 +91,15 @@ async function executeCloseOption(
     StateManager.getInstance().pauseConfigWatcher();
 
     try {
-      // Kill the tmux pane - use a more robust approach
+      // CRITICAL: Remove from config FIRST, before killing tmux pane
+      // This prevents the race condition where polling detects "missing" pane
+      // and recreates it before we finish closing
+      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
+      console.error(`[closeAction] Removing pane ${pane.id} from config FIRST, result: ${updatedPanes.length} panes`);
+      await context.savePanes(updatedPanes);
+      console.error(`[closeAction] Config saved, now killing tmux pane`);
+
+      // NOW kill the tmux pane (after config is updated)
       try {
         // First, try to kill any running process in the pane (like Claude)
         try {
@@ -148,12 +165,6 @@ async function executeCloseOption(
         }
       }
 
-      // Remove from panes list
-      const updatedPanes = context.panes.filter(p => p.id !== pane.id);
-      console.error(`[closeAction] Filtering pane ${pane.id} from context.panes, result: ${updatedPanes.length} panes`);
-      await context.savePanes(updatedPanes);
-      console.error(`[closeAction] Panes saved successfully`);
-
       if (context.onPaneRemove) {
         context.onPaneRemove(pane.paneId); // Pass tmux pane ID, not dmux ID
       }
@@ -213,6 +224,11 @@ async function executeCloseOption(
     } finally {
       // CRITICAL: Always resume watcher, even if there was an error
       StateManager.getInstance().resumeConfigWatcher();
+
+      // Complete the lifecycle close (releases lock)
+      // Do this AFTER resume to ensure the config is stable
+      await lifecycleManager.completeClose(pane.id);
+      await lifecycleManager.completeClose(pane.paneId);
     }
   } catch (error) {
     // Clear before showing error too
@@ -221,6 +237,10 @@ async function executeCloseOption(
       execSync('tmux clear-history', { stdio: 'pipe' });
       execSync('tmux refresh-client', { stdio: 'pipe' });
     } catch {}
+
+    // Release lifecycle lock on error
+    await lifecycleManager.completeClose(pane.id);
+    await lifecycleManager.completeClose(pane.paneId);
 
     return {
       type: 'error',

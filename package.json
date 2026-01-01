@@ -1,17 +1,17 @@
 {
   "name": "dmux",
-  "version": "3.3.1",
+  "version": "4.0.0",
   "description": "Tmux pane manager with AI agent integration for parallel development workflows",
   "type": "module",
   "author": "Justin Schroeder",
   "license": "MIT",
-  "homepage": "https://github.com/justinschroeder/dmux#readme",
+  "homepage": "https://github.com/formkit/dmux#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/justinschroeder/dmux.git"
+    "url": "git+https://github.com/formkit/dmux.git"
   },
   "bugs": {
-    "url": "https://github.com/justinschroeder/dmux/issues"
+    "url": "https://github.com/formkit/dmux/issues"
   },
   "keywords": [
     "tmux",
@@ -58,9 +58,9 @@
     "test": "vitest --run",
     "prepublishOnly": "pnpm run build",
     "prerelease": "run-s clean build typecheck",
-    "release": "bumpp --commit --push --tag && pnpm publish",
-    "release:minor": "bumpp minor --commit --push --tag && pnpm publish",
-    "release:major": "bumpp major --commit --push --tag && pnpm publish"
+    "release": "bumpp --commit --push --tag",
+    "release:minor": "bumpp minor --commit --push --tag",
+    "release:major": "bumpp major --commit --push --tag"
   },
   "bin": {
     "dmux": "./dmux"

@@ -1,6 +1,5 @@
 import path from "path"
 import fs from "fs/promises"
-import { execSync } from "child_process"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 import {
@@ -10,6 +9,7 @@ import {
 } from "../utils/popup.js"
 import { StateManager } from "../shared/StateManager.js"
 import { LogService } from "./LogService.js"
+import { TmuxService } from "./TmuxService.js"
 import { SETTING_DEFINITIONS } from "../utils/settingsManager.js"
 import type { DmuxPane, ProjectSettings } from "../types.js"
 import { getAvailableActions, type PaneAction } from "../actions/index.js"
@@ -115,15 +115,13 @@ export class PopupManager {
       // Get positioning
       let positioning
       if (options.positioning === "large") {
-        const tmuxDims = execSync(
-          'tmux display-message -p "#{client_width},#{client_height}"',
-          { encoding: "utf-8" }
-        ).trim()
-        const [termWidth, termHeight] = tmuxDims.split(",").map(Number)
+        // Use async dimension fetching for better performance
+        const tmuxService = TmuxService.getInstance()
+        const dims = await tmuxService.getAllDimensions()
         positioning = POPUP_POSITIONING.large(
           this.config.sidebarWidth,
-          termWidth,
-          termHeight
+          dims.clientWidth,
+          dims.clientHeight
         )
       } else if (options.positioning === "centered") {
         positioning = POPUP_POSITIONING.centeredWithSidebar(
@@ -257,12 +255,20 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return false
 
     try {
+      // Calculate height based on message content
+      // Count newlines + estimate wrapped lines (assuming ~75 chars per line for width 80)
+      const messageLines = message.split('\n').reduce((count, line) => {
+        return count + Math.max(1, Math.ceil(line.length / 75))
+      }, 0)
+      // Add space for title, buttons, padding (about 6 lines)
+      const calculatedHeight = Math.min(35, Math.max(12, messageLines + 6))
+
       const result = await this.launchPopup<boolean>(
         "confirmPopup.js",
         [],
         {
-          width: 60,
-          height: 12,
+          width: 80,
+          height: calculatedHeight,
           title: title || "Confirm",
         },
         { title, message, yesLabel, noLabel }
@@ -478,7 +484,7 @@ export class PopupManager {
 
       if (result.success) {
         // Check if this is an action result
-        if ((result as any).action === "hooks") {
+        if (result.data?.action === "hooks") {
           await onLaunchHooks()
           return null
         } else if (result.data) {
@@ -583,6 +589,42 @@ export class PopupManager {
       )
     } catch (error: any) {
       this.showTempMessage(message, timeout)
+    }
+  }
+
+  async launchReopenWorktreePopup(
+    worktrees: Array<{
+      slug: string
+      path: string
+      lastModified: Date
+      branch: string
+      hasUncommittedChanges: boolean
+    }>
+  ): Promise<{ slug: string; path: string } | null> {
+    if (!this.checkPopupSupport()) return null
+
+    try {
+      // Convert Date objects to ISO strings for JSON serialization
+      const worktreesData = worktrees.map((wt) => ({
+        ...wt,
+        lastModified: wt.lastModified.toISOString(),
+      }))
+
+      const result = await this.launchPopup<{ slug: string; path: string }>(
+        "reopenWorktreePopup.js",
+        [],
+        {
+          width: 70,
+          height: Math.min(25, worktrees.length * 3 + 8),
+          title: "📂 Reopen Closed Worktree",
+        },
+        { worktrees: worktreesData }
+      )
+
+      return this.handleResult(result)
+    } catch (error: any) {
+      this.showTempMessage(`Failed to launch popup: ${error.message}`)
+      return null
     }
   }
 }

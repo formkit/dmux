@@ -2,6 +2,7 @@
  * MERGE Action - Merge a worktree into the main branch with comprehensive pre-checks
  *
  * This is the simplified orchestrator that delegates to specialized modules.
+ * Supports multi-merge: detects sub-worktrees and merges them all sequentially.
  */
 
 import type { DmuxPane } from '../../types.js';
@@ -16,7 +17,8 @@ import {
 } from '../merge/issueHandlers/index.js';
 
 /**
- * Merge a worktree into the main branch with comprehensive pre-checks
+ * Merge a worktree into the main branch with comprehensive pre-checks.
+ * Supports multi-merge: if sub-worktrees exist, merges all of them sequentially.
  */
 export async function mergePane(
   pane: DmuxPane,
@@ -32,17 +34,60 @@ export async function mergePane(
     };
   }
 
-  // 2. Pre-merge validation
-  const { validateMerge } = await import('../../utils/mergeValidation.js');
-  const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
-  const validation = validateMerge(mainRepoPath, pane.worktreePath, pane.slug);
+  // 2. Detect all worktrees (including sub-worktrees created by hooks)
+  const { detectAllWorktrees } = await import('../../utils/worktreeDiscovery.js');
+  const worktrees = detectAllWorktrees(pane.worktreePath);
 
-  // 3. Handle detected issues
+  console.error(`[mergeAction] Detected ${worktrees.length} worktree(s) in ${pane.worktreePath}`);
+  for (const wt of worktrees) {
+    console.error(`[mergeAction]   - ${wt.repoName} (${wt.branch}) at ${wt.relativePath} [depth=${wt.depth}, isRoot=${wt.isRoot}]`);
+  }
+
+  // 3. Build merge queue (only worktrees with changes)
+  const { buildMergeQueue, executeMultiMerge } = await import('../merge/multiMergeOrchestrator.js');
+  const queue = await buildMergeQueue(worktrees);
+
+  console.error(`[mergeAction] Merge queue has ${queue.length} item(s)`);
+
+  // 4. Handle based on queue size
+  // No changes anywhere
+  if (queue.length === 0) {
+    return {
+      type: 'info',
+      message: 'No changes to merge in any repository',
+      dismissable: true,
+    };
+  }
+
+  // Single root worktree = use existing flow (backwards compatible)
+  if (queue.length === 1 && queue[0].worktree.isRoot) {
+    console.error('[mergeAction] Single root worktree - using existing flow');
+    return executeSingleRootMerge(pane, context, params);
+  }
+
+  // Multiple worktrees or only sub-worktrees = use multi-merge flow
+  console.error('[mergeAction] Multiple worktrees or sub-worktrees - using multi-merge flow');
+  return executeMultiMerge(pane, context, queue);
+}
+
+/**
+ * Execute single root worktree merge (original flow, backwards compatible)
+ */
+async function executeSingleRootMerge(
+  pane: DmuxPane,
+  context: ActionContext,
+  params?: { mainBranch?: string }
+): Promise<ActionResult> {
+  const { validateMerge } = await import('../../utils/mergeValidation.js');
+  const mainRepoPath = pane.worktreePath!.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+  const validation = validateMerge(mainRepoPath, pane.worktreePath!, pane.slug);
+
+  // Handle detected issues
   if (!validation.canMerge) {
     return handleMergeIssues(pane, context, validation, mainRepoPath);
   }
 
-  // 4. No issues detected, proceed with merge confirmation
+  // No issues detected, proceed with merge confirmation
   return {
     type: 'confirm',
     title: 'Merge Worktree',

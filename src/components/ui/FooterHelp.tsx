@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { Toast } from '../../services/ToastService.js';
 import ToastNotification from './ToastNotification.js';
@@ -22,7 +22,7 @@ interface FooterHelpProps {
   toastQueuePosition?: number | null;
 }
 
-const FooterHelp: React.FC<FooterHelpProps> = ({
+const FooterHelp: React.FC<FooterHelpProps> = memo(({
   show,
   gridInfo,
   showRemoteKey = false,
@@ -165,12 +165,12 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
             ) : tunnelUrl ? (
               <>
                 <Text color="green">Connected. </Text>
-                <Text color="cyan">[r]</Text>
+                <Text color="cyan">[R]</Text>
                 <Text> to view</Text>
               </>
             ) : (
               <>
-                <Text color="cyan">[r]</Text>
+                <Text color="cyan">[R]</Text>
                 <Text>emote tunnel</Text>
               </>
             )}
@@ -190,6 +190,6 @@ const FooterHelp: React.FC<FooterHelpProps> = ({
       )}
     </Box>
   );
-};
+});
 
 export default FooterHelp;

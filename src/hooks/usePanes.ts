@@ -20,6 +20,7 @@ import {
   detectAndAddShellPanes,
 } from './useShellDetection.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
+import { PaneEventService, type PaneEventMode } from '../services/PaneEventService.js';
 
 // Use p-queue for proper concurrency control instead of manual write lock
 // This prevents race conditions and provides better visibility into queue state
@@ -29,13 +30,37 @@ async function withWriteLock<T>(operation: () => Promise<T>): Promise<T> {
   return configQueue.add(operation);
 }
 
-export default function usePanes(panesFile: string, skipLoading: boolean) {
+export interface UsePanesOptions {
+  panesFile: string;
+  skipLoading: boolean;
+  sessionName: string;
+  controlPaneId?: string;
+  useHooks?: boolean; // undefined = not yet decided, true = use hooks, false = use polling
+}
+
+export default function usePanes(
+  panesFile: string,
+  skipLoading: boolean,
+  sessionName?: string,
+  controlPaneId?: string,
+  useHooks?: boolean // undefined = not yet decided, true = use hooks, false = use polling
+) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [eventMode, setEventMode] = useState<PaneEventMode>('disabled');
   const initialLoadComplete = useRef(false);
+  const isLoadingPanes = useRef(false); // Guard against concurrent loadPanes calls
+  const paneEventService = useRef(PaneEventService.getInstance());
 
   const loadPanes = async () => {
     if (skipLoading) return;
+
+    // Prevent concurrent loadPanes calls which can cause race conditions
+    // and duplicate pane detection
+    if (isLoadingPanes.current) {
+      return;
+    }
+    isLoadingPanes.current = true;
 
     try {
       // Load panes from file and rebind IDs based on tmux state
@@ -140,6 +165,7 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
         'usePanes'
       );
     } finally {
+      isLoadingPanes.current = false;
       if (isLoading) setIsLoading(false);
     }
   };
@@ -149,28 +175,90 @@ export default function usePanes(panesFile: string, skipLoading: boolean) {
     setPanes(updatedPanes);
   };
 
+  // Initialize PaneEventService when session info is available
   useEffect(() => {
+    if (!sessionName) return;
+
+    const service = paneEventService.current;
+    service.initialize({
+      sessionName,
+      controlPaneId,
+      pollInterval: PANE_POLLING_INTERVAL,
+    });
+
+    return () => {
+      // Cleanup on unmount
+      service.stop();
+    };
+  }, [sessionName, controlPaneId]);
+
+  // Start event-driven updates when useHooks preference is determined
+  useEffect(() => {
+    if (!sessionName || useHooks === undefined) return;
+
+    const service = paneEventService.current;
+
+    const startEvents = async () => {
+      try {
+        const mode = await service.start(useHooks);
+        setEventMode(mode);
+        LogService.getInstance().info(
+          `Pane event mode: ${mode}`,
+          'paneEvents'
+        );
+      } catch (error) {
+        LogService.getInstance().error(
+          `Failed to start pane events: ${error}`,
+          'paneEvents'
+        );
+        // Fall back to polling with interval
+        setEventMode('polling');
+      }
+    };
+
+    startEvents();
+
+    return () => {
+      service.stop();
+    };
+  }, [sessionName, useHooks]);
+
+  // Subscribe to pane change events from PaneEventService
+  useEffect(() => {
+    if (skipLoading) return;
+
+    const service = paneEventService.current;
+
+    // Initial load
     loadPanes();
 
-    // Listen for pane split events from SIGUSR2 signal
+    // Subscribe to pane change events
+    const unsubscribe = service.onPanesChanged(() => {
+      LogService.getInstance().debug('Pane change event received', 'paneEvents');
+      loadPanes();
+    });
+
+    // Listen for pane split events from SIGUSR2 signal (legacy support)
     const handlePaneSplit = () => {
       LogService.getInstance().debug('Pane split event received, triggering immediate detection', 'shellDetection');
-      if (!skipLoading) {
-        loadPanes();
-      }
+      loadPanes();
+      // Also trigger a force check on the service
+      service.forceCheck();
     };
     process.on('pane-split-detected' as any, handlePaneSplit);
 
-    // Re-enabled: polling helps correct any layout shifts by triggering re-renders
-    const interval = setInterval(() => {
-      if (!skipLoading) loadPanes();
-    }, PANE_POLLING_INTERVAL);
+    // Keep a backup polling interval for resilience
+    // This is much longer when hooks are active
+    const backupInterval = setInterval(() => {
+      loadPanes();
+    }, eventMode === 'hooks' ? 30000 : PANE_POLLING_INTERVAL); // 30s backup for hooks, 5s for polling
 
     return () => {
-      clearInterval(interval);
+      unsubscribe();
+      clearInterval(backupInterval);
       process.off('pane-split-detected' as any, handlePaneSplit);
     };
-  }, [skipLoading, panesFile]);
+  }, [skipLoading, panesFile, eventMode]);
 
-  return { panes, setPanes, isLoading, loadPanes, savePanes } as const;
+  return { panes, setPanes, isLoading, loadPanes, savePanes, eventMode } as const;
 }
