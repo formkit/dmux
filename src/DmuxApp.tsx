@@ -136,7 +136,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Agent selection state
   const { availableAgents } = useAgentDetection()
-  const [agentChoice, setAgentChoice] = useState<"claude" | "opencode" | null>(
+  const [agentChoice, setAgentChoice] = useState<"claude" | "opencode" | "codex" | null>(
     null
   )
 

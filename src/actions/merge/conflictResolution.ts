@@ -19,16 +19,17 @@ export async function createConflictResolutionPaneForMerge(
   targetRepoPath: string
 ): Promise<ActionResult> {
   // First, check which agents are available
-  const { findClaudeCommand, findOpencodeCommand } = await import('../../utils/agentDetection.js');
+  const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../utils/agentDetection.js');
 
-  const availableAgents: Array<'claude' | 'opencode'> = [];
+  const availableAgents: Array<'claude' | 'opencode' | 'codex'> = [];
   if (await findClaudeCommand()) availableAgents.push('claude');
   if (await findOpencodeCommand()) availableAgents.push('opencode');
+  if (await findCodexCommand()) availableAgents.push('codex');
 
   if (availableAgents.length === 0) {
     return {
       type: 'error',
-      message: 'No AI agents available. Please install claude or opencode.',
+      message: 'No AI agents available. Please install claude, opencode, or codex.',
       dismissable: true,
     };
   }
@@ -41,8 +42,8 @@ export async function createConflictResolutionPaneForMerge(
       message: 'Which agent would you like to use to resolve merge conflicts?',
       options: availableAgents.map(agent => ({
         id: agent,
-        label: agent === 'claude' ? 'Claude Code' : 'OpenCode',
-        description: agent === 'claude' ? 'Anthropic Claude' : 'Open-source alternative',
+        label: agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : 'OpenCode',
+        description: agent === 'claude' ? 'Anthropic Claude' : agent === 'codex' ? 'OpenAI Codex CLI' : 'Open-source alternative',
         default: agent === 'claude',
       })),
       onSelect: async (agentId: string) => {
@@ -51,7 +52,7 @@ export async function createConflictResolutionPaneForMerge(
           context,
           targetBranch,
           targetRepoPath,
-          agentId as 'claude' | 'opencode'
+          agentId as 'claude' | 'opencode' | 'codex'
         );
       },
       dismissable: true,
@@ -76,7 +77,7 @@ async function createAndLaunchConflictPane(
   context: ActionContext,
   targetBranch: string,
   targetRepoPath: string,
-  agent: 'claude' | 'opencode'
+  agent: 'claude' | 'opencode' | 'codex'
 ): Promise<ActionResult> {
   try {
     const { createConflictResolutionPane } = await import('../../utils/conflictResolutionPane.js');

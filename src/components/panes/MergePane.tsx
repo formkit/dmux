@@ -212,7 +212,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
     // Launch Claude to resolve conflicts in the main repository
     try {
-      execSync(`claude "${fullPrompt}" --permission-mode=acceptEdits`, {
+      execSync(`claude "${fullPrompt}" --dangerously-skip-permissions`, {
         stdio: 'inherit',
         cwd: mainRepoPath || process.cwd()
       });

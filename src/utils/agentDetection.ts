@@ -70,13 +70,45 @@ export async function findOpencodeCommand(): Promise<string | null> {
 }
 
 /**
+ * Find Codex CLI command
+ */
+export async function findCodexCommand(): Promise<string | null> {
+  try {
+    const userShell = process.env.SHELL || '/bin/bash';
+    const result = execSync(
+      `${userShell} -i -c "command -v codex 2>/dev/null || which codex 2>/dev/null"`,
+      { encoding: 'utf-8', stdio: 'pipe' }
+    ).trim();
+    if (result) return result.split('\n')[0];
+  } catch {}
+
+  const commonPaths = [
+    '/usr/local/bin/codex',
+    '/opt/homebrew/bin/codex',
+    `${process.env.HOME}/.local/bin/codex`,
+    `${process.env.HOME}/bin/codex`,
+    `${process.env.HOME}/.npm-global/bin/codex`,
+  ];
+
+  for (const p of commonPaths) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
  * Get all available agents
  */
-export async function getAvailableAgents(): Promise<Array<'claude' | 'opencode'>> {
-  const agents: Array<'claude' | 'opencode'> = [];
+export async function getAvailableAgents(): Promise<Array<'claude' | 'opencode' | 'codex'>> {
+  const agents: Array<'claude' | 'opencode' | 'codex'> = [];
 
   if (await findClaudeCommand()) agents.push('claude');
   if (await findOpencodeCommand()) agents.push('opencode');
+  if (await findCodexCommand()) agents.push('codex');
 
   return agents;
 }

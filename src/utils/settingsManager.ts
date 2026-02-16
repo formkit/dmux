@@ -21,6 +21,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: '', label: 'Ask each time' },
       { value: 'claude', label: 'Claude Code' },
       { value: 'opencode', label: 'OpenCode' },
+      { value: 'codex', label: 'Codex' },
     ],
   },
   {
