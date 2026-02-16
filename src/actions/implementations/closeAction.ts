@@ -100,37 +100,66 @@ async function executeCloseOption(
       console.error(`[closeAction] Config saved, now killing tmux pane`);
 
       // NOW kill the tmux pane (after config is updated)
+      // CRITICAL FIX: First verify the pane exists before trying to interact with it
+      // This prevents crashes/hangs when operating on stale pane IDs
+      let paneExists = false;
       try {
-        // First, try to kill any running process in the pane (like Claude)
-        try {
-          execSync(`tmux send-keys -t '${pane.paneId}' C-c`, { stdio: 'pipe' });
-          // Wait a moment for the process to exit
-          await new Promise(resolve => setTimeout(resolve, TMUX_SPLIT_DELAY));
-        } catch {
-          // Process might not be running
-        }
+        const paneList = execSync('tmux list-panes -F "#{pane_id}"', {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          timeout: 5000 // 5 second timeout to prevent hangs
+        });
+        paneExists = paneList.includes(pane.paneId);
+      } catch {
+        // Error checking panes - assume it doesn't exist
+        LogService.getInstance().debug(`Could not verify pane ${pane.paneId} exists, treating as already closed`, 'paneActions');
+      }
 
-        // Now kill the pane
-        execSync(`tmux kill-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
-
-        // Verify the pane is actually gone
-        await new Promise(resolve => setTimeout(resolve, 100));
+      if (paneExists) {
         try {
-          // Check if pane still exists
-          const paneList = execSync('tmux list-panes -F "#{pane_id}"', { encoding: 'utf-8', stdio: 'pipe' });
-          if (paneList.includes(pane.paneId)) {
-            const msg = `Pane ${pane.paneId} still exists after kill attempt`;
-            console.error(`Warning: ${msg}`);
-            LogService.getInstance().warn(msg, 'paneActions', pane.id);
+          // First, try to kill any running process in the pane (like Claude)
+          try {
+            execSync(`tmux send-keys -t '${pane.paneId}' C-c`, {
+              stdio: 'pipe',
+              timeout: 2000 // 2 second timeout
+            });
+            // Wait a moment for the process to exit
+            await new Promise(resolve => setTimeout(resolve, TMUX_SPLIT_DELAY));
+          } catch {
+            // Process might not be running or pane already gone
           }
-        } catch {
-          // Error listing panes is fine
+
+          // Now kill the pane
+          execSync(`tmux kill-pane -t '${pane.paneId}'`, {
+            stdio: 'pipe',
+            timeout: 5000 // 5 second timeout
+          });
+
+          // Verify the pane is actually gone
+          await new Promise(resolve => setTimeout(resolve, 100));
+          try {
+            // Check if pane still exists
+            const updatedPaneList = execSync('tmux list-panes -F "#{pane_id}"', {
+              encoding: 'utf-8',
+              stdio: 'pipe',
+              timeout: 5000
+            });
+            if (updatedPaneList.includes(pane.paneId)) {
+              const msg = `Pane ${pane.paneId} still exists after kill attempt`;
+              console.error(`Warning: ${msg}`);
+              LogService.getInstance().warn(msg, 'paneActions', pane.id);
+            }
+          } catch {
+            // Error listing panes is fine
+          }
+        } catch (killError) {
+          // Pane might already be dead, which is fine
+          const msg = `Error killing pane ${pane.paneId}`;
+          console.error(msg, killError);
+          LogService.getInstance().error(msg, 'paneActions', pane.id, killError instanceof Error ? killError : undefined);
         }
-      } catch (killError) {
-        // Pane might already be dead, which is fine
-        const msg = `Error killing pane ${pane.paneId}`;
-        console.error(msg, killError);
-        LogService.getInstance().error(msg, 'paneActions', pane.id, killError instanceof Error ? killError : undefined);
+      } else {
+        LogService.getInstance().debug(`Pane ${pane.paneId} already gone, skipping kill`, 'paneActions');
       }
 
       // Handle worktree cleanup based on option
@@ -170,21 +199,48 @@ async function executeCloseOption(
       }
 
       // Recalculate layout for remaining panes
+      // CRITICAL FIX: Use validated pane IDs, not just the ones from config
+      // The config may have stale IDs if panes were killed between save and layout
       try {
         const config: DmuxConfig = JSON.parse(fs.readFileSync(path.join(projectRoot, '.dmux', 'dmux.config.json'), 'utf-8'));
         if (config.controlPaneId && updatedPanes.length > 0) {
-          const { recalculateAndApplyLayout } = await import('../../utils/layoutManager.js');
-          const { getTerminalDimensions } = await import('../../utils/tmux.js');
-          const dimensions = getTerminalDimensions();
+          // Verify control pane exists before attempting layout
+          const paneListCheck = execSync('tmux list-panes -F "#{pane_id}"', {
+            encoding: 'utf-8',
+            stdio: 'pipe',
+            timeout: 5000
+          });
+          const currentPaneIds = paneListCheck.trim().split('\n').filter(Boolean);
 
-          recalculateAndApplyLayout(
-            config.controlPaneId,
-            updatedPanes.map(p => p.paneId),
-            dimensions.width,
-            dimensions.height
-          );
+          if (!currentPaneIds.includes(config.controlPaneId)) {
+            LogService.getInstance().debug(
+              `Control pane ${config.controlPaneId} no longer exists, skipping layout recalc`,
+              'paneActions'
+            );
+          } else {
+            // Filter to only panes that actually exist in tmux
+            const validPaneIds = updatedPanes
+              .map(p => p.paneId)
+              .filter(id => currentPaneIds.includes(id));
 
-          LogService.getInstance().debug(`Recalculated layout after closing pane: ${updatedPanes.length} panes remaining`, 'paneActions');
+            if (validPaneIds.length > 0) {
+              const { recalculateAndApplyLayout } = await import('../../utils/layoutManager.js');
+              const { getTerminalDimensions } = await import('../../utils/tmux.js');
+              const dimensions = getTerminalDimensions();
+
+              recalculateAndApplyLayout(
+                config.controlPaneId,
+                validPaneIds,
+                dimensions.width,
+                dimensions.height
+              );
+
+              LogService.getInstance().debug(
+                `Recalculated layout after closing pane: ${validPaneIds.length} panes remaining`,
+                'paneActions'
+              );
+            }
+          }
         }
       } catch (error) {
         // Log but don't fail - layout recalc is non-critical

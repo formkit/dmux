@@ -79,11 +79,22 @@ describe('closeAction', () => {
       const mockPane = createShellPane({ paneId: '%99' });
       const mockContext = createMockContext([mockPane]);
 
-      vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+      // Mock must return the pane ID in list-panes so existence check passes
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes('list-panes')) {
+          return '%99\n'; // Pane exists
+        }
+        return Buffer.from('');
+      });
 
       await closePane(mockPane, mockContext);
 
-      // Verify tmux commands were called
+      // Verify existence check was called
+      expect(execSync).toHaveBeenCalledWith(
+        expect.stringContaining('tmux list-panes'),
+        expect.anything()
+      );
+      // Verify kill command was called after existence check passed
       expect(execSync).toHaveBeenCalledWith(
         expect.stringContaining('tmux send-keys'),
         expect.anything()
@@ -271,12 +282,18 @@ describe('closeAction', () => {
       const mockPane = createWorktreePane({ slug: 'my-feature' });
       const mockContext = createMockContext([mockPane]);
 
-      vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+      // Mock must return the pane ID in list-panes so existence check passes
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes('list-panes')) {
+          return '%1\n'; // Pane exists
+        }
+        return Buffer.from('');
+      });
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         controlPaneId: '%0',
       }));
 
-      const result = await closePane(mockPane);
+      const result = await closePane(mockPane, mockContext); // Fixed: added missing mockContext
       await result.onSelect!('kill_clean_branch');
 
       // Should remove worktree

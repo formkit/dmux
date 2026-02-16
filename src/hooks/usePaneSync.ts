@@ -114,6 +114,10 @@ export async function savePanesToFile(
  *
  * IMPORTANT: Checks PaneLifecycleManager to avoid queuing panes for recreation
  * if they are being intentionally closed (prevents race condition)
+ *
+ * CRITICAL FIX: On initial load, shell panes with stale IDs are immediately removed.
+ * Shell panes cannot be recreated (they have no worktreePath), so keeping them
+ * with stale IDs causes dmux to hang when trying to interact with non-existent panes.
  */
 export function rebindAndFilterPanes(
   loadedPanes: DmuxPane[],
@@ -160,10 +164,16 @@ export function rebindAndFilterPanes(
         'shellDetection'
       );
 
-      // Remove shell panes that are no longer present
+      // CRITICAL FIX: Remove shell panes that are no longer present
+      // Shell panes have no worktreePath, so they cannot be recreated.
+      // Keeping them with stale paneIds causes dmux to hang when:
+      // 1. Trying to send keys to non-existent panes
+      // 2. Trying to get pane status/content
+      // 3. Trying to apply layouts with stale pane IDs
+      // This is especially important on session reopen where tmux pane IDs change.
       if (pane.type === 'shell') {
-        LogService.getInstance().debug(
-          `Removing dead shell pane: ${pane.id} (${pane.slug})`,
+        LogService.getInstance().info(
+          `Removing stale shell pane: ${pane.id} (${pane.slug}) - paneId ${pane.paneId} no longer exists`,
           'shellDetection'
         );
         return false;
@@ -194,8 +204,8 @@ export function rebindAndFilterPanes(
   );
 
   if (shellPanesRemoved) {
-    LogService.getInstance().debug(
-      `Shell panes were removed, will save updated config`,
+    LogService.getInstance().info(
+      `Removed ${loadedPanes.filter(p => p.type === 'shell' && !allPaneIds.includes(p.paneId)).length} stale shell pane(s) from config`,
       'shellDetection'
     );
   }

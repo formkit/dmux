@@ -88,7 +88,27 @@ export async function recalculateAndApplyLayout(
     } catch (error) {
       LogService.getInstance().debug(`Failed to find spacer pane: ${error}`, 'Layout');
     }
-    const realContentPanes = contentPaneIds.filter(id => id !== existingSpacerId);
+
+    // CRITICAL FIX: Validate that content panes actually exist in tmux before proceeding
+    // This prevents crashes when panes have been killed but we still have stale IDs
+    const tmuxService = TmuxService.getInstance();
+    let validContentPaneIds: string[];
+    try {
+      const allTmuxPaneIds = tmuxService.getAllPaneIdsSync();
+      validContentPaneIds = contentPaneIds.filter(id => {
+        if (id === existingSpacerId) return false; // Filter out spacer
+        if (!allTmuxPaneIds.includes(id)) {
+          LogService.getInstance().debug(`Skipping stale pane ID ${id} (no longer exists in tmux)`, 'Layout');
+          return false;
+        }
+        return true;
+      });
+    } catch (error) {
+      // If we can't get tmux pane list, use the provided IDs but filter spacer
+      LogService.getInstance().debug(`Failed to validate pane IDs: ${error}`, 'Layout');
+      validContentPaneIds = contentPaneIds.filter(id => id !== existingSpacerId);
+    }
+    const realContentPanes = validContentPaneIds;
 
   // Check if dimensions and pane count have changed since last layout
   const dimensionsUnchanged =
@@ -248,7 +268,7 @@ export async function recalculateAndApplyLayout(
 
   // Step 7: Find and verify the actual control pane
   // The control pane ID may change after layout operations, so we need to find it by position
-  const tmuxService = TmuxService.getInstance();
+  // Note: tmuxService already declared above in Step 1
   let actualControlPaneId = controlPaneId;
   try {
     // First, verify the provided controlPaneId still exists
@@ -339,7 +359,42 @@ export async function recalculateAndApplyLayout(
   // } catch {}
 
   // Step 9: Apply the layout to tmux
-  layoutApplier.applyPaneLayout(actualControlPaneId, finalContentPanes, finalLayout, terminalHeight);
+  // CRITICAL FIX: Final validation before layout application
+  // Re-check that all panes still exist to prevent "invalid layout" errors
+  // that occur when panes are killed between layout calculation and application
+  try {
+    const currentPaneIds = tmuxService.getAllPaneIdsSync();
+    const validFinalPanes = finalContentPanes.filter(id => {
+      if (!currentPaneIds.includes(id)) {
+        LogService.getInstance().debug(`Pane ${id} disappeared before layout application`, 'Layout');
+        return false;
+      }
+      return true;
+    });
+
+    // Only proceed if we still have the same panes (or if spacer was the only one removed)
+    if (validFinalPanes.length < finalContentPanes.length - (spacerId ? 1 : 0)) {
+      LogService.getInstance().warn(
+        `Panes changed during layout calculation (${finalContentPanes.length} → ${validFinalPanes.length}), skipping layout apply`,
+        'Layout'
+      );
+      return;
+    }
+
+    // Also verify control pane still exists
+    if (!currentPaneIds.includes(actualControlPaneId)) {
+      LogService.getInstance().warn(
+        `Control pane ${actualControlPaneId} no longer exists, skipping layout apply`,
+        'Layout'
+      );
+      return;
+    }
+
+    layoutApplier.applyPaneLayout(actualControlPaneId, validFinalPanes, finalLayout, terminalHeight);
+  } catch (validationError) {
+    LogService.getInstance().debug(`Final validation failed: ${validationError}, attempting layout anyway`, 'Layout');
+    layoutApplier.applyPaneLayout(actualControlPaneId, finalContentPanes, finalLayout, terminalHeight);
+  }
   } catch (error) {
     // Catch-all for any errors during layout recalculation
     // Log but don't crash - layout will be retried on next resize event

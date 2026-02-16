@@ -250,6 +250,10 @@ export async function recreateKilledWorktreePanes(
 /**
  * Loads panes from config file, rebinds IDs, and recreates missing panes
  * Returns the loaded and processed panes along with tmux state
+ *
+ * CRITICAL FIX: On initial load, stale shell panes are removed immediately.
+ * Shell panes have no worktreePath so they cannot be recreated - keeping them
+ * with stale paneIds causes dmux to hang when trying to interact with them.
  */
 export async function loadAndProcessPanes(
   panesFile: string,
@@ -259,10 +263,47 @@ export async function loadAndProcessPanes(
   let { allPaneIds, titleToId } = await fetchTmuxPaneIds();
 
   // Attempt to rebind panes whose IDs changed by matching on title (slug)
-  const reboundPanes = loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
+  let reboundPanes = loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
 
-  // Only attempt to recreate missing panes on initial load
-  const missingPanes = (allPaneIds.length > 0 && loadedPanes.length > 0 && isInitialLoad)
+  // CRITICAL FIX: On initial load, immediately filter out shell panes with stale IDs
+  // Shell panes cannot be recreated (no worktreePath), so keeping them causes:
+  // 1. Hang when trying to send keys to non-existent panes
+  // 2. Hang when trying to get pane status/content
+  // 3. "Invalid layout" errors when applying layouts with stale pane IDs
+  if (isInitialLoad && allPaneIds.length > 0) {
+    const staleShellPanes = reboundPanes.filter(
+      p => p.type === 'shell' && !allPaneIds.includes(p.paneId)
+    );
+
+    if (staleShellPanes.length > 0) {
+      LogService.getInstance().info(
+        `Removing ${staleShellPanes.length} stale shell pane(s) on startup: ${staleShellPanes.map(p => p.slug).join(', ')}`,
+        'usePaneLoading'
+      );
+      reboundPanes = reboundPanes.filter(
+        p => !(p.type === 'shell' && !allPaneIds.includes(p.paneId))
+      );
+
+      // Save the cleaned config immediately to prevent these panes from reappearing
+      try {
+        const fs = await import('fs/promises');
+        const configContent = await fs.readFile(panesFile, 'utf-8');
+        const config = JSON.parse(configContent);
+        config.panes = reboundPanes;
+        config.lastUpdated = new Date().toISOString();
+        await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
+        LogService.getInstance().debug('Saved cleaned config after removing stale shell panes', 'usePaneLoading');
+      } catch (saveError) {
+        LogService.getInstance().debug(
+          `Failed to save cleaned config: ${saveError}`,
+          'usePaneLoading'
+        );
+      }
+    }
+  }
+
+  // Only attempt to recreate missing panes on initial load (only worktree panes, not shell)
+  const missingPanes = (allPaneIds.length > 0 && reboundPanes.length > 0 && isInitialLoad)
     ? reboundPanes.filter(pane =>
         !allPaneIds.includes(pane.paneId) && pane.type !== 'shell'
       )
@@ -278,12 +319,7 @@ export async function loadAndProcessPanes(
     titleToId = freshData.titleToId;
 
     // Re-rebind after recreation
-    loadedPanes.forEach((p, idx) => {
-      const rebound = rebindPaneByTitle(p, titleToId, allPaneIds);
-      if (rebound.paneId !== p.paneId) {
-        loadedPanes[idx] = rebound;
-      }
-    });
+    reboundPanes = reboundPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
   }
 
   return { panes: reboundPanes, allPaneIds, titleToId };

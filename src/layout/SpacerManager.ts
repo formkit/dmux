@@ -58,11 +58,27 @@ export class SpacerManager {
    * @param lastContentPaneId - The ID of the last content pane to split from
    * @returns The new spacer pane ID
    * @throws Error if pane creation fails
+   *
+   * CRITICAL FIX: Added validation that the target pane exists before attempting to split.
+   * This prevents crashes when the pane list becomes stale during rapid resize/pane operations.
    */
   createSpacerPane(lastContentPaneId: string): string {
     try {
+      // CRITICAL FIX: Verify the target pane exists before trying to split from it
+      // This prevents "can't find pane" errors during rapid operations
+      const allPanes = this.tmuxService.getAllPaneIdsSync();
+      if (!allPanes.includes(lastContentPaneId)) {
+        throw new Error(`Target pane ${lastContentPaneId} no longer exists`);
+      }
+
       // Store the currently active pane
-      const originalPaneId = this.tmuxService.getCurrentPaneIdSync();
+      let originalPaneId: string;
+      try {
+        originalPaneId = this.tmuxService.getCurrentPaneIdSync();
+      } catch {
+        // If we can't get current pane, use the last content pane as fallback
+        originalPaneId = lastContentPaneId;
+      }
 
       // Switch to the last content pane
       this.tmuxService.selectPaneSync(lastContentPaneId);
@@ -78,8 +94,15 @@ export class SpacerManager {
       // Set the pane title to identify it as a spacer
       this.tmuxService.setPaneTitleSync(newPaneId, SPACER_PANE_TITLE);
 
-      // Return focus to the originally active pane
-      this.tmuxService.selectPaneSync(originalPaneId);
+      // Return focus to the originally active pane (if it still exists)
+      try {
+        const currentPanes = this.tmuxService.getAllPaneIdsSync();
+        if (currentPanes.includes(originalPaneId)) {
+          this.tmuxService.selectPaneSync(originalPaneId);
+        }
+      } catch {
+        // Ignore errors restoring focus - non-critical
+      }
 
       // LogService.getInstance().debug(
       //   `Created spacer pane: ${newPaneId} (split from ${lastContentPaneId}, restored focus to ${originalPaneId})`,
