@@ -11,6 +11,7 @@ import type { ActionContext } from '../../../src/actions/types.js';
 vi.mock('../../../src/utils/agentDetection.js', () => ({
   findClaudeCommand: vi.fn(() => Promise.resolve(true)),
   findOpencodeCommand: vi.fn(() => Promise.resolve(true)),
+  findCodexCommand: vi.fn(() => Promise.resolve(false)),
 }));
 
 // Mock conflict resolution pane creation
@@ -75,9 +76,10 @@ describe('Conflict Resolution', () => {
 
   describe('createConflictResolutionPaneForMerge', () => {
     it('should return error when no agents available', async () => {
-      const { findClaudeCommand, findOpencodeCommand } = await import('../../../src/utils/agentDetection.js');
+      const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../../src/utils/agentDetection.js');
       vi.mocked(findClaudeCommand).mockResolvedValue(false);
       vi.mocked(findOpencodeCommand).mockResolvedValue(false);
+      vi.mocked(findCodexCommand).mockResolvedValue(false);
 
       const result = await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
 

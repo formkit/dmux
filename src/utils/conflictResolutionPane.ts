@@ -15,7 +15,7 @@ export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
   targetBranch: string;      // Branch merging into (usually main)
   targetRepoPath: string;    // Path to the target repository (where merge will happen)
-  agent: 'claude' | 'opencode';
+  agent: 'claude' | 'opencode' | 'codex';
   projectName: string;
   existingPanes: DmuxPane[];
 }
@@ -103,16 +103,26 @@ export async function createConflictResolutionPane(
       .replace(/"/g, '\\"')
       .replace(/`/g, '\\`')
       .replace(/\$/g, '\\$');
-    const claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
+    const claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
 
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
-    // Note: --permission-mode=acceptEdits handles edit permissions, but not workspace trust
+    // Note: --dangerously-skip-permissions handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
+  } else if (agent === 'codex') {
+    const escapedPrompt = prompt
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/`/g, '\\`')
+      .replace(/\$/g, '\\$');
+    const codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+
+    await tmuxService.sendShellCommand(paneInfo, codexCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
     await tmuxService.sendShellCommand(paneInfo, 'opencode');
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');

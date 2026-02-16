@@ -18,7 +18,7 @@ import { atomicWriteJsonSync } from './atomicWrite.js';
 
 export interface CreatePaneOptions {
   prompt: string;
-  agent?: 'claude' | 'opencode';
+  agent?: 'claude' | 'opencode' | 'codex';
   projectName: string;
   existingPanes: DmuxPane[];
   projectRoot?: string;
@@ -35,7 +35,7 @@ export interface CreatePaneResult {
  */
 export async function createPane(
   options: CreatePaneOptions,
-  availableAgents: Array<'claude' | 'opencode'>
+  availableAgents: Array<'claude' | 'opencode' | 'codex'>
 ): Promise<CreatePaneResult> {
   const { prompt, projectName, existingPanes } = options;
   let { agent, projectRoot: optionsProjectRoot } = options;
@@ -359,19 +359,32 @@ export async function createPane(
         .replace(/"/g, '\\"')
         .replace(/`/g, '\\`')
         .replace(/\$/g, '\\$');
-      claudeCmd = `claude "${escapedPrompt}" --permission-mode=acceptEdits`;
+      claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
     } else {
-      claudeCmd = `claude --permission-mode=acceptEdits`;
+      claudeCmd = `claude --dangerously-skip-permissions`;
     }
     // Send the claude command (auto-quoted by sendShellCommand)
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
-    // Note: --permission-mode=acceptEdits handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo, prompt).catch(() => {
       // Ignore errors in background monitoring
     });
+  } else if (agent === 'codex') {
+    let codexCmd: string;
+    if (prompt && prompt.trim()) {
+      const escapedPrompt = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+      codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+    } else {
+      codexCmd = `codex --dangerously-bypass-approvals-and-sandbox`;
+    }
+    await tmuxService.sendShellCommand(paneInfo, codexCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
     await tmuxService.sendShellCommand(paneInfo, 'opencode');
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');

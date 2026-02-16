@@ -149,11 +149,13 @@ export async function validateSystemRequirements(): Promise<ValidationResult> {
 
   // Warnings for missing agents
   if (checks.agents.length === 0) {
-    warnings.push('No agents found (claude or opencode). You will not be able to use AI features.');
-  } else if (checks.agents.length === 1) {
-    const allAgents: Array<'claude' | 'opencode'> = ['claude', 'opencode'];
-    const missing = allAgents.find(a => !checks.agents.includes(a));
-    warnings.push(`Agent '${missing}' not found. Only '${checks.agents[0]}' is available.`);
+    warnings.push('No agents found (claude, opencode, or codex). You will not be able to use AI features.');
+  } else {
+    const allAgents: Array<'claude' | 'opencode' | 'codex'> = ['claude', 'opencode', 'codex'];
+    const missing = allAgents.filter(a => !checks.agents.includes(a));
+    if (missing.length > 0) {
+      warnings.push(`Agent(s) not found: ${missing.map(a => `'${a}'`).join(', ')}. Available: ${checks.agents.map(a => `'${a}'`).join(', ')}.`);
+    }
   }
 
   return {

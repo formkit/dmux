@@ -86,15 +86,15 @@ export function createPanesRoutes() {
 
       console.error('[API] After normalization, agent =', agent);
 
-      if (agent && agent !== 'claude' && agent !== 'opencode') {
+      if (agent && agent !== 'claude' && agent !== 'opencode' && agent !== 'codex') {
         event.node.res.statusCode = 400;
-        return { error: 'Invalid agent. Must be "claude" or "opencode"' };
+        return { error: 'Invalid agent. Must be "claude", "opencode", or "codex"' };
       }
 
       // Get available agents using robust detection (same as TUI)
       const { execSync } = await import('child_process');
       const fsPromises = await import('fs/promises');
-      const availableAgents: Array<'claude' | 'opencode'> = [];
+      const availableAgents: Array<'claude' | 'opencode' | 'codex'> = [];
 
       // Check for Claude
       const hasClaude = await (async () => {
@@ -156,11 +156,41 @@ export function createPanesRoutes() {
 
       if (hasOpencode) availableAgents.push('opencode');
 
+      // Check for Codex
+      const hasCodex = await (async () => {
+        try {
+          const userShell = process.env.SHELL || '/bin/bash';
+          const result = execSync(
+            `${userShell} -i -c "command -v codex 2>/dev/null || which codex 2>/dev/null"`,
+            { encoding: 'utf-8', stdio: 'pipe' }
+          ).trim();
+          if (result) return true;
+        } catch {}
+
+        const codexPaths = [
+          '/usr/local/bin/codex',
+          '/opt/homebrew/bin/codex',
+          `${process.env.HOME}/.local/bin/codex`,
+          `${process.env.HOME}/bin/codex`,
+          `${process.env.HOME}/.npm-global/bin/codex`,
+        ];
+
+        for (const p of codexPaths) {
+          try {
+            await fsPromises.access(p);
+            return true;
+          } catch {}
+        }
+        return false;
+      })();
+
+      if (hasCodex) availableAgents.push('codex');
+
       console.error('[API] Available agents:', availableAgents);
 
       if (availableAgents.length === 0) {
         event.node.res.statusCode = 500;
-        return { error: 'No agents available. Install claude or opencode.' };
+        return { error: 'No agents available. Install claude, opencode, or codex.' };
       }
 
       // If no agent specified and multiple available, return agent choice needed
@@ -169,7 +199,7 @@ export function createPanesRoutes() {
         return {
           needsAgentChoice: true,
           availableAgents,
-          message: 'Please specify an agent (claude or opencode) in the request body',
+          message: 'Please specify an agent (claude, opencode, or codex) in the request body',
         };
       }
 
@@ -195,7 +225,7 @@ export function createPanesRoutes() {
         return {
           needsAgentChoice: true,
           availableAgents,
-          message: 'Please specify an agent (claude or opencode) in the request body',
+          message: 'Please specify an agent (claude, opencode, or codex) in the request body',
         };
       }
 

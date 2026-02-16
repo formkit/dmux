@@ -120,10 +120,30 @@ export async function reopenWorktree(
   // Wait for CD to complete
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  // Run claude --continue to resume the session
-  const claudeCmd = 'claude --continue --permission-mode=acceptEdits';
-  await tmuxService.sendShellCommand(paneInfo, claudeCmd);
-  await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  // Detect which agent to use - check what's available, prefer claude
+  const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('./agentDetection.js');
+  let agent: 'claude' | 'opencode' | 'codex' = 'claude';
+  if (await findClaudeCommand()) {
+    agent = 'claude';
+  } else if (await findCodexCommand()) {
+    agent = 'codex';
+  } else if (await findOpencodeCommand()) {
+    agent = 'opencode';
+  }
+
+  // Resume the agent session
+  if (agent === 'claude') {
+    const claudeCmd = 'claude --continue --dangerously-skip-permissions';
+    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  } else if (agent === 'codex') {
+    const codexCmd = 'codex resume --last --dangerously-bypass-approvals-and-sandbox';
+    await tmuxService.sendShellCommand(paneInfo, codexCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  } else if (agent === 'opencode') {
+    await tmuxService.sendShellCommand(paneInfo, 'opencode');
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  }
 
   // Keep focus on the new pane
   await tmuxService.selectPane(paneInfo);
@@ -135,7 +155,7 @@ export async function reopenWorktree(
     prompt: '(Reopened session)',
     paneId: paneInfo,
     worktreePath,
-    agent: 'claude',
+    agent,
     autopilot: false,
   };
 
