@@ -1,5 +1,7 @@
 import type { DmuxPane } from '../types.js';
 import { LogService } from '../services/LogService.js';
+import { getPaneTitleCandidates } from './paneTitle.js';
+import { StateManager } from '../shared/StateManager.js';
 
 /**
  * Attempts to rebind a pane whose ID has changed by matching on title (slug).
@@ -24,13 +26,20 @@ export function rebindPaneByTitle(
 
   // Pane ID missing - try to find it by title match
   if (allPaneIds.length > 0 && !allPaneIds.includes(pane.paneId)) {
-    const remappedId = titleToIdMap.get(pane.slug);
-    if (remappedId) {
-  //       LogService.getInstance().debug(
-  //         `Rebound pane ${pane.id} from ${pane.paneId} to ${remappedId} (matched by title: ${pane.slug})`,
-  //         'shellDetection'
-  //       );
-      return { ...pane, paneId: remappedId };
+    const sessionProjectRoot = StateManager.getInstance().getState().projectRoot;
+    const titleCandidates = getPaneTitleCandidates(
+      pane,
+      sessionProjectRoot || undefined
+    );
+    for (const candidate of titleCandidates) {
+      const remappedId = titleToIdMap.get(candidate);
+      if (remappedId) {
+  //         LogService.getInstance().debug(
+  //           `Rebound pane ${pane.id} from ${pane.paneId} to ${remappedId} (matched by title: ${candidate})`,
+  //           'shellDetection'
+  //         );
+        return { ...pane, paneId: remappedId };
+      }
     }
   }
 

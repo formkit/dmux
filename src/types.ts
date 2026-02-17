@@ -17,6 +17,8 @@ export interface DmuxPane {
   slug: string;
   prompt: string;
   paneId: string;
+  projectRoot?: string; // Main repository root this pane belongs to
+  projectName?: string; // Display name for pane's project
   type?: 'worktree' | 'shell';  // Type of pane (defaults to 'worktree' for backward compat)
   shellType?: string;  // Shell type for shell panes (bash, zsh, fish, etc)
   worktreePath?: string;

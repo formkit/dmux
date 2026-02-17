@@ -3,19 +3,20 @@ import * as fs from 'fs';
 import { TmuxService } from '../services/TmuxService.js';
 import {
   setupSidebarLayout,
-  getContentPaneIds,
   getTerminalDimensions,
   splitPane,
 } from './tmux.js';
 import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import type { DmuxPane, DmuxConfig } from '../types.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
-import { TMUX_LAYOUT_APPLY_DELAY } from '../constants/timing.js';
+import { buildWorktreePaneTitle } from './paneTitle.js';
 
 export interface ReopenWorktreeOptions {
   slug: string;
   worktreePath: string;
-  projectRoot: string;
+  projectRoot: string; // Target repo root for the reopened pane
+  sessionConfigPath?: string; // Shared dmux config path for this session
+  sessionProjectRoot?: string; // Session root for welcome pane/layout state
   existingPanes: DmuxPane[];
 }
 
@@ -30,13 +31,24 @@ export interface ReopenWorktreeResult {
 export async function reopenWorktree(
   options: ReopenWorktreeOptions
 ): Promise<ReopenWorktreeResult> {
-  const { slug, worktreePath, projectRoot, existingPanes } = options;
+  const {
+    slug,
+    worktreePath,
+    projectRoot,
+    existingPanes,
+    sessionConfigPath: optionsSessionConfigPath,
+    sessionProjectRoot: optionsSessionProjectRoot,
+  } = options;
+  const paneProjectName = path.basename(projectRoot);
+  const sessionProjectRoot = optionsSessionProjectRoot
+    || (optionsSessionConfigPath ? path.dirname(path.dirname(optionsSessionConfigPath)) : projectRoot);
 
   const tmuxService = TmuxService.getInstance();
   const originalPaneId = tmuxService.getCurrentPaneIdSync();
 
   // Load config to get control pane info
-  const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
+  const configPath = optionsSessionConfigPath
+    || path.join(sessionProjectRoot, '.dmux', 'dmux.config.json');
   let controlPaneId: string | undefined;
 
   try {
@@ -93,7 +105,10 @@ export async function reopenWorktree(
 
   // Set pane title
   try {
-    await tmuxService.setPaneTitle(paneInfo, slug);
+    const paneTitle = projectRoot === sessionProjectRoot
+      ? slug
+      : buildWorktreePaneTitle(slug, projectRoot, paneProjectName);
+    await tmuxService.setPaneTitle(paneInfo, paneTitle);
   } catch {
     // Ignore if setting title fails
   }
@@ -154,6 +169,8 @@ export async function reopenWorktree(
     slug,
     prompt: '(Reopened session)',
     paneId: paneInfo,
+    projectRoot,
+    projectName: paneProjectName,
     worktreePath,
     agent,
     autopilot: false,
@@ -170,7 +187,7 @@ export async function reopenWorktree(
       atomicWriteJsonSync(configPath, config);
 
       const { destroyWelcomePaneCoordinated } = await import('./welcomePaneManager.js');
-      destroyWelcomePaneCoordinated(projectRoot);
+      destroyWelcomePaneCoordinated(sessionProjectRoot);
     } catch {
       // Log but don't fail
     }

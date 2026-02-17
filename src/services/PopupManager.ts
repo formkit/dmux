@@ -191,14 +191,15 @@ export class PopupManager {
     return null
   }
 
-  async launchNewPanePopup(): Promise<string | null> {
+  async launchNewPanePopup(projectPath?: string): Promise<string | null> {
     if (!this.checkPopupSupport()) return null
 
     try {
       const popupHeight = Math.floor(this.config.terminalHeight * 0.8)
+      const popupArgs = projectPath ? [projectPath] : []
       const result = await this.launchPopup<string>(
         "newPanePopup.js",
-        [],
+        popupArgs,
         {
           width: 90,
           height: popupHeight,

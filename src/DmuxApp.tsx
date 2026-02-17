@@ -236,6 +236,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     panes,
     savePanes,
     projectName,
+    sessionProjectRoot: projectRoot || process.cwd(),
+    panesFile,
     setIsCreatingPane,
     setStatusMessage,
     loadPanes,
@@ -415,7 +417,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // applySmartLayout moved to utils/tmux
 
   // Helper function to handle agent choice and pane creation
-  const handlePaneCreationWithAgent = async (prompt: string) => {
+  const handlePaneCreationWithAgent = async (
+    prompt: string,
+    targetProjectRoot?: string
+  ) => {
     const agents = availableAgents
 
     const createPanesForAgents = async (selectedAgents: AgentName[]) => {
@@ -434,6 +439,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
             ? getAgentSlugSuffix(selectedAgent)
             : undefined,
           slugBase,
+          targetProjectRoot,
         })
 
         if (!pane) {
@@ -445,7 +451,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     }
 
     if (agents.length === 0) {
-      await createNewPaneHook(prompt)
+      await createNewPaneHook(prompt, undefined, {
+        targetProjectRoot,
+      })
     } else if (agents.length === 1) {
       await createPanesForAgents([agents[0]])
     } else {
@@ -464,15 +472,22 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   }
 
   // Helper function to reopen a closed worktree
-  const handleReopenWorktree = async (slug: string, worktreePath: string) => {
+  const handleReopenWorktree = async (
+    slug: string,
+    worktreePath: string,
+    targetProjectRoot?: string
+  ) => {
     try {
       setIsCreatingPane(true)
       setStatusMessage(`Reopening ${slug}...`)
 
+      const reopenProjectRoot = targetProjectRoot || projectRoot || process.cwd()
       const result = await reopenWorktree({
         slug,
         worktreePath,
-        projectRoot: projectRoot || process.cwd(),
+        projectRoot: reopenProjectRoot,
+        sessionProjectRoot: projectRoot || process.cwd(),
+        sessionConfigPath: panesFile,
         existingPanes: panes,
       })
 
@@ -811,6 +826,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           selectedIndex={selectedIndex}
           isLoading={isLoading}
           agentStatuses={agentStatuses}
+          fallbackProjectRoot={projectRoot || process.cwd()}
+          fallbackProjectName={projectName}
         />
 
         {/* Loading dialog */}

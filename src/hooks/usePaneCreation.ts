@@ -7,6 +7,8 @@ interface Params {
   panes: DmuxPane[];
   savePanes: (p: DmuxPane[]) => Promise<void>;
   projectName: string;
+  sessionProjectRoot: string;
+  panesFile: string;
   setIsCreatingPane: (v: boolean) => void;
   setStatusMessage: (msg: string) => void;
   loadPanes: () => Promise<void>;
@@ -17,9 +19,20 @@ interface CreateNewPaneOptions {
   existingPanes?: DmuxPane[];
   slugSuffix?: string;
   slugBase?: string;
+  targetProjectRoot?: string;
 }
 
-export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, loadPanes, availableAgents }: Params) {
+export default function usePaneCreation({
+  panes,
+  savePanes,
+  projectName,
+  sessionProjectRoot,
+  panesFile,
+  setIsCreatingPane,
+  setStatusMessage,
+  loadPanes,
+  availableAgents,
+}: Params) {
   const openInEditor = async (currentPrompt: string, setPrompt: (v: string) => void) => {
     try {
       const os = await import('os');
@@ -61,6 +74,9 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
           existingPanes: panesForCreation,
           slugSuffix: options.slugSuffix,
           slugBase: options.slugBase,
+          projectRoot: options.targetProjectRoot,
+          sessionProjectRoot,
+          sessionConfigPath: panesFile,
         },
         availableAgents
       );

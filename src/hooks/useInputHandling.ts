@@ -13,6 +13,7 @@ import { enforceControlPaneSize } from "../utils/tmux.js"
 import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
 import { suggestCommand } from "../utils/commands.js"
 import type { PopupManager } from "../services/PopupManager.js"
+import { getPaneProjectRoot } from "../utils/paneProject.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -60,10 +61,10 @@ interface UseInputHandlingParams {
 
   // Callbacks
   setStatusMessage: (message: string) => void
-  copyNonGitFiles: (worktreePath: string) => Promise<void>
+  copyNonGitFiles: (worktreePath: string, sourceProjectRoot?: string) => Promise<void>
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
-  handlePaneCreationWithAgent: (prompt: string) => Promise<void>
-  handleReopenWorktree: (slug: string, worktreePath: string) => Promise<void>
+  handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
+  handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
   loadPanes: () => Promise<void>
   cleanExit: () => void
 
@@ -157,7 +158,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
         setShowFileCopyPrompt(false)
         const selectedPane = panes[selectedIndex]
         if (selectedPane && selectedPane.worktreePath && currentCommandType) {
-          await copyNonGitFiles(selectedPane.worktreePath)
+          const paneProjectRoot = getPaneProjectRoot(selectedPane, projectRoot)
+          await copyNonGitFiles(selectedPane.worktreePath, paneProjectRoot)
 
           // Mark as not first run and continue with command
           const newSettings = {
@@ -310,18 +312,57 @@ export function useInputHandling(params: UseInputHandlingParams) {
       cleanExit()
     } else if (input === "r") {
       // Reopen closed worktree popup
-      const activeSlugs = panes.map((p) => p.slug)
-      const orphanedWorktrees = getOrphanedWorktrees(projectRoot, activeSlugs)
+      const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+      const targetProjectRoot = selectedPane
+        ? getPaneProjectRoot(selectedPane, projectRoot)
+        : projectRoot
+      const activeSlugs = panes
+        .filter((p) => getPaneProjectRoot(p, projectRoot) === targetProjectRoot)
+        .map((p) => p.slug)
+      const orphanedWorktrees = getOrphanedWorktrees(targetProjectRoot, activeSlugs)
 
       if (orphanedWorktrees.length === 0) {
-        setStatusMessage("No closed worktrees to reopen")
+        setStatusMessage(`No closed worktrees in ${targetProjectRoot}`)
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
         return
       }
 
       const result = await popupManager.launchReopenWorktreePopup(orphanedWorktrees)
       if (result) {
-        await handleReopenWorktree(result.slug, result.path)
+        await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
+      }
+      return
+    } else if (!isLoading && input === "N") {
+      // Create pane in a different project (Shift+N)
+      const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+      const defaultProjectPath = selectedPane
+        ? getPaneProjectRoot(selectedPane, projectRoot)
+        : projectRoot
+
+      const requestedProjectPath = await popupManager.launchInputPopup(
+        "Select Project",
+        "Enter a repository path (repo root or any subdirectory)",
+        "~/projects/my-app",
+        defaultProjectPath
+      )
+
+      if (!requestedProjectPath) {
+        return
+      }
+
+      try {
+        const { resolveProjectRootFromPath } = await import("../utils/projectRoot.js")
+        const resolved = resolveProjectRootFromPath(requestedProjectPath, projectRoot)
+
+        const promptValue = await popupManager.launchNewPanePopup(resolved.projectRoot)
+        if (!promptValue) {
+          return
+        }
+
+        await handlePaneCreationWithAgent(promptValue, resolved.projectRoot)
+      } catch (error: any) {
+        setStatusMessage(error?.message || "Invalid project path")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
       }
       return
     } else if (
@@ -329,7 +370,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       (input === "n" || (key.return && selectedIndex === panes.length))
     ) {
       // Launch popup modal for new pane
-      const promptValue = await popupManager.launchNewPanePopup()
+      const promptValue = await popupManager.launchNewPanePopup(projectRoot)
       if (promptValue) {
         await handlePaneCreationWithAgent(promptValue)
       }
