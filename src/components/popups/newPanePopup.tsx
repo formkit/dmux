@@ -20,8 +20,11 @@ import { scanProjectFiles, fuzzyMatchFiles } from "../../utils/fileScanner.js"
 import fs from "fs"
 import path from "path"
 
+const PROJECT_PATH_ARG = process.argv[3]
+const FILE_SCAN_ROOT = PROJECT_PATH_ARG || process.cwd()
+
 // Debug logging to file
-const DEBUG_LOG = path.join(process.cwd(), '.dmux', 'file-picker-debug.log')
+const DEBUG_LOG = path.join(FILE_SCAN_ROOT, '.dmux', 'file-picker-debug.log')
 function debugLog(message: string, data?: any) {
   const timestamp = new Date().toISOString()
   const logLine = `[${timestamp}] ${message} ${data ? JSON.stringify(data, null, 2) : ''}\n`
@@ -113,8 +116,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
         // User is actively typing a query, show file list
         debugLog('[@Detection] Showing file list for query:', { query })
         try {
-          const projectPath = process.cwd()
-          const { files } = scanProjectFiles(projectPath)
+          const { files } = scanProjectFiles(FILE_SCAN_ROOT)
           const matches = fuzzyMatchFiles(query, files)
 
           setFilteredFiles(matches)

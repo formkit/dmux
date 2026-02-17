@@ -79,6 +79,7 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
 | `↑/↓` | Navigate pane list |
 | `Enter` or `j` | Jump to selected pane |
 | `n` | Create new dmux pane |
+| `N` | Create pane in another project |
 | `m` | Merge worktree to main |
 | `x` | Close selected pane |
 | `q` | Quit dmux interface |

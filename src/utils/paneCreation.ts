@@ -16,6 +16,7 @@ import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.j
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
 import { appendSlugSuffix } from './agentLaunch.js';
+import { buildWorktreePaneTitle } from './paneTitle.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -24,7 +25,9 @@ export interface CreatePaneOptions {
   slugBase?: string;
   projectName: string;
   existingPanes: DmuxPane[];
-  projectRoot?: string;
+  projectRoot?: string; // Target repository root for the new pane
+  sessionConfigPath?: string; // Shared dmux config file for the current session
+  sessionProjectRoot?: string; // Session root that owns sidebar/welcome pane state
 }
 
 export interface CreatePaneResult {
@@ -54,7 +57,15 @@ export async function createPane(
   options: CreatePaneOptions,
   availableAgents: Array<'claude' | 'opencode' | 'codex'>
 ): Promise<CreatePaneResult> {
-  const { prompt, projectName, existingPanes, slugSuffix, slugBase } = options;
+  const {
+    prompt,
+    projectName,
+    existingPanes,
+    slugSuffix,
+    slugBase,
+    sessionConfigPath: optionsSessionConfigPath,
+    sessionProjectRoot: optionsSessionProjectRoot,
+  } = options;
   let { agent, projectRoot: optionsProjectRoot } = options;
 
   // Load settings to check for default agent and autopilot
@@ -93,6 +104,10 @@ export async function createPane(
   const settingsManager = new SettingsManager(projectRoot);
   const settings = settingsManager.getSettings();
 
+  const sessionProjectRoot = optionsSessionProjectRoot
+    || (optionsSessionConfigPath ? path.dirname(path.dirname(optionsSessionConfigPath)) : projectRoot);
+  const paneProjectName = path.basename(projectRoot);
+
   // If no agent specified, check settings for default agent
   if (!agent && settings.defaultAgent) {
     // Only use default if it's available
@@ -130,7 +145,8 @@ export async function createPane(
   const originalPaneId = tmuxService.getCurrentPaneIdSync();
 
   // Load config to get control pane info
-  const configPath = path.join(projectRoot, '.dmux', 'dmux.config.json');
+  const configPath = optionsSessionConfigPath
+    || path.join(sessionProjectRoot, '.dmux', 'dmux.config.json');
   let controlPaneId: string | undefined;
 
   try {
@@ -242,9 +258,12 @@ export async function createPane(
 
   await waitForPaneReady(tmuxService, paneInfo);
 
-  // Set pane title to match the slug
+  // Set pane title (project-tagged for collision-safe rebinding across projects)
   try {
-    await tmuxService.setPaneTitle(paneInfo, slug);
+    const paneTitle = projectRoot === sessionProjectRoot
+      ? slug
+      : buildWorktreePaneTitle(slug, projectRoot, paneProjectName);
+    await tmuxService.setPaneTitle(paneInfo, paneTitle);
   } catch {
     // Ignore if setting title fails
   }
@@ -429,6 +448,8 @@ export async function createPane(
     slug,
     prompt: prompt || 'No initial prompt',
     paneId: paneInfo,
+    projectRoot,
+    projectName: paneProjectName,
     worktreePath,
     agent,
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
@@ -449,7 +470,7 @@ export async function createPane(
 
       // NOW destroy the welcome pane (event-based destruction)
       const { destroyWelcomePaneCoordinated } = await import('./welcomePaneManager.js');
-      destroyWelcomePaneCoordinated(projectRoot);
+      destroyWelcomePaneCoordinated(sessionProjectRoot);
     } catch (error) {
       // Log but don't fail - welcome pane cleanup is not critical
     }

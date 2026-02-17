@@ -4,12 +4,15 @@ import type { DmuxPane } from "../../types.js"
 import type { AgentStatusMap } from "../../hooks/useAgentStatus.js"
 import PaneCard from "./PaneCard.js"
 import { COLORS } from "../../theme/colors.js"
+import { groupPanesByProject } from "../../utils/paneGrouping.js"
 
 interface PanesGridProps {
   panes: DmuxPane[]
   selectedIndex: number
   isLoading: boolean
   agentStatuses?: AgentStatusMap
+  fallbackProjectRoot: string
+  fallbackProjectName: string
 }
 
 const PanesGrid: React.FC<PanesGridProps> = memo(({
@@ -17,35 +20,57 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   selectedIndex,
   isLoading,
   agentStatuses,
+  fallbackProjectRoot,
+  fallbackProjectName,
 }) => {
   // Two buttons at the end: "new agent" and "new terminal"
-  const totalItems = panes.length + (!isLoading ? 2 : 0)
-  const hasSelection = selectedIndex >= 0 && selectedIndex < totalItems
+  const paneGroups = useMemo(
+    () => groupPanesByProject(panes, fallbackProjectRoot, fallbackProjectName),
+    [panes, fallbackProjectRoot, fallbackProjectName]
+  )
 
   return (
     <Box flexDirection="column">
-      {panes.map((pane, index) => {
-        // Apply the runtime status to the pane
-        const paneWithStatus = {
-          ...pane,
-          agentStatus: agentStatuses?.get(pane.id) || pane.agentStatus,
-        }
-        const isSelected = selectedIndex === index
-        const isFirstPane = index === 0
-        const isLastPane = index === panes.length - 1
-        const isNextSelected = selectedIndex === index + 1
+      {paneGroups.map((group, groupIndex) => (
+        <Box key={group.projectRoot} flexDirection="column">
+          {paneGroups.length > 1 && (
+            <Box flexDirection="column">
+              {groupIndex > 0 && (
+                <Text color={COLORS.border}>{"─".repeat(40)}</Text>
+              )}
+              <Box width={40}>
+                <Text color={COLORS.accent}> {group.projectName}</Text>
+              </Box>
+            </Box>
+          )}
 
-        return (
-          <PaneCard
-            key={pane.id}
-            pane={paneWithStatus}
-            selected={isSelected}
-            isFirstPane={isFirstPane}
-            isLastPane={isLastPane}
-            isNextSelected={isNextSelected}
-          />
-        )
-      })}
+          {group.panes.map((entry, localIndex) => {
+            const pane = entry.pane
+            // Apply the runtime status to the pane
+            const paneWithStatus = {
+              ...pane,
+              agentStatus: agentStatuses?.get(pane.id) || pane.agentStatus,
+            }
+            const paneIndex = entry.index
+            const isSelected = selectedIndex === paneIndex
+            const isFirstPane = localIndex === 0
+            const isLastPane = localIndex === group.panes.length - 1
+            const nextPaneIndex = group.panes[localIndex + 1]?.index
+            const isNextSelected = nextPaneIndex !== undefined && selectedIndex === nextPaneIndex
+
+            return (
+              <PaneCard
+                key={pane.id}
+                pane={paneWithStatus}
+                selected={isSelected}
+                isFirstPane={isFirstPane}
+                isLastPane={isLastPane}
+                isNextSelected={isNextSelected}
+              />
+            )
+          })}
+        </Box>
+      ))}
 
       {!isLoading && (
         <Box marginTop={panes.length === 0 ? 1 : 0} flexDirection="row" gap={1}>

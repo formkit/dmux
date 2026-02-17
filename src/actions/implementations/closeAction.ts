@@ -12,6 +12,7 @@ import { PaneLifecycleManager } from '../../services/PaneLifecycleManager.js';
 import { triggerHook } from '../../utils/hooks.js';
 import { LogService } from '../../services/LogService.js';
 import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
+import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../utils/paneProject.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -68,6 +69,11 @@ async function executeCloseOption(
   option: string
 ): Promise<ActionResult> {
   const lifecycleManager = PaneLifecycleManager.getInstance();
+  const stateManager = StateManager.getInstance();
+  const state = stateManager.getState();
+  const sessionProjectRoot = state.projectRoot || process.cwd();
+  const paneProjectRoot = getPaneProjectRoot(pane, sessionProjectRoot);
+  const panesFile = state.panesFile || path.join(sessionProjectRoot, '.dmux', 'dmux.config.json');
 
   try {
     // CRITICAL: Mark pane as closing FIRST to prevent race condition with polling
@@ -76,16 +82,12 @@ async function executeCloseOption(
     // Also mark by paneId in case polling checks that
     await lifecycleManager.beginClose(pane.paneId, `close action: ${option}`);
 
-    // Get project root for hooks
-    const state = StateManager.getInstance().getState();
-    const projectRoot = state.projectRoot || process.cwd();
-
     // Trigger before_pane_close hook
-    await triggerHook('before_pane_close', projectRoot, pane);
+    await triggerHook('before_pane_close', paneProjectRoot, pane);
 
     // CRITICAL: Pause ConfigWatcher to prevent race condition where
     // the watcher reloads the pane list from disk before our save completes
-    StateManager.getInstance().pauseConfigWatcher();
+    stateManager.pauseConfigWatcher();
 
     try {
       // CRITICAL: Remove from config FIRST, before killing tmux pane
@@ -157,10 +159,10 @@ async function executeCloseOption(
 
       // Handle worktree cleanup based on option
       if (pane.worktreePath && (option === 'kill_and_clean' || option === 'kill_clean_branch')) {
-        const mainRepoPath = pane.worktreePath.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
+        const mainRepoPath = deriveProjectRootFromWorktreePath(pane.worktreePath) || paneProjectRoot;
 
         // Trigger before_worktree_remove hook
-        await triggerHook('before_worktree_remove', projectRoot, pane);
+        await triggerHook('before_worktree_remove', paneProjectRoot, pane);
 
         try {
           execSync(`git worktree remove "${pane.worktreePath}" --force`, {
@@ -172,7 +174,7 @@ async function executeCloseOption(
         }
 
         // Trigger worktree_removed hook
-        await triggerHook('worktree_removed', projectRoot, pane);
+        await triggerHook('worktree_removed', paneProjectRoot, pane);
 
         // Delete branch if requested
         if (option === 'kill_clean_branch') {
@@ -195,7 +197,7 @@ async function executeCloseOption(
       // CRITICAL FIX: Use validated pane IDs, not just the ones from config
       // The config may have stale IDs if panes were killed between save and layout
       try {
-        const config: DmuxConfig = JSON.parse(fs.readFileSync(path.join(projectRoot, '.dmux', 'dmux.config.json'), 'utf-8'));
+        const config: DmuxConfig = JSON.parse(fs.readFileSync(panesFile, 'utf-8'));
         if (config.controlPaneId && updatedPanes.length > 0) {
           // Verify control pane exists before attempting layout
           const paneListCheck = execSync('tmux list-panes -F "#{pane_id}"', {
@@ -241,12 +243,12 @@ async function executeCloseOption(
       }
 
       // Trigger pane_closed hook (after everything is cleaned up)
-      await triggerHook('pane_closed', projectRoot, pane);
+      await triggerHook('pane_closed', paneProjectRoot, pane);
 
       // If we just closed the last pane, recreate the welcome pane and recalculate layout
       if (updatedPanes.length === 0) {
         const { handleLastPaneRemoved } = await import('../../utils/postPaneCleanup.js');
-        await handleLastPaneRemoved(projectRoot);
+        await handleLastPaneRemoved(sessionProjectRoot);
       }
 
       return {
@@ -256,7 +258,7 @@ async function executeCloseOption(
       };
     } finally {
       // CRITICAL: Always resume watcher, even if there was an error
-      StateManager.getInstance().resumeConfigWatcher();
+      stateManager.resumeConfigWatcher();
 
       // Complete the lifecycle close (releases lock)
       // Do this AFTER resume to ensure the config is stable

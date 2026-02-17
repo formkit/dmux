@@ -7,6 +7,8 @@ import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT } from '../constants/timing.js';
 import type { DmuxConfig } from './usePaneLoading.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
+import { getPaneTmuxTitle } from '../utils/paneTitle.js';
+import { StateManager } from '../shared/StateManager.js';
 
 /**
  * Enforces that pane titles in tmux match the slugs in the config
@@ -17,6 +19,7 @@ export async function enforcePaneTitles(
   allPaneIds: string[]
 ): Promise<void> {
   const tmuxService = TmuxService.getInstance();
+  const sessionProjectRoot = StateManager.getInstance().getState().projectRoot;
   const titleByPaneId = new Map<string, string>();
 
   try {
@@ -35,11 +38,13 @@ export async function enforcePaneTitles(
         const currentTitle = titleByPaneId.get(pane.paneId)
           ?? await tmuxService.getPaneTitle(pane.paneId);
 
-        // Only update if title doesn't match slug (avoids unnecessary tmux commands)
-        if (currentTitle !== pane.slug) {
-          await tmuxService.setPaneTitle(pane.paneId, pane.slug);
+        const expectedTitle = getPaneTmuxTitle(pane, sessionProjectRoot || undefined);
+
+        // Only update if title doesn't match expected title
+        if (currentTitle !== expectedTitle) {
+          await tmuxService.setPaneTitle(pane.paneId, expectedTitle);
           LogService.getInstance().debug(
-            `Synced pane title: ${pane.id} "${currentTitle}" → "${pane.slug}"`,
+            `Synced pane title: ${pane.id} "${currentTitle}" → "${expectedTitle}"`,
             'shellDetection'
           );
         }
