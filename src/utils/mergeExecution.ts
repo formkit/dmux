@@ -171,7 +171,7 @@ export function completeMerge(repoPath: string, message?: string): MergeResult {
 
     // Complete the merge
     const commitMsg = message || 'Merge branch with resolved conflicts';
-    execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, {
+    execSync(`git commit --no-gpg-sign -m "${commitMsg.replace(/"/g, '\\"')}"`, {
       cwd: repoPath,
       stdio: 'pipe',
     });

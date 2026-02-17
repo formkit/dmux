@@ -143,7 +143,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
       // Stage and commit changes in the worktree
       runCommand('git add -A');
-      const commitResult = runCommand(`git commit -m "${finalMessage}"`);
+      const commitResult = runCommand(`git commit --no-gpg-sign -m "${finalMessage}"`);
       if (!commitResult.success) {
         setError('Failed to commit changes');
         setStatus('error');
