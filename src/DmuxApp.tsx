@@ -60,7 +60,10 @@ import UpdatingIndicator from "./components/indicators/UpdatingIndicator.js"
 import FooterHelp from "./components/ui/FooterHelp.js"
 import TmuxHooksPromptDialog from "./components/dialogs/TmuxHooksPromptDialog.js"
 import { PaneEventService } from "./services/PaneEventService.js"
-import { buildProjectActionLayout } from "./utils/projectActions.js"
+import {
+  buildProjectActionLayout,
+  buildVisualNavigationRows,
+} from "./utils/projectActions.js"
 
 const DmuxApp: React.FC<DmuxAppProps> = ({
   panesFile,
@@ -409,12 +412,17 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     () => buildProjectActionLayout(panes, sessionProjectRoot, projectName),
     [panes, sessionProjectRoot, projectName]
   )
+  const navigationRows = useMemo(
+    () => isLoading
+      ? projectActionLayout.groups.flatMap((group) =>
+          group.panes.map((entry) => [entry.index])
+        )
+      : buildVisualNavigationRows(projectActionLayout),
+    [isLoading, projectActionLayout]
+  )
 
   // Navigation logic moved to hook
-  const { getCardGridPosition, findCardInDirection } = useNavigation(
-    terminalWidth,
-    isLoading ? panes.length : projectActionLayout.totalItems
-  )
+  const { getCardGridPosition, findCardInDirection } = useNavigation(navigationRows)
 
   // findCardInDirection provided by useNavigation
 
@@ -892,9 +900,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         toastQueuePosition={toastQueuePosition}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined
-          const cols = Math.max(1, Math.floor(terminalWidth / 37))
-          const totalCards = isLoading ? panes.length : projectActionLayout.totalItems
-          const rows = Math.ceil(totalCards / cols)
+          const rows = navigationRows.length
+          const cols = Math.max(1, ...navigationRows.map((row) => row.length))
           const pos = getCardGridPosition(selectedIndex)
           return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`
         })()}

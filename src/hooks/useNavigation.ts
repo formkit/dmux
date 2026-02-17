@@ -1,60 +1,59 @@
 import { useMemo } from 'react';
 
-export default function useNavigation(terminalWidth: number, totalItems: number) {
-  const cardWidth = 35 + 2; // Card width + gap
-  const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
+export default function useNavigation(navigationRows: number[][]) {
+  const indexToPosition = useMemo(() => {
+    const map = new Map<number, { row: number; col: number }>();
+    navigationRows.forEach((rowItems, row) => {
+      rowItems.forEach((itemIndex, col) => {
+        map.set(itemIndex, { row, col });
+      });
+    });
+    return map;
+  }, [navigationRows]);
 
   const getCardGridPosition = useMemo(() => {
     return (index: number): { row: number; col: number } => {
-      const row = Math.floor(index / cardsPerRow);
-      const col = index % cardsPerRow;
-      return { row, col };
+      return indexToPosition.get(index) || { row: 0, col: 0 };
     };
-  }, [cardsPerRow]);
+  }, [indexToPosition]);
 
   const findCardInDirection = useMemo(() => {
     return (currentIndex: number, direction: 'up' | 'down' | 'left' | 'right'): number | null => {
-      const currentPos = getCardGridPosition(currentIndex);
-      let targetIndex: number | null = null;
+      const currentPos = indexToPosition.get(currentIndex);
+      if (!currentPos) return null;
 
       switch (direction) {
         case 'up':
-          if (currentPos.row > 0) {
-            targetIndex = (currentPos.row - 1) * cardsPerRow + currentPos.col;
-            if (targetIndex >= totalItems) {
-              targetIndex = Math.min((currentPos.row - 1) * cardsPerRow + cardsPerRow - 1, totalItems - 1);
-            }
+          if (currentPos.row > 0 && navigationRows[currentPos.row - 1]) {
+            const targetRow = navigationRows[currentPos.row - 1];
+            const targetCol = Math.min(currentPos.col, targetRow.length - 1);
+            return targetRow[targetCol] ?? null;
           }
           break;
         case 'down':
-          targetIndex = (currentPos.row + 1) * cardsPerRow + currentPos.col;
-          if (targetIndex >= totalItems) {
-            if (currentIndex < totalItems - 1) targetIndex = totalItems - 1; else targetIndex = null;
+          if (currentPos.row < navigationRows.length - 1 && navigationRows[currentPos.row + 1]) {
+            const targetRow = navigationRows[currentPos.row + 1];
+            const targetCol = Math.min(currentPos.col, targetRow.length - 1);
+            return targetRow[targetCol] ?? null;
           }
           break;
         case 'left':
           if (currentPos.col > 0) {
-            targetIndex = currentIndex - 1;
-          } else if (currentPos.row > 0) {
-            targetIndex = currentPos.row * cardsPerRow - 1;
-            if (targetIndex >= totalItems) targetIndex = totalItems - 1;
+            const row = navigationRows[currentPos.row];
+            return row?.[currentPos.col - 1] ?? null;
           }
           break;
         case 'right':
-          if (currentPos.col < cardsPerRow - 1 && currentIndex < totalItems - 1) {
-            targetIndex = currentIndex + 1;
-          } else if ((currentPos.row + 1) * cardsPerRow < totalItems) {
-            targetIndex = (currentPos.row + 1) * cardsPerRow;
+          if (navigationRows[currentPos.row] && currentPos.col < navigationRows[currentPos.row].length - 1) {
+            const row = navigationRows[currentPos.row];
+            return row?.[currentPos.col + 1] ?? null;
           }
           break;
       }
 
-      if (targetIndex !== null && targetIndex >= 0 && targetIndex < totalItems) {
-        return targetIndex;
-      }
       return null;
     };
-  }, [cardsPerRow, totalItems, getCardGridPosition]);
+  }, [indexToPosition, navigationRows]);
 
   return { getCardGridPosition, findCardInDirection };
 }

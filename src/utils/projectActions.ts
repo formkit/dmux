@@ -94,3 +94,58 @@ export function getProjectActionByIndex(
 ): ProjectActionItem | undefined {
   return actionItems.find((item) => item.index === index);
 }
+
+/**
+ * Build visual navigation rows in rendered order.
+ *
+ * Each inner array represents one visible row of selectable cards/buttons.
+ * This is the canonical source for arrow-key navigation.
+ */
+export function buildVisualNavigationRows(
+  layout: ProjectActionLayout
+): number[][] {
+  const rows: number[][] = [];
+  const actionByProject = new Map<
+    string,
+    { newAgent?: ProjectActionItem; terminal?: ProjectActionItem }
+  >();
+
+  for (const action of layout.actionItems) {
+    const entry = actionByProject.get(action.projectRoot) || {};
+    if (action.kind === 'new-agent') {
+      entry.newAgent = action;
+    } else {
+      entry.terminal = action;
+    }
+    actionByProject.set(action.projectRoot, entry);
+  }
+
+  if (!layout.multiProjectMode) {
+    for (const group of layout.groups) {
+      for (const entry of group.panes) {
+        rows.push([entry.index]);
+      }
+    }
+
+    const first = layout.actionItems[0];
+    const second = layout.actionItems[1];
+    if (first && second) {
+      rows.push([first.index, second.index]);
+    }
+
+    return rows;
+  }
+
+  for (const group of layout.groups) {
+    for (const entry of group.panes) {
+      rows.push([entry.index]);
+    }
+
+    const actions = actionByProject.get(group.projectRoot);
+    if (actions?.newAgent && actions.terminal) {
+      rows.push([actions.newAgent.index, actions.terminal.index]);
+    }
+  }
+
+  return rows;
+}
