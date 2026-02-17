@@ -14,6 +14,10 @@ import { SETTING_DEFINITIONS } from "../utils/settingsManager.js"
 import type { DmuxPane, ProjectSettings } from "../types.js"
 import { getAvailableActions, type PaneAction } from "../actions/index.js"
 import { INPUT_IGNORE_DELAY } from "../constants/timing.js"
+import {
+  buildAgentLaunchOptions,
+  type AgentName,
+} from "../utils/agentLaunch.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -24,8 +28,8 @@ export interface PopupManagerConfig {
   popupsSupported: boolean
   terminalWidth: number
   terminalHeight: number
-  availableAgents: Array<"claude" | "opencode" | "codex">
-  agentChoice: "claude" | "opencode" | "codex" | null
+  availableAgents: AgentName[]
+  agentChoice: AgentName | null
   settingsManager: any
   projectSettings: ProjectSettings
 }
@@ -279,22 +283,23 @@ export class PopupManager {
     }
   }
 
-  async launchAgentChoicePopup(): Promise<"claude" | "opencode" | "codex" | null> {
+  async launchAgentChoicePopup(): Promise<AgentName[] | null> {
     if (!this.checkPopupSupport()) return null
 
     try {
       const agentsJson = JSON.stringify(this.config.availableAgents)
       const defaultAgent =
         this.config.agentChoice || this.config.availableAgents[0] || "claude"
-      const popupHeight = Math.max(12, this.config.availableAgents.length * 2 + 7)
+      const popupOptionsCount = buildAgentLaunchOptions(this.config.availableAgents).length
+      const popupHeight = Math.max(12, popupOptionsCount * 2 + 7)
 
-      const result = await this.launchPopup<"claude" | "opencode" | "codex">(
+      const result = await this.launchPopup<AgentName[]>(
         "agentChoicePopup.js",
         [agentsJson, defaultAgent],
         {
           width: 56,
           height: popupHeight,
-          title: "Select Agent",
+          title: "Select Agent(s)",
         }
       )
 

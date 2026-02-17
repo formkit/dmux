@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
+import type { AgentName } from '../utils/agentLaunch.js';
 
 export default function useAgentDetection() {
-  const [availableAgents, setAvailableAgents] = useState<Array<'claude' | 'opencode' | 'codex'>>([]);
+  const [availableAgents, setAvailableAgents] = useState<AgentName[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const agents: Array<'claude' | 'opencode' | 'codex'> = [];
+        const agents: AgentName[] = [];
         const hasClaude = await findClaudeCommand();
         if (hasClaude) agents.push('claude');
         const hasopencode = await findopencodeCommand();

@@ -15,10 +15,13 @@ import { triggerHook } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
+import { appendSlugSuffix } from './agentLaunch.js';
 
 export interface CreatePaneOptions {
   prompt: string;
   agent?: 'claude' | 'opencode' | 'codex';
+  slugSuffix?: string;
+  slugBase?: string;
   projectName: string;
   existingPanes: DmuxPane[];
   projectRoot?: string;
@@ -51,7 +54,7 @@ export async function createPane(
   options: CreatePaneOptions,
   availableAgents: Array<'claude' | 'opencode' | 'codex'>
 ): Promise<CreatePaneResult> {
-  const { prompt, projectName, existingPanes } = options;
+  const { prompt, projectName, existingPanes, slugSuffix, slugBase } = options;
   let { agent, projectRoot: optionsProjectRoot } = options;
 
   // Load settings to check for default agent and autopilot
@@ -119,7 +122,8 @@ export async function createPane(
   });
 
   // Generate slug
-  const slug = await generateSlug(prompt);
+  const generatedSlug = slugBase || await generateSlug(prompt);
+  const slug = appendSlugSuffix(generatedSlug, slugSuffix);
   const tmuxService = TmuxService.getInstance();
 
   const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
