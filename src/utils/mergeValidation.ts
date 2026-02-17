@@ -314,7 +314,7 @@ export function commitChanges(
   }
 
   try {
-    execSync(`git commit --no-gpg-sign -m "${message.replace(/"/g, '\\"')}"`, {
+    execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
       cwd: repoPath,
       stdio: 'pipe',
     });

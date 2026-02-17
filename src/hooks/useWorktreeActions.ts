@@ -72,7 +72,7 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
         execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
         setStatusMessage('Committing changes...');
         // Use generic message to avoid bringing in LLM here
-        execSync(`git -C "${pane.worktreePath}" commit --no-gpg-sign -m 'chore: worktree changes'`, { stdio: 'pipe' });
+        execSync(`git -C "${pane.worktreePath}" commit -m 'chore: worktree changes'`, { stdio: 'pipe' });
       }
 
       setStatusMessage('Merging into main...');
@@ -131,7 +131,7 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
         setStatusMessage('Staging changes...');
         execSync(`git -C "${pane.worktreePath}" add -A`, { stdio: 'pipe' });
         setStatusMessage('Committing changes...');
-        execSync(`git -C "${pane.worktreePath}" commit --no-gpg-sign -m 'chore: worktree changes'`, { stdio: 'pipe' });
+        execSync(`git -C "${pane.worktreePath}" commit -m 'chore: worktree changes'`, { stdio: 'pipe' });
       }
 
       setStatusMessage('Merging into main...');
