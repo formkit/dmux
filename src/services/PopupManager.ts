@@ -288,13 +288,14 @@ export class PopupManager {
       const agentsJson = JSON.stringify(this.config.availableAgents)
       const defaultAgent =
         this.config.agentChoice || this.config.availableAgents[0] || "claude"
+      const popupHeight = Math.max(12, this.config.availableAgents.length * 2 + 7)
 
       const result = await this.launchPopup<"claude" | "opencode" | "codex">(
         "agentChoicePopup.js",
         [agentsJson, defaultAgent],
         {
-          width: 50,
-          height: 10,
+          width: 56,
+          height: popupHeight,
           title: "Select Agent",
         }
       )
