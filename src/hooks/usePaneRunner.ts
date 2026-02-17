@@ -14,10 +14,13 @@ interface Params {
 }
 
 export default function usePaneRunner({ panes, savePanes, projectSettings, setStatusMessage, setRunningCommand }: Params) {
-  const copyNonGitFiles = async (worktreePath: string) => {
+  const copyNonGitFiles = async (worktreePath: string, sourceProjectRoot?: string) => {
     try {
       setStatusMessage('Copying non-git files from main...');
-      const projectRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf-8', stdio: 'pipe' }).trim();
+      const derivedRoot = worktreePath.replace(/[\\\/]\.dmux[\\\/]worktrees[\\\/][^\\\/]+$/, '');
+      const projectRoot = sourceProjectRoot
+        || (derivedRoot !== worktreePath ? derivedRoot : undefined)
+        || execSync('git rev-parse --show-toplevel', { encoding: 'utf-8', stdio: 'pipe' }).trim();
       const rsyncCmd = `rsync -avz --exclude='.git' --exclude='.dmux' --exclude='node_modules' --exclude='dist' --exclude='build' --exclude='.next' --exclude='.turbo' "${projectRoot}/" "${worktreePath}/"`;
       execSync(rsyncCmd, { stdio: 'pipe' });
       setStatusMessage('Non-git files copied successfully');

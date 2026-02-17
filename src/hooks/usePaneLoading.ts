@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import path from 'path';
 import type { DmuxPane } from '../types.js';
 import { splitPane } from '../utils/tmux.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
@@ -7,6 +8,7 @@ import { TmuxService } from '../services/TmuxService.js';
 import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
+import { getPaneTmuxTitle } from '../utils/paneTitle.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
@@ -103,6 +105,7 @@ export async function recreateMissingPanes(
   if (missingPanes.length === 0) return;
 
   const tmuxService = TmuxService.getInstance();
+  const sessionProjectRoot = path.dirname(path.dirname(panesFile));
 
   for (const missingPane of missingPanes) {
     try {
@@ -110,7 +113,7 @@ export async function recreateMissingPanes(
       const newPaneId = splitPane({ cwd: missingPane.worktreePath || process.cwd() });
 
       // Set pane title
-      await tmuxService.setPaneTitle(newPaneId, missingPane.slug);
+      await tmuxService.setPaneTitle(newPaneId, getPaneTmuxTitle(missingPane, sessionProjectRoot));
 
       // Update the pane with new ID
       missingPane.paneId = newPaneId;
@@ -145,6 +148,7 @@ export async function recreateKilledWorktreePanes(
   panesFile: string
 ): Promise<DmuxPane[]> {
   const lifecycleManager = PaneLifecycleManager.getInstance();
+  const sessionProjectRoot = path.dirname(path.dirname(panesFile));
 
   // Filter out panes that are being intentionally closed
   const worktreePanesToRecreate = panes.filter(pane => {
@@ -184,7 +188,7 @@ export async function recreateKilledWorktreePanes(
       const newPaneId = splitPane({ cwd: pane.worktreePath });
 
       // Set pane title
-      await tmuxService.setPaneTitle(newPaneId, pane.slug);
+      await tmuxService.setPaneTitle(newPaneId, getPaneTmuxTitle(pane, sessionProjectRoot));
 
       // Update the pane with new ID
       const paneIndex = updatedPanes.findIndex(p => p.id === pane.id);

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import path from 'path';
 import PQueue from 'p-queue';
 import type { DmuxPane } from '../types.js';
 import { LogService } from '../services/LogService.js';
@@ -147,7 +148,8 @@ export default function usePanes(
 
             // If shell panes were removed and we now have 0 panes, recreate welcome pane
             if (shellPanesRemoved && finalPanes.length === 0) {
-              await handleLastPaneRemoval(process.cwd());
+              const sessionProjectRoot = path.dirname(path.dirname(panesFile));
+              await handleLastPaneRemoval(sessionProjectRoot);
             }
           }
         }

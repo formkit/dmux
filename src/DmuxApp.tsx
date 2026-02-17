@@ -231,6 +231,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     panes,
     savePanes,
     projectName,
+    sessionProjectRoot: projectRoot || process.cwd(),
+    panesFile,
     setIsCreatingPane,
     setStatusMessage,
     loadPanes,
@@ -410,37 +412,47 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // applySmartLayout moved to utils/tmux
 
   // Helper function to handle agent choice and pane creation
-  const handlePaneCreationWithAgent = async (prompt: string) => {
+  const handlePaneCreationWithAgent = async (
+    prompt: string,
+    targetProjectRoot?: string
+  ) => {
     const agents = availableAgents
     if (agents.length === 0) {
-      await createNewPaneHook(prompt)
+      await createNewPaneHook(prompt, undefined, targetProjectRoot)
     } else if (agents.length === 1) {
-      await createNewPaneHook(prompt, agents[0])
+      await createNewPaneHook(prompt, agents[0], targetProjectRoot)
     } else {
       // Multiple agents available - check for default agent setting first
       const settings = settingsManager.getSettings()
       if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
-        await createNewPaneHook(prompt, settings.defaultAgent)
+        await createNewPaneHook(prompt, settings.defaultAgent, targetProjectRoot)
       } else {
         // Show agent choice popup
         const selectedAgent = await popupManager.launchAgentChoicePopup()
         if (selectedAgent) {
-          await createNewPaneHook(prompt, selectedAgent)
+          await createNewPaneHook(prompt, selectedAgent, targetProjectRoot)
         }
       }
     }
   }
 
   // Helper function to reopen a closed worktree
-  const handleReopenWorktree = async (slug: string, worktreePath: string) => {
+  const handleReopenWorktree = async (
+    slug: string,
+    worktreePath: string,
+    targetProjectRoot?: string
+  ) => {
     try {
       setIsCreatingPane(true)
       setStatusMessage(`Reopening ${slug}...`)
 
+      const reopenProjectRoot = targetProjectRoot || projectRoot || process.cwd()
       const result = await reopenWorktree({
         slug,
         worktreePath,
-        projectRoot: projectRoot || process.cwd(),
+        projectRoot: reopenProjectRoot,
+        sessionProjectRoot: projectRoot || process.cwd(),
+        sessionConfigPath: panesFile,
         existingPanes: panes,
       })
 
@@ -779,6 +791,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           selectedIndex={selectedIndex}
           isLoading={isLoading}
           agentStatuses={agentStatuses}
+          fallbackProjectRoot={projectRoot || process.cwd()}
+          fallbackProjectName={projectName}
         />
 
         {/* Loading dialog */}

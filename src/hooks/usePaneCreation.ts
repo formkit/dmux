@@ -7,13 +7,25 @@ interface Params {
   panes: DmuxPane[];
   savePanes: (p: DmuxPane[]) => Promise<void>;
   projectName: string;
+  sessionProjectRoot: string;
+  panesFile: string;
   setIsCreatingPane: (v: boolean) => void;
   setStatusMessage: (msg: string) => void;
   loadPanes: () => Promise<void>;
   availableAgents: Array<'claude' | 'opencode' | 'codex'>;
 }
 
-export default function usePaneCreation({ panes, savePanes, projectName, setIsCreatingPane, setStatusMessage, loadPanes, availableAgents }: Params) {
+export default function usePaneCreation({
+  panes,
+  savePanes,
+  projectName,
+  sessionProjectRoot,
+  panesFile,
+  setIsCreatingPane,
+  setStatusMessage,
+  loadPanes,
+  availableAgents,
+}: Params) {
   const openInEditor = async (currentPrompt: string, setPrompt: (v: string) => void) => {
     try {
       const os = await import('os');
@@ -35,7 +47,11 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
     } catch {}
   };
 
-  const createNewPane = async (prompt: string, agent?: 'claude' | 'opencode' | 'codex') => {
+  const createNewPane = async (
+    prompt: string,
+    agent?: 'claude' | 'opencode' | 'codex',
+    targetProjectRoot?: string
+  ) => {
     try {
       setIsCreatingPane(true)
       setStatusMessage("Creating pane...")
@@ -47,6 +63,9 @@ export default function usePaneCreation({ panes, savePanes, projectName, setIsCr
           agent,
           projectName,
           existingPanes: panes,
+          projectRoot: targetProjectRoot,
+          sessionProjectRoot,
+          sessionConfigPath: panesFile,
         },
         availableAgents
       );

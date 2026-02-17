@@ -16,6 +16,8 @@ function formatPaneResponse(pane: DmuxPane) {
     slug: pane.slug,
     prompt: pane.prompt,
     paneId: pane.paneId,
+    projectRoot: pane.projectRoot,
+    projectName: pane.projectName,
     worktreePath: pane.worktreePath,
     agent: pane.agent || 'unknown',
     agentStatus: pane.agentStatus || 'idle',
@@ -70,13 +72,18 @@ export function createPanesRoutes() {
   router.post('/api/panes', eventHandler(async (event) => {
     try {
       const body = await readBody(event);
-      let { prompt, agent } = body;
+      let { prompt, agent, projectPath } = body;
 
       console.error('[API] POST /api/panes called with:', { prompt, agent, body });
 
       if (!prompt || typeof prompt !== 'string') {
         event.node.res.statusCode = 400;
         return { error: 'Missing or invalid prompt' };
+      }
+
+      if (projectPath !== undefined && typeof projectPath !== 'string') {
+        event.node.res.statusCode = 400;
+        return { error: 'Invalid projectPath. Must be a string path.' };
       }
 
       // Normalize agent to undefined if not provided or empty
@@ -208,6 +215,11 @@ export function createPanesRoutes() {
       // Import pane creation utility
       const { createPane } = await import('../../utils/paneCreation.js');
       const state = stateManager.getState();
+      let targetProjectRoot: string | undefined;
+      if (projectPath && projectPath.trim()) {
+        const { resolveProjectRootFromPath } = await import('../../utils/projectRoot.js');
+        targetProjectRoot = resolveProjectRootFromPath(projectPath, state.projectRoot || process.cwd()).projectRoot;
+      }
 
       // Create the pane
       const result = await createPane(
@@ -216,6 +228,9 @@ export function createPanesRoutes() {
           agent: agent || (availableAgents.length === 1 ? availableAgents[0] : undefined),
           projectName: state.projectName || 'unknown',
           existingPanes: state.panes,
+          projectRoot: targetProjectRoot,
+          sessionProjectRoot: state.projectRoot || process.cwd(),
+          sessionConfigPath: state.panesFile,
         },
         availableAgents
       );
@@ -236,7 +251,7 @@ export function createPanesRoutes() {
 
       // Get panes file path from state
       const projectRoot = state.projectRoot || process.cwd();
-      const panesFile = path.join(
+      const panesFile = state.panesFile || path.join(
         projectRoot,
         '.dmux',
         `dmux.config.json`

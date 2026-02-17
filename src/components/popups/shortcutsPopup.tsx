@@ -36,6 +36,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'm', description: 'Open kebab menu for selected pane' },
     { key: 'x', description: 'Close selected pane' },
     { key: 'n', description: 'Create new pane' },
+    { key: 'N', description: 'Create pane in another project' },
     { key: 'r', description: 'Reopen closed worktree' },
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
