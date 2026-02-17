@@ -21,6 +21,7 @@ import { TMUX_COLORS } from './theme/colors.js';
 import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
 import { getUntrackedPanes } from './utils/shellPaneDetection.js';
+import { runTmuxConfigOnboardingIfNeeded } from './utils/tmuxConfigOnboarding.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -84,6 +85,9 @@ class Dmux {
 
     // Check for migration from old config location
     await this.migrateOldConfig();
+
+    // First-run global onboarding for tmux config presets
+    await runTmuxConfigOnboardingIfNeeded();
 
     // Initialize config file if it doesn't exist
     if (!await this.fileExists(this.panesFile)) {
