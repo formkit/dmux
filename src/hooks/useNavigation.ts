@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
 
-export default function useNavigation(terminalWidth: number, panesLength: number, isLoading: boolean) {
+export default function useNavigation(terminalWidth: number, totalItems: number) {
   const cardWidth = 35 + 2; // Card width + gap
   const cardsPerRow = Math.max(1, Math.floor(terminalWidth / cardWidth));
-  const totalItems = panesLength + (isLoading ? 0 : 3); // Three actions: agent, terminal, projects
 
   const getCardGridPosition = useMemo(() => {
     return (index: number): { row: number; col: number } => {

@@ -116,6 +116,9 @@ const FooterHelp: React.FC<FooterHelpProps> = memo(({
           <Text>🪵 </Text>
           <Text color="cyan">[l]</Text>
           <Text bold>ogs</Text>
+          <Text dimColor>  •  </Text>
+          <Text color="cyan">[p]</Text>
+          <Text bold>rojects</Text>
         </Text>
         {(hasErrors || hasWarnings) && (
           <Text>

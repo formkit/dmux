@@ -7,6 +7,7 @@
 import type { DmuxPane } from '../types.js';
 import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
+import { resolveProjectRootFromPath } from './projectRoot.js';
 
 /**
  * Detects the shell type running in a tmux pane
@@ -153,6 +154,30 @@ export async function getUntrackedPanes(
   }
 }
 
+async function detectPaneProjectInfo(
+  paneId: string
+): Promise<{ projectRoot?: string; projectName?: string }> {
+  try {
+    const { execSync } = await import('child_process');
+    const panePath = execSync(
+      `tmux display-message -t '${paneId}' -p '#{pane_current_path}'`,
+      { encoding: 'utf-8', stdio: 'pipe' }
+    ).trim();
+
+    if (!panePath) {
+      return {};
+    }
+
+    const resolved = resolveProjectRootFromPath(panePath, panePath);
+    return {
+      projectRoot: resolved.projectRoot,
+      projectName: resolved.projectName,
+    };
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Creates a DmuxPane object for a shell pane
  * @param paneId The tmux pane ID
@@ -163,6 +188,7 @@ export async function getUntrackedPanes(
 export async function createShellPane(paneId: string, nextId: number, existingTitle?: string): Promise<DmuxPane> {
   const tmuxService = TmuxService.getInstance();
   const shellType = await detectShellType(paneId);
+  const paneProjectInfo = await detectPaneProjectInfo(paneId);
 
   // CRITICAL: Always generate unique shell-N slugs for shell panes.
   // Using existing titles (like hostname "Gigablaster.local") causes tracking bugs
@@ -185,6 +211,8 @@ export async function createShellPane(paneId: string, nextId: number, existingTi
     slug,
     prompt: '', // No prompt for manually created panes
     paneId,
+    projectRoot: paneProjectInfo.projectRoot,
+    projectName: paneProjectInfo.projectName,
     type: 'shell',
     shellType,
   };

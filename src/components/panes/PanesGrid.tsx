@@ -4,7 +4,10 @@ import type { DmuxPane } from "../../types.js"
 import type { AgentStatusMap } from "../../hooks/useAgentStatus.js"
 import PaneCard from "./PaneCard.js"
 import { COLORS } from "../../theme/colors.js"
-import { groupPanesByProject } from "../../utils/paneGrouping.js"
+import {
+  buildProjectActionLayout,
+  type ProjectActionItem,
+} from "../../utils/projectActions.js"
 
 interface PanesGridProps {
   panes: DmuxPane[]
@@ -23,11 +26,41 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   fallbackProjectRoot,
   fallbackProjectName,
 }) => {
-  // Action cards at the end: "new agent", "terminal", and "projects"
-  const paneGroups = useMemo(
-    () => groupPanesByProject(panes, fallbackProjectRoot, fallbackProjectName),
+  const actionLayout = useMemo(
+    () => buildProjectActionLayout(panes, fallbackProjectRoot, fallbackProjectName),
     [panes, fallbackProjectRoot, fallbackProjectName]
   )
+  const paneGroups = actionLayout.groups
+
+  const actionsByProject = useMemo(() => {
+    const map = new Map<string, { newAgent?: ProjectActionItem; terminal?: ProjectActionItem }>()
+    for (const action of actionLayout.actionItems) {
+      const entry = map.get(action.projectRoot) || {}
+      if (action.kind === "new-agent") {
+        entry.newAgent = action
+      } else {
+        entry.terminal = action
+      }
+      map.set(action.projectRoot, entry)
+    }
+    return map
+  }, [actionLayout.actionItems])
+
+  const renderActionLabel = (action: ProjectActionItem | undefined, label: "new-agent" | "terminal") => {
+    if (!action) return null
+
+    if (label === "new-agent") {
+      if (action.hotkey === "n") {
+        return <><Text color={COLORS.accent}>[n]</Text>ew agent</>
+      }
+      return <>new agent</>
+    }
+
+    if (action.hotkey === "t") {
+      return <><Text color={COLORS.accent}>[t]</Text>erminal</>
+    }
+    return <>terminal</>
+  }
 
   return (
     <Box flexDirection="column">
@@ -69,75 +102,96 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
               />
             )
           })}
+
+          {!isLoading && actionLayout.multiProjectMode && (() => {
+            const groupActions = actionsByProject.get(group.projectRoot)
+            const newAgentAction = groupActions?.newAgent
+            const terminalAction = groupActions?.terminal
+
+            if (!newAgentAction || !terminalAction) {
+              return null
+            }
+
+            return (
+              <Box marginTop={1} flexDirection="row" gap={1}>
+                <Box
+                  borderStyle="round"
+                  borderColor={
+                    selectedIndex === newAgentAction.index
+                      ? COLORS.borderSelected
+                      : COLORS.border
+                  }
+                  paddingX={1}
+                >
+                  <Text
+                    color={
+                      selectedIndex === newAgentAction.index
+                        ? COLORS.success
+                        : COLORS.border
+                    }
+                  >
+                    +{" "}
+                  </Text>
+                  <Text
+                    color={
+                      selectedIndex === newAgentAction.index
+                        ? COLORS.selected
+                        : COLORS.unselected
+                    }
+                    bold={selectedIndex === newAgentAction.index}
+                  >
+                    {renderActionLabel(newAgentAction, "new-agent")}
+                  </Text>
+                </Box>
+                <Box
+                  borderStyle="round"
+                  borderColor={
+                    selectedIndex === terminalAction.index
+                      ? COLORS.borderSelected
+                      : COLORS.border
+                  }
+                  paddingX={1}
+                >
+                  <Text
+                    color={
+                      selectedIndex === terminalAction.index
+                        ? COLORS.success
+                        : COLORS.border
+                    }
+                  >
+                    +{" "}
+                  </Text>
+                  <Text
+                    color={
+                      selectedIndex === terminalAction.index
+                        ? COLORS.selected
+                        : COLORS.unselected
+                    }
+                    bold={selectedIndex === terminalAction.index}
+                  >
+                    {renderActionLabel(terminalAction, "terminal")}
+                  </Text>
+                </Box>
+              </Box>
+            )
+          })()}
         </Box>
       ))}
 
-      {!isLoading && (
-        <Box marginTop={panes.length === 0 ? 1 : 0} flexDirection="column">
-          <Box flexDirection="row" gap={1}>
-            <Box
-              borderStyle="round"
-              borderColor={
-                selectedIndex === panes.length
-                  ? COLORS.borderSelected
-                  : COLORS.border
-              }
-              paddingX={1}
-            >
-              <Text
-                color={
-                  selectedIndex === panes.length ? COLORS.success : COLORS.border
-                }
-              >
-                +{" "}
-              </Text>
-              <Text
-                color={
-                  selectedIndex === panes.length
-                    ? COLORS.selected
-                    : COLORS.unselected
-                }
-                bold={selectedIndex === panes.length}
-              >
-                <Text color={COLORS.accent}>[n]</Text>ew agent
-              </Text>
-            </Box>
-            <Box
-              borderStyle="round"
-              borderColor={
-                selectedIndex === panes.length + 1
-                  ? COLORS.borderSelected
-                  : COLORS.border
-              }
-              paddingX={1}
-            >
-              <Text
-                color={
-                  selectedIndex === panes.length + 1
-                    ? COLORS.success
-                    : COLORS.border
-                }
-              >
-                +{" "}
-              </Text>
-              <Text
-                color={
-                  selectedIndex === panes.length + 1
-                    ? COLORS.selected
-                    : COLORS.unselected
-                }
-                bold={selectedIndex === panes.length + 1}
-              >
-                <Text color={COLORS.accent}>[t]</Text>erminal
-              </Text>
-            </Box>
-          </Box>
+      {!isLoading && !actionLayout.multiProjectMode && (() => {
+        const newAgentAction = actionLayout.actionItems.find((item) => item.kind === "new-agent")
+        const terminalAction = actionLayout.actionItems.find((item) => item.kind === "terminal")
 
+        if (!newAgentAction || !terminalAction) {
+          return null
+        }
+
+        return (
+        <Box marginTop={panes.length === 0 ? 1 : 0} flexDirection="row" gap={1}>
           <Box
-            marginTop={1}
             borderStyle="round"
             borderColor={
-              selectedIndex === panes.length + 2
+              selectedIndex === newAgentAction.index
                 ? COLORS.borderSelected
                 : COLORS.border
             }
@@ -145,24 +199,54 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
           >
             <Text
               color={
-                selectedIndex === panes.length + 2 ? COLORS.success : COLORS.border
+                selectedIndex === newAgentAction.index ? COLORS.success : COLORS.border
               }
             >
               +{" "}
             </Text>
             <Text
               color={
-                selectedIndex === panes.length + 2
+                selectedIndex === newAgentAction.index
                   ? COLORS.selected
                   : COLORS.unselected
               }
-              bold={selectedIndex === panes.length + 2}
+              bold={selectedIndex === newAgentAction.index}
             >
-              <Text color={COLORS.accent}>[p]</Text>rojects
+              <Text color={COLORS.accent}>[n]</Text>ew agent
+            </Text>
+          </Box>
+          <Box
+            borderStyle="round"
+            borderColor={
+              selectedIndex === terminalAction.index
+                ? COLORS.borderSelected
+                : COLORS.border
+            }
+            paddingX={1}
+          >
+            <Text
+              color={
+                selectedIndex === terminalAction.index
+                  ? COLORS.success
+                  : COLORS.border
+              }
+            >
+              +{" "}
+            </Text>
+            <Text
+              color={
+                selectedIndex === terminalAction.index
+                  ? COLORS.selected
+                  : COLORS.unselected
+              }
+              bold={selectedIndex === terminalAction.index}
+            >
+              <Text color={COLORS.accent}>[t]</Text>erminal
             </Text>
           </Box>
         </Box>
-      )}
+        )
+      })()}
     </Box>
   )
 })

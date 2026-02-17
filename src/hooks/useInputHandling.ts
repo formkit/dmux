@@ -14,6 +14,11 @@ import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
 import { suggestCommand } from "../utils/commands.js"
 import type { PopupManager } from "../services/PopupManager.js"
 import { getPaneProjectRoot } from "../utils/paneProject.js"
+import {
+  getProjectActionByIndex,
+  type ProjectActionItem,
+} from "../utils/projectActions.js"
+import { createShellPane, getNextDmuxId } from "../utils/shellPaneDetection.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -65,11 +70,13 @@ interface UseInputHandlingParams {
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
   handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
+  savePanes: (panes: DmuxPane[]) => Promise<void>
   loadPanes: () => Promise<void>
   cleanExit: () => void
 
   // Project info
   projectRoot: string
+  projectActionItems: ProjectActionItem[]
 
   // Navigation
   findCardInDirection: (currentIndex: number, direction: "up" | "down" | "left" | "right") => number | null
@@ -111,17 +118,59 @@ export function useInputHandling(params: UseInputHandlingParams) {
     runCommandInternal,
     handlePaneCreationWithAgent,
     handleReopenWorktree,
+    savePanes,
     loadPanes,
     cleanExit,
     projectRoot,
+    projectActionItems,
     findCardInDirection,
   } = params
 
+  const handleCreateAgentPane = async (targetProjectRoot: string) => {
+    const promptValue = await popupManager.launchNewPanePopup(targetProjectRoot)
+    if (promptValue) {
+      await handlePaneCreationWithAgent(promptValue, targetProjectRoot)
+    }
+  }
+
+  const handleCreateTerminalPane = async (targetProjectRoot: string) => {
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage("Creating terminal pane...")
+
+      const tmuxService = TmuxService.getInstance()
+      const newPaneId = await tmuxService.splitPane({ cwd: targetProjectRoot })
+
+      // Wait for pane creation to settle
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
+
+      // Persist shell pane immediately with project metadata so grouping is stable.
+      const shellPane = await createShellPane(
+        newPaneId,
+        getNextDmuxId(panes)
+      )
+      shellPane.projectRoot = targetProjectRoot
+      await savePanes([...panes, shellPane])
+
+      setIsCreatingPane(false)
+      setStatusMessage("Terminal pane created")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+
+      // Force a reload to ensure tmux metadata and pane IDs are in sync
+      await loadPanes()
+    } catch (error: any) {
+      setIsCreatingPane(false)
+      setStatusMessage(`Failed to create terminal pane: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    }
+  }
+
   const handleCreatePaneInProject = async () => {
+    const selectedAction = getProjectActionByIndex(projectActionItems, selectedIndex)
     const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
     const defaultProjectPath = selectedPane
       ? getPaneProjectRoot(selectedPane, projectRoot)
-      : projectRoot
+      : (selectedAction?.projectRoot || projectRoot)
 
     const requestedProjectPath = await popupManager.launchInputPopup(
       "Select Project",
@@ -369,53 +418,30 @@ export function useInputHandling(params: UseInputHandlingParams) {
       !isLoading &&
       (
         input === "p" ||
-        input === "N" ||
-        (key.return && selectedIndex === panes.length + 2)
+        input === "N"
       )
     ) {
-      // Create pane in another project ([p]rojects card, with Shift+N fallback)
+      // Create pane in another project ([p], with Shift+N fallback)
       await handleCreatePaneInProject()
       return
-    } else if (
-      !isLoading &&
-      (input === "n" || (key.return && selectedIndex === panes.length))
-    ) {
-      // Launch popup modal for new pane
-      const promptValue = await popupManager.launchNewPanePopup(projectRoot)
-      if (promptValue) {
-        await handlePaneCreationWithAgent(promptValue)
-      }
+    } else if (!isLoading && input === "n") {
+      // Main session hotkey only
+      await handleCreateAgentPane(projectRoot)
+      return
+    } else if (!isLoading && input === "t") {
+      // Main session hotkey only
+      await handleCreateTerminalPane(projectRoot)
       return
     } else if (
       !isLoading &&
-      (input === "t" || (key.return && selectedIndex === panes.length + 1))
+      key.return &&
+      !!getProjectActionByIndex(projectActionItems, selectedIndex)
     ) {
-      // Create a new terminal pane without an agent
-      try {
-        setIsCreatingPane(true)
-        setStatusMessage("Creating terminal pane...")
-
-        const tmuxService = TmuxService.getInstance()
-
-        // Create a simple tmux pane split
-        await tmuxService.splitPane({})
-
-        // Wait for pane creation to settle
-        await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
-
-        // The shell pane will be automatically detected by the shell pane detection system
-        // No need to manually add it to the panes array
-
-        setIsCreatingPane(false)
-        setStatusMessage("Terminal pane created")
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-
-        // Force a reload to pick up the new shell pane
-        await loadPanes()
-      } catch (error: any) {
-        setIsCreatingPane(false)
-        setStatusMessage(`Failed to create terminal pane: ${error.message}`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      const selectedAction = getProjectActionByIndex(projectActionItems, selectedIndex)!
+      if (selectedAction.kind === "new-agent") {
+        await handleCreateAgentPane(selectedAction.projectRoot)
+      } else if (selectedAction.kind === "terminal") {
+        await handleCreateTerminalPane(selectedAction.projectRoot)
       }
       return
     } else if (input === "j" && selectedIndex < panes.length) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { Box, Text, useApp, useStdout, useInput } from "ink"
 import { TmuxService } from "./services/TmuxService.js"
 
@@ -60,6 +60,7 @@ import UpdatingIndicator from "./components/indicators/UpdatingIndicator.js"
 import FooterHelp from "./components/ui/FooterHelp.js"
 import TmuxHooksPromptDialog from "./components/dialogs/TmuxHooksPromptDialog.js"
 import { PaneEventService } from "./services/PaneEventService.js"
+import { buildProjectActionLayout } from "./utils/projectActions.js"
 
 const DmuxApp: React.FC<DmuxAppProps> = ({
   panesFile,
@@ -403,11 +404,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // getPanePositions moved to utils/tmux
 
+  const sessionProjectRoot = projectRoot || process.cwd()
+  const projectActionLayout = useMemo(
+    () => buildProjectActionLayout(panes, sessionProjectRoot, projectName),
+    [panes, sessionProjectRoot, projectName]
+  )
+
   // Navigation logic moved to hook
   const { getCardGridPosition, findCardInDirection } = useNavigation(
     terminalWidth,
-    panes.length,
-    isLoading
+    isLoading ? panes.length : projectActionLayout.totalItems
   )
 
   // findCardInDirection provided by useNavigation
@@ -763,9 +769,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     runCommandInternal,
     handlePaneCreationWithAgent,
     handleReopenWorktree,
+    savePanes,
     loadPanes,
     cleanExit,
-    projectRoot: projectRoot || process.cwd(),
+    projectRoot: sessionProjectRoot,
+    projectActionItems: projectActionLayout.actionItems,
     findCardInDirection,
   })
 
@@ -885,7 +893,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined
           const cols = Math.max(1, Math.floor(terminalWidth / 37))
-          const rows = Math.ceil((panes.length + 3) / cols)
+          const totalCards = isLoading ? panes.length : projectActionLayout.totalItems
+          const rows = Math.ceil(totalCards / cols)
           const pos = getCardGridPosition(selectedIndex)
           return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`
         })()}
