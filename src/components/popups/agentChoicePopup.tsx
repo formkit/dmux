@@ -94,13 +94,6 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
                   {isSelected ? '▶ ' : '  '}
                   {index + 1}. {option.label}
                 </Text>
-                {option.isPair && (
-                  <Box marginLeft={3}>
-                    <Text dimColor>
-                      Launch both with the same prompt
-                    </Text>
-                  </Box>
-                )}
               </Box>
             );
           })}

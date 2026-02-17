@@ -297,7 +297,7 @@ export class PopupManager {
         "agentChoicePopup.js",
         [agentsJson, defaultAgent],
         {
-          width: 56,
+          width: 72,
           height: popupHeight,
           title: "Select Agent(s)",
         }
