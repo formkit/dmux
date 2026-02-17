@@ -214,6 +214,12 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
   },
 };
 
+const HIDDEN_MENU_ACTIONS = new Set<PaneAction>([
+  PaneAction.DUPLICATE,
+  PaneAction.RUN_TEST,
+  PaneAction.RUN_DEV,
+]);
+
 /**
  * Get available actions for a pane based on its state
  */
@@ -222,6 +228,7 @@ export function getAvailableActions(
   projectSettings?: any
 ): ActionMetadata[] {
   return Object.values(ACTION_REGISTRY).filter(action => {
+    if (HIDDEN_MENU_ACTIONS.has(action.id)) return false;
     if (!action.requires) return true;
 
     const { worktree, testCommand, devCommand, runningProcess } = action.requires;

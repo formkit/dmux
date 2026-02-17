@@ -146,9 +146,6 @@ export function initTerminalSim() {
             <div class="menu-item">  Close</div>
             <div class="menu-item">  Merge</div>
             <div class="menu-item">  Rename</div>
-            <div class="menu-item">  Duplicate</div>
-            <div class="menu-item">  Run Tests</div>
-            <div class="menu-item">  Run Dev Server</div>
             <div class="menu-item">  Copy Path</div>
             <div class="menu-item">  Open in Editor</div>
             <div class="menu-item">  Toggle Autopilot</div>
@@ -522,4 +519,3 @@ export function initTerminalSim() {
   // Initialize with empty terminal (wait for dmux typing to complete)
   showEmptyTerminal();
 }
-
