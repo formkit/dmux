@@ -5,7 +5,6 @@ import type { DmuxPane, DmuxConfig } from '../types.js';
 import { TmuxService } from '../services/TmuxService.js';
 import {
   setupSidebarLayout,
-  getContentPaneIds,
   getTerminalDimensions,
   splitPane,
 } from './tmux.js';
@@ -15,6 +14,7 @@ import { capturePaneContent } from './paneCapture.js';
 import { triggerHook } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
+import { LogService } from '../services/LogService.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -27,6 +27,20 @@ export interface CreatePaneOptions {
 export interface CreatePaneResult {
   pane: DmuxPane;
   needsAgentChoice: boolean;
+}
+
+async function waitForPaneReady(
+  tmuxService: TmuxService,
+  paneId: string,
+  timeoutMs: number = 600
+): Promise<void> {
+  const start = Date.now();
+  while ((Date.now() - start) < timeoutMs) {
+    if (await tmuxService.paneExists(paneId)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
 }
 
 /**
@@ -125,7 +139,10 @@ export async function createPane(
       const exists = await tmuxService.paneExists(controlPaneId);
       if (!exists) {
         // Pane doesn't exist anymore, use current pane and update config
-        console.error(`[dmux] Control pane ${controlPaneId} no longer exists, updating to ${originalPaneId}`);
+        LogService.getInstance().warn(
+          `Control pane ${controlPaneId} no longer exists, updating to ${originalPaneId}`,
+          'paneCreation'
+        );
         controlPaneId = originalPaneId;
         config.controlPaneId = controlPaneId;
         config.controlPaneSize = SIDEBAR_WIDTH;
@@ -149,9 +166,6 @@ export async function createPane(
     controlPaneId = originalPaneId;
   }
 
-  // Get current pane count
-  const paneCount = tmuxService.getAllPaneIdsSync().length;
-
   // Enable pane borders to show titles
   try {
     tmuxService.setGlobalOptionSync('pane-border-status', 'top');
@@ -171,9 +185,6 @@ export async function createPane(
       // First, create the tmux pane but DON'T destroy welcome pane yet
       // This way we can save the pane to config first, THEN destroy welcome pane
       paneInfo = setupSidebarLayout(controlPaneId);
-
-      // Wait for pane creation to settle
-      await new Promise((resolve) => setTimeout(resolve, 300));
     } else {
       // Subsequent panes - always split horizontally, let layout manager organize
       // Get actual dmux pane IDs (not welcome pane) from existingPanes
@@ -187,11 +198,14 @@ export async function createPane(
     // Check if error is due to stale pane ID (can't find pane)
     const errorMsg = error instanceof Error ? error.message : String(error);
     if (errorMsg.includes("can't find pane")) {
-      console.error(`[dmux] Pane creation failed with stale ID, self-healing...`);
+      LogService.getInstance().warn('Pane creation failed with stale control pane ID, self-healing', 'paneCreation');
 
       // Fix: Update controlPaneId to current pane and save to config
       const currentPaneId = originalPaneId; // We got this at the start of createPane
-      console.error(`[dmux] Updating controlPaneId from ${controlPaneId} to ${currentPaneId}`);
+      LogService.getInstance().info(
+        `Updating controlPaneId from ${controlPaneId} to ${currentPaneId}`,
+        'paneCreation'
+      );
 
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
@@ -201,14 +215,16 @@ export async function createPane(
         atomicWriteJsonSync(configPath, config);
         controlPaneId = currentPaneId; // Update local variable
       } catch (configError) {
-        console.error('[dmux] Failed to update config:', configError);
+        LogService.getInstance().error(
+          `Failed to update config after control pane recovery: ${configError}`,
+          'paneCreation'
+        );
         throw error; // Re-throw original error
       }
 
       // Retry pane creation with corrected controlPaneId
       if (isFirstContentPane) {
         paneInfo = setupSidebarLayout(controlPaneId);
-        await new Promise((resolve) => setTimeout(resolve, 300));
       } else {
         const dmuxPaneIds = existingPanes.map(p => p.paneId);
         const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1];
@@ -220,8 +236,7 @@ export async function createPane(
     }
   }
 
-  // Wait for pane creation to settle
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await waitForPaneReady(tmuxService, paneInfo);
 
   // Set pane title to match the slug
   try {

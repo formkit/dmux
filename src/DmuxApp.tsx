@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react"
 import { Box, Text, useApp, useStdout, useInput } from "ink"
-import { createRequire } from "module"
 import { TmuxService } from "./services/TmuxService.js"
 
 // Hooks
@@ -18,7 +17,6 @@ import { useStatusMessages } from "./hooks/useStatusMessages.js"
 import { useLayoutManagement } from "./hooks/useLayoutManagement.js"
 import { useInputHandling } from "./hooks/useInputHandling.js"
 import { useDialogState } from "./hooks/useDialogState.js"
-import { useTunnelManagement } from "./hooks/useTunnelManagement.js"
 import { useDebugInfo } from "./hooks/useDebugInfo.js"
 
 // Utils
@@ -26,9 +24,7 @@ import { SIDEBAR_WIDTH } from "./utils/layoutManager.js"
 import { supportsPopups } from "./utils/popup.js"
 import { StateManager } from "./shared/StateManager.js"
 import {
-  REPAINT_SPINNER_DURATION,
   STATUS_MESSAGE_DURATION_SHORT,
-  TUNNEL_COPY_FEEDBACK_DURATION,
 } from "./constants/timing.js"
 import {
   getStatusDetector,
@@ -39,7 +35,6 @@ import {
 } from "./actions/index.js"
 import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
-import { getMainBranch } from "./utils/git.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
@@ -47,8 +42,6 @@ import { dirname } from "path"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const require = createRequire(import.meta.url)
-const packageJson = require("../package.json")
 import type {
   DmuxPane,
   DmuxAppProps,
@@ -70,25 +63,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   settingsFile,
   projectRoot,
   autoUpdater,
-  serverPort,
-  server,
   controlPaneId,
-  rerenderRef,
 }) => {
   const { stdout } = useStdout()
   const terminalHeight = stdout?.rows || 40
 
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const { statusMessage, setStatusMessage, showStatus, clearStatus } = useStatusMessages()
+  const { statusMessage, setStatusMessage } = useStatusMessages()
   const [isCreatingPane, setIsCreatingPane] = useState(false)
 
   // Settings state
   const [settingsManager] = useState(() => new SettingsManager(projectRoot))
-  // Force repaint trigger - incrementing this causes Ink to re-render
-  const [forceRepaintTrigger, setForceRepaintTrigger] = useState(0)
-  // Spinner state - shows for a few frames to force render
-  const [showRepaintSpinner, setShowRepaintSpinner] = useState(false)
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile)
 
   // Dialog state management
@@ -107,19 +93,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     quitConfirmMode,
     setQuitConfirmMode,
   } = dialogState
-
-  // Tunnel/network state management
-  const tunnelState = useTunnelManagement()
-  const {
-    tunnelUrl,
-    setTunnelUrl,
-    tunnelCreating,
-    setTunnelCreating,
-    tunnelCopied,
-    setTunnelCopied,
-    localIp,
-    setLocalIp,
-  } = tunnelState
 
   // Debug/development info
   const { debugMessage, setDebugMessage, currentBranch } = useDebugInfo(__dirname)
@@ -167,11 +140,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
     const updateState = () => {
       const state = stateManager.getState()
-      setUnreadErrorCount(state.unreadErrorCount)
-      setUnreadWarningCount(state.unreadWarningCount)
-      setCurrentToast(state.currentToast)
-      setToastQueueLength(state.toastQueueLength)
-      setToastQueuePosition(state.toastQueuePosition)
+      setUnreadErrorCount((prev) => prev === state.unreadErrorCount ? prev : state.unreadErrorCount)
+      setUnreadWarningCount((prev) => prev === state.unreadWarningCount ? prev : state.unreadWarningCount)
+      setCurrentToast((prev: any) => prev === state.currentToast ? prev : state.currentToast)
+      setToastQueueLength((prev) => prev === state.toastQueueLength ? prev : state.toastQueueLength)
+      setToastQueuePosition((prev) => prev === state.toastQueuePosition ? prev : state.toastQueuePosition)
     }
 
     // Initial state
@@ -186,7 +159,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   }, [])
 
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
-  const { panes, setPanes, isLoading, loadPanes, savePanes, eventMode } = usePanes(
+  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(
     panesFile,
     false,
     sessionName,
@@ -251,71 +224,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     setRunningCommand,
   })
 
-  // Force repaint helper - shows spinner for a few frames to force full re-render
-  const forceRepaint = () => {
-    setForceRepaintTrigger((prev) => prev + 1)
-    setShowRepaintSpinner(true)
-
-    // CRITICAL: Use Ink's official rerender method to force complete redraw
-    // When tmux clears the pane via selectLayout, Ink's output is lost
-    // Calling rerender forces Ink to redraw the entire component tree
-    if (rerenderRef?.current) {
-      rerenderRef.current(React.createElement(DmuxApp, {
-        panesFile,
-        projectName,
-        sessionName,
-        settingsFile,
-        projectRoot,
-        autoUpdater,
-        serverPort,
-        server,
-        controlPaneId,
-        rerenderRef,
-      }));
-    }
-
-    // Hide spinner after a few frames (enough to trigger multiple renders)
-    setTimeout(() => setShowRepaintSpinner(false), REPAINT_SPINNER_DURATION)
-  }
-
-  // Force repaint effect - ensures Ink re-renders when trigger changes
-  useEffect(() => {
-    if (forceRepaintTrigger > 0) {
-      // Small delay to ensure terminal is ready
-      const timer = setTimeout(async () => {
-        try {
-          const tmuxService = TmuxService.getInstance()
-          await tmuxService.refreshClient()
-        } catch {}
-      }, 50)
-      return () => clearTimeout(timer)
-    }
-  }, [forceRepaintTrigger])
-
-  // Get local network IP on mount
-  useEffect(() => {
-    const getLocalIp = async () => {
-      try {
-        // Get local IP address (not 127.0.0.1)
-        const { execSync } = await import("child_process")
-        const result = execSync(
-          `hostname -I 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1`,
-          {
-            encoding: "utf-8",
-            stdio: "pipe",
-          }
-        ).trim()
-        if (result) {
-          setLocalIp(result.split(" ")[0]) // Take first IP if multiple
-        }
-      } catch {
-        // Fallback to 127.0.0.1
-        setLocalIp("127.0.0.1")
-      }
-    }
-    getLocalIp()
-  }, [])
-
   // Spinner animation and branch detection now handled in hooks
 
   // Pane creation
@@ -326,9 +234,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     setIsCreatingPane,
     setStatusMessage,
     loadPanes,
-    panesFile,
     availableAgents,
-    forceRepaint,
   })
 
   // Initialize services
@@ -341,16 +247,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     terminalHeight,
     availableAgents,
     agentChoice,
-    serverPort,
-    server,
     settingsManager,
     projectSettings,
 
     // Callbacks
     setStatusMessage,
     setIgnoreInput,
-    savePanes,
-    loadPanes,
   })
 
   // Listen for status updates with analysis data and merge into panes
@@ -359,67 +261,73 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
     const handleStatusUpdate = (event: StatusUpdateEvent) => {
       setPanes((prevPanes) => {
-        const updatedPanes = prevPanes.map((pane) => {
-          if (pane.id === event.paneId) {
-            const updated: DmuxPane = {
-              ...pane,
-              agentStatus: event.status,
-            }
+        const paneIndex = prevPanes.findIndex((pane) => pane.id === event.paneId)
+        if (paneIndex === -1) return prevPanes
 
-            // Only update analysis fields if they're present in the event (not undefined)
-            // This prevents simple status changes from overwriting PaneAnalyzer results
-            if (event.optionsQuestion !== undefined) {
-              updated.optionsQuestion = event.optionsQuestion
-            }
-            if (event.options !== undefined) {
-              updated.options = event.options
-            }
-            if (event.potentialHarm !== undefined) {
-              updated.potentialHarm = event.potentialHarm
-            }
-            if (event.summary !== undefined) {
-              updated.agentSummary = event.summary
-            }
-            if (event.analyzerError !== undefined) {
-              updated.analyzerError = event.analyzerError
-            }
+        const pane = prevPanes[paneIndex]
+        const updated: DmuxPane = {
+          ...pane,
+          agentStatus: event.status,
+        }
 
-            // Clear option dialog data when transitioning away from 'waiting' state
-            if (event.status !== "waiting" && pane.agentStatus === "waiting") {
-              updated.optionsQuestion = undefined
-              updated.options = undefined
-              updated.potentialHarm = undefined
-            }
+        // Only update analysis fields if they're present in the event (not undefined)
+        // This prevents simple status changes from overwriting PaneAnalyzer results
+        if (event.optionsQuestion !== undefined) {
+          updated.optionsQuestion = event.optionsQuestion
+        }
+        if (event.options !== undefined) {
+          updated.options = event.options
+        }
+        if (event.potentialHarm !== undefined) {
+          updated.potentialHarm = event.potentialHarm
+        }
+        if (event.summary !== undefined) {
+          updated.agentSummary = event.summary
+        }
+        if (event.analyzerError !== undefined) {
+          updated.analyzerError = event.analyzerError
+        }
 
-            // Clear summary when transitioning away from 'idle' state
-            if (event.status !== "idle" && pane.agentStatus === "idle") {
-              updated.agentSummary = undefined
-            }
+        // Clear option dialog data when transitioning away from 'waiting' state
+        if (event.status !== "waiting" && pane.agentStatus === "waiting") {
+          updated.optionsQuestion = undefined
+          updated.options = undefined
+          updated.potentialHarm = undefined
+        }
 
-            // Clear analyzer error when successfully getting a new analysis
-            // or when transitioning to 'working' status
-            if (event.status === "working") {
-              updated.analyzerError = undefined
-            } else if (event.status === "waiting" || event.status === "idle") {
-              if (
-                event.analyzerError === undefined &&
-                (event.optionsQuestion || event.summary)
-              ) {
-                updated.analyzerError = undefined
-              }
-            }
+        // Clear summary when transitioning away from 'idle' state
+        if (event.status !== "idle" && pane.agentStatus === "idle") {
+          updated.agentSummary = undefined
+        }
 
-            return updated
+        // Clear analyzer error when successfully getting a new analysis
+        // or when transitioning to 'working' status
+        if (event.status === "working") {
+          updated.analyzerError = undefined
+        } else if (event.status === "waiting" || event.status === "idle") {
+          if (
+            event.analyzerError === undefined &&
+            (event.optionsQuestion || event.summary)
+          ) {
+            updated.analyzerError = undefined
           }
-          return pane
-        })
+        }
 
-        // Persist to disk - ConfigWatcher will handle syncing to StateManager
-        savePanes(updatedPanes).catch((err) => {
-          console.error("Failed to save panes after status update:", err)
-        })
+        const unchanged =
+          pane.agentStatus === updated.agentStatus &&
+          pane.optionsQuestion === updated.optionsQuestion &&
+          pane.options === updated.options &&
+          pane.potentialHarm === updated.potentialHarm &&
+          pane.agentSummary === updated.agentSummary &&
+          pane.analyzerError === updated.analyzerError
 
-        return updatedPanes
+        if (unchanged) {
+          return prevPanes
+        }
+
+        const next = prevPanes.slice()
+        next[paneIndex] = updated
+        return next
       })
     }
 
@@ -428,7 +336,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     return () => {
       statusDetector.off("status-updated", handleStatusUpdate)
     }
-  }, [setPanes, savePanes])
+  }, [setPanes])
 
   // Note: No need to sync panes with StateManager here.
   // The ConfigWatcher automatically updates StateManager when the config file changes.
@@ -525,12 +433,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Helper function to reopen a closed worktree
   const handleReopenWorktree = async (slug: string, worktreePath: string) => {
-    // Force repaint first
-    forceRepaint()
-
-    // Minimal clearing
-    process.stdout.write('\x1b[2J\x1b[H')
-
     try {
       setIsCreatingPane(true)
       setStatusMessage(`Reopening ${slug}...`)
@@ -546,20 +448,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       const updatedPanes = [...panes, result.pane]
       await savePanes(updatedPanes)
 
-      // Force repaint and refresh
-      forceRepaint()
-      process.stdout.write('\x1b[2J\x1b[3J\x1b[H')
-
-      const tmuxService = TmuxService.getInstance()
-      tmuxService.clearHistorySync()
-      tmuxService.refreshClientSync()
-
       await loadPanes()
 
       setStatusMessage(`Reopened ${slug}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-
-      forceRepaint()
     } catch (error: any) {
       setStatusMessage(`Failed to reopen: ${error.message}`)
       setTimeout(() => setStatusMessage(""), 3000)
@@ -630,9 +522,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         if (targetPane) {
           try {
             TmuxService.getInstance().selectPane(targetPane.paneId)
-          } catch (error) {
-            console.error('[onActionResult] Failed to navigate to pane:', error)
-          }
+          } catch {}
         }
       }
       // Show message if dismissable
@@ -675,7 +565,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       await lifecycleManager.completeClose(paneId)
     },
     onActionResult: handleActionResult,
-    forceRepaint,
     popupLaunchers: popupsSupported
       ? {
           launchConfirmPopup: popupManager.launchConfirmPopup.bind(popupManager),
@@ -702,7 +591,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       isCreatingPane ||
       runningCommand ||
       isUpdating,
-    onForceRepaint: forceRepaint,
   })
 
   // Monitor agent status across panes (returns a map of pane ID to status)
@@ -822,14 +710,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     projectSettings,
     saveSettings,
     settingsManager,
-    tunnelUrl,
-    setTunnelUrl,
-    tunnelCreating,
-    setTunnelCreating,
-    setTunnelCopied,
     popupManager,
     actionSystem,
-    server,
     controlPaneId,
     setStatusMessage,
     copyNonGitFiles,
@@ -848,7 +730,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // - Normal mode calculation:
   //   - Base: 4 lines (marginTop + logs divider + logs line + keyboard shortcuts)
   //   - Toast: +2 lines (toast message + marginBottom) if currentToast exists
-  //   - Network section: +4 lines (divider, local IP, remote tunnel, divider) if serverPort exists
   //   - Debug info: +1 line if DEBUG_DMUX
   //   - Status line: +1 line if updateAvailable/currentBranch/debugMessage
   //   - Status messages: +1 line per active message
@@ -871,10 +752,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
       footerLines += wrappedLines + 1 + 1; // wrapped lines + header line + marginBottom
     }
-    // Add network section (now 2 lines for local IP + remote tunnel, plus 2 dividers)
-    if (serverPort && serverPort > 0) {
-      footerLines += 4
-    }
     // Add debug info
     if (process.env.DEBUG_DMUX) {
       footerLines += 1
@@ -895,13 +772,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   return (
     <Box flexDirection="column" height={terminalHeight}>
-      {/* CRITICAL: Hidden spinner that forces re-render when shown */}
-      {showRepaintSpinner && (
-        <Box marginTop={-10} marginLeft={-100}>
-          <Text>⟳</Text>
-        </Box>
-      )}
-
       {/* Main content area - height dynamically adjusts for status messages */}
       <Box flexDirection="column" height={contentHeight} overflow="hidden">
         <PanesGrid
@@ -959,20 +829,12 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       {/* Footer - always at bottom */}
       <FooterHelp
         show={!showCommandPrompt}
-        showRemoteKey={!!server}
         quitConfirmMode={quitConfirmMode}
-        hasSidebarLayout={!!controlPaneId}
-        serverPort={serverPort}
         unreadErrorCount={unreadErrorCount}
         unreadWarningCount={unreadWarningCount}
         currentToast={currentToast}
         toastQueueLength={toastQueueLength}
         toastQueuePosition={toastQueuePosition}
-        localIp={localIp}
-        tunnelUrl={tunnelUrl}
-        tunnelCreating={tunnelCreating}
-        tunnelCopied={tunnelCopied}
-        tunnelSpinner={tunnelState.getSpinnerChar()}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined
           const cols = Math.max(1, Math.floor(terminalWidth / 37))

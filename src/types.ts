@@ -90,10 +90,7 @@ export interface DmuxAppProps {
   projectRoot?: string;
   settingsFile: string;
   autoUpdater?: any; // AutoUpdater instance
-  serverPort?: number;
-  server?: any; // DmuxServer instance
   controlPaneId?: string; // Pane ID running dmux TUI (left sidebar)
-  rerenderRef?: { current: ((element: React.ReactElement) => void) | null }; // Ink rerender function
 }
 
 export interface DmuxConfig {

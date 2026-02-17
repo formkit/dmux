@@ -12,7 +12,6 @@ import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import DmuxApp from './DmuxApp.js';
 import { AutoUpdater } from './services/AutoUpdater.js';
-import { DmuxServer } from './server/index.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
 import { TmuxService } from './services/TmuxService.js';
@@ -34,7 +33,6 @@ class Dmux {
   private sessionName: string;
   private projectRoot: string;
   private autoUpdater: AutoUpdater;
-  private server: DmuxServer;
   private stateManager: StateManager;
 
   constructor() {
@@ -65,8 +63,7 @@ class Dmux {
     // Initialize auto-updater with config file
     this.autoUpdater = new AutoUpdater(configFile);
 
-    // Initialize server and state manager
-    this.server = new DmuxServer();
+    // Initialize state manager
     this.stateManager = StateManager.getInstance();
   }
 
@@ -301,18 +298,6 @@ class Dmux {
     // Update state manager with project info
     this.stateManager.updateProjectInfo(this.projectName, this.sessionName, this.projectRoot, this.panesFile);
 
-    // Start the HTTP server
-    let serverInfo: { port: number; url: string; tunnelUrl?: string } = { port: 0, url: '' };
-    try {
-      serverInfo = await this.server.start();
-      // Update StateManager with server info
-      this.stateManager.updateServerInfo(serverInfo.port, serverInfo.url);
-      // Don't log the local URL - tunnel will be created on demand when "r" is pressed
-    } catch (err) {
-      LogService.getInstance().error('Failed to start HTTP server', 'Setup', undefined, err instanceof Error ? err : undefined);
-      // Continue without server - not critical for main functionality
-    }
-
     // Logging system is ready (removed debug logs to reduce clutter)
 
     // Suppress console output from LogService to prevent interference with Ink UI
@@ -325,9 +310,6 @@ class Dmux {
     // Ensure cursor is truly at home position and scrollback is clear
     process.stdout.write('\x1b[1;1H');  // Force cursor to row 1, column 1
 
-    // Small delay to let terminal settle
-    await new Promise(resolve => setTimeout(resolve, 50));
-
     // Launch the Ink app
     const appProps = {
       panesFile: this.panesFile,
@@ -336,23 +318,15 @@ class Dmux {
       sessionName: this.sessionName,
       projectRoot: this.projectRoot,
       autoUpdater: this.autoUpdater,
-      serverPort: serverInfo.port,
-      server: this.server,
       controlPaneId,
-      // Pass rerender function as a ref that will be set after first render
-      rerenderRef: { current: null as any }
     };
 
     const app = render(React.createElement(DmuxApp, appProps), {
       exitOnCtrlC: false  // Disable automatic exit on Ctrl+C
     });
 
-    // Set the rerender function so DmuxApp can use it
-    appProps.rerenderRef.current = app.rerender;
-
     // Clean shutdown on app exit
     app.waitUntilExit().then(async () => {
-      await this.server.stop();
       process.exit(0);
     });
   }

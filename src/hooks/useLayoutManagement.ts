@@ -6,7 +6,6 @@ import { LogService } from '../services/LogService.js';
 interface LayoutManagementOptions {
   controlPaneId: string | undefined;
   hasActiveDialog: boolean;
-  onForceRepaint: () => void;
 }
 
 /**
@@ -16,7 +15,6 @@ interface LayoutManagementOptions {
 export function useLayoutManagement({
   controlPaneId,
   hasActiveDialog,
-  onForceRepaint,
 }: LayoutManagementOptions) {
   // Use refs to track state across resize events
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -42,7 +40,6 @@ export function useLayoutManagement({
     const handleResize = () => {
       // Skip if we're already applying a layout (prevents loops and race conditions)
       if (isApplyingLayoutRef.current) {
-        LogService.getInstance().debug('Skipping resize - layout already in progress', 'ResizeDebug');
         return;
       }
 
@@ -66,8 +63,6 @@ export function useLayoutManagement({
           }
           isApplyingLayoutRef.current = true;
 
-          LogService.getInstance().debug('Starting resize handler', 'ResizeDebug');
-
           try {
             // Only enforce sidebar width when terminal resizes
             await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
@@ -77,13 +72,6 @@ export function useLayoutManagement({
               return;
             }
 
-            LogService.getInstance().debug('enforceControlPaneSize complete, calling onForceRepaint', 'ResizeDebug');
-
-            // CRITICAL: Force Ink to repaint AFTER layout changes complete
-            // This ensures the dmux UI redraws last, preventing blank pane
-            onForceRepaint();
-
-            LogService.getInstance().debug('onForceRepaint called', 'ResizeDebug');
           } catch (error) {
             // Log error but don't crash - layout will be retried on next resize
             LogService.getInstance().warn(
@@ -118,5 +106,5 @@ export function useLayoutManagement({
         clearTimeout(resizeTimeoutRef.current);
       }
     };
-  }, [controlPaneId, hasActiveDialog, onForceRepaint]);
+  }, [controlPaneId, hasActiveDialog]);
 }

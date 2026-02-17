@@ -123,22 +123,12 @@ export const setupSidebarLayout = (controlPaneId: string): string => {
       targetPane: controlPaneId,
     });
 
-    // Wait for split to settle
-    const waitMs = 100;
-    const startTime = Date.now();
-    while (Date.now() - startTime < waitMs) {
-      // Busy wait
-    }
-
     // Resize control pane to fixed width (sync version for initial setup)
     try {
       tmuxService.resizePaneSync(controlPaneId, { width: SIDEBAR_WIDTH });
     } catch {
       // Ignore resize errors during initial setup
     }
-
-    // Refresh to ensure panes are painted correctly after layout
-    tmuxService.refreshClientSync();
 
     return newPaneId;
   } catch (error) {
@@ -485,4 +475,3 @@ export const enforceControlPaneSize = async (
     LogService.getInstance().error(msg, 'tmux', undefined, error instanceof Error ? error : undefined);
   }
 };
-

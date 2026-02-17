@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react"
+import { useMemo } from "react"
 import { PopupManager, type PopupManagerConfig } from "../services/PopupManager.js"
-import type { DmuxPane, ProjectSettings } from "../types.js"
+import type { ProjectSettings } from "../types.js"
 
 interface UseServicesProps {
   // PopupManager config
@@ -11,16 +11,12 @@ interface UseServicesProps {
   terminalHeight: number
   availableAgents: Array<"claude" | "opencode" | "codex">
   agentChoice: "claude" | "opencode" | "codex" | null
-  serverPort?: number
-  server?: any
   settingsManager: any
   projectSettings: ProjectSettings
 
   // Callbacks
   setStatusMessage: (msg: string) => void
   setIgnoreInput: (ignore: boolean) => void
-  savePanes: (panes: DmuxPane[]) => Promise<void>
-  loadPanes: () => Promise<void>
 }
 
 export function useServices(props: UseServicesProps) {
@@ -34,8 +30,6 @@ export function useServices(props: UseServicesProps) {
       terminalHeight: props.terminalHeight,
       availableAgents: props.availableAgents,
       agentChoice: props.agentChoice,
-      serverPort: props.serverPort,
-      server: props.server,
       settingsManager: props.settingsManager,
       projectSettings: props.projectSettings,
     }
@@ -53,8 +47,6 @@ export function useServices(props: UseServicesProps) {
     props.terminalHeight,
     props.availableAgents,
     props.agentChoice,
-    props.serverPort,
-    props.server,
     props.settingsManager,
     props.projectSettings,
     props.setStatusMessage,

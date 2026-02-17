@@ -46,11 +46,17 @@ export default function usePanes(
   useHooks?: boolean // undefined = not yet decided, true = use hooks, false = use polling
 ) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
+  const panesRef = useRef<DmuxPane[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [eventMode, setEventMode] = useState<PaneEventMode>('disabled');
   const initialLoadComplete = useRef(false);
   const isLoadingPanes = useRef(false); // Guard against concurrent loadPanes calls
+  const pendingLoad = useRef(false);
   const paneEventService = useRef(PaneEventService.getInstance());
+
+  useEffect(() => {
+    panesRef.current = panes;
+  }, [panes]);
 
   const loadPanes = async () => {
     if (skipLoading) return;
@@ -58,105 +64,94 @@ export default function usePanes(
     // Prevent concurrent loadPanes calls which can cause race conditions
     // and duplicate pane detection
     if (isLoadingPanes.current) {
+      pendingLoad.current = true;
       return;
     }
     isLoadingPanes.current = true;
 
     try {
-      // Load panes from file and rebind IDs based on tmux state
-      const { panes: loadedPanes, allPaneIds, titleToId } = await loadAndProcessPanes(
-        panesFile,
-        !initialLoadComplete.current
-      );
+      do {
+        pendingLoad.current = false;
 
-      // For initial load, set the loaded panes and mark as complete
-      if (!initialLoadComplete.current) {
-        // LogService.getInstance().debug(
-        //   `Initial load: panes.length=${panes.length}, loadedPanes.length=${loadedPanes.length}`,
-        //   'shellDetection'
-        // );
-        setPanes(loadedPanes);
-        initialLoadComplete.current = true;
-        return; // Exit early for initial load
-      }
-
-      // Rebind and filter panes (removes dead shell panes, keeps worktree panes)
-      const { activePanes, shellPanesRemoved, worktreePanesToRecreate } = rebindAndFilterPanes(
-        loadedPanes,
-        titleToId,
-        allPaneIds,
-        !initialLoadComplete.current
-      );
-
-      // Recreate worktree panes that were killed (e.g., via Ctrl+b x)
-      let finalPanes = activePanes;
-      if (worktreePanesToRecreate.length > 0) {
-        finalPanes = await recreateKilledWorktreePanes(activePanes, allPaneIds, panesFile);
-
-        // Re-fetch pane IDs after recreation
-        const freshData = await fetchTmuxPaneIds();
-        const updatedIds = freshData.allPaneIds;
-        const updatedTitleToId = freshData.titleToId;
-
-        // Re-rebind after recreation using the utility function
-        finalPanes = finalPanes.map(p => rebindPaneByTitle(p, updatedTitleToId, updatedIds));
-      }
-
-      // Detect untracked panes (only after initial load)
-      let shellPanesAdded = false;
-      if (initialLoadComplete.current) {
-        // LogService.getInstance().debug(
-        //   `Shell detection check: allPaneIds=${allPaneIds.length}, initialLoadComplete=${initialLoadComplete.current}`,
-        //   'shellDetection'
-        // );
-
-        const { updatedPanes, shellPanesAdded: added } = await detectAndAddShellPanes(
+        // Load panes from file and rebind IDs based on tmux state
+        const { panes: loadedPanes, allPaneIds, titleToId } = await loadAndProcessPanes(
           panesFile,
-          finalPanes,
-          allPaneIds
+          !initialLoadComplete.current
         );
-        finalPanes = updatedPanes;
-        shellPanesAdded = added;
-      }
 
-      // Destroy welcome pane if transitioning from 0 to >0 panes
-      await destroyWelcomePaneIfNeeded(panesFile, panes.length, finalPanes.length);
-
-      // Enforce pane titles always match slug (worktree name)
-      await enforcePaneTitles(finalPanes, allPaneIds);
-
-      // Check if panes changed (compare IDs and paneIds only)
-      const currentPaneIds = panes.map(p => `${p.id}:${p.paneId}`).sort().join(',');
-      const newPaneIds = finalPanes.map(p => `${p.id}:${p.paneId}`).sort().join(',');
-
-      // Check if IDs were remapped
-      const idsChanged = finalPanes.some((pane, idx) =>
-        loadedPanes[idx] && loadedPanes[idx].paneId !== pane.paneId
-      );
-
-      // Update state and save if panes changed OR if shell panes were added/removed
-      if (currentPaneIds !== newPaneIds || shellPanesAdded || shellPanesRemoved) {
-        setPanes(finalPanes);
-
-        // Save to file if IDs were remapped OR if shell panes were added/removed
-        if (idsChanged || shellPanesAdded || shellPanesRemoved) {
-          // LogService.getInstance().debug(
-          //   `Saving config: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}, finalPanes=${finalPanes.length}`,
-          //   'shellDetection'
-          // );
-          await saveUpdatedPaneConfig(panesFile, finalPanes, withWriteLock);
-
-          // If shell panes were removed and we now have 0 panes, recreate welcome pane
-          if (shellPanesRemoved && finalPanes.length === 0) {
-            await handleLastPaneRemoval(process.cwd());
-          }
-        } else {
-          // LogService.getInstance().debug(
-          //   `NOT saving: idsChanged=${idsChanged}, shellPanesAdded=${shellPanesAdded}, shellPanesRemoved=${shellPanesRemoved}`,
-          //   'shellDetection'
-          // );
+        // For initial load, set the loaded panes and mark as complete
+        if (!initialLoadComplete.current) {
+          panesRef.current = loadedPanes;
+          setPanes(loadedPanes);
+          initialLoadComplete.current = true;
+          continue;
         }
-      }
+
+        // Rebind and filter panes (removes dead shell panes, keeps worktree panes)
+        const { activePanes, shellPanesRemoved, worktreePanesToRecreate } = rebindAndFilterPanes(
+          loadedPanes,
+          titleToId,
+          allPaneIds,
+          !initialLoadComplete.current
+        );
+
+        // Recreate worktree panes that were killed (e.g., via Ctrl+b x)
+        let finalPanes = activePanes;
+        if (worktreePanesToRecreate.length > 0) {
+          finalPanes = await recreateKilledWorktreePanes(activePanes, allPaneIds, panesFile);
+
+          // Re-fetch pane IDs after recreation
+          const freshData = await fetchTmuxPaneIds();
+          const updatedIds = freshData.allPaneIds;
+          const updatedTitleToId = freshData.titleToId;
+
+          // Re-rebind after recreation using the utility function
+          finalPanes = finalPanes.map(p => rebindPaneByTitle(p, updatedTitleToId, updatedIds));
+        }
+
+        // Detect untracked panes (only after initial load)
+        let shellPanesAdded = false;
+        if (initialLoadComplete.current) {
+          const { updatedPanes, shellPanesAdded: added } = await detectAndAddShellPanes(
+            panesFile,
+            finalPanes,
+            allPaneIds
+          );
+          finalPanes = updatedPanes;
+          shellPanesAdded = added;
+        }
+
+        // Destroy welcome pane if transitioning from 0 to >0 panes
+        await destroyWelcomePaneIfNeeded(panesFile, panesRef.current.length, finalPanes.length);
+
+        // Enforce pane titles always match slug (worktree name)
+        await enforcePaneTitles(finalPanes, allPaneIds);
+
+        // Check if panes changed (compare IDs and paneIds only)
+        const currentPaneIds = panesRef.current.map(p => `${p.id}:${p.paneId}`).sort().join(',');
+        const newPaneIds = finalPanes.map(p => `${p.id}:${p.paneId}`).sort().join(',');
+
+        // Check if IDs were remapped
+        const idsChanged = finalPanes.some((pane, idx) =>
+          loadedPanes[idx] && loadedPanes[idx].paneId !== pane.paneId
+        );
+
+        // Update state and save if panes changed OR if shell panes were added/removed
+        if (currentPaneIds !== newPaneIds || shellPanesAdded || shellPanesRemoved) {
+          panesRef.current = finalPanes;
+          setPanes(finalPanes);
+
+          // Save to file if IDs were remapped OR if shell panes were added/removed
+          if (idsChanged || shellPanesAdded || shellPanesRemoved) {
+            await saveUpdatedPaneConfig(panesFile, finalPanes, withWriteLock);
+
+            // If shell panes were removed and we now have 0 panes, recreate welcome pane
+            if (shellPanesRemoved && finalPanes.length === 0) {
+              await handleLastPaneRemoval(process.cwd());
+            }
+          }
+        }
+      } while (pendingLoad.current);
     } catch (error) {
       // Silently ignore errors during pane loading to prevent UI crashes
       // Most common errors are transient tmux state issues that resolve on next poll
@@ -172,6 +167,7 @@ export default function usePanes(
 
   const savePanes = async (newPanes: DmuxPane[]) => {
     const updatedPanes = await savePanesToFile(panesFile, newPanes, withWriteLock);
+    panesRef.current = updatedPanes;
     setPanes(updatedPanes);
   };
 

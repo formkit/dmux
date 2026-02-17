@@ -17,12 +17,23 @@ export async function enforcePaneTitles(
   allPaneIds: string[]
 ): Promise<void> {
   const tmuxService = TmuxService.getInstance();
+  const titleByPaneId = new Map<string, string>();
+
+  try {
+    const paneInfo = await tmuxService.getAllPaneInfo();
+    for (const pane of paneInfo) {
+      titleByPaneId.set(pane.paneId, pane.title);
+    }
+  } catch {
+    // Fall back to per-pane title lookups below.
+  }
 
   for (const pane of panes) {
     if (allPaneIds.includes(pane.paneId)) {
       try {
         // Get current title to check if update is needed
-        const currentTitle = await tmuxService.getPaneTitle(pane.paneId);
+        const currentTitle = titleByPaneId.get(pane.paneId)
+          ?? await tmuxService.getPaneTitle(pane.paneId);
 
         // Only update if title doesn't match slug (avoids unnecessary tmux commands)
         if (currentTitle !== pane.slug) {
@@ -58,20 +69,17 @@ export async function savePanesToFile(
     // Try to update pane IDs if they've changed (rebinding)
     try {
       const tmuxService = TmuxService.getInstance();
-      const allPanes = await tmuxService.getAllPaneIds();
       const titleToId = new Map<string, string>();
+      const paneInfo = await tmuxService.getAllPaneInfo();
 
-      // Fetch titles for each pane
-      for (const id of allPanes) {
-        try {
-          const title = await tmuxService.getPaneTitle(id);
-          // Filter out dmux internal panes (spacer, control pane, etc.)
-          if (id && id.startsWith('%') && title && title !== 'dmux-spacer') {
-            titleToId.set(title.trim(), id);
-          }
-        } catch {
-          // Skip panes we can't get titles for
-          continue;
+      for (const pane of paneInfo) {
+        if (
+          pane.paneId &&
+          pane.paneId.startsWith('%') &&
+          pane.title &&
+          pane.title !== 'dmux-spacer'
+        ) {
+          titleToId.set(pane.title.trim(), pane.paneId);
         }
       }
 
@@ -239,7 +247,7 @@ export async function saveUpdatedPaneConfig(
       `Writing config with ${currentConfig.panes.length} panes`,
       'shellDetection'
     );
-    await fs.writeFile(panesFile, JSON.stringify(currentConfig, null, 2));
+    await atomicWriteJson(panesFile, currentConfig);
     LogService.getInstance().debug('Config file written successfully', 'shellDetection');
   });
 }
@@ -278,7 +286,7 @@ export async function destroyWelcomePaneIfNeeded(
       // Clear welcomePaneId from config (will be saved by caller)
       config.welcomePaneId = undefined;
       // Write the config immediately to clear welcomePaneId
-      await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
+      await atomicWriteJson(panesFile, config);
     }
   } catch (error) {
     LogService.getInstance().debug('Failed to destroy welcome pane', 'shellDetection');

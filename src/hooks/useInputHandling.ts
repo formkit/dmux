@@ -1,12 +1,10 @@
 import { useInput } from "ink"
 import type { DmuxPane } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
-import { LogService } from "../services/LogService.js"
 import { TmuxService } from "../services/TmuxService.js"
 import {
   STATUS_MESSAGE_DURATION_SHORT,
   STATUS_MESSAGE_DURATION_LONG,
-  TUNNEL_COPY_FEEDBACK_DURATION,
   ANIMATION_DELAY,
 } from "../constants/timing.js"
 import { PaneAction } from "../actions/index.js"
@@ -55,17 +53,9 @@ interface UseInputHandlingParams {
   saveSettings: (settings: any) => Promise<void>
   settingsManager: any
 
-  // Tunnel state
-  tunnelUrl: string | null
-  setTunnelUrl: (url: string | null) => void
-  tunnelCreating: boolean
-  setTunnelCreating: (value: boolean) => void
-  setTunnelCopied: (value: boolean) => void
-
   // Services
   popupManager: PopupManager
   actionSystem: ActionSystem
-  server: any
   controlPaneId: string | undefined
 
   // Callbacks
@@ -112,14 +102,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
     projectSettings,
     saveSettings,
     settingsManager,
-    tunnelUrl,
-    setTunnelUrl,
-    tunnelCreating,
-    setTunnelCreating,
-    setTunnelCopied,
     popupManager,
     actionSystem,
-    server,
     controlPaneId,
     setStatusMessage,
     copyNonGitFiles,
@@ -133,13 +117,6 @@ export function useInputHandling(params: UseInputHandlingParams) {
   } = params
 
   useInput(async (input: string, key: any) => {
-    const logService = LogService.getInstance()
-
-    // DEBUG: Log all input to help diagnose key handling issues
-    const inputPreview =
-      input.length > 50 ? input.substring(0, 50) + "..." : input
-    logService.debug(`Input: "${inputPreview}" charCode=${input.charCodeAt(0)}`, "InputDebug")
-
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
       return
@@ -309,7 +286,6 @@ export function useInputHandling(params: UseInputHandlingParams) {
       }
     } else if (input === "l") {
       // Open logs popup
-      logService.debug("MATCHED 'l' - opening logs", "InputDebug")
       await popupManager.launchLogsPopup()
     } else if (input === "?") {
       // Open keyboard shortcuts popup
@@ -334,7 +310,6 @@ export function useInputHandling(params: UseInputHandlingParams) {
       cleanExit()
     } else if (input === "r") {
       // Reopen closed worktree popup
-      logService.debug("MATCHED 'r' - opening reopen popup", "InputDebug")
       const activeSlugs = panes.map((p) => p.slug)
       const orphanedWorktrees = getOrphanedWorktrees(projectRoot, activeSlugs)
 
@@ -348,31 +323,6 @@ export function useInputHandling(params: UseInputHandlingParams) {
       if (result) {
         await handleReopenWorktree(result.slug, result.path)
       }
-      return
-    } else if (input === "R" && server) {
-      // Handle remote tunnel (Shift+R)
-      if (tunnelUrl) {
-        // Tunnel exists - open popup with QR code
-        await popupManager.launchRemotePopup(tunnelUrl, () => {
-          setTunnelCopied(true)
-          setTimeout(() => setTunnelCopied(false), TUNNEL_COPY_FEEDBACK_DURATION)
-        })
-      } else if (!tunnelCreating) {
-        // Start tunnel creation
-        setTunnelCreating(true)
-        ;(async () => {
-          try {
-            const url = await server.startTunnel()
-            setTunnelUrl(url)
-          } catch (error: any) {
-            setStatusMessage(`Failed to create tunnel: ${error.message}`)
-            setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
-          } finally {
-            setTunnelCreating(false)
-          }
-        })()
-      }
-      // If tunnelCreating is true, do nothing (already creating)
       return
     } else if (
       !isLoading &&

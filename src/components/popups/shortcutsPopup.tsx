@@ -12,13 +12,11 @@ import { POPUP_CONFIG } from './config.js';
 interface ShortcutsPopupAppProps {
   resultFile: string;
   hasSidebarLayout: boolean;
-  showRemoteKey: boolean;
 }
 
 const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   resultFile,
   hasSidebarLayout,
-  showRemoteKey
 }) => {
   const { exit } = useApp();
 
@@ -42,7 +40,6 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
     ...(hasSidebarLayout ? [{ key: 'L', description: 'Toggle sidebar layout' }] : []),
-    ...(showRemoteKey ? [{ key: 'R', description: 'Open remote dashboard' }] : []),
     { key: 'q', description: 'Quit dmux (Ctrl+C twice)' },
     { key: '↑↓←→', description: 'Navigate panes spatially' },
     { key: 'Enter', description: 'Select highlighted item' },
@@ -93,7 +90,6 @@ const main = async () => {
     render(<ShortcutsPopupApp
       resultFile={resultFile}
       hasSidebarLayout={data.hasSidebarLayout || false}
-      showRemoteKey={data.showRemoteKey || false}
     />);
   } catch (error) {
     console.error('Failed to read data file:', error);

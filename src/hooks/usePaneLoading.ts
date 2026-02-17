@@ -6,6 +6,7 @@ import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
 import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
+import { atomicWriteJson } from '../utils/atomicWrite.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
@@ -30,31 +31,27 @@ interface PaneLoadResult {
  */
 export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: string[]; titleToId: Map<string, string> }> {
   const tmuxService = TmuxService.getInstance();
-  let allPaneIds: string[] = [];
-  let titleToId = new Map<string, string>();
   let retryCount = 0;
 
   while (retryCount <= maxRetries) {
     try {
-      // Get all panes in session with their titles
-      const allPanes = await tmuxService.getAllPaneIds();
+      const paneInfo = await tmuxService.getAllPaneInfo();
+      const allPaneIds: string[] = [];
+      const titleToId = new Map<string, string>();
 
-      // Fetch titles for each pane
-      for (const id of allPanes) {
-        try {
-          const title = await tmuxService.getPaneTitle(id);
-          // Filter out dmux internal panes (spacer, control pane, etc.)
-          if (id && id.startsWith('%') && title !== 'dmux-spacer') {
-            allPaneIds.push(id);
-            if (title) titleToId.set(title.trim(), id);
-          }
-        } catch {
-          // Skip panes we can't get titles for
+      for (const pane of paneInfo) {
+        if (!pane.paneId || !pane.paneId.startsWith('%') || pane.title === 'dmux-spacer') {
           continue;
+        }
+        allPaneIds.push(pane.paneId);
+        if (pane.title) {
+          titleToId.set(pane.title.trim(), pane.paneId);
         }
       }
 
-      if (allPaneIds.length > 0 || retryCount === maxRetries) break;
+      if (allPaneIds.length > 0 || retryCount === maxRetries) {
+        return { allPaneIds, titleToId };
+      }
     } catch (error) {
       // Retry on tmux command failure (common during rapid pane creation/destruction)
   //       LogService.getInstance().debug(
@@ -66,7 +63,7 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
     retryCount++;
   }
 
-  return { allPaneIds, titleToId };
+  return { allPaneIds: [], titleToId: new Map() };
 }
 
 /**
@@ -291,7 +288,7 @@ export async function loadAndProcessPanes(
         const config = JSON.parse(configContent);
         config.panes = reboundPanes;
         config.lastUpdated = new Date().toISOString();
-        await fs.writeFile(panesFile, JSON.stringify(config, null, 2));
+        await atomicWriteJson(panesFile, config);
         LogService.getInstance().debug('Saved cleaned config after removing stale shell panes', 'usePaneLoading');
       } catch (saveError) {
         LogService.getInstance().debug(

@@ -14,10 +14,9 @@ interface Params {
   setStatusMessage: (msg: string) => void;
   setShowMergeConfirmation: (v: boolean) => void;
   setMergedPane: (pane: DmuxPane | null) => void;
-  forceRepaint?: () => void;
 }
 
-export default function useWorktreeActions({ panes, savePanes, setStatusMessage, setShowMergeConfirmation, setMergedPane, forceRepaint }: Params) {
+export default function useWorktreeActions({ panes, savePanes, setStatusMessage, setShowMergeConfirmation, setMergedPane }: Params) {
   const showTemporary = useTemporaryStatus(setStatusMessage);
 
   const closePane = useCallback(async (pane: DmuxPane) => {
@@ -30,14 +29,6 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
       if (pane.devWindowId) {
         try { await tmuxService.killWindow(pane.devWindowId); } catch {}
       }
-
-      // CRITICAL: Force repaint FIRST to prevent blank screen
-      if (forceRepaint) {
-        forceRepaint();
-      }
-
-      // Minimal clearing to avoid layout shifts
-      process.stdout.write('\x1b[2J\x1b[H');
 
       await tmuxService.killPane(pane.paneId);
       // Don't apply global layouts - just enforce sidebar width
@@ -53,7 +44,7 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
     } catch {
       showTemporary('Failed to close pane', 2000);
     }
-  }, [panes, savePanes, showTemporary, forceRepaint]);
+  }, [panes, savePanes, showTemporary]);
 
   const mergeWorktree = useCallback(async (pane: DmuxPane) => {
     if (!pane.worktreePath) {

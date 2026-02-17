@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import type { DmuxPane, AgentStatus } from '../types.js';
 import { getStatusDetector } from '../services/StatusDetector.js';
+import { LogService } from '../services/LogService.js';
 
 interface UseAgentStatusParams {
   panes: DmuxPane[];
@@ -16,6 +17,7 @@ export default function useAgentStatus({ panes, suspend, onPaneRemoved }: UseAge
   const statusDetector = useRef(getStatusDetector());
   const panesRef = useRef(panes);
   const onPaneRemovedRef = useRef(onPaneRemoved);
+  const lastMonitorSignature = useRef('');
 
   // Keep refs up to date
   panesRef.current = panes;
@@ -27,6 +29,10 @@ export default function useAgentStatus({ panes, suspend, onPaneRemoved }: UseAge
     // Subscribe to status updates from the detector
     const handleStatusUpdate = (event: any) => {
       setStatuses(prevStatuses => {
+        const existing = prevStatuses.get(event.paneId);
+        if (existing === event.status) {
+          return prevStatuses;
+        }
         const newStatuses = new Map(prevStatuses);
         newStatuses.set(event.paneId, event.status);
         return newStatuses;
@@ -64,14 +70,25 @@ export default function useAgentStatus({ panes, suspend, onPaneRemoved }: UseAge
 
   useEffect(() => {
     const detector = statusDetector.current;
+    const paneSignature = panes.map((pane) => pane.id).join(',');
+
+    if (suspend || panes.length === 0) {
+      lastMonitorSignature.current = '';
+      return;
+    }
+
+    if (lastMonitorSignature.current === paneSignature) {
+      return;
+    }
+    lastMonitorSignature.current = paneSignature;
 
     // Update monitoring when panes change or suspend state changes
-    if (!suspend && panes.length > 0) {
-      // Start monitoring these panes
-      detector.monitorPanes(panes).catch(err => {
-        console.error('Failed to monitor panes:', err);
-      });
-    }
+    detector.monitorPanes(panes).catch(err => {
+      LogService.getInstance().debug(
+        `Failed to monitor panes: ${err instanceof Error ? err.message : String(err)}`,
+        'useAgentStatus'
+      );
+    });
   }, [panes, suspend]);
 
   return statuses;

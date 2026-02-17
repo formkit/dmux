@@ -98,13 +98,6 @@ async function poll(): Promise<void> {
 
       lastSnapshot = newSnapshot;
 
-      // Also send periodic heartbeat so main thread knows worker is alive
-      parentPort?.postMessage({
-        type: 'heartbeat',
-        paneCount: paneIds.length,
-        timestamp: Date.now(),
-      });
-
     } catch (error) {
       parentPort?.postMessage({
         type: 'error',

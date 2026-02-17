@@ -67,9 +67,6 @@ async function executeCloseOption(
   context: ActionContext,
   option: string
 ): Promise<ActionResult> {
-  console.error(`[closeAction] executeCloseOption called for pane ${pane.id} (slug: ${pane.slug}) with option: ${option}`);
-  console.error(`[closeAction] Context has ${context.panes.length} panes: ${context.panes.map(p => p.id).join(', ')}`);
-
   const lifecycleManager = PaneLifecycleManager.getInstance();
 
   try {
@@ -95,9 +92,7 @@ async function executeCloseOption(
       // This prevents the race condition where polling detects "missing" pane
       // and recreates it before we finish closing
       const updatedPanes = context.panes.filter(p => p.id !== pane.id);
-      console.error(`[closeAction] Removing pane ${pane.id} from config FIRST, result: ${updatedPanes.length} panes`);
       await context.savePanes(updatedPanes);
-      console.error(`[closeAction] Config saved, now killing tmux pane`);
 
       // NOW kill the tmux pane (after config is updated)
       // CRITICAL FIX: First verify the pane exists before trying to interact with it
@@ -146,7 +141,6 @@ async function executeCloseOption(
             });
             if (updatedPaneList.includes(pane.paneId)) {
               const msg = `Pane ${pane.paneId} still exists after kill attempt`;
-              console.error(`Warning: ${msg}`);
               LogService.getInstance().warn(msg, 'paneActions', pane.id);
             }
           } catch {
@@ -155,7 +149,6 @@ async function executeCloseOption(
         } catch (killError) {
           // Pane might already be dead, which is fine
           const msg = `Error killing pane ${pane.paneId}`;
-          console.error(msg, killError);
           LogService.getInstance().error(msg, 'paneActions', pane.id, killError instanceof Error ? killError : undefined);
         }
       } else {
@@ -247,22 +240,6 @@ async function executeCloseOption(
         LogService.getInstance().debug('Failed to recalculate layout after pane close', 'paneActions');
       }
 
-      // Wait a bit for the file save to stabilize
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // CRITICAL: Aggressively clear terminal BEFORE returning success
-      // This prevents artifacts when Ink re-renders the status message
-      try {
-        // Clear screen with ANSI codes
-        process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-        // Clear tmux history and scrollback
-        execSync('tmux clear-history', { stdio: 'pipe' });
-        // Force tmux client refresh
-        execSync('tmux refresh-client', { stdio: 'pipe' });
-      } catch {
-        // Ignore clearing errors
-      }
-
       // Trigger pane_closed hook (after everything is cleaned up)
       await triggerHook('pane_closed', projectRoot, pane);
 
@@ -287,13 +264,6 @@ async function executeCloseOption(
       await lifecycleManager.completeClose(pane.paneId);
     }
   } catch (error) {
-    // Clear before showing error too
-    try {
-      process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-      execSync('tmux clear-history', { stdio: 'pipe' });
-      execSync('tmux refresh-client', { stdio: 'pipe' });
-    } catch {}
-
     // Release lifecycle lock on error
     await lifecycleManager.completeClose(pane.id);
     await lifecycleManager.completeClose(pane.paneId);

@@ -26,8 +26,6 @@ export interface PopupManagerConfig {
   terminalHeight: number
   availableAgents: Array<"claude" | "opencode" | "codex">
   agentChoice: "claude" | "opencode" | "codex" | null
-  serverPort?: number
-  server?: any
   settingsManager: any
   projectSettings: ProjectSettings
 }
@@ -406,55 +404,8 @@ export class PopupManager {
         },
         {
           hasSidebarLayout,
-          showRemoteKey: !!this.config.server,
         }
       )
-    } catch (error: any) {
-      this.showTempMessage(`Failed to launch popup: ${error.message}`)
-    }
-  }
-
-  async launchRemotePopup(
-    tunnelUrl: string,
-    onCopied: () => void
-  ): Promise<void> {
-    if (!this.checkPopupSupport()) return
-    if (!this.config.server || !this.config.serverPort || !tunnelUrl) {
-      this.showTempMessage("Tunnel not ready")
-      return
-    }
-
-    try {
-      // Prepare status file with existing tunnel URL
-      const tunnelStatusFile = `/tmp/dmux-tunnel-status-${Date.now()}.json`
-      await fs.writeFile(tunnelStatusFile, JSON.stringify({ url: tunnelUrl }))
-
-      const result = await this.launchPopup<{ closed: boolean; copied: boolean }>(
-        "remotePopup.js",
-        [],
-        {
-          width: 60,
-          height: 30,
-          title: "🌐 Remote Access",
-          positioning: "centered",
-        },
-        {
-          loading: false,
-          serverPort: this.config.serverPort,
-          statusFile: tunnelStatusFile,
-        }
-      )
-
-      // Clean up status file
-      try {
-        await fs.unlink(tunnelStatusFile)
-      } catch {
-        // Intentionally silent - status file cleanup is optional
-      }
-
-      if (result && (result as any).copied) {
-        onCopied()
-      }
     } catch (error: any) {
       this.showTempMessage(`Failed to launch popup: ${error.message}`)
     }

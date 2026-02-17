@@ -6,17 +6,9 @@ import ToastNotification from './ToastNotification.js';
 interface FooterHelpProps {
   show: boolean;
   gridInfo?: string;
-  showRemoteKey?: boolean;
   quitConfirmMode?: boolean;
-  hasSidebarLayout?: boolean;
-  serverPort?: number;
   unreadErrorCount?: number;
   unreadWarningCount?: number;
-  localIp?: string;
-  tunnelUrl?: string | null;
-  tunnelCreating?: boolean;
-  tunnelSpinner?: string;
-  tunnelCopied?: boolean;
   currentToast?: Toast | null;
   toastQueueLength?: number;
   toastQueuePosition?: number | null;
@@ -25,17 +17,9 @@ interface FooterHelpProps {
 const FooterHelp: React.FC<FooterHelpProps> = memo(({
   show,
   gridInfo,
-  showRemoteKey = false,
   quitConfirmMode = false,
-  hasSidebarLayout = false,
-  serverPort,
   unreadErrorCount = 0,
   unreadWarningCount = 0,
-  localIp,
-  tunnelUrl,
-  tunnelCreating = false,
-  tunnelSpinner = '⠋',
-  tunnelCopied = false,
   currentToast,
   toastQueueLength = 0,
   toastQueuePosition
@@ -142,42 +126,6 @@ const FooterHelp: React.FC<FooterHelpProps> = memo(({
           </Text>
         )}
       </Box>
-
-      {/* Network section with dividers - always show if server is running */}
-      {(serverPort ?? 0) > 0 && (
-        <>
-          <Divider />
-          {/* Local network IP */}
-          <Text>
-            <Text>🏠 </Text>
-            <Text color="cyan">http://{localIp || '127.0.0.1'}:{serverPort}</Text>
-          </Text>
-          {/* Remote tunnel status */}
-          <Text>
-            <Text>🌐 </Text>
-            {tunnelCopied ? (
-              <Text color="green">Copied!</Text>
-            ) : tunnelCreating ? (
-              <>
-                <Text color="yellow">{tunnelSpinner} </Text>
-                <Text dimColor>Creating tunnel...</Text>
-              </>
-            ) : tunnelUrl ? (
-              <>
-                <Text color="green">Connected. </Text>
-                <Text color="cyan">[R]</Text>
-                <Text> to view</Text>
-              </>
-            ) : (
-              <>
-                <Text color="cyan">[R]</Text>
-                <Text>emote tunnel</Text>
-              </>
-            )}
-          </Text>
-          <Divider />
-        </>
-      )}
 
       {/* Keyboard shortcuts */}
       <Text dimColor>

@@ -22,7 +22,6 @@ interface UseActionSystemParams {
   projectName: string;
   onPaneUpdate?: (pane: DmuxPane) => void;
   onPaneRemove?: (paneId: string) => void;
-  forceRepaint?: () => void;
   onActionResult?: (result: ActionResult) => Promise<void>;
 
   // Popup launchers (optional - falls back to inline dialogs if not provided)
@@ -40,20 +39,13 @@ interface UseActionSystemParams {
  *
  * @param result - The action result to handle
  * @param popupLaunchers - Available popup launchers
- * @param context - Action context for forceRepaint
- * @param setActionState - State setter for inline fallback
  */
 async function handleResultWithPopups(
   result: ActionResult,
-  popupLaunchers: UseActionSystemParams['popupLaunchers'],
-  context: ActionContext,
-  setActionState: (updater: (prev: TUIActionState) => TUIActionState) => void
+  popupLaunchers: UseActionSystemParams['popupLaunchers']
 ): Promise<void> {
-  console.error(`[useActionSystem] handleResultWithPopups called with type: ${result.type}, title: ${result.title || result.message?.substring(0, 50)}`);
-
   // Handle confirm dialogs
   if (result.type === 'confirm' && popupLaunchers?.launchConfirmPopup) {
-    console.error(`[useActionSystem] Launching confirm popup: ${result.title}`);
     const confirmed = await popupLaunchers.launchConfirmPopup(
       result.title || 'Confirm',
       result.message,
@@ -61,17 +53,12 @@ async function handleResultWithPopups(
       result.cancelLabel
     );
 
-    console.error(`[useActionSystem] Popup result: confirmed=${confirmed}`);
     if (confirmed && result.onConfirm) {
-      console.error(`[useActionSystem] Calling onConfirm callback`);
       const nextResult = await result.onConfirm();
-      console.error(`[useActionSystem] onConfirm returned type: ${nextResult.type}`);
-      await handleResultWithPopups(nextResult, popupLaunchers, context, setActionState);
+      await handleResultWithPopups(nextResult, popupLaunchers);
     } else if (!confirmed && result.onCancel) {
-      console.error(`[useActionSystem] Calling onCancel callback`);
       const nextResult = await result.onCancel();
-      console.error(`[useActionSystem] onCancel returned type: ${nextResult.type}`);
-      await handleResultWithPopups(nextResult, popupLaunchers, context, setActionState);
+      await handleResultWithPopups(nextResult, popupLaunchers);
     }
     return;
   }
@@ -86,7 +73,7 @@ async function handleResultWithPopups(
 
     if (selectedId && result.onSelect) {
       const nextResult = await result.onSelect(selectedId);
-      await handleResultWithPopups(nextResult, popupLaunchers, context, setActionState);
+      await handleResultWithPopups(nextResult, popupLaunchers);
     }
     return;
   }
@@ -102,7 +89,7 @@ async function handleResultWithPopups(
 
     if (inputValue !== null && result.onSubmit) {
       const nextResult = await result.onSubmit(inputValue);
-      await handleResultWithPopups(nextResult, popupLaunchers, context, setActionState);
+      await handleResultWithPopups(nextResult, popupLaunchers);
     }
     return;
   }
@@ -112,13 +99,6 @@ async function handleResultWithPopups(
   const { default: stateManager } = await import('../shared/StateManager.js');
   const type = result.type === 'error' ? 'error' : result.type === 'success' ? 'success' : 'info';
   stateManager.showToast(result.message, type);
-
-  // Force repaint after showing toast
-  if (context.forceRepaint) {
-    setTimeout(() => {
-      context.forceRepaint!();
-    }, 100);
-  }
 }
 
 export default function useActionSystem({
@@ -128,7 +108,6 @@ export default function useActionSystem({
   projectName,
   onPaneUpdate,
   onPaneRemove,
-  forceRepaint,
   onActionResult,
   popupLaunchers,
 }: UseActionSystemParams) {
@@ -143,9 +122,8 @@ export default function useActionSystem({
     savePanes,
     onPaneUpdate,
     onPaneRemove,
-    forceRepaint,
     onActionResult,
-  }), [panes, sessionName, projectName, savePanes, onPaneUpdate, onPaneRemove, forceRepaint, onActionResult]);
+  }), [panes, sessionName, projectName, savePanes, onPaneUpdate, onPaneRemove, onActionResult]);
 
   // Execute an action and handle the result
   const executeActionWithHandling = useCallback(async (
@@ -158,7 +136,7 @@ export default function useActionSystem({
 
       // If popup launchers are available, handle interactive results with popups
       if (popupLaunchers) {
-        await handleResultWithPopups(result, popupLaunchers, context, setActionState);
+        await handleResultWithPopups(result, popupLaunchers);
       } else {
         // Fall back to inline dialogs if popup launchers not available
         handleActionResult(result, actionState, (updates) => {
@@ -208,7 +186,7 @@ export default function useActionSystem({
 
       // Handle the result (may trigger more dialogs)
       if (popupLaunchers) {
-        await handleResultWithPopups(result, popupLaunchers, context, setActionState);
+        await handleResultWithPopups(result, popupLaunchers);
       } else {
         handleActionResult(result, actionState, (updates) => {
           setActionState(prev => ({ ...prev, ...updates }));
