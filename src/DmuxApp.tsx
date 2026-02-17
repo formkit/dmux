@@ -39,6 +39,11 @@ import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
+import {
+  getAgentSlugSuffix,
+  type AgentName,
+} from "./utils/agentLaunch.js"
+import { generateSlug } from "./utils/slug.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -109,7 +114,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Agent selection state
   const { availableAgents } = useAgentDetection()
-  const [agentChoice, setAgentChoice] = useState<"claude" | "opencode" | "codex" | null>(
+  const [agentChoice, setAgentChoice] = useState<AgentName | null>(
     null
   )
 
@@ -417,20 +422,48 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     targetProjectRoot?: string
   ) => {
     const agents = availableAgents
+
+    const createPanesForAgents = async (selectedAgents: AgentName[]) => {
+      const dedupedAgents = selectedAgents.filter(
+        (agent, index) => selectedAgents.indexOf(agent) === index
+      )
+
+      let panesForCreation = panes
+      const isMultiLaunch = dedupedAgents.length > 1
+      const slugBase = isMultiLaunch ? await generateSlug(prompt) : undefined
+
+      for (const selectedAgent of dedupedAgents) {
+        const pane = await createNewPaneHook(prompt, selectedAgent, {
+          existingPanes: panesForCreation,
+          slugSuffix: isMultiLaunch
+            ? getAgentSlugSuffix(selectedAgent)
+            : undefined,
+          slugBase,
+          targetProjectRoot,
+        })
+
+        if (!pane) {
+          return
+        }
+
+        panesForCreation = [...panesForCreation, pane]
+      }
+    }
+
     if (agents.length === 0) {
       await createNewPaneHook(prompt, undefined, { targetProjectRoot })
     } else if (agents.length === 1) {
-      await createNewPaneHook(prompt, agents[0], { targetProjectRoot })
+      await createPanesForAgents([agents[0]])
     } else {
       // Multiple agents available - check for default agent setting first
       const settings = settingsManager.getSettings()
       if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
-        await createNewPaneHook(prompt, settings.defaultAgent, { targetProjectRoot })
+        await createPanesForAgents([settings.defaultAgent])
       } else {
         // Show agent choice popup
-        const selectedAgent = await popupManager.launchAgentChoicePopup()
-        if (selectedAgent) {
-          await createNewPaneHook(prompt, selectedAgent, { targetProjectRoot })
+        const selectedAgents = await popupManager.launchAgentChoicePopup()
+        if (selectedAgents && selectedAgents.length > 0) {
+          await createPanesForAgents(selectedAgents)
         }
       }
     }

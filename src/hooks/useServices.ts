@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { PopupManager, type PopupManagerConfig } from "../services/PopupManager.js"
 import type { ProjectSettings } from "../types.js"
+import type { AgentName } from "../utils/agentLaunch.js"
 
 interface UseServicesProps {
   // PopupManager config
@@ -9,8 +10,8 @@ interface UseServicesProps {
   popupsSupported: boolean
   terminalWidth: number
   terminalHeight: number
-  availableAgents: Array<"claude" | "opencode" | "codex">
-  agentChoice: "claude" | "opencode" | "codex" | null
+  availableAgents: AgentName[]
+  agentChoice: AgentName | null
   settingsManager: any
   projectSettings: ProjectSettings
 
