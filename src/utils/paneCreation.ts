@@ -22,6 +22,8 @@ export interface CreatePaneOptions {
   agent?: 'claude' | 'opencode' | 'codex';
   projectName: string;
   existingPanes: DmuxPane[];
+  slugSuffix?: string;
+  slugBase?: string;
   projectRoot?: string; // Target repository root for the new pane
   sessionConfigPath?: string; // Shared dmux config file for the current session
   sessionProjectRoot?: string; // Session root that owns sidebar/welcome pane state

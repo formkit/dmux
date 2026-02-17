@@ -117,6 +117,39 @@ export function useInputHandling(params: UseInputHandlingParams) {
     findCardInDirection,
   } = params
 
+  const handleCreatePaneInProject = async () => {
+    const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+    const defaultProjectPath = selectedPane
+      ? getPaneProjectRoot(selectedPane, projectRoot)
+      : projectRoot
+
+    const requestedProjectPath = await popupManager.launchInputPopup(
+      "Select Project",
+      "Enter a repository path (repo root or any subdirectory)",
+      "~/projects/my-app",
+      defaultProjectPath
+    )
+
+    if (!requestedProjectPath) {
+      return
+    }
+
+    try {
+      const { resolveProjectRootFromPath } = await import("../utils/projectRoot.js")
+      const resolved = resolveProjectRootFromPath(requestedProjectPath, projectRoot)
+
+      const promptValue = await popupManager.launchNewPanePopup(resolved.projectRoot)
+      if (!promptValue) {
+        return
+      }
+
+      await handlePaneCreationWithAgent(promptValue, resolved.projectRoot)
+    } catch (error: any) {
+      setStatusMessage(error?.message || "Invalid project path")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    }
+  }
+
   useInput(async (input: string, key: any) => {
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
@@ -332,38 +365,16 @@ export function useInputHandling(params: UseInputHandlingParams) {
         await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
       }
       return
-    } else if (!isLoading && input === "N") {
-      // Create pane in a different project (Shift+N)
-      const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
-      const defaultProjectPath = selectedPane
-        ? getPaneProjectRoot(selectedPane, projectRoot)
-        : projectRoot
-
-      const requestedProjectPath = await popupManager.launchInputPopup(
-        "Select Project",
-        "Enter a repository path (repo root or any subdirectory)",
-        "~/projects/my-app",
-        defaultProjectPath
+    } else if (
+      !isLoading &&
+      (
+        input === "p" ||
+        input === "N" ||
+        (key.return && selectedIndex === panes.length + 2)
       )
-
-      if (!requestedProjectPath) {
-        return
-      }
-
-      try {
-        const { resolveProjectRootFromPath } = await import("../utils/projectRoot.js")
-        const resolved = resolveProjectRootFromPath(requestedProjectPath, projectRoot)
-
-        const promptValue = await popupManager.launchNewPanePopup(resolved.projectRoot)
-        if (!promptValue) {
-          return
-        }
-
-        await handlePaneCreationWithAgent(promptValue, resolved.projectRoot)
-      } catch (error: any) {
-        setStatusMessage(error?.message || "Invalid project path")
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
-      }
+    ) {
+      // Create pane in another project ([p]rojects card, with Shift+N fallback)
+      await handleCreatePaneInProject()
       return
     } else if (
       !isLoading &&

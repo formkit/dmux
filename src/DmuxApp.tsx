@@ -418,19 +418,19 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   ) => {
     const agents = availableAgents
     if (agents.length === 0) {
-      await createNewPaneHook(prompt, undefined, targetProjectRoot)
+      await createNewPaneHook(prompt, undefined, { targetProjectRoot })
     } else if (agents.length === 1) {
-      await createNewPaneHook(prompt, agents[0], targetProjectRoot)
+      await createNewPaneHook(prompt, agents[0], { targetProjectRoot })
     } else {
       // Multiple agents available - check for default agent setting first
       const settings = settingsManager.getSettings()
       if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
-        await createNewPaneHook(prompt, settings.defaultAgent, targetProjectRoot)
+        await createNewPaneHook(prompt, settings.defaultAgent, { targetProjectRoot })
       } else {
         // Show agent choice popup
         const selectedAgent = await popupManager.launchAgentChoicePopup()
         if (selectedAgent) {
-          await createNewPaneHook(prompt, selectedAgent, targetProjectRoot)
+          await createNewPaneHook(prompt, selectedAgent, { targetProjectRoot })
         }
       }
     }
@@ -852,7 +852,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined
           const cols = Math.max(1, Math.floor(terminalWidth / 37))
-          const rows = Math.ceil((panes.length + 1) / cols)
+          const rows = Math.ceil((panes.length + 3) / cols)
           const pos = getCardGridPosition(selectedIndex)
           return `Grid: ${cols} cols × ${rows} rows | Selected: row ${pos.row}, col ${pos.col} | Terminal: ${terminalWidth}w`
         })()}

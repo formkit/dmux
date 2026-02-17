@@ -55,6 +55,7 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
    cd /path/to/your/project
    dmux
    ```
+   If you run `dmux` from a different repo while already inside a `dmux-*` tmux session, dmux will prompt to add that repo into the current session.
 
 2. **Create a new development pane**
    - Press `n` or select "+ New dmux pane"
@@ -77,7 +78,8 @@ Get your API key from [OpenRouter](https://openrouter.ai/).
 | `↑/↓` | Navigate pane list |
 | `Enter` or `j` | Jump to selected pane |
 | `n` | Create new dmux pane |
-| `N` | Create pane in another project |
+| `p` | Create pane in another project |
+| `N` | Create pane in another project (legacy) |
 | `m` | Merge worktree to main |
 | `x` | Close selected pane |
 | `q` | Quit dmux interface |

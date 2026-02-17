@@ -15,6 +15,13 @@ interface Params {
   availableAgents: Array<'claude' | 'opencode' | 'codex'>;
 }
 
+interface CreateNewPaneOptions {
+  existingPanes?: DmuxPane[];
+  slugSuffix?: string;
+  slugBase?: string;
+  targetProjectRoot?: string;
+}
+
 export default function usePaneCreation({
   panes,
   savePanes,
@@ -50,8 +57,10 @@ export default function usePaneCreation({
   const createNewPane = async (
     prompt: string,
     agent?: 'claude' | 'opencode' | 'codex',
-    targetProjectRoot?: string
-  ) => {
+    options: CreateNewPaneOptions = {}
+  ): Promise<DmuxPane | null> => {
+    const panesForCreation = options.existingPanes ?? panes;
+
     try {
       setIsCreatingPane(true)
       setStatusMessage("Creating pane...")
@@ -62,8 +71,10 @@ export default function usePaneCreation({
           prompt,
           agent,
           projectName,
-          existingPanes: panes,
-          projectRoot: targetProjectRoot,
+          existingPanes: panesForCreation,
+          slugSuffix: options.slugSuffix,
+          slugBase: options.slugBase,
+          projectRoot: options.targetProjectRoot,
           sessionProjectRoot,
           sessionConfigPath: panesFile,
         },
@@ -75,21 +86,23 @@ export default function usePaneCreation({
         // before calling createNewPane, but just in case
         setStatusMessage('Agent choice is required');
         setTimeout(() => setStatusMessage(''), 3000);
-        return;
+        return null;
       }
 
       // Save the pane
-      const updatedPanes = [...panes, result.pane];
+      const updatedPanes = [...panesForCreation, result.pane];
       await savePanes(updatedPanes);
 
       await loadPanes();
       setStatusMessage("Pane created")
       setTimeout(() => setStatusMessage(""), 2000)
+      return result.pane;
     } catch (error) {
       const msg = 'Failed to create pane';
       LogService.getInstance().error(msg, 'usePaneCreation', undefined, error instanceof Error ? error : undefined);
       setStatusMessage(`Failed to create pane: ${error}`);
       setTimeout(() => setStatusMessage(''), 3000);
+      return null;
     } finally {
       setIsCreatingPane(false)
     }

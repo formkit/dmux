@@ -23,7 +23,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   fallbackProjectRoot,
   fallbackProjectName,
 }) => {
-  // Two buttons at the end: "new agent" and "new terminal"
+  // Action cards at the end: "new agent", "terminal", and "projects"
   const paneGroups = useMemo(
     () => groupPanesByProject(panes, fallbackProjectRoot, fallbackProjectName),
     [panes, fallbackProjectRoot, fallbackProjectName]
@@ -73,61 +73,92 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
       ))}
 
       {!isLoading && (
-        <Box marginTop={panes.length === 0 ? 1 : 0} flexDirection="row" gap={1}>
-          <Box
-            borderStyle="round"
-            borderColor={
-              selectedIndex === panes.length
-                ? COLORS.borderSelected
-                : COLORS.border
-            }
-            paddingX={1}
-          >
-            <Text
-              color={
-                selectedIndex === panes.length ? COLORS.success : COLORS.border
-              }
-            >
-              +{" "}
-            </Text>
-            <Text
-              color={
+        <Box marginTop={panes.length === 0 ? 1 : 0} flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            <Box
+              borderStyle="round"
+              borderColor={
                 selectedIndex === panes.length
-                  ? COLORS.selected
-                  : COLORS.unselected
-              }
-              bold={selectedIndex === panes.length}
-            >
-              <Text color={COLORS.accent}>[n]</Text>ew agent
-            </Text>
-          </Box>
-          <Box
-            borderStyle="round"
-            borderColor={
-              selectedIndex === panes.length + 1
-                ? COLORS.borderSelected
-                : COLORS.border
-            }
-            paddingX={1}
-          >
-            <Text
-              color={
-                selectedIndex === panes.length + 1
-                  ? COLORS.success
+                  ? COLORS.borderSelected
                   : COLORS.border
               }
+              paddingX={1}
+            >
+              <Text
+                color={
+                  selectedIndex === panes.length ? COLORS.success : COLORS.border
+                }
+              >
+                +{" "}
+              </Text>
+              <Text
+                color={
+                  selectedIndex === panes.length
+                    ? COLORS.selected
+                    : COLORS.unselected
+                }
+                bold={selectedIndex === panes.length}
+              >
+                <Text color={COLORS.accent}>[n]</Text>ew agent
+              </Text>
+            </Box>
+            <Box
+              borderStyle="round"
+              borderColor={
+                selectedIndex === panes.length + 1
+                  ? COLORS.borderSelected
+                  : COLORS.border
+              }
+              paddingX={1}
+            >
+              <Text
+                color={
+                  selectedIndex === panes.length + 1
+                    ? COLORS.success
+                    : COLORS.border
+                }
+              >
+                +{" "}
+              </Text>
+              <Text
+                color={
+                  selectedIndex === panes.length + 1
+                    ? COLORS.selected
+                    : COLORS.unselected
+                }
+                bold={selectedIndex === panes.length + 1}
+              >
+                <Text color={COLORS.accent}>[t]</Text>erminal
+              </Text>
+            </Box>
+          </Box>
+
+          <Box
+            marginTop={1}
+            borderStyle="round"
+            borderColor={
+              selectedIndex === panes.length + 2
+                ? COLORS.borderSelected
+                : COLORS.border
+            }
+            paddingX={1}
+          >
+            <Text
+              color={
+                selectedIndex === panes.length + 2 ? COLORS.success : COLORS.border
+              }
             >
               +{" "}
             </Text>
             <Text
               color={
-                selectedIndex === panes.length + 1
+                selectedIndex === panes.length + 2
                   ? COLORS.selected
                   : COLORS.unselected
               }
-              bold={selectedIndex === panes.length + 1}
+              bold={selectedIndex === panes.length + 2}
             >
-              <Text color={COLORS.accent}>[t]</Text>erminal
+              <Text color={COLORS.accent}>[p]</Text>rojects
             </Text>
           </Box>
         </Box>
