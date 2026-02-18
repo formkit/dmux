@@ -28,13 +28,6 @@ export const sections = [
       { path: '/multi-project', title: 'Multi-Project' },
     ],
   },
-  {
-    title: 'Reference',
-    pages: [
-      { path: '/web-dashboard', title: 'Web Dashboard' },
-      { path: '/troubleshooting', title: 'Troubleshooting' },
-    ],
-  },
 ];
 
 // Add load function to each page

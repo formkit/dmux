@@ -5,37 +5,13 @@ export function render() {
     <h1>Getting Started</h1>
     <p class="lead">Get dmux running in under a minute. All you need is tmux, Node.js, and at least one AI coding agent.</p>
 
-    <h2>Prerequisites</h2>
-    <ul>
-      <li><strong>tmux</strong> 3.0 or later</li>
-      <li><strong>Node.js</strong> 18 or later</li>
-      <li><strong>Git</strong> 2.20 or later</li>
-      <li>At least one agent CLI: <code>claude</code>, <code>opencode</code>, or <code>codex</code></li>
-    </ul>
-
-    <h3>Installing tmux</h3>
-    <pre><code data-lang="bash"># macOS
-brew install tmux
-
-# Ubuntu/Debian
-sudo apt install tmux
-
-# Verify version
-tmux -V</code></pre>
-
-    <h3>Installing an Agent</h3>
-    <p>dmux works with any of these AI coding agents. Install at least one:</p>
-    <pre><code data-lang="bash"># Claude Code (Anthropic)
-npm install -g @anthropic-ai/claude-code
-
-# opencode
-# See https://github.com/opencode-ai/opencode
-
-# Codex (OpenAI)
-npm install -g @openai/codex</code></pre>
-
     <h2>Install dmux</h2>
     <pre><code data-lang="bash">npm -g i dmux</code></pre>
+
+    <h2>Set Up OpenRouter (Recommended)</h2>
+    <p>Before your first run, we recommend setting up an <a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a> API key. dmux uses it to generate smart branch names from your prompts and AI-powered commit messages when merging. Without it, branch names fall back to <code>dmux-{timestamp}</code> and commit messages will be generic.</p>
+    <pre><code data-lang="bash">export OPENROUTER_API_KEY="sk-or-..."</code></pre>
+    <p>Add this to your shell profile (<code>~/.zshrc</code> or <code>~/.bashrc</code>) so it persists across sessions. See <a href="#configuration">Configuration</a> for model options and details.</p>
 
     <h2>First Run</h2>
     <ol>
@@ -78,10 +54,52 @@ npm install -g @openai/codex</code></pre>
       Add <code>.dmux/</code> to your project's <code>.gitignore</code>. dmux will suggest this on first run.
     </div>
 
-    <h2>OpenRouter API Key (Optional)</h2>
-    <p>dmux uses OpenRouter to generate smart branch names and commit messages. Without it, branch names fall back to <code>dmux-{timestamp}</code>.</p>
-    <pre><code data-lang="bash">export OPENROUTER_API_KEY="sk-or-..."</code></pre>
-    <p>Add this to your shell profile (<code>~/.zshrc</code> or <code>~/.bashrc</code>) to persist it. See <a href="#/configuration">Configuration</a> for details.</p>
+    <h2>tmux Configuration</h2>
+    <p>On first run, dmux will detect if you have no tmux config and offer to install a recommended preset (dark or light theme). This handles pane borders, navigation bindings, mouse support, and clipboard integration automatically.</p>
+    <p>If you'd rather configure tmux manually, edit <code>~/.tmux.conf</code> (or <code>~/.config/tmux/tmux.conf</code>). Here's a solid starting point:</p>
+    <pre><code data-lang="bash"># Extended keys for Ctrl-Shift-Arrow support
+set -g extended-keys on
+
+# Active/inactive pane dimming — makes it obvious which pane has focus
+set -g window-style 'fg=colour247,bg=colour236'
+set -g window-active-style 'fg=default,bg=colour234'
+
+# Pane borders with labels showing pane number and current command
+set -g pane-border-style "fg=colour238 bg=default"
+set -g pane-active-border-style "fg=blue bg=default"
+set -g pane-border-format ' #[bold]#P #[default]#{?pane_title,#{pane_title},#{pane_current_command}} '
+set -g pane-border-status top
+
+# Status bar
+set -g status-style 'bg=colour236'
+
+# Fast pane navigation with Ctrl+Shift+Arrow
+bind -n C-S-Left select-pane -L
+bind -n C-S-Right select-pane -R
+bind -n C-S-Up select-pane -U
+bind -n C-S-Down select-pane -D
+
+# Mouse support — click panes, resize, scroll
+set -g mouse on
+
+# Clipboard and terminal passthrough
+set -g set-clipboard on
+set -g allow-passthrough all
+
+# Copy mouse selection to system clipboard (macOS)
+bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
+bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
+
+# Terminal overrides for image/cursor passthrough
+set -ga terminal-overrides ',xterm-256color:Ms=\\E]52;c;%p2%s\\007'
+set -ga terminal-overrides ',*:Ss=\\E[%p1%d q:Se=\\E[2 q'
+set -ga update-environment "TERM_PROGRAM"</code></pre>
+    <p>After editing, reload with <code>tmux source-file ~/.tmux.conf</code> or restart tmux.</p>
+
+    <div class="callout callout-info">
+      <div class="callout-title">Note</div>
+      On Linux, swap <code>pbcopy</code> for <code>wl-copy</code> (Wayland) or <code>xclip -selection clipboard -in</code> (X11) in the clipboard bindings.
+    </div>
 
     <h2>Next Steps</h2>
     <ul>
