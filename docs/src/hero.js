@@ -17,7 +17,7 @@ export function renderHero(starCount) {
           <a href="https://github.com/formkit/dmux" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-5 h-10 rounded-[10px] font-[var(--font-display)] text-sm font-semibold bg-bg-card text-text-primary border border-border-light hover:border-border-hover hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] transition-all cursor-pointer max-sm:w-full max-sm:justify-center max-sm:max-w-[280px]">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="#f0c040" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
             Star
-            <span class="hero-star-badge bg-accent-glow-mid text-accent px-1.5 py-px rounded-lg text-[11.5px] font-semibold tabular-nums ${starCount ? '' : 'hidden'}">${starCount ? formatStars(starCount) : ''}</span>
+            <span class="hero-star-badge bg-accent-glow-mid text-accent px-1.5 py-px rounded-lg text-[11.5px] font-semibold tabular-nums" ${starCount ? '' : 'style="display:none"'}>${starCount ? formatStars(starCount) : ''}</span>
           </a>
           <button id="hero-copy-btn" title="Copy to clipboard" class="hero-install-btn group inline-flex items-center gap-2.5 bg-bg-code border border-border rounded-[10px] px-5 h-10 cursor-pointer hover:border-border-hover hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] transition-all">
             <code class="font-[var(--font-mono)] text-sm font-medium text-accent tracking-[-0.02em] !bg-transparent !border-0 !p-0">npm -g i dmux</code>

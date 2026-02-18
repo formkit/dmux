@@ -41,7 +41,7 @@ async function init() {
     const badge = heroContainer.querySelector('.hero-star-badge');
     if (badge) {
       badge.textContent = formatStars(count);
-      badge.classList.remove('hidden');
+      badge.style.display = '';
     }
   }
 
@@ -106,9 +106,9 @@ function bindEarlyAccessForm() {
 
     // Loading state
     btn.disabled = true;
-    label.classList.add('hidden');
-    spinner.classList.remove('hidden');
-    errorMsg.classList.add('hidden');
+    label.style.display = 'none';
+    spinner.style.display = '';
+    errorMsg.style.display = 'none';
 
     try {
       const res = await fetch('/api/early-access', {
@@ -125,18 +125,18 @@ function bindEarlyAccessForm() {
       // Success — slide form out, show success message
       formWrapper.classList.add('sa-slide-out');
       formWrapper.addEventListener('animationend', () => {
-        formWrapper.classList.add('hidden');
-        successMsg.classList.remove('hidden');
+        formWrapper.style.display = 'none';
+        successMsg.style.display = '';
         successMsg.classList.add('sa-slide-in');
       }, { once: true });
     } catch (err) {
       // Reset button
       btn.disabled = false;
-      label.classList.remove('hidden');
-      spinner.classList.add('hidden');
+      label.style.display = '';
+      spinner.style.display = 'none';
       // Show error
       errorMsg.textContent = err.message;
-      errorMsg.classList.remove('hidden');
+      errorMsg.style.display = '';
     }
   });
 }
