@@ -5,10 +5,10 @@
 export function renderHero(starCount) {
   return `
     <div class="hero relative text-center pt-24 pb-20 px-8 overflow-hidden max-sm:pt-16 max-sm:pb-14 max-sm:px-5">
+      <div class="hero-scanlines absolute inset-0 pointer-events-none z-0"></div>
       <div class="relative z-1">
         <div class="relative inline-block mb-10">
           <img src="/dmux.svg" alt="dmux" class="h-44 w-auto relative z-1 drop-shadow-[0_0_80px_rgba(234,100,0,0.35)] max-sm:h-28" style="animation: hero-logo-in 0.8s cubic-bezier(0.16,1,0.3,1) both" />
-          <div class="hero-scanlines absolute -inset-x-12 -inset-y-6 pointer-events-none z-2 rounded"></div>
         </div>
         <p class="font-[var(--font-display)] text-[42px] font-bold text-text-primary mb-4 tracking-[-0.035em] leading-[1.15] max-sm:text-[26px]" style="animation: fade-up 0.7s 0.1s cubic-bezier(0.16,1,0.3,1) both">Parallel agents with tmux and worktrees</p>
         <p class="text-[17px] text-text-secondary max-w-[520px] mx-auto mb-10 leading-[1.65] max-sm:text-[15px]" style="animation: fade-up 0.7s 0.2s cubic-bezier(0.16,1,0.3,1) both">Manage multiple AI coding agents in isolated git worktrees. Branch, develop, and merge &mdash; all in parallel.</p>
@@ -44,6 +44,17 @@ export async function fetchStars() {
     if (cached) {
       const { count, ts } = JSON.parse(cached);
       if (Date.now() - ts < CACHE_TTL) return count;
+    }
+  } catch {}
+
+  // Try server-side cached endpoint first, fall back to direct GitHub API
+  try {
+    const res = await fetch('/api/stars');
+    if (res.ok) {
+      const data = await res.json();
+      const count = data.stars;
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ count, ts: Date.now() })); } catch {}
+      return count;
     }
   } catch {}
 

@@ -3,7 +3,7 @@ export const meta = { title: 'Getting Started' };
 export function render() {
   return `
     <h1>Getting Started</h1>
-    <p class="lead">Get dmux running in under a minute. All you need is tmux, Node.js, and at least one AI coding agent.</p>
+    <p>Get dmux running in under a minute. All you need is tmux, Node.js, and at least one AI coding agent.</p>
 
     <h2>Install dmux</h2>
     <pre><code data-lang="bash">npm -g i dmux</code></pre>

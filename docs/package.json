@@ -4,13 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite build && vite preview",
+    "deploy": "vite build && wrangler deploy"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.25.1",
     "@tailwindcss/vite": "^4.1.18",
     "tailwindcss": "^4.1.18",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "wrangler": "^4.66.0"
   }
 }

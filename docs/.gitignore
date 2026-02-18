@@ -1,6 +1,9 @@
 # Build output
 dist/
 
+# Cloudflare
+.wrangler
+
 # Dependencies
 node_modules/
 

@@ -2,6 +2,30 @@
  * Content registry - all pages and section definitions
  */
 
+import * as introduction from './introduction.js';
+import * as gettingStarted from './getting-started.js';
+import * as coreConcepts from './core-concepts.js';
+import * as keyboardShortcuts from './keyboard-shortcuts.js';
+import * as merging from './merging.js';
+import * as hooks from './hooks.js';
+import * as configuration from './configuration.js';
+import * as agents from './agents.js';
+import * as multiAgent from './multi-agent.js';
+import * as multiProject from './multi-project.js';
+
+const modules = {
+  introduction,
+  'getting-started': gettingStarted,
+  'core-concepts': coreConcepts,
+  'keyboard-shortcuts': keyboardShortcuts,
+  merging,
+  hooks,
+  configuration,
+  agents,
+  'multi-agent': multiAgent,
+  'multi-project': multiProject,
+};
+
 export const sections = [
   {
     title: 'Overview',
@@ -33,6 +57,7 @@ export const sections = [
 // Add load function to each page
 for (const section of sections) {
   for (const page of section.pages) {
-    page.load = () => import(`./${page.path.slice(1)}.js`);
+    const key = page.path.slice(1);
+    page.load = () => Promise.resolve(modules[key]);
   }
 }

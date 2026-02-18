@@ -93,16 +93,13 @@ a {
 .hero::after {
   content: '';
   position: absolute;
-  top: -80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 500px;
+  inset: 0;
   background: radial-gradient(
-    ellipse at 50% 40%,
+    ellipse at 50% 35%,
     rgba(234, 100, 0, 0.14) 0%,
-    rgba(234, 100, 0, 0.04) 40%,
-    transparent 70%
+    rgba(234, 100, 0, 0.06) 35%,
+    rgba(234, 100, 0, 0.02) 60%,
+    transparent 85%
   );
   pointer-events: none;
 }
@@ -243,13 +240,19 @@ a {
   margin-bottom: 0;
 }
 
-.content > .lead {
+.content .lead {
   font-size: 17px;
   color: var(--color-text-secondary);
   line-height: 1.72;
   margin-bottom: 36px;
   padding-bottom: 28px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.content .doc-section:first-child .lead {
+  font-size: 20px;
+  color: var(--color-text-primary);
+  line-height: 1.65;
 }
 
 /* Inline code */
