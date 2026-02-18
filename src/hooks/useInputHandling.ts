@@ -388,6 +388,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
     } else if (input === "l") {
       // Open logs popup
       await popupManager.launchLogsPopup()
+    } else if (input === "h") {
+      // Launch hooks authoring session directly
+      await launchHooksAuthoringSession()
     } else if (input === "?") {
       // Open keyboard shortcuts popup
       const shortcutsAction = await popupManager.launchShortcutsPopup(!!controlPaneId)

@@ -43,6 +43,7 @@ export function render() {
         <tr><td><kbd>s</kbd></td><td>Open settings dialog</td></tr>
         <tr><td><kbd>l</kbd></td><td>View application logs</td></tr>
         <tr><td><kbd>L</kbd></td><td>Toggle sidebar layout mode (when using grid layout)</td></tr>
+        <tr><td><kbd>h</kbd></td><td>Create or modify hooks with AI</td></tr>
         <tr><td><kbd>?</kbd></td><td>Show keyboard shortcuts help</td></tr>
         <tr><td><kbd>q</kbd></td><td>Quit dmux</td></tr>
       </tbody>

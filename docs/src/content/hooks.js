@@ -5,17 +5,29 @@ export function render() {
     <h1>Hooks</h1>
     <p class="lead">dmux provides 11 lifecycle hooks that let you run custom scripts at key moments — from pane creation to merge completion. Hooks are simple shell scripts that receive context via environment variables.</p>
 
-    <h2>Hook Directory</h2>
-    <p>Hooks are shell scripts placed in a hooks directory. dmux searches for hooks in this priority order:</p>
+    <h2>Creating Hooks with AI</h2>
+    <p>The easiest way to create and edit hooks is with dmux's AI-assisted authoring:</p>
+    <ol>
+      <li>Focus the main dmux pane and press <kbd>h</kbd></li>
+      <li>dmux initializes a <code>.dmux-hooks/</code> directory with documentation and example hooks</li>
+      <li>A new pane opens with an AI agent that walks you through creating or editing hooks for your project</li>
+    </ol>
+    <p>The agent understands all available hook types and environment variables, so you can describe what you want in plain language — like "install dependencies when a worktree is created" or "run tests before merging" — and it will write the scripts for you.</p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Tip</div>
+      Press <kbd>?</kbd> to see all available shortcuts, or access hook authoring from the settings menu with <kbd>s</kbd> → "Manage Hooks".
+    </div>
+
+    <h2>Manual Setup</h2>
+    <p>You can also create hooks by hand. Hooks are shell scripts placed in a hooks directory. dmux searches for hooks in this priority order:</p>
     <ol>
       <li><code>.dmux-hooks/</code> — project root (highest priority)</li>
       <li><code>.dmux/hooks/</code> — inside the dmux data directory</li>
       <li><code>~/.dmux/hooks/</code> — global hooks (lowest priority)</li>
     </ol>
     <p>The first directory found is used. Scripts must be executable (<code>chmod +x</code>).</p>
-
-    <h3>Initializing Hooks</h3>
-    <p>dmux can create the hooks directory and a README for you. From the TUI, press <kbd>s</kbd> to open settings, then select "Manage Hooks". Or create the directory manually:</p>
+    <p>To create the directory manually:</p>
     <pre><code data-lang="bash">mkdir -p .dmux-hooks
 chmod +x .dmux-hooks/*</code></pre>
 
