@@ -13,12 +13,21 @@ export function render() {
             <span class="sa-badge">Coming Soon</span>
           </div>
           <p class="sa-description">Standard Agents is an open standard for creating domain-specific agents you can distribute and compose together to form safe, efficient, and effective agents. If you're interested, join the early access waitlist below.</p>
-          <form class="sa-form" id="sa-early-access-form">
-            <input type="text" placeholder="Name" required class="sa-input" id="sa-name-input" />
-            <input type="email" placeholder="Email" required class="sa-input" id="sa-email-input" />
-            <button type="submit" class="sa-submit">Request Early Access</button>
-          </form>
-          <p class="sa-submitted hidden" id="sa-submitted-msg">Thanks! We'll be in touch.</p>
+          <div id="sa-form-wrapper">
+            <form class="sa-form" id="sa-early-access-form">
+              <input type="text" placeholder="Name" required class="sa-input" id="sa-name-input" />
+              <input type="email" placeholder="Email" required class="sa-input" id="sa-email-input" />
+              <button type="submit" class="sa-submit" id="sa-submit-btn">
+                <span class="sa-submit-label">Request Early Access</span>
+                <span class="sa-submit-spinner hidden"><svg class="sa-spinner" viewBox="0 0 20 20" width="16" height="16" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="2.5" opacity="0.25"/><path d="M10 2a8 8 0 0 1 8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+              </button>
+            </form>
+            <p class="sa-error hidden" id="sa-error-msg"></p>
+          </div>
+          <div class="sa-success hidden" id="sa-success-msg">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none"><circle cx="10" cy="10" r="9" stroke="#22c55e" stroke-width="1.5"/><path d="M6 10.5l2.5 2.5 5.5-5.5" stroke="#22c55e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>You're on the list! We'll be in touch.</span>
+          </div>
         </div>
       </div>
     </div>

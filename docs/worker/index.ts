@@ -72,6 +72,11 @@ async function handleEarlyAccess(request: Request, env: Env): Promise<Response> 
       return Response.json({ error: 'Name and email required' }, { status: 400 });
     }
 
+    if (!env.WAITLIST_API_TOKEN) {
+      console.error('[early-access] WAITLIST_API_TOKEN is not set');
+      return Response.json({ error: 'Server misconfigured' }, { status: 500 });
+    }
+
     const res = await fetch(WAITLIST_API, {
       method: 'POST',
       headers: {
@@ -81,12 +86,16 @@ async function handleEarlyAccess(request: Request, env: Env): Promise<Response> 
       body: JSON.stringify({ email: body.email, name: body.name, source: 'dmux-docs' }),
     });
 
+    const responseBody = await res.text();
+    console.log(`[early-access] upstream status=${res.status} body=${responseBody}`);
+
     if (!res.ok) {
       return Response.json({ error: 'Waitlist API error' }, { status: 502 });
     }
 
     return Response.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error('[early-access] error:', err);
     return Response.json({ error: 'Failed to submit' }, { status: 500 });
   }
 }

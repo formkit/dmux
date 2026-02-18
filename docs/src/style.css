@@ -499,8 +499,13 @@ a {
 }
 
 .sa-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   height: 36px;
   padding: 0 16px;
+  min-width: 160px;
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
@@ -515,11 +520,53 @@ a {
 .sa-submit:hover {
   background: #818cf8;
 }
+.sa-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 
-.sa-submitted {
-  font-size: 13.5px;
-  color: #818cf8;
-  margin: 0;
+@keyframes sa-spin {
+  to { transform: rotate(360deg); }
+}
+.sa-spinner {
+  animation: sa-spin 0.6s linear infinite;
+}
+
+.sa-error {
+  font-size: 13px;
+  color: #f87171;
+  margin: 8px 0 0;
+}
+
+.sa-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #22c55e;
+}
+
+@keyframes sa-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+@keyframes sa-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.sa-slide-out {
+  animation: sa-slide-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.sa-slide-in {
+  animation: sa-slide-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @media (max-width: 640px) {

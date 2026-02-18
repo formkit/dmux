@@ -3,7 +3,7 @@
  */
 
 import { initSidebar, updateActiveSection } from './sidebar.js';
-import { renderHero, fetchStars, updateStarCount } from './hero.js';
+import { renderHero, fetchStars, formatStars } from './hero.js';
 import { processCodeBlocks } from './code-highlight.js';
 import { sections } from './content/index.js';
 
@@ -35,13 +35,14 @@ async function init() {
   initSidebar();
   setupScrollSpy();
 
-  // Fetch stars async
+  // Fetch stars async (update badge in-place to avoid re-triggering hero animations)
   const count = await fetchStars();
   if (count) {
-    updateStarCount(count);
-    // Re-render hero with star count
-    heroContainer.innerHTML = renderHero(count);
-    bindCopyBtn();
+    const badge = heroContainer.querySelector('.hero-star-badge');
+    if (badge) {
+      badge.textContent = formatStars(count);
+      badge.classList.remove('hidden');
+    }
   }
 
   // Handle initial hash anchor
@@ -90,22 +91,53 @@ function bindCopyBtn() {
 function bindEarlyAccessForm() {
   const form = document.getElementById('sa-early-access-form');
   if (!form) return;
+  const btn = document.getElementById('sa-submit-btn');
+  const label = btn.querySelector('.sa-submit-label');
+  const spinner = btn.querySelector('.sa-submit-spinner');
+  const errorMsg = document.getElementById('sa-error-msg');
+  const formWrapper = document.getElementById('sa-form-wrapper');
+  const successMsg = document.getElementById('sa-success-msg');
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('sa-name-input').value.trim();
     const email = document.getElementById('sa-email-input').value.trim();
     if (!name || !email) return;
 
+    // Loading state
+    btn.disabled = true;
+    label.classList.add('hidden');
+    spinner.classList.remove('hidden');
+    errorMsg.classList.add('hidden');
+
     try {
-      await fetch('/api/early-access', {
+      const res = await fetch('/api/early-access', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email }),
       });
-    } catch {}
 
-    form.classList.add('hidden');
-    document.getElementById('sa-submitted-msg').classList.remove('hidden');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Something went wrong. Please try again.');
+      }
+
+      // Success — slide form out, show success message
+      formWrapper.classList.add('sa-slide-out');
+      formWrapper.addEventListener('animationend', () => {
+        formWrapper.classList.add('hidden');
+        successMsg.classList.remove('hidden');
+        successMsg.classList.add('sa-slide-in');
+      }, { once: true });
+    } catch (err) {
+      // Reset button
+      btn.disabled = false;
+      label.classList.remove('hidden');
+      spinner.classList.add('hidden');
+      // Show error
+      errorMsg.textContent = err.message;
+      errorMsg.classList.remove('hidden');
+    }
   });
 }
 
