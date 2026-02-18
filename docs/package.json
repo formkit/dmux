@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite build && vite preview",
-    "deploy": "vite build && wrangler deploy"
+    "deploy": "vite build && wrangler deploy -c src/dist/dmux_docs/wrangler.json"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.25.1",
