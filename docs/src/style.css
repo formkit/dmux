@@ -472,6 +472,17 @@ a {
   margin-bottom: 16px;
   line-height: 1.6;
 }
+.sa-description a {
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-hover);
+  text-underline-offset: 2px;
+  transition: color 0.2s, text-decoration-color 0.2s;
+}
+.sa-description a:hover {
+  color: #818cf8;
+  text-decoration-color: #818cf8;
+}
 
 .sa-form {
   display: flex;
