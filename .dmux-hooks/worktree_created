@@ -1,0 +1,8 @@
+#!/bin/bash
+# Install dependencies when a new worktree is created
+
+cd "$DMUX_WORKTREE_PATH"
+
+if [ -f "pnpm-lock.yaml" ]; then
+  pnpm install --prefer-offline &
+fi
