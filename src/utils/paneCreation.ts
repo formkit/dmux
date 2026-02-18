@@ -11,7 +11,7 @@ import {
 import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import { generateSlug } from './slug.js';
 import { capturePaneContent } from './paneCapture.js';
-import { triggerHook } from './hooks.js';
+import { triggerHook, initializeHooksDirectory } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
@@ -294,7 +294,10 @@ export async function createPane(
   });
 
   // Check if this is a hooks editing session (before worktree creation)
-  const isHooksEditingSession = prompt && /edit.*dmux.*hooks/i.test(prompt);
+  const isHooksEditingSession = !!prompt && (
+    /(create|edit|modify).*(dmux|\.)?.*hooks/i.test(prompt)
+    || /\.dmux-hooks/i.test(prompt)
+  );
 
   // Create git worktree and cd into it
   try {
@@ -354,22 +357,7 @@ export async function createPane(
 
     // Initialize .dmux-hooks if this is a hooks editing session
     if (isHooksEditingSession) {
-      const hooksDir = path.join(worktreePath, '.dmux-hooks');
-
-      // Check if .dmux-hooks already exists
-      if (!fs.existsSync(hooksDir)) {
-        // Create the directory
-        fs.mkdirSync(hooksDir, { recursive: true });
-
-        // Import and write the documentation content
-        const { AGENTS_MD } = await import('./generated-agents-doc.js');
-
-        // Write AGENTS.md
-        fs.writeFileSync(path.join(hooksDir, 'AGENTS.md'), AGENTS_MD, 'utf-8');
-
-        // Copy to CLAUDE.md
-        fs.writeFileSync(path.join(hooksDir, 'CLAUDE.md'), AGENTS_MD, 'utf-8');
-      }
+      initializeHooksDirectory(worktreePath);
     }
   } catch (error) {
     // Worktree creation failed - send helpful error message to the pane

@@ -6,7 +6,7 @@
  */
 
 import { execSync, spawn } from 'child_process';
-import { existsSync, accessSync, constants, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, accessSync, constants, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import type { DmuxPane } from '../types.js';
@@ -280,52 +280,87 @@ export function listAvailableHooks(projectRoot: string): HookType[] {
  */
 export function initializeHooksDirectory(projectRoot: string): void {
   const hooksDir = path.join(projectRoot, '.dmux-hooks');
+  const agentsPath = path.join(hooksDir, 'AGENTS.md');
+  const claudePath = path.join(hooksDir, 'CLAUDE.md');
+  const readmePath = path.join(hooksDir, 'README.md');
+  const examplesDir = path.join(hooksDir, 'examples');
+  const examplePaths = Object.keys(EXAMPLE_HOOKS).map((filename) =>
+    path.join(examplesDir, filename)
+  );
 
-  // Skip if already initialized
-  if (existsSync(path.join(hooksDir, 'AGENTS.md'))) {
+  // Fast path for the common case: everything already initialized
+  if (
+    existsSync(agentsPath)
+    && existsSync(claudePath)
+    && existsSync(readmePath)
+    && existsSync(examplesDir)
+    && examplePaths.every((examplePath) => existsSync(examplePath))
+  ) {
     return;
   }
 
-  const initMsg = 'Initializing .dmux-hooks/ directory...';
+  const initMsg = 'Initializing .dmux-hooks/ directory (or repairing missing docs)...';
   LogService.getInstance().debug(initMsg, 'hooks');
 
   try {
+    let madeChanges = false;
+
     // Create main hooks directory
     if (!existsSync(hooksDir)) {
       mkdirSync(hooksDir, { recursive: true });
+      madeChanges = true;
     }
 
-    // Write AGENTS.md (complete reference)
-    writeFileSync(
-      path.join(hooksDir, 'AGENTS.md'),
-      HOOKS_DOCUMENTATION,
-      'utf-8'
-    );
+    // Ensure AGENTS.md (complete reference)
+    if (!existsSync(agentsPath)) {
+      writeFileSync(
+        agentsPath,
+        HOOKS_DOCUMENTATION,
+        'utf-8'
+      );
+      madeChanges = true;
+    }
 
-    // Write CLAUDE.md (identical to AGENTS.md, just different filename for Claude Code)
-    writeFileSync(
-      path.join(hooksDir, 'CLAUDE.md'),
-      HOOKS_DOCUMENTATION,
-      'utf-8'
-    );
+    // Ensure CLAUDE.md (prefer AGENTS.md content if present)
+    if (!existsSync(claudePath)) {
+      let claudeContent = HOOKS_DOCUMENTATION;
+      try {
+        claudeContent = readFileSync(agentsPath, 'utf-8');
+      } catch {
+        // Keep default HOOKS_DOCUMENTATION fallback
+      }
 
-    // Write README.md
-    writeFileSync(
-      path.join(hooksDir, 'README.md'),
-      HOOKS_README,
-      'utf-8'
-    );
+      writeFileSync(
+        claudePath,
+        claudeContent,
+        'utf-8'
+      );
+      madeChanges = true;
+    }
 
-    // Create examples directory
-    const examplesDir = path.join(hooksDir, 'examples');
+    // Ensure README.md
+    if (!existsSync(readmePath)) {
+      writeFileSync(
+        readmePath,
+        HOOKS_README,
+        'utf-8'
+      );
+      madeChanges = true;
+    }
+
+    // Ensure examples directory
     if (!existsSync(examplesDir)) {
       mkdirSync(examplesDir, { recursive: true });
+      madeChanges = true;
     }
 
-    // Write example hooks
+    // Ensure example hooks
     for (const [filename, content] of Object.entries(EXAMPLE_HOOKS)) {
       const examplePath = path.join(examplesDir, filename);
-      writeFileSync(examplePath, content, 'utf-8');
+      if (!existsSync(examplePath)) {
+        writeFileSync(examplePath, content, 'utf-8');
+        madeChanges = true;
+      }
 
       // Make examples executable
       try {
@@ -335,10 +370,12 @@ export function initializeHooksDirectory(projectRoot: string): void {
       }
     }
 
-    const completeMsg = '✅ Initialized .dmux-hooks/ with documentation and examples';
-    const readmeMsg = '📝 Read AGENTS.md or CLAUDE.md to get started';
-    LogService.getInstance().debug(completeMsg, 'hooks');
-    LogService.getInstance().debug(readmeMsg, 'hooks');
+    if (madeChanges) {
+      const completeMsg = '✅ Initialized .dmux-hooks/ with documentation and examples';
+      const readmeMsg = '📝 Read AGENTS.md or CLAUDE.md to get started';
+      LogService.getInstance().debug(completeMsg, 'hooks');
+      LogService.getInstance().debug(readmeMsg, 'hooks');
+    }
   } catch (error) {
     const errMsg = `Failed to initialize .dmux-hooks/ directory: ${error instanceof Error ? error.message : String(error)}`;
     LogService.getInstance().warn(errMsg, 'hooks');

@@ -396,24 +396,29 @@ export class PopupManager {
     }
   }
 
-  async launchShortcutsPopup(hasSidebarLayout: boolean): Promise<void> {
-    if (!this.checkPopupSupport()) return
+  async launchShortcutsPopup(hasSidebarLayout: boolean): Promise<"hooks" | null> {
+    if (!this.checkPopupSupport()) return null
 
     try {
-      await this.launchPopup<void>(
+      const result = await this.launchPopup<{ action?: "hooks" }>(
         "shortcutsPopup.js",
         [],
         {
           width: 50,
-          height: 20,
+          height: 21,
           title: "⌨️  Keyboard Shortcuts",
         },
         {
           hasSidebarLayout,
         }
       )
+
+      this.ignoreInputBriefly()
+      const data = this.handleResult(result)
+      return data?.action === "hooks" ? "hooks" : null
     } catch (error: any) {
       this.showTempMessage(`Failed to launch popup: ${error.message}`)
+      return null
     }
   }
 

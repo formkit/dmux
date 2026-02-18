@@ -6,12 +6,16 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
-import { PopupWrapper } from './shared/index.js';
+import { PopupWrapper, writeCancelAndExit, writeSuccessAndExit } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
 
 interface ShortcutsPopupAppProps {
   resultFile: string;
   hasSidebarLayout: boolean;
+}
+
+interface ShortcutActionResult {
+  action?: 'hooks';
 }
 
 const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
@@ -21,13 +25,13 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   const { exit } = useApp();
 
   useInput((input, key) => {
+    if (input === 'h') {
+      writeSuccessAndExit<ShortcutActionResult>(resultFile, { action: 'hooks' }, exit);
+      return;
+    }
+
     if (key.escape || input === 'q' || input === '?') {
-      try {
-        fs.writeFileSync(resultFile, JSON.stringify({ closed: true }));
-      } catch (error) {
-        console.error('[shortcutsPopup] Failed to write result file:', error);
-      }
-      exit();
+      writeCancelAndExit(resultFile, exit);
     }
   });
 
@@ -42,6 +46,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'r', description: 'Reopen closed worktree' },
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
+    { key: 'h', description: 'Create or modify hooks with AI' },
     ...(hasSidebarLayout ? [{ key: 'L', description: 'Toggle sidebar layout' }] : []),
     { key: 'q', description: 'Quit dmux (Ctrl+C twice)' },
     { key: '↑↓←→', description: 'Navigate panes spatially' },
@@ -67,7 +72,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
         ))}
 
         <Box marginTop={1}>
-          <Text dimColor>Press Esc or ? to close</Text>
+          <Text dimColor>Press h for hooks, or Esc/? to close</Text>
         </Box>
       </Box>
     </PopupWrapper>

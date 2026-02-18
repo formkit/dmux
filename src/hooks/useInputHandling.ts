@@ -199,6 +199,26 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
+  const getActiveProjectRoot = (): string => {
+    const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+    if (selectedPane) {
+      return getPaneProjectRoot(selectedPane, projectRoot)
+    }
+
+    const selectedAction = getProjectActionByIndex(projectActionItems, selectedIndex)
+    return selectedAction?.projectRoot || projectRoot
+  }
+
+  const launchHooksAuthoringSession = async (targetProjectRoot?: string) => {
+    const hooksProjectRoot = targetProjectRoot || getActiveProjectRoot()
+    const { initializeHooksDirectory } = await import("../utils/hooks.js")
+    initializeHooksDirectory(hooksProjectRoot)
+
+    const prompt =
+      "I would like to create or edit my dmux hooks in .dmux-hooks. Please read AGENTS.md or CLAUDE.md first, then ask me what I want to create or modify."
+    await handlePaneCreationWithAgent(prompt, hooksProjectRoot)
+  }
+
   useInput(async (input: string, key: any) => {
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
@@ -353,10 +373,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       const result = await popupManager.launchSettingsPopup(async () => {
         // Launch hooks popup
         await popupManager.launchHooksPopup(async () => {
-          // Edit hooks using an agent
-          const prompt =
-            "I would like to edit my dmux hooks in .dmux-hooks, please read the instructions in there and ask me what I want to edit"
-          await handlePaneCreationWithAgent(prompt)
+          await launchHooksAuthoringSession()
         })
       })
       if (result) {
@@ -373,7 +390,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await popupManager.launchLogsPopup()
     } else if (input === "?") {
       // Open keyboard shortcuts popup
-      await popupManager.launchShortcutsPopup(!!controlPaneId)
+      const shortcutsAction = await popupManager.launchShortcutsPopup(!!controlPaneId)
+      if (shortcutsAction === "hooks") {
+        await launchHooksAuthoringSession()
+      }
     } else if (input === "L" && controlPaneId) {
       // Reset layout to sidebar configuration (Shift+L)
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
