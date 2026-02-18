@@ -29,6 +29,7 @@ async function init() {
 
   contentEl.innerHTML = html;
   processCodeBlocks(contentEl);
+  bindEarlyAccessForm();
 
   // Initialize sidebar with scroll-spy
   initSidebar();
@@ -83,6 +84,28 @@ function bindCopyBtn() {
         btn.querySelector('.hero-check-icon').classList.add('hidden');
       }, 1500);
     });
+  });
+}
+
+function bindEarlyAccessForm() {
+  const form = document.getElementById('sa-early-access-form');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('sa-name-input').value.trim();
+    const email = document.getElementById('sa-email-input').value.trim();
+    if (!name || !email) return;
+
+    try {
+      await fetch('/api/early-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+    } catch {}
+
+    form.classList.add('hidden');
+    document.getElementById('sa-submitted-msg').classList.remove('hidden');
   });
 }
 

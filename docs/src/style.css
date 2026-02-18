@@ -245,8 +245,6 @@ a {
   color: var(--color-text-secondary);
   line-height: 1.72;
   margin-bottom: 36px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--color-border);
 }
 
 .content .doc-section:first-child .lead {
@@ -424,6 +422,113 @@ a {
 .shortcut-table td:first-child {
   width: 110px;
   white-space: nowrap;
+}
+
+/* Standard Agents banner */
+.sa-banner {
+  margin: 32px 0 20px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+
+.sa-banner-inner {
+  padding: 28px 28px 24px;
+  background:
+    radial-gradient(ellipse at 80% 20%, rgba(99, 102, 241, 0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 20% 80%, rgba(234, 100, 0, 0.04) 0%, transparent 60%);
+}
+
+.sa-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.sa-logo {
+  height: 20px;
+  width: auto;
+  color: var(--color-text-primary);
+}
+
+.sa-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.sa-description {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.sa-form {
+  display: flex;
+  gap: 8px;
+}
+
+.sa-input {
+  flex: 1;
+  height: 36px;
+  padding: 0 12px;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  background: var(--color-bg-code);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.sa-input::placeholder {
+  color: var(--color-text-dimmer);
+}
+.sa-input:focus {
+  border-color: var(--color-border-hover);
+}
+
+.sa-submit {
+  height: 36px;
+  padding: 0 16px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.sa-submit:hover {
+  background: #818cf8;
+}
+
+.sa-submitted {
+  font-size: 13.5px;
+  color: #818cf8;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .sa-banner-inner {
+    padding: 20px;
+  }
+  .sa-form {
+    flex-direction: column;
+  }
 }
 
 /* File tree */
