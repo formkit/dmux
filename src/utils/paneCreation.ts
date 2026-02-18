@@ -204,7 +204,7 @@ export async function createPane(
     if (isFirstContentPane) {
       // First, create the tmux pane but DON'T destroy welcome pane yet
       // This way we can save the pane to config first, THEN destroy welcome pane
-      paneInfo = setupSidebarLayout(controlPaneId);
+      paneInfo = setupSidebarLayout(controlPaneId, projectRoot);
     } else {
       // Subsequent panes - always split horizontally, let layout manager organize
       // Get actual dmux pane IDs (not welcome pane) from existingPanes
@@ -212,7 +212,7 @@ export async function createPane(
       const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
       // Always split horizontally - the layout manager will organize panes optimally
-      paneInfo = splitPane({ targetPane });
+      paneInfo = splitPane({ targetPane, cwd: projectRoot });
     }
   } catch (error) {
     // Check if error is due to stale pane ID (can't find pane)
@@ -244,11 +244,11 @@ export async function createPane(
 
       // Retry pane creation with corrected controlPaneId
       if (isFirstContentPane) {
-        paneInfo = setupSidebarLayout(controlPaneId);
+        paneInfo = setupSidebarLayout(controlPaneId, projectRoot);
       } else {
         const dmuxPaneIds = existingPanes.map(p => p.paneId);
         const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1];
-        paneInfo = splitPane({ targetPane });
+        paneInfo = splitPane({ targetPane, cwd: projectRoot });
       }
     } else {
       // Different error, re-throw
@@ -326,9 +326,10 @@ export async function createPane(
     // - If branch exists, use it (don't create with -b)
     // - If branch doesn't exist, create it with -b
     // - DON'T silence errors (we want to see them in the pane for debugging)
-    const worktreeCmd = branchExists
-      ? `git worktree add "${worktreePath}" ${slug} && cd "${worktreePath}"`
-      : `git worktree add "${worktreePath}" -b ${slug} && cd "${worktreePath}"`;
+    const worktreeAddCmd = branchExists
+      ? `git worktree add "${worktreePath}" ${slug}`
+      : `git worktree add "${worktreePath}" -b ${slug}`;
+    const worktreeCmd = `cd "${projectRoot}" && ${worktreeAddCmd} && cd "${worktreePath}"`;
 
     // Send the git worktree command (auto-quoted by sendShellCommand)
     await tmuxService.sendShellCommand(paneInfo, worktreeCmd);

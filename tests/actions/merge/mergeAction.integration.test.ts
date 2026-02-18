@@ -29,6 +29,34 @@ vi.mock('../../../src/utils/hooks.js', () => ({
   triggerHook: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('../../../src/utils/worktreeDiscovery.js', () => ({
+  detectAllWorktrees: vi.fn(() => ([
+    {
+      worktreePath: '/test/main/.dmux/worktrees/test-branch',
+      parentRepoPath: '/test/main',
+      branch: 'test-branch',
+      repoName: 'main',
+      relativePath: '.',
+      depth: 0,
+      isRoot: true,
+    },
+  ])),
+}));
+
+vi.mock('../../../src/actions/merge/multiMergeOrchestrator.js', () => ({
+  buildMergeQueue: vi.fn(async (worktrees: any[]) =>
+    worktrees.map((worktree) => ({
+      worktree,
+      validation: { canMerge: true, mainBranch: 'main', issues: [] },
+    }))
+  ),
+  executeMultiMerge: vi.fn(async () => ({
+    type: 'success',
+    message: 'Multi-merge complete',
+    dismissable: true,
+  })),
+}));
+
 vi.mock('../../../src/actions/implementations/closeAction.js', () => ({
   closePane: vi.fn(() =>
     Promise.resolve({
@@ -58,6 +86,7 @@ vi.mock('../../../src/shared/StateManager.js', () => ({
 vi.mock('../../../src/services/LogService.js', () => ({
   LogService: {
     getInstance: vi.fn(() => ({
+      info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
     })),

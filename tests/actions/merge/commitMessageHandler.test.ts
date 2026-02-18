@@ -35,6 +35,7 @@ vi.mock('../../../src/shared/StateManager.js', () => ({
 vi.mock('../../../src/services/LogService.js', () => ({
   LogService: {
     getInstance: vi.fn(() => ({
+      info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
     })),

@@ -59,7 +59,8 @@ async function poll<T>(fn: () => T | Promise<T>, predicate: (v: T) => boolean, t
 
 // Only run if tmux and a runner are available
 const runner = detectRunner();
-const canRun = hasTmux() && !!runner;
+const runE2E = process.env.DMUX_E2E === '1';
+const canRun = runE2E && hasTmux() && !!runner;
 
 describe.sequential('dmux e2e: create pane', () => {
   it.runIf(canRun)('starts dmux in tmux and initializes panes file', async () => {

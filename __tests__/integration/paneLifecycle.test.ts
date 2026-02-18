@@ -213,6 +213,41 @@ describe('Pane Lifecycle Integration Tests', () => {
       }
     });
 
+    it('should create agent panes in the selected project root for added projects', async () => {
+      const { createPane } = await import('../../src/utils/paneCreation.js');
+
+      await createPane(
+        {
+          prompt: 'work on added project',
+          agent: 'claude',
+          projectName: 'test-project',
+          existingPanes: [
+            {
+              id: 'dmux-1',
+              slug: 'existing',
+              prompt: 'existing pane',
+              paneId: '%5',
+              projectRoot: '/primary/repo',
+              worktreePath: '/primary/repo/.dmux/worktrees/existing',
+            },
+          ],
+          projectRoot: '/target/repo',
+          slugBase: 'target-slug',
+        },
+        ['claude']
+      );
+
+      const splitCall = mockExecSync.mock.calls.find(([cmd]) =>
+        typeof cmd === 'string' && cmd.includes('tmux split-window')
+      );
+      expect(splitCall?.[0]).toContain('-c "/target/repo"');
+
+      const worktreeCall = mockExecSync.mock.calls.find(([cmd]) =>
+        typeof cmd === 'string' && cmd.includes('git worktree add')
+      );
+      expect(worktreeCall?.[0]).toContain('cd "/target/repo" && git worktree add "/target/repo/.dmux/worktrees/target-slug"');
+    });
+
     it('should handle slug generation failure (fallback to timestamp)', async () => {
       // Mock OpenRouter API failure
       const mockFetch = vi.fn(() =>

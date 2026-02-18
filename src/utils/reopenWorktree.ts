@@ -92,7 +92,7 @@ export async function reopenWorktree(
   let paneInfo: string;
 
   if (isFirstContentPane) {
-    paneInfo = setupSidebarLayout(controlPaneId);
+    paneInfo = setupSidebarLayout(controlPaneId, projectRoot);
     await new Promise((resolve) => setTimeout(resolve, 300));
   } else {
     // Subsequent panes - always split horizontally

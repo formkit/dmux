@@ -70,8 +70,24 @@ describe('Conflict Resolution', () => {
     onPaneUpdate: vi.fn(),
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+
+    const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../../src/utils/agentDetection.js');
+    vi.mocked(findClaudeCommand).mockResolvedValue(true);
+    vi.mocked(findOpencodeCommand).mockResolvedValue(true);
+    vi.mocked(findCodexCommand).mockResolvedValue(false);
+
+    const { createConflictResolutionPane } = await import('../../../src/utils/conflictResolutionPane.js');
+    vi.mocked(createConflictResolutionPane).mockResolvedValue({
+      id: 'conflict-pane-1',
+      slug: 'resolve-conflicts',
+      prompt: 'Resolve merge conflicts',
+      paneId: '%99',
+    });
+
+    const { startConflictMonitoring } = await import('../../../src/utils/conflictMonitor.js');
+    vi.mocked(startConflictMonitoring).mockReturnValue(vi.fn());
   });
 
   describe('createConflictResolutionPaneForMerge', () => {
@@ -100,6 +116,18 @@ describe('Conflict Resolution', () => {
       expect(result.options?.map(o => o.id)).toEqual(['claude', 'opencode']);
     });
 
+    it('should include codex in agent choice when available', async () => {
+      const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../../src/utils/agentDetection.js');
+      vi.mocked(findClaudeCommand).mockResolvedValue(true);
+      vi.mocked(findOpencodeCommand).mockResolvedValue(false);
+      vi.mocked(findCodexCommand).mockResolvedValue(true);
+
+      const result = await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
+
+      expect(result.type).toBe('choice');
+      expect(result.options?.map(o => o.id)).toEqual(['claude', 'codex']);
+    });
+
     it('should use only available agent directly', async () => {
       const { findClaudeCommand, findOpencodeCommand } = await import('../../../src/utils/agentDetection.js');
       const { createConflictResolutionPane } = await import('../../../src/utils/conflictResolutionPane.js');
@@ -119,6 +147,35 @@ describe('Conflict Resolution', () => {
         projectName: 'test-project',
         existingPanes: [mockPane],
       });
+    });
+
+    it('should use codex directly when it is the only available agent', async () => {
+      const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../../src/utils/agentDetection.js');
+      const { createConflictResolutionPane } = await import('../../../src/utils/conflictResolutionPane.js');
+      const { startConflictMonitoring } = await import('../../../src/utils/conflictMonitor.js');
+
+      vi.mocked(findClaudeCommand).mockResolvedValue(false);
+      vi.mocked(findOpencodeCommand).mockResolvedValue(false);
+      vi.mocked(findCodexCommand).mockResolvedValue(true);
+
+      const result = await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
+
+      expect(result.type).toBe('navigation');
+      expect(createConflictResolutionPane).toHaveBeenCalledWith({
+        sourceBranch: 'test-branch',
+        targetBranch: 'main',
+        targetRepoPath: '/test/worktree',
+        agent: 'codex',
+        projectName: 'test-project',
+        existingPanes: [mockPane],
+      });
+      expect(startConflictMonitoring).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conflictPaneId: '%99',
+          repoPath: '/test/worktree',
+          onResolved: expect.any(Function),
+        })
+      );
     });
 
     it('should create conflict pane and update state', async () => {
@@ -209,6 +266,39 @@ describe('Conflict Resolution', () => {
           projectName: 'test-project',
           existingPanes: [mockPane],
         });
+      }
+    });
+
+    it('should handle codex selection for multiple agents', async () => {
+      const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../../src/utils/agentDetection.js');
+      const { createConflictResolutionPane } = await import('../../../src/utils/conflictResolutionPane.js');
+      const { startConflictMonitoring } = await import('../../../src/utils/conflictMonitor.js');
+
+      vi.mocked(findClaudeCommand).mockResolvedValue(true);
+      vi.mocked(findOpencodeCommand).mockResolvedValue(true);
+      vi.mocked(findCodexCommand).mockResolvedValue(true);
+
+      const result = await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
+
+      if (result.type === 'choice' && result.onSelect) {
+        const selectedResult = await result.onSelect('codex');
+
+        expect(selectedResult.type).toBe('navigation');
+        expect(createConflictResolutionPane).toHaveBeenCalledWith({
+          sourceBranch: 'test-branch',
+          targetBranch: 'main',
+          targetRepoPath: '/test/worktree',
+          agent: 'codex',
+          projectName: 'test-project',
+          existingPanes: [mockPane],
+        });
+        expect(startConflictMonitoring).toHaveBeenCalledWith(
+          expect.objectContaining({
+            conflictPaneId: '%99',
+            repoPath: '/test/worktree',
+            onResolved: expect.any(Function),
+          })
+        );
       }
     });
 

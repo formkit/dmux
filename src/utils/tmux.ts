@@ -104,9 +104,10 @@ export const getContentPaneIds = (controlPaneId: string): string[] => {
 /**
  * Creates initial sidebar layout by splitting from control pane
  * @param controlPaneId The pane ID running dmux TUI (left sidebar)
+ * @param cwd Optional working directory for the new content pane
  * @returns The newly created content area pane ID
  */
-export const setupSidebarLayout = (controlPaneId: string): string => {
+export const setupSidebarLayout = (controlPaneId: string, cwd?: string): string => {
   try {
     const tmuxService = TmuxService.getInstance();
 
@@ -121,6 +122,7 @@ export const setupSidebarLayout = (controlPaneId: string): string => {
     // Split horizontally (left-right) from control pane
     const newPaneId = tmuxService.splitPaneSync({
       targetPane: controlPaneId,
+      cwd,
     });
 
     // Resize control pane to fixed width (sync version for initial setup)

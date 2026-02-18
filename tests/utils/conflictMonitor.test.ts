@@ -30,7 +30,7 @@ describe('Conflict Monitor', () => {
       const onResolved = vi.fn();
 
       // Mock pane exists
-      vi.mocked(mockExecSync).mockReturnValue(Buffer.from('%99'));
+      vi.mocked(mockExecSync).mockReturnValue('%99');
 
       const cleanup = startConflictMonitoring({
         conflictPaneId: '%99',
@@ -48,7 +48,7 @@ describe('Conflict Monitor', () => {
       // Mock pane exists and still in merge state
       vi.mocked(mockExecSync).mockImplementation((cmd: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99');
+          return '%99';
         }
         if (cmd.includes('MERGE_HEAD')) {
           return Buffer.from('abc123'); // MERGE_HEAD exists
@@ -72,7 +72,7 @@ describe('Conflict Monitor', () => {
       );
     });
 
-    it('should stop monitoring if pane is manually closed', () => {
+    it('should stop monitoring if pane is manually closed', async () => {
       const onResolved = vi.fn();
 
       // First check: pane exists
@@ -82,9 +82,9 @@ describe('Conflict Monitor', () => {
         if (cmd.includes('display-message')) {
           checkCount++;
           if (checkCount > 1) {
-            throw new Error('Pane not found');
+            throw new Error("can't find pane");
           }
-          return Buffer.from('%99');
+          return '%99';
         }
         throw new Error('Command not found');
       });
@@ -97,24 +97,24 @@ describe('Conflict Monitor', () => {
       });
 
       // First check - pane exists
-      vi.advanceTimersByTime(1000);
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Second check - pane doesn't exist, should stop
-      vi.advanceTimersByTime(1000);
+      await vi.advanceTimersByTimeAsync(1000);
 
       // Third check - shouldn't happen
-      vi.advanceTimersByTime(1000);
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(onResolved).not.toHaveBeenCalled();
       expect(checkCount).toBe(2);
     });
 
-    it('should detect conflict resolution and trigger callback', () => {
+    it('should detect conflict resolution and trigger callback', async () => {
       const onResolved = vi.fn();
 
       vi.mocked(mockExecSync).mockImplementation((cmd: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99'); // Pane exists
+          return '%99'; // Pane exists
         }
         if (cmd.includes('MERGE_HEAD')) {
           throw new Error('MERGE_HEAD not found'); // Merge committed
@@ -133,7 +133,7 @@ describe('Conflict Monitor', () => {
       });
 
       // Advance timer to trigger check
-      vi.advanceTimersByTime(1000);
+      await vi.advanceTimersByTimeAsync(1000);
 
       expect(onResolved).toHaveBeenCalledTimes(1);
     });
@@ -143,7 +143,7 @@ describe('Conflict Monitor', () => {
 
       vi.mocked(mockExecSync).mockImplementation((cmd: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99');
+          return '%99';
         }
         if (cmd.includes('MERGE_HEAD')) {
           return Buffer.from('abc123'); // Still in merge state
@@ -168,7 +168,7 @@ describe('Conflict Monitor', () => {
 
       vi.mocked(mockExecSync).mockImplementation((cmd: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99');
+          return '%99';
         }
         if (cmd.includes('MERGE_HEAD')) {
           throw new Error('MERGE_HEAD not found'); // Merge committed or aborted
@@ -197,7 +197,7 @@ describe('Conflict Monitor', () => {
 
       vi.mocked(mockExecSync).mockImplementation((cmd: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99');
+          return '%99';
         }
         if (cmd.includes('MERGE_HEAD')) {
           return Buffer.from('abc123'); // Still in merge state
@@ -259,7 +259,7 @@ describe('Conflict Monitor', () => {
 
       vi.mocked(mockExecSync).mockImplementation((cmd: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99');
+          return '%99';
         }
         if (cmd.includes('MERGE_HEAD')) {
           return Buffer.from('abc123');
@@ -292,7 +292,7 @@ describe('Conflict Monitor', () => {
     it('should use custom check interval', () => {
       const onResolved = vi.fn();
 
-      vi.mocked(mockExecSync).mockReturnValue(Buffer.from('%99'));
+      vi.mocked(mockExecSync).mockReturnValue('%99');
 
       startConflictMonitoring({
         conflictPaneId: '%99',
@@ -317,7 +317,7 @@ describe('Conflict Monitor', () => {
 
       vi.mocked(mockExecSync).mockImplementation((cmd: any, options: any) => {
         if (cmd.includes('display-message')) {
-          return Buffer.from('%99');
+          return '%99';
         }
         // Check cwd is set correctly
         if (options?.cwd) {

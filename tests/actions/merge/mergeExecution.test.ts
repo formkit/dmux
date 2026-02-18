@@ -136,69 +136,36 @@ describe('Merge Execution - Bug Fixes', () => {
       mockGetPanes.mockReturnValue([mockPane]);
     });
 
-    it('should cleanup worktree when user confirms', async () => {
-      const { mergeMainIntoWorktree, mergeWorktreeIntoMain, cleanupAfterMerge } = await import(
+    it('should return close options from closePane after successful merge', async () => {
+      const { mergeMainIntoWorktree, mergeWorktreeIntoMain } = await import(
         '../../../src/utils/mergeExecution.ts'
+      );
+      const { closePane } = await import(
+        '../../../src/actions/implementations/closeAction.js'
       );
 
       // Ensure both merge steps succeed
       vi.mocked(mergeMainIntoWorktree).mockReturnValue({ success: true });
       vi.mocked(mergeWorktreeIntoMain).mockReturnValue({ success: true });
-      vi.mocked(cleanupAfterMerge).mockReturnValue({ success: true });
 
       const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
 
-      expect(result.type).toBe('confirm');
-      expect(result.title).toBe('Merge Complete');
-
-      // Simulate user clicking "Yes, close it"
-      if (result.type === 'confirm' && result.onConfirm) {
-        await result.onConfirm();
-
-        expect(cleanupAfterMerge).toHaveBeenCalledWith(
-          '/test/main',
-          '/test/main/.dmux/worktrees/test-branch',
-          'test-branch'
-        );
-      }
+      expect(result.type).toBe('choice');
+      expect(result.title).toBe('Close Pane');
+      expect(closePane).toHaveBeenCalledWith(mockPane, mockContext);
     });
 
-    it('should handle cleanup failures gracefully', async () => {
-      const { cleanupAfterMerge } = await import('../../../src/utils/mergeExecution.ts');
-
-      vi.mocked(cleanupAfterMerge).mockReturnValue({
-        success: false,
-        error: 'Failed to remove worktree',
-      });
-
-      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
-
-      if (result.type === 'confirm' && result.onConfirm) {
-        const cleanupResult = await result.onConfirm();
-
-        expect(cleanupResult.type).toBe('error');
-        expect(cleanupResult.message).toContain('cleanup failed');
-      }
-    });
-
-    it('should remove pane from context after successful cleanup', async () => {
-      const { mergeMainIntoWorktree, mergeWorktreeIntoMain, cleanupAfterMerge } = await import(
+    it('should not directly mutate panes during merge execution', async () => {
+      const { mergeMainIntoWorktree, mergeWorktreeIntoMain } = await import(
         '../../../src/utils/mergeExecution.ts'
       );
 
       // Ensure all operations succeed
       vi.mocked(mergeMainIntoWorktree).mockReturnValue({ success: true });
       vi.mocked(mergeWorktreeIntoMain).mockReturnValue({ success: true });
-      vi.mocked(cleanupAfterMerge).mockReturnValue({ success: true });
 
-      const result = await executeMerge(mockPane, mockContext, 'main', '/test/main');
-
-      if (result.type === 'confirm' && result.onConfirm) {
-        await result.onConfirm();
-
-        // Should remove pane from context
-        expect(mockContext.savePanes).toHaveBeenCalledWith([]);
-      }
+      await executeMerge(mockPane, mockContext, 'main', '/test/main');
+      expect(mockContext.savePanes).not.toHaveBeenCalled();
     });
   });
 

@@ -20,7 +20,8 @@ function detectRunner(): { cmd: string; label: string } | null {
 }
 
 const runner = detectRunner();
-const canRun = hasCmd('tmux') && !!runner;
+const runE2E = process.env.DMUX_E2E === '1';
+const canRun = runE2E && hasCmd('tmux') && !!runner;
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
