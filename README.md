@@ -38,7 +38,11 @@ npm install -g dmux
 
 ### 2. Enable AI Features
 
-For AI-powered branch naming and commit messages:
+On first run, dmux onboarding can:
+- suggest/install a recommended tmux config preset if you do not have one
+- prompt for your OpenRouter API key and save it to your shell config automatically
+
+You can also set it manually for AI-powered branch naming and commit messages:
 
 ```bash
 # Add to your ~/.bashrc or ~/.zshrc
