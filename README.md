@@ -17,7 +17,7 @@
 
 ---
 
-![dmux demo](./dmux.gif)
+<img src="./dmux.gif" alt="dmux demo" width="100%" />
 
 ## Install
 
