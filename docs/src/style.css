@@ -247,6 +247,13 @@ a {
   margin-bottom: 36px;
 }
 
+.dmux-video {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-light);
+  margin-bottom: 32px;
+}
+
 .content .doc-section:first-child .lead {
   font-size: 20px;
   color: var(--color-text-primary);

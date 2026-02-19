@@ -5,6 +5,10 @@ export function render() {
     <h1>What is dmux?</h1>
     <p class="lead">dmux is a tool for running multiple coding agents (Claude Code, Codex, or OpenCode) in parallel using tmux and git worktrees. It provides hooks to automate every portion of the worktree lifecycle, supports multiple projects in the same session, as well as multiple worktrees under the root directory. If you provide an OpenRouter key, it will write your commit messages for you, name your window panes, and auto-advance annoying babysitting tasks.</p>
 
+    <video class="dmux-video" autoplay loop muted playsinline>
+      <source src="/dmux.mp4" type="video/mp4" />
+    </video>
+
     <div class="sa-banner">
       <div class="sa-banner-inner">
         <div class="sa-banner-content">
