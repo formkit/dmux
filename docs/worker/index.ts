@@ -24,7 +24,7 @@ export default {
 
 async function handleStars(request: Request): Promise<Response> {
   const cache = caches.default;
-  const cacheKey = new Request(new URL('/api/stars', request.url).toString());
+  const cacheKey = new Request(new URL('/api/stars?v=2', request.url).toString());
 
   // Check cache first
   const cached = await cache.match(cacheKey);
