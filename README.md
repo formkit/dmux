@@ -17,7 +17,7 @@
 
 ---
 
-![dmux demo](./screen.gif)
+![dmux demo](./dmux.gif)
 
 ## Install
 
