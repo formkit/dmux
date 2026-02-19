@@ -17,7 +17,7 @@
 
 ---
 
-<video src="https://github.com/formkit/dmux/raw/main/dmux.mp4" width="100%" autoplay loop muted playsinline></video>
+![dmux demo](./screen.gif)
 
 ## Install
 
