@@ -26,7 +26,52 @@ This project maintains several documentation files for different aspects of the 
 - Working on backend/TUI → Read CLAUDE.md
 - Working on API endpoints → Read API.md
 - Working on frontend/build system → Read BUNDLED_ASSETS.md
-- Writing user documentation → Update README.md
+- Working on user documentation → Update README.md
+- Working on docs website → See Docs Website section below
+
+## Docs Website
+
+The public documentation site lives at **[dmux.ai](https://dmux.ai)** and is deployed via Cloudflare Pages with a Worker backend.
+
+### Deployment
+
+- **Auto-deploys on push to `main`** — Cloudflare is configured to watch the repo; no manual deploy needed
+- Build: `pnpm build` from `docs/`
+- Dev: `pnpm dev` from `docs/` (port 3001)
+
+### Architecture
+
+- **Vite** + **Cloudflare Vite Plugin** with Tailwind CSS v4
+- **Single-page app**: all content sections rendered into one scrollable page with scroll-spy navigation
+- **Worker API** (`docs/worker/index.ts`): handles `/api/stars` (GitHub star count with caching) and `/api/early-access` (waitlist signup proxy)
+- **Static assets**: `docs/public/` served at root (images, video, favicon)
+- **Content**: `docs/src/content/` — each page is a JS module exporting `render()` that returns an HTML string
+
+### Key Files
+
+```
+docs/
+├── worker/index.ts         # Cloudflare Worker (API routes)
+├── src/
+│   ├── main.js             # App entry, init, form handlers
+│   ├── hero.js             # Hero section template + star count
+│   ├── sidebar.js          # Navigation sidebar with scroll-spy
+│   ├── style.css           # All styles (Tailwind + custom)
+│   ├── content/
+│   │   ├── index.js        # Section/page registry
+│   │   └── *.js            # Content pages (render() → HTML)
+│   └── index.html          # Shell HTML
+├── public/                 # Static assets (served at /)
+├── vite.config.js          # Vite config (root: src, publicDir: ../public)
+├── wrangler.json           # Cloudflare Worker config
+└── .dev.vars               # Local dev secrets (WAITLIST_API_TOKEN)
+```
+
+### Important Notes
+
+- **Tailwind v4 class detection**: Tailwind v4 uses CSS-based detection and does NOT scan JS template strings. Use inline `style="display:none"` instead of the `hidden` utility class for elements in JS templates.
+- **Hero animations**: The hero uses CSS keyframe animations on inline `style` attributes. Never re-render the hero innerHTML after initial load or animations will replay (double flash). Update individual elements in-place instead.
+- **Secrets**: `WAITLIST_API_TOKEN` is in `.dev.vars` for local dev. For production, set via `wrangler secret put WAITLIST_API_TOKEN`.
 
 ## Project Overview
 
