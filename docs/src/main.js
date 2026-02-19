@@ -35,15 +35,16 @@ async function init() {
   initSidebar();
   setupScrollSpy();
 
-  // Fetch stars async (update badge in-place to avoid re-triggering hero animations)
-  const count = await fetchStars();
-  if (count) {
+  // Fetch stars — returns cached value immediately, refetches in background
+  function showStars(count) {
     const badge = heroContainer.querySelector('.hero-star-badge');
-    if (badge) {
+    if (badge && count) {
       badge.textContent = formatStars(count);
       badge.style.display = '';
     }
   }
+  const cachedCount = fetchStars(showStars);
+  showStars(cachedCount);
 
   // Handle initial hash anchor
   if (window.location.hash) {

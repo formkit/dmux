@@ -1,6 +1,6 @@
 const GITHUB_API = 'https://api.github.com/repos/formkit/dmux';
 const WAITLIST_API = 'https://agents.standardagentbuilder.com/api/waitlist';
-const CACHE_TTL = 3600; // 1 hour in seconds
+const CACHE_TTL = 60; // 1 minute in seconds
 
 interface Env {
   WAITLIST_API_TOKEN: string;

@@ -36,18 +36,33 @@ export function formatStars(count) {
 }
 
 const CACHE_KEY = 'dmux_gh_stars';
-const CACHE_TTL = 3600000;
+const REFETCH_INTERVAL = 60000; // don't fetch more than once per minute
 
-export async function fetchStars() {
+export function fetchStars(onUpdate) {
+  let cached = null;
   try {
-    const cached = sessionStorage.getItem(CACHE_KEY);
-    if (cached) {
-      const { count, ts } = JSON.parse(cached);
-      if (Date.now() - ts < CACHE_TTL) return count;
-    }
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (raw) cached = JSON.parse(raw);
   } catch {}
 
-  // Try server-side cached endpoint first, fall back to direct GitHub API
+  // Return cached value immediately, refetch in background if stale
+  if (cached) {
+    if (Date.now() - cached.ts > REFETCH_INTERVAL) {
+      fetchFresh().then((count) => {
+        if (count && count !== cached.count && onUpdate) onUpdate(count);
+      });
+    }
+    return cached.count;
+  }
+
+  // No cache — fetch and call onUpdate when ready
+  fetchFresh().then((count) => {
+    if (count && onUpdate) onUpdate(count);
+  });
+  return null;
+}
+
+async function fetchFresh() {
   try {
     const res = await fetch('/api/stars');
     if (res.ok) {
@@ -68,12 +83,4 @@ export async function fetchStars() {
   } catch {
     return null;
   }
-}
-
-export function updateStarCount(count) {
-  if (count == null) return;
-  const formatted = formatStars(count);
-  document.querySelectorAll('.hero-star-badge').forEach((el) => {
-    el.textContent = formatted;
-  });
 }
