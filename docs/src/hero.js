@@ -35,10 +35,13 @@ export function formatStars(count) {
   return String(count);
 }
 
-const CACHE_KEY = 'dmux_gh_stars';
+const CACHE_KEY = 'dmux_gh_stars_v2';
 const REFETCH_INTERVAL = 60000; // don't fetch more than once per minute
 
 export function fetchStars(onUpdate) {
+  // Clear old cache key
+  try { sessionStorage.removeItem('dmux_gh_stars'); } catch {}
+
   let cached = null;
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
