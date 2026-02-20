@@ -23,8 +23,17 @@ export function render() {
     <table>
       <tbody>
         <tr><td><strong>Type</strong></td><td><code>boolean</code></td></tr>
-        <tr><td><strong>Default</strong></td><td><code>false</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>true</code></td></tr>
         <tr><td><strong>Description</strong></td><td>Automatically accept options when no risk is detected for new panes. When enabled, agents will run with less user intervention.</td></tr>
+      </tbody>
+    </table>
+
+    <h3><code>permissionMode</code></h3>
+    <table>
+      <tbody>
+        <tr><td><strong>Type</strong></td><td><code>'' | 'plan' | 'acceptEdits' | 'bypassPermissions'</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>'bypassPermissions'</code></td></tr>
+        <tr><td><strong>Description</strong></td><td>Controls the permission flags dmux passes to launched agents. Use empty string to defer to each agent's own defaults.</td></tr>
       </tbody>
     </table>
 
@@ -67,6 +76,7 @@ curl -X PATCH http://127.0.0.1:PORT/api/settings \\
     <p>You can edit the JSON files directly:</p>
     <pre><code data-lang="json">{
   "enableAutopilotByDefault": true,
+  "permissionMode": "bypassPermissions",
   "defaultAgent": "claude",
   "useTmuxHooks": false
 }</code></pre>

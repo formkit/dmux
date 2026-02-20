@@ -67,6 +67,12 @@ export interface ProjectSettings {
 }
 
 export interface DmuxSettings {
+  // Agent permission mode
+  // '' = agent default behavior (usually prompts for permissions)
+  // plan = Claude plan mode only (read/plan focused)
+  // acceptEdits = edit files without asking, ask for command execution
+  // bypassPermissions = fully autonomous mode (dangerous)
+  permissionMode?: '' | 'plan' | 'acceptEdits' | 'bypassPermissions';
   // Autopilot settings
   enableAutopilotByDefault?: boolean;
   // Agent selection
