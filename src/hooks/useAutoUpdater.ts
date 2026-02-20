@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Worker } from 'worker_threads';
 import path from 'path';
+import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,6 +14,14 @@ interface UpdateInfo {
   installMethod: 'global' | 'local' | 'unknown';
 }
 
+interface UpdateCheckerMessage {
+  type: 'update-available' | 'no-update' | 'error';
+  updateInfo?: UpdateInfo;
+}
+
+const INITIAL_CHECK_DELAY_MS = 3000;
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
+
 export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMessage: (msg: string) => void) {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
@@ -20,60 +29,78 @@ export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMe
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
-    // Only run the worker check, not the old blocking check
     let worker: Worker | null = null;
     let updateInterval: NodeJS.Timeout | null = null;
+    const workerPath = path.join(__dirname, '../workers/updateChecker.js');
+    const configFile =
+      autoUpdater && typeof autoUpdater.configFile === 'string'
+        ? autoUpdater.configFile
+        : undefined;
+
+    const releaseWorker = () => {
+      if (!worker) {
+        return;
+      }
+      worker.removeAllListeners();
+      worker = null;
+    };
 
     const runWorkerCheck = () => {
+      if (worker) {
+        return;
+      }
+
       try {
-        // Create a new worker thread for update checking
-        const workerPath = path.join(__dirname, '../workers/updateChecker.js');
-        
-        // Check if worker file exists first
-        if (!require('fs').existsSync(workerPath)) {
+        if (!existsSync(workerPath) || !configFile) {
           return;
         }
-        
-        worker = new Worker(workerPath);
-        
-        worker.on('message', (message) => {
-          if (message.type === 'update-available') {
-            setUpdateInfo(message.updateInfo);
-            setUpdateAvailable(true);
+
+        worker = new Worker(workerPath, {
+          workerData: {
+            configFile
           }
-          // Clean up the worker after it's done
-          worker?.terminate();
-          worker = null;
         });
 
-        worker.on('error', () => {
-          // Silently ignore errors
-          worker?.terminate();
-          worker = null;
+        worker.once('message', (message: UpdateCheckerMessage) => {
+          if (message.type === 'update-available') {
+            setUpdateInfo(message.updateInfo || null);
+            setUpdateAvailable(true);
+          } else if (message.type === 'no-update') {
+            setUpdateInfo(null);
+            setUpdateAvailable(false);
+          }
+          releaseWorker();
+        });
+
+        worker.once('error', () => {
+          releaseWorker();
+        });
+
+        worker.once('exit', () => {
+          releaseWorker();
         });
       } catch {
-        // Silently ignore any errors creating the worker
+        releaseWorker();
       }
     };
 
-    // Initial check after a short delay
     const initialCheckTimer = setTimeout(() => {
       runWorkerCheck();
-    }, 3000);
+    }, INITIAL_CHECK_DELAY_MS);
 
-    // Periodic checks every 1 hour
     updateInterval = setInterval(() => {
       runWorkerCheck();
-    }, 1 * 60 * 60 * 1000);
+    }, UPDATE_CHECK_INTERVAL_MS);
 
     return () => {
       clearTimeout(initialCheckTimer);
       if (updateInterval) clearInterval(updateInterval);
       if (worker) {
-        worker.terminate();
+        worker.terminate().catch(() => {});
+        releaseWorker();
       }
     };
-  }, []);
+  }, [autoUpdater]);
 
   const performUpdate = async () => {
     if (!autoUpdater || !updateInfo) return;
@@ -93,7 +120,7 @@ export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMe
         setStatusMessage('Update failed. Please update manually.');
         setTimeout(() => setStatusMessage(''), 3000);
       }
-    } catch (error) {
+    } catch {
       setStatusMessage('Update failed. Please update manually.');
       setTimeout(() => setStatusMessage(''), 3000);
     } finally {
