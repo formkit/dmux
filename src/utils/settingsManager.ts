@@ -35,13 +35,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     key: 'baseBranch',
     label: 'Base Branch',
     description: 'Branch to create new worktrees from. Leave empty to use current HEAD.',
-    type: 'select',
-    options: [
-      { value: '', label: 'Current HEAD (default)' },
-      { value: 'main', label: 'main' },
-      { value: 'master', label: 'master' },
-      { value: 'develop', label: 'develop' },
-    ],
+    type: 'text',
   },
   {
     key: 'branchPrefix',

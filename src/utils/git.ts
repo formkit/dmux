@@ -8,6 +8,9 @@ import type { DmuxPane } from '../types.js';
 /** Regex for characters allowed in git branch names and branch prefixes */
 export const SAFE_BRANCH_CHARS = /^[a-zA-Z0-9._\/-]*$/;
 
+/** Reject path traversal sequences */
+const HAS_DOT_DOT = /\.\./;
+
 /**
  * Get the git branch name for a pane.
  * Returns branchName if set (prefix-based), otherwise falls back to slug.
@@ -22,7 +25,7 @@ export function getPaneBranchName(pane: DmuxPane): string {
  */
 export function isValidBranchName(name: string): boolean {
   if (!name) return true; // empty is valid (means "not set")
-  return SAFE_BRANCH_CHARS.test(name);
+  return SAFE_BRANCH_CHARS.test(name) && !HAS_DOT_DOT.test(name);
 }
 
 /**

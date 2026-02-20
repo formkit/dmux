@@ -74,6 +74,13 @@ describe('isValidBranchName', () => {
     expect(isValidBranchName('$(cat /etc/passwd)')).toBe(false);
     expect(isValidBranchName('main && echo pwned')).toBe(false);
   });
+
+  it('rejects path traversal sequences', () => {
+    expect(isValidBranchName('../main')).toBe(false);
+    expect(isValidBranchName('refs/../../etc')).toBe(false);
+    expect(isValidBranchName('foo/../bar')).toBe(false);
+    expect(isValidBranchName('..')).toBe(false);
+  });
 });
 
 // ─── Test 5: Settings validation at write time ───
@@ -311,18 +318,12 @@ describe('hooks environment uses branchName', () => {
 // ─── Setting definitions ───
 
 describe('setting definitions', () => {
-  it('baseBranch has correct options', async () => {
+  it('baseBranch is a text field for arbitrary branch names', async () => {
     const { SETTING_DEFINITIONS } = await import('../src/utils/settingsManager.js');
     const def = SETTING_DEFINITIONS.find(d => d.key === 'baseBranch');
 
     expect(def).toBeDefined();
-    expect(def!.type).toBe('select');
-
-    const values = def!.options!.map(o => o.value);
-    expect(values).toContain('');
-    expect(values).toContain('main');
-    expect(values).toContain('master');
-    expect(values).toContain('develop');
+    expect(def!.type).toBe('text');
   });
 
   it('branchPrefix has common prefix options', async () => {

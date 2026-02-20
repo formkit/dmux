@@ -87,7 +87,7 @@ export interface SettingDefinition {
   key: keyof DmuxSettings | string;
   label: string;
   description: string;
-  type: 'boolean' | 'select' | 'action';
+  type: 'boolean' | 'select' | 'text' | 'action';
   options?: Array<{ value: string; label: string }>;
 }
 
