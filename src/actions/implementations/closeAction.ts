@@ -13,6 +13,7 @@ import { triggerHook } from '../../utils/hooks.js';
 import { LogService } from '../../services/LogService.js';
 import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
 import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../utils/paneProject.js';
+import { getPaneBranchName } from '../../utils/git.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -179,7 +180,7 @@ async function executeCloseOption(
         // Delete branch if requested
         if (option === 'kill_clean_branch') {
           try {
-            execSync(`git branch -D ${pane.slug}`, {
+            execSync(`git branch -D "${getPaneBranchName(pane)}"`, {
               stdio: 'pipe',
               cwd: mainRepoPath,
             });

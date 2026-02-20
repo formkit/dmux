@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type { DmuxSettings, SettingsScope, SettingDefinition } from '../types.js';
+import { isValidBranchName } from './git.js';
 
 const GLOBAL_SETTINGS_PATH = join(homedir(), '.dmux.global.json');
 
@@ -29,6 +30,30 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     label: 'Use Tmux Hooks',
     description: 'Use tmux hooks for event-driven updates (lower CPU). If disabled, uses polling in a worker thread.',
     type: 'boolean',
+  },
+  {
+    key: 'baseBranch',
+    label: 'Base Branch',
+    description: 'Branch to create new worktrees from. Leave empty to use current HEAD.',
+    type: 'select',
+    options: [
+      { value: '', label: 'Current HEAD (default)' },
+      { value: 'main', label: 'main' },
+      { value: 'master', label: 'master' },
+      { value: 'develop', label: 'develop' },
+    ],
+  },
+  {
+    key: 'branchPrefix',
+    label: 'Branch Name Prefix',
+    description: 'Prefix for new branch names (e.g. "feat/" produces branch "feat/fix-auth"). Leave empty for no prefix.',
+    type: 'select',
+    options: [
+      { value: '', label: 'No prefix (default)' },
+      { value: 'feat/', label: 'feat/' },
+      { value: 'fix/', label: 'fix/' },
+      { value: 'chore/', label: 'chore/' },
+    ],
   },
   {
     key: 'hooks' as any,
@@ -112,6 +137,13 @@ export class SettingsManager {
     value: DmuxSettings[K],
     scope: SettingsScope
   ): void {
+    // Validate branch-related settings
+    if ((key === 'baseBranch' || key === 'branchPrefix') && typeof value === 'string' && value !== '') {
+      if (!isValidBranchName(value)) {
+        throw new Error(`Invalid ${key}: contains characters not allowed in git branch names`);
+      }
+    }
+
     if (scope === 'global') {
       this.globalSettings[key] = value;
       this.saveGlobalSettings();

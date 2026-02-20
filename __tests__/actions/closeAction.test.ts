@@ -302,9 +302,9 @@ describe('closeAction', () => {
         expect.anything()
       );
 
-      // Should delete branch
+      // Should delete branch (branch name is quoted for shell safety)
       expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('git branch -D my-feature'),
+        expect.stringContaining('git branch -D "my-feature"'),
         expect.anything()
       );
     });

@@ -116,7 +116,7 @@ export async function buildHookEnvironment(
 
     if (pane.worktreePath) {
       env.DMUX_WORKTREE_PATH = pane.worktreePath;
-      env.DMUX_BRANCH = pane.slug; // Branch name matches slug
+      env.DMUX_BRANCH = pane.branchName || pane.slug; // Branch name (may differ from slug with prefix)
     }
   }
 

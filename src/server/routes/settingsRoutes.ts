@@ -73,11 +73,12 @@ export function createSettingsRoutes() {
               message: `Setting "${key}" updated at ${scope} level`
             };
           } catch (err: any) {
-            const msg = 'Failed to update setting';
+            const msg = err.message || 'Failed to update setting';
             console.error(msg, err);
             LogService.getInstance().error(msg, 'routes', undefined, err instanceof Error ? err : undefined);
-            event.node.res.statusCode = 500;
-            return { error: 'Failed to update setting', details: err.message };
+            // Return 400 for validation errors, 500 for unexpected errors
+            event.node.res.statusCode = msg.includes('Invalid') ? 400 : 500;
+            return { error: msg };
           }
         }
 

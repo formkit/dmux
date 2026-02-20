@@ -15,6 +15,7 @@ export interface PotentialHarm {
 export interface DmuxPane {
   id: string;
   slug: string;
+  branchName?: string; // Git branch name (may differ from slug when branchPrefix is set)
   prompt: string;
   paneId: string;
   projectRoot?: string; // Main repository root this pane belongs to
@@ -73,6 +74,11 @@ export interface DmuxSettings {
   // Tmux hooks for event-driven updates (low CPU)
   // true = use hooks, false = use polling, undefined = not yet asked
   useTmuxHooks?: boolean;
+  // Base branch for new worktrees (e.g. 'main', 'master', 'develop')
+  // When set, worktrees branch from this instead of the current HEAD
+  baseBranch?: string;
+  // Prefix for branch names (e.g. 'feat/' produces 'feat/fix-auth')
+  branchPrefix?: string;
 }
 
 export type SettingsScope = 'global' | 'project';
