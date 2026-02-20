@@ -139,6 +139,7 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
           onSubmit={handleSubmit}
           placeholder="~/projects/my-app"
           maxWidth={72}
+          cursorPosition={value.length}
           disableUpDownArrows={true}
           disableEscape={true}
           ignoreFocus={true}
