@@ -59,7 +59,6 @@ export function render() {
       </thead>
       <tbody>
         <tr><td><kbd>p</kbd></td><td>Interactive project selection then prompt input</td></tr>
-        <tr><td>API</td><td><code>POST /api/panes</code> with <code>project</code> field specifying the target</td></tr>
       </tbody>
     </table>
 

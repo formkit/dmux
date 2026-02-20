@@ -17,15 +17,11 @@
 This project maintains several documentation files for different aspects of the system:
 
 - **[CLAUDE.md](CLAUDE.md)** (this file) - Complete technical documentation covering architecture, implementation, and development workflows
-- **[API.md](API.md)** - REST API reference for the HTTP server, including all endpoints, request/response formats, and examples
-- **[BUNDLED_ASSETS.md](BUNDLED_ASSETS.md)** - Frontend build system documentation explaining the Vue 3 migration, asset embedding, and single dist/ directory architecture
 - **[README.md](README.md)** - User-facing documentation with quick start guide and feature overview
 
 **When to use each:**
 
 - Working on backend/TUI → Read CLAUDE.md
-- Working on API endpoints → Read API.md
-- Working on frontend/build system → Read BUNDLED_ASSETS.md
 - Working on user documentation → Update README.md
 - Working on docs website → See Docs Website section below
 
@@ -75,19 +71,18 @@ docs/
 
 ## Project Overview
 
-dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-powered development sessions with Claude Code or opencode. It provides seamless integration between tmux, git worktrees, and these agents to enable parallel development workflows with automatic branch management and AI assistance.
+dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-powered development sessions with Claude Code, Codex, or opencode. It provides seamless integration between tmux, git worktrees, and these agents to enable parallel development workflows with automatic branch management and AI assistance.
 
 ### Key Capabilities
 
 - **Project-specific tmux sessions**: Each project gets its own isolated tmux session
 - **Horizontal split pane management**: Creates and manages tmux panes (not windows)
 - **Git worktree integration**: Each pane operates in its own git worktree with a dedicated branch
-- **Agent automation**: Automatically launches Claude Code (with `--accept-edits`) or opencode and submits your initial prompt
+- **Agent automation**: Automatically launches Claude Code, Codex, or opencode (with `--dangerously-skip-permissions`) and submits your initial prompt
 - **AI-powered naming**: Generates contextual kebab-case slugs for branches and worktrees
 - **Intelligent merge workflows**: Auto-commits, generates commit messages, and merges worktrees
 - **React-based TUI**: Interactive terminal UI built with Ink framework
 - **Session persistence**: Tracks active panes per project with automatic cleanup
-- **Test merge functionality**: This line added to test the merge workflow
 
 ## Architecture
 
@@ -114,7 +109,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 - **Styling**: chalk for terminal colors
 - **Language**: TypeScript 5.x with strict mode
 - **External APIs**: OpenRouter AI (gpt-4o-mini model)
-- **System Requirements**: tmux, git, and at least one agent CLI: Claude Code (`claude`) or opencode (`opencode`)
+- **System Requirements**: tmux, git, and at least one agent CLI: Claude Code (`claude`), Codex (`codex`), or opencode (`opencode`)
 
 ### File Structure
 
@@ -123,9 +118,13 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 ├── src/                  # TypeScript source code
 │   ├── index.ts          # Main entry point, session management
 │   ├── DmuxApp.tsx       # React TUI component, core logic
-│   └── server/           # HTTP server and API
-│       ├── routes.ts     # API endpoints
-│       └── embedded-assets.ts  # Generated frontend assets
+│   ├── server/
+│   │   └── embedded-assets.ts  # Generated frontend assets (base64 embedded)
+│   └── utils/
+│       ├── paneCreation.ts     # Pane creation logic (shared by TUI)
+│       ├── promptStore.ts      # File-based prompt passing to agents
+│       ├── settingsManager.ts  # Global/project settings management
+│       └── git.ts              # Git utilities (branch validation, etc.)
 ├── frontend/             # Vue 3 frontend application
 │   ├── src/
 │   │   ├── components/   # Vue components
@@ -138,20 +137,14 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 │   │   └── terminal.ts
 │   ├── package.json      # Frontend dependencies
 │   └── vite.config.ts    # Vite build configuration
-├── scripts/
-│   └── embed-assets.js   # Embeds frontend assets into TypeScript
 ├── dist/                 # All build output (gitignored)
 │   ├── *.js              # Compiled TypeScript
-│   ├── *.d.ts            # Type definitions
-│   ├── dashboard.*       # Frontend dashboard bundle
-│   └── terminal.*        # Frontend terminal bundle
+│   └── *.d.ts            # Type definitions
 ├── dmux                  # Executable wrapper script
 ├── package.json          # Node dependencies and scripts
 ├── tsconfig.json         # TypeScript configuration
 ├── .gitignore            # Git ignore rules
 ├── CLAUDE.md             # Technical documentation (this file)
-├── API.md                # REST API reference
-├── BUNDLED_ASSETS.md     # Frontend build system documentation
 ├── README.md             # User-facing documentation
 └── .dmux/                # Project-specific dmux data (gitignored)
     ├── dmux.config.json  # Configuration and pane tracking
@@ -164,7 +157,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 ### Prerequisites
 
 - tmux 3.0+, Node.js 18+, Git 2.20+
-- At least one agent: `claude` or `opencode`
+- At least one agent: `claude`, `codex`, or `opencode`
 - Optional: `OPENROUTER_API_KEY` for AI slug/commit generation
 
 ### Build Commands
@@ -244,20 +237,21 @@ dmux supports both global and project-specific settings stored in:
 
 **Available Settings:**
 
-- `enableAutopilotByDefault` (boolean): Automatically enable autopilot mode for new panes
-- `defaultAgent` ('claude' | 'opencode' | ''): Default agent for new panes (empty string means "ask each time")
+- `enableAutopilotByDefault` (boolean): Automatically accept options when no risk is detected for new panes
+- `defaultAgent` ('claude' | 'opencode' | 'codex' | ''): Default agent for new panes (empty string means "ask each time")
+- `useTmuxHooks` (boolean): Use tmux hooks for event-driven updates instead of polling
+- `baseBranch` (string): Branch to create new worktrees from (empty = current HEAD)
+- `branchPrefix` (string): Prefix for new branch names (e.g. `feat/` produces `feat/fix-auth`)
 
 **Accessing Settings:**
 
 - **TUI**: Press `s` to open settings dialog
-- **Web**: Click "Settings" button in dashboard
-- **API**: `GET /api/settings`, `PATCH /api/settings`
 
 **Setting Precedence**: Project settings override global settings
 
 ### 6. Pane Lifecycle
 
-**Creation**: Generate slug → create worktree → split tmux pane → launch agent with `--permission-mode=acceptEdits`
+**Creation**: Generate slug → create worktree → split tmux pane → launch agent with `--dangerously-skip-permissions`
 **Auto-Cleanup**: Polls every 2s, removes dead panes from tracking
 **Merge**: AI-generated commit → merge to main → remove worktree → optional pane close
 
@@ -267,8 +261,7 @@ dmux supports both global and project-specific settings stored in:
 
 - **Session Management** (`src/index.ts`): Creates/attaches project-specific tmux sessions, manages config in `.dmux/dmux.config.json`
 - **TUI** (`src/DmuxApp.tsx`): Ink React app with keyboard navigation, auto-refresh every 2s
-- **HTTP Server** (`src/server/`): Auto-port selection, serves Vue 3 dashboard
-- **State Management** (`src/shared/StateManager.ts`): Singleton shared between TUI and server
+- **State Management** (`src/shared/StateManager.ts`): Singleton for TUI state
 
 ### 2. DmuxPane Interface
 
@@ -276,9 +269,12 @@ dmux supports both global and project-specific settings stored in:
 interface DmuxPane {
   id: string // dmux-# identifier
   slug: string // Branch/worktree name
+  branchName?: string // Git branch name (may differ from slug when branchPrefix is set)
   prompt: string // Initial agent prompt
   paneId: string // tmux pane ID (%38)
   worktreePath?: string
+  agent?: 'claude' | 'opencode' | 'codex'
+  autopilot?: boolean
 }
 ```
 
@@ -311,25 +307,17 @@ interface DmuxPane {
 - Activity-based: terminal motion = working, static = analyze
 - User typing detection prevents false "working" status
 
-### 6. HTTP Server & API
+### 6. Prompt Store (`src/utils/promptStore.ts`)
 
-**Endpoints**: See [API.md](API.md) for details
+Resolves prompt passing conflicts by storing prompts as files instead of inline shell escaping:
 
-- `GET /` - Vue 3 dashboard (embedded assets)
-- `GET/POST /api/panes` - List/create panes
-- `GET /api/stream/:id` - SSE terminal output
-- `POST /api/keys/:id` - Send keystrokes (uses dmux IDs, not tmux pane IDs)
-- Actions API: `/api/panes/:id/actions/:action`, callbacks for interactions
-
-**Features**:
-
-- Auto-port selection, all assets embedded in binary
-- Real-time dashboard with pane status indicators
-- LLM optimization: only calls when ambiguous
+- `writePromptFile(projectRoot, slug, prompt)` — writes prompt to `.dmux/prompts/{slug}.txt`
+- `buildPromptReadAndDeleteSnippet(promptPath)` — returns shell snippet that reads prompt into `$DMUX_PROMPT_CONTENT` and deletes the file
+- Falls back to inline shell escaping if file write fails
 
 ### 7. Pane Creation (`src/utils/paneCreation.ts`)
 
-Shared utility for TUI and API:
+Shared utility for TUI:
 
 ```typescript
 createPane({ prompt, agent, projectName, existingPanes }, availableAgents)
@@ -337,6 +325,13 @@ createPane({ prompt, agent, projectName, existingPanes }, availableAgents)
 ```
 
 Handles: slug generation → worktree creation → tmux split → agent launch
+
+**Agent launch flags** (always applied, not conditional on autopilot):
+- Claude Code: `--dangerously-skip-permissions`
+- Codex: `--dangerously-bypass-approvals-and-sandbox`
+- opencode: launched directly with prompt
+
+**Configurable branching**: When `baseBranch` is set, worktrees are created from that branch instead of HEAD. When `branchPrefix` is set (e.g. `feat/`), the git branch name becomes `feat/{slug}` while the filesystem slug stays flat.
 
 ### 8. Layout System (`src/utils/layoutManager.ts`, `src/utils/tmux.ts`)
 
@@ -465,40 +460,20 @@ When layout issues occur, check logs for:
 6. `s` - Open settings (global or project-specific)
 7. `q` - Exit dmux interface
 
-### Programmatic Pane Creation
-
-```bash
-curl -X POST http://127.0.0.1:PORT/api/panes \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Add tests", "agent": "claude"}'
-```
-
-Use cases: CI/CD pipelines, project management tools, batch task creation. See [API.md](API.md) for details.
-
 ## Standardized Action System
 
-Decouples business logic from UI. Actions work identically across TUI, Web Dashboard, and REST API.
+Decouples business logic from UI. Actions are pure functions invoked through the TUI adapter.
 
-**Architecture**: User Interfaces → Adapters → Action Functions → System Operations
+**Architecture**: TUI → Adapter → Action Functions → System Operations
 
 **Action Result Types**: `success`, `error`, `confirm`, `choice`, `input`, `info`, `progress`, `navigation`
 
 **Actions**: `VIEW`, `CLOSE`, `MERGE`, `RENAME`, `DUPLICATE`, `RUN_TEST`, `RUN_DEV`, etc.
 
-**API Endpoints**:
-
-- `GET /api/actions` - List all actions
-- `POST /api/panes/:id/actions/:action` - Execute action
-- `POST /api/callbacks/{confirm,choice,input}/:callbackId` - Respond to interactions
-
 **File Organization**:
 
 - `src/actions/paneActions.ts` - Pure action functions
 - `src/adapters/tuiActionHandler.ts` - TUI adapter
-- `src/adapters/apiActionHandler.ts` - API adapter
-- `src/server/actionsApi.ts` - REST endpoints
-
-**Migration Status**: VIEW/CLOSE ✅, MERGE in progress
 
 ### Adding New Actions
 
@@ -573,27 +548,28 @@ ps aux | grep dmux                    # Running processes
   - Minimum spacer width (20 cells) prevents tmux rejection
   - Comprehensive test suite with regression tests for problematic widths
   - Debug logs always enabled for easier troubleshooting
-- **Vue 3 Dashboard**: Full SFC migration with TypeScript, kebab menus, dialogs (see [BUNDLED_ASSETS.md](BUNDLED_ASSETS.md))
-- **Standardized Action System**: Pure functions + adapters for TUI/Web/API consistency
+- **Standardized Action System**: Pure functions + adapters for TUI consistency
 - **LLM Status Detection**: Worker-based monitoring with smart activity detection
-- **Pane Creation API**: `POST /api/panes` for programmatic creation
 - **pnpm Workspace**: Single node_modules, consolidated dependencies
 - **Enhanced Dialogs**: Auto-focus, Esc to close, loading spinners, chained interactions
+- **Configurable Base Branch & Prefix** (v5.2.0): Create worktrees from a specific branch with optional branch name prefixes (e.g. `feat/`, `fix/`)
+- **Prompt Store** (v5.2.0): File-based prompt passing to agents, avoids shell escaping issues with long/complex prompts
+- **Server Removal** (v5.2.0): Removed HTTP server, REST API, tunnel service, and remote popup. TUI is now the sole interface.
+- **Codex Agent Support**: Full support for OpenAI Codex with `--dangerously-bypass-approvals-and-sandbox`
+- **GitHub Release Automation** (v5.2.0): CI automatically creates GitHub releases with changelogs on publish
 
 ### Known Issues
 
 1. Agent availability not verified on startup
 2. Long prompts may overflow in TUI
 3. No undo for pane deletion
-4. API timeouts not configured
 
 ### Planned
 
-- Complete action system migration (VIEW/CLOSE done, MERGE in progress)
 - Merge conflict resolution UI
 - Custom keyboard shortcuts
 
 ## Best Practices
 
 **Users**: Descriptive prompts, merge frequently, one feature per pane
-**Developers**: Use action system, test all interfaces, update relevant docs (CLAUDE.md/API.md/BUNDLED_ASSETS.md/README.md)
+**Developers**: Use action system, test TUI, update relevant docs (CLAUDE.md/README.md)
