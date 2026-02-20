@@ -13,6 +13,7 @@ import { triggerHook } from '../../utils/hooks.js';
 import { LogService } from '../../services/LogService.js';
 import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
 import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../utils/paneProject.js';
+import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -155,6 +156,17 @@ async function executeCloseOption(
         }
       } else {
         LogService.getInstance().debug(`Pane ${pane.paneId} already gone, skipping kill`, 'paneActions');
+      }
+
+      // Best-effort cleanup of any stored prompt files for this pane slug
+      // (including leftovers from interrupted launches).
+      try {
+        const promptCleanupRoot = pane.worktreePath
+          ? (deriveProjectRootFromWorktreePath(pane.worktreePath) || paneProjectRoot)
+          : paneProjectRoot;
+        await cleanupPromptFilesForSlug(promptCleanupRoot, pane.slug);
+      } catch {
+        // Ignore prompt cleanup errors
       }
 
       // Handle worktree cleanup based on option

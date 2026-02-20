@@ -5,6 +5,7 @@
  */
 
 import { execSync } from 'child_process';
+import { cleanupPromptFilesForSlug } from './promptStore.js';
 
 export interface MergeResult {
   success: boolean;
@@ -205,6 +206,9 @@ export function cleanupAfterMerge(
       cwd: mainRepoPath,
       stdio: 'pipe',
     });
+
+    // Best-effort cleanup for any prompt artifacts associated with this branch.
+    void cleanupPromptFilesForSlug(mainRepoPath, branchName);
 
     return { success: true };
   } catch (error) {

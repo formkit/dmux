@@ -6,6 +6,8 @@ import { TmuxService } from '../services/TmuxService.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
 import { getCurrentBranch } from '../utils/git.js';
+import { cleanupPromptFilesForSlug } from '../utils/promptStore.js';
+import { deriveProjectRootFromWorktreePath } from '../utils/paneProject.js';
 import { useTemporaryStatus } from './useTemporaryStatus.js';
 
 interface Params {
@@ -94,6 +96,8 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
 
       // Only remove worktree if merge succeeded
       execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
+      const mainRepoPath = deriveProjectRootFromWorktreePath(pane.worktreePath) || process.cwd();
+      await cleanupPromptFilesForSlug(mainRepoPath, pane.slug);
       execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
 
       setStatusMessage(`Merged ${pane.slug} into ${mainBranch}`);
@@ -153,6 +157,8 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
 
       // Only remove worktree if merge succeeded
       execSync(`git worktree remove "${pane.worktreePath}"`, { stdio: 'pipe' });
+      const mainRepoPath = deriveProjectRootFromWorktreePath(pane.worktreePath) || process.cwd();
+      await cleanupPromptFilesForSlug(mainRepoPath, pane.slug);
       execSync(`git branch -d ${pane.slug}`, { stdio: 'pipe' });
       await closePane(pane);
       setStatusMessage(`Merged ${pane.slug} into ${mainBranch} and closed pane`);
@@ -172,6 +178,8 @@ export default function useWorktreeActions({ panes, savePanes, setStatusMessage,
     try {
       setStatusMessage('Removing worktree with unsaved changes...');
       execSync(`git worktree remove --force "${pane.worktreePath}"`, { stdio: 'pipe' });
+      const mainRepoPath = deriveProjectRootFromWorktreePath(pane.worktreePath) || process.cwd();
+      await cleanupPromptFilesForSlug(mainRepoPath, pane.slug);
       try { execSync(`git branch -D ${pane.slug}`, { stdio: 'pipe' }); } catch {}
       await closePane(pane);
       setStatusMessage(`Deleted worktree ${pane.slug} and closed pane`);

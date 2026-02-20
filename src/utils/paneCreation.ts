@@ -17,6 +17,11 @@ import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
 import { appendSlugSuffix } from './agentLaunch.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
+import {
+  buildPromptReadAndDeleteSnippet,
+  deletePromptFile,
+  writePromptFile,
+} from './promptStore.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -378,15 +383,29 @@ export async function createPane(
   }
 
   // Launch agent if specified
+  const hasInitialPrompt = !!(prompt && prompt.trim());
+
   if (agent === 'claude') {
     let claudeCmd: string;
-    if (prompt && prompt.trim()) {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
+    if (hasInitialPrompt) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping if prompt file write fails
+      }
+
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT" --dangerously-skip-permissions`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
+      }
     } else {
       claudeCmd = `claude --dangerously-skip-permissions`;
     }
@@ -400,13 +419,25 @@ export async function createPane(
     });
   } else if (agent === 'codex') {
     let codexCmd: string;
-    if (prompt && prompt.trim()) {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+    if (hasInitialPrompt) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping if prompt file write fails
+      }
+
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT" --dangerously-bypass-approvals-and-sandbox`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+      }
     } else {
       codexCmd = `codex --dangerously-bypass-approvals-and-sandbox`;
     }
@@ -416,11 +447,29 @@ export async function createPane(
     await tmuxService.sendShellCommand(paneInfo, 'opencode');
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
-    if (prompt && prompt.trim()) {
+    if (hasInitialPrompt) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       const bufName = `dmux_prompt_${Date.now()}`;
-      const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-      await tmuxService.setBuffer(bufName, promptEsc);
+      let promptLoaded = false;
+      let promptFilePath: string | null = null;
+
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+        await tmuxService.loadBufferFromFile(bufName, promptFilePath);
+        await deletePromptFile(promptFilePath);
+        promptLoaded = true;
+      } catch {
+        // Fall back to escaped buffer if prompt file flow fails
+      }
+
+      if (!promptLoaded) {
+        const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+        await tmuxService.setBuffer(bufName, promptEsc);
+        if (promptFilePath) {
+          await deletePromptFile(promptFilePath);
+        }
+      }
+
       await tmuxService.pasteBuffer(bufName, paneInfo);
       await new Promise((resolve) => setTimeout(resolve, 200));
       await tmuxService.deleteBuffer(bufName);
