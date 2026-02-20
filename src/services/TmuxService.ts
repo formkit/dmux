@@ -568,7 +568,7 @@ export class TmuxService {
    * The command will be automatically quoted to prevent tmux from splitting on spaces.
    *
    * @example
-   * await tmuxService.sendShellCommand(paneId, 'claude "fix the bug" --dangerously-skip-permissions');
+   * await tmuxService.sendShellCommand(paneId, 'claude "fix the bug" --permission-mode acceptEdits');
    * await tmuxService.sendTmuxKeys(paneId, 'Enter'); // Then send Enter key
    *
    * @param paneId The tmux pane ID (e.g., "%1")

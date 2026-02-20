@@ -75,3 +75,29 @@ export function buildAgentLaunchOptions(
 
   return [...singleAgentOptions, ...pairOptions];
 }
+
+/**
+ * Resolve CLI permission flags for a given agent and dmux permissionMode.
+ */
+export function getPermissionFlags(
+  agent: AgentName,
+  permissionMode: '' | 'plan' | 'acceptEdits' | 'bypassPermissions' | undefined
+): string {
+  const mode = permissionMode || '';
+
+  if (agent === 'claude') {
+    if (mode === 'plan') return '--permission-mode plan';
+    if (mode === 'acceptEdits') return '--permission-mode acceptEdits';
+    if (mode === 'bypassPermissions') return '--dangerously-skip-permissions';
+    return '';
+  }
+
+  if (agent === 'codex') {
+    if (mode === 'acceptEdits') return '--approval-mode auto-edit';
+    if (mode === 'bypassPermissions') return '--dangerously-bypass-approvals-and-sandbox';
+    return '';
+  }
+
+  // opencode currently has no equivalent permission flags for these modes.
+  return '';
+}

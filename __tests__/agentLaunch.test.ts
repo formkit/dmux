@@ -3,6 +3,7 @@ import {
   appendSlugSuffix,
   buildAgentLaunchOptions,
   getAgentSlugSuffix,
+  getPermissionFlags,
 } from '../src/utils/agentLaunch.js';
 
 describe('agent launch utils', () => {
@@ -37,5 +38,55 @@ describe('agent launch utils', () => {
       'claude+codex',
       'opencode+codex',
     ]);
+  });
+});
+
+describe('getPermissionFlags', () => {
+  describe('claude', () => {
+    it('returns no flags for empty/default mode', () => {
+      expect(getPermissionFlags('claude', '')).toBe('');
+      expect(getPermissionFlags('claude', undefined)).toBe('');
+    });
+
+    it('returns plan mode flags', () => {
+      expect(getPermissionFlags('claude', 'plan')).toBe('--permission-mode plan');
+    });
+
+    it('returns accept edits flags', () => {
+      expect(getPermissionFlags('claude', 'acceptEdits')).toBe('--permission-mode acceptEdits');
+    });
+
+    it('returns bypass permissions flags', () => {
+      expect(getPermissionFlags('claude', 'bypassPermissions')).toBe('--dangerously-skip-permissions');
+    });
+  });
+
+  describe('codex', () => {
+    it('returns no flags for empty/default mode', () => {
+      expect(getPermissionFlags('codex', '')).toBe('');
+      expect(getPermissionFlags('codex', undefined)).toBe('');
+    });
+
+    it('returns no flags for unsupported plan mode', () => {
+      expect(getPermissionFlags('codex', 'plan')).toBe('');
+    });
+
+    it('returns accept edits flags', () => {
+      expect(getPermissionFlags('codex', 'acceptEdits')).toBe('--approval-mode auto-edit');
+    });
+
+    it('returns bypass permissions flags', () => {
+      expect(getPermissionFlags('codex', 'bypassPermissions')).toBe('--dangerously-bypass-approvals-and-sandbox');
+    });
+  });
+
+  describe('opencode', () => {
+    it('returns no flags for all modes', () => {
+      expect(getPermissionFlags('opencode', '')).toBe('');
+      expect(getPermissionFlags('opencode', undefined)).toBe('');
+      expect(getPermissionFlags('opencode', 'plan')).toBe('');
+      expect(getPermissionFlags('opencode', 'acceptEdits')).toBe('');
+      expect(getPermissionFlags('opencode', 'bypassPermissions')).toBe('');
+    });
   });
 });
