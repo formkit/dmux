@@ -8,6 +8,7 @@ interface MergePaneProps {
   pane: {
     id: string;
     slug: string;
+    branchName?: string;
     prompt: string;
     paneId: string;
     worktreePath?: string;
@@ -173,7 +174,8 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
     // Step 4: Attempt merge in the main repository
     setStatus('merging');
-    const mergeResult = runCommand(`git merge ${pane.slug} --no-ff`, mainRepoPath);
+    const mergeBranch = pane.branchName || pane.slug;
+    const mergeResult = runCommand(`git merge "${mergeBranch}" --no-ff`, mainRepoPath);
 
     if (!mergeResult.success) {
       // Check if it's a merge conflict

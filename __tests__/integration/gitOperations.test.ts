@@ -321,7 +321,7 @@ describe('Git Operations Integration Tests', () => {
 
       expect(result.success).toBe(true);
       expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('git merge main'),
+        expect.stringContaining('git merge "main"'),
         expect.any(Object)
       );
     });
@@ -333,7 +333,7 @@ describe('Git Operations Integration Tests', () => {
 
       expect(result.success).toBe(true);
       expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('git merge feature-branch'),
+        expect.stringContaining('git merge "feature-branch"'),
         expect.any(Object)
       );
     });

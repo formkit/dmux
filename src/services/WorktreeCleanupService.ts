@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import { triggerHook } from '../utils/hooks.js';
+import { getPaneBranchName } from '../utils/git.js';
 import { LogService } from './LogService.js';
 
 interface WorktreeCleanupJob {
@@ -79,7 +80,7 @@ export class WorktreeCleanupService {
 
     if (deleteBranch) {
       const deleteBranchResult = await this.runGitCommand(
-        ['branch', '-D', pane.slug],
+        ['branch', '-D', getPaneBranchName(pane)],
         mainRepoPath
       );
 

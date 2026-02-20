@@ -23,7 +23,7 @@ export function mergeMainIntoWorktree(
   mainBranch: string
 ): MergeResult {
   try {
-    execSync(`git merge ${mainBranch} --no-edit`, {
+    execSync(`git merge "${mainBranch}" --no-edit`, {
       cwd: worktreePath,
       stdio: 'pipe',
     });
@@ -70,7 +70,7 @@ export function mergeWorktreeIntoMain(
   worktreeBranch: string
 ): MergeResult {
   try {
-    execSync(`git merge ${worktreeBranch} --no-edit`, {
+    execSync(`git merge "${worktreeBranch}" --no-edit`, {
       cwd: mainRepoPath,
       stdio: 'pipe',
     });
@@ -202,7 +202,7 @@ export function cleanupAfterMerge(
     });
 
     // Delete branch (use -d for safety, it will fail if not merged)
-    execSync(`git branch -d ${branchName}`, {
+    execSync(`git branch -d "${branchName}"`, {
       cwd: mainRepoPath,
       stdio: 'pipe',
     });

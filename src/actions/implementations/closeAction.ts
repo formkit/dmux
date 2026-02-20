@@ -15,6 +15,7 @@ import { WorktreeCleanupService } from '../../services/WorktreeCleanupService.js
 import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
 import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../utils/paneProject.js';
 import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
+import { getPaneBranchName } from '../../utils/git.js';
 
 /**
  * Close a pane - presents options for how to close

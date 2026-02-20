@@ -21,6 +21,7 @@ import {
   buildPromptReadAndDeleteSnippet,
   writePromptFile,
 } from './promptStore.js';
+import { isValidBranchName } from './git.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -140,9 +141,16 @@ export async function createPane(
     DMUX_AGENT: agent || 'unknown',
   });
 
-  // Generate slug
+  // Validate branchPrefix before use
+  const branchPrefix = settings.branchPrefix || '';
+  if (branchPrefix && !isValidBranchName(branchPrefix)) {
+    throw new Error(`Invalid branch prefix: ${branchPrefix}`);
+  }
+
+  // Generate slug (filesystem-safe directory name) and branch name (may include prefix)
   const generatedSlug = slugBase || await generateSlug(prompt);
   const slug = appendSlugSuffix(generatedSlug, slugSuffix);
+  const branchName = branchPrefix ? `${branchPrefix}${slug}` : slug;
   const tmuxService = TmuxService.getInstance();
 
   const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
@@ -320,7 +328,7 @@ export async function createPane(
     // Check if branch already exists (from a deleted worktree)
     let branchExists = false;
     try {
-      execSync(`git show-ref --verify --quiet refs/heads/${slug}`, {
+      execSync(`git show-ref --verify --quiet "refs/heads/${branchName}"`, {
         stdio: 'pipe',
         cwd: projectRoot,
       });
@@ -329,13 +337,32 @@ export async function createPane(
       // Branch doesn't exist, which is good
     }
 
+    // Validate and resolve base branch for new worktrees
+    const baseBranch = settings.baseBranch || '';
+    if (baseBranch && !isValidBranchName(baseBranch)) {
+      throw new Error(`Invalid base branch name: ${baseBranch}`);
+    }
+    if (baseBranch) {
+      try {
+        execSync(`git rev-parse --verify "refs/heads/${baseBranch}"`, {
+          stdio: 'pipe',
+          cwd: projectRoot,
+        });
+      } catch {
+        throw new Error(
+          `Base branch "${baseBranch}" does not exist. Update the baseBranch setting to a valid branch name.`
+        );
+      }
+    }
+
     // Build worktree command:
     // - If branch exists, use it (don't create with -b)
-    // - If branch doesn't exist, create it with -b
+    // - If branch doesn't exist, create it with -b, optionally from a configured base branch
     // - DON'T silence errors (we want to see them in the pane for debugging)
+    const startPoint = baseBranch ? ` "${baseBranch}"` : '';
     const worktreeAddCmd = branchExists
-      ? `git worktree add "${worktreePath}" ${slug}`
-      : `git worktree add "${worktreePath}" -b ${slug}`;
+      ? `git worktree add "${worktreePath}" "${branchName}"`
+      : `git worktree add "${worktreePath}" -b "${branchName}"${startPoint}`;
     const worktreeCmd = `cd "${projectRoot}" && ${worktreeAddCmd} && cd "${worktreePath}"`;
 
     // Send the git worktree command (auto-quoted by sendShellCommand)
@@ -373,7 +400,7 @@ export async function createPane(
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await tmuxService.sendShellCommand(
       paneInfo,
-      `echo "Tip: Try running: git worktree prune && git branch -D ${slug}"`
+      `echo "Tip: Try running: git worktree prune && git branch -D ${branchName}"`
     );
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
@@ -477,6 +504,7 @@ export async function createPane(
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    branchName: branchName !== slug ? branchName : undefined, // Only store if different from slug
     prompt: prompt || 'No initial prompt',
     paneId: paneInfo,
     projectRoot,

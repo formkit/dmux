@@ -3,6 +3,30 @@ import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { execAsync, execAsyncRace } from './execAsync.js';
+import type { DmuxPane } from '../types.js';
+
+/** Regex for characters allowed in git branch names and branch prefixes */
+export const SAFE_BRANCH_CHARS = /^[a-zA-Z0-9._\/-]*$/;
+
+/** Reject path traversal sequences */
+const HAS_DOT_DOT = /\.\./;
+
+/**
+ * Get the git branch name for a pane.
+ * Returns branchName if set (prefix-based), otherwise falls back to slug.
+ */
+export function getPaneBranchName(pane: DmuxPane): string {
+  return pane.branchName || pane.slug;
+}
+
+/**
+ * Validate that a string is safe for use as a git branch name or prefix.
+ * Returns true if valid, false if it contains dangerous characters.
+ */
+export function isValidBranchName(name: string): boolean {
+  if (!name) return true; // empty is valid (means "not set")
+  return SAFE_BRANCH_CHARS.test(name) && !HAS_DOT_DOT.test(name);
+}
 
 /**
  * Detects the main/master branch name for the repository (async version)

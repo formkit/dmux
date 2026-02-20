@@ -8,6 +8,7 @@
 import type { ActionResult, ActionContext } from '../types.js';
 import type { DmuxPane } from '../../types.js';
 import { TmuxService } from '../../services/TmuxService.js';
+import { getPaneBranchName } from '../../utils/git.js';
 
 /**
  * Create a new pane for AI-assisted conflict resolution
@@ -86,7 +87,7 @@ async function createAndLaunchConflictPane(
     // NOTE: We pass the WORKTREE path as targetRepoPath because that's where
     // the conflicts exist and need to be resolved (not in main repo)
     const conflictPane = await createConflictResolutionPane({
-      sourceBranch: pane.slug,
+      sourceBranch: getPaneBranchName(pane),
       targetBranch,
       targetRepoPath: pane.worktreePath!, // CRITICAL: Use worktree, not main repo
       agent,
