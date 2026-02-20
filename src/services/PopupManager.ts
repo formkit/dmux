@@ -493,6 +493,32 @@ export class PopupManager {
     }
   }
 
+  async launchProjectSelectPopup(
+    defaultValue?: string
+  ): Promise<string | null> {
+    if (!this.checkPopupSupport()) return null
+
+    try {
+      const result = await this.launchPopup<string>(
+        "projectSelectPopup.js",
+        [],
+        {
+          width: 80,
+          height: 25,
+          title: "  Select Project  ",
+          positioning: "centered",
+        },
+        { defaultValue: defaultValue || "" }
+      )
+
+      this.ignoreInputBriefly()
+      return this.handleResult(result)
+    } catch (error: any) {
+      this.showTempMessage(`Failed to launch popup: ${error.message}`)
+      return null
+    }
+  }
+
   async launchInputPopup(
     title: string,
     message: string,
