@@ -172,10 +172,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       ? getPaneProjectRoot(selectedPane, projectRoot)
       : (selectedAction?.projectRoot || projectRoot)
 
-    const requestedProjectPath = await popupManager.launchInputPopup(
-      "Select Project",
-      "Enter a repository path (repo root or any subdirectory)",
-      "~/projects/my-app",
+    const requestedProjectPath = await popupManager.launchProjectSelectPopup(
       defaultProjectPath
     )
 
