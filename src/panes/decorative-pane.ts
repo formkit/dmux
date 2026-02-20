@@ -12,10 +12,11 @@ const FILL_CHAR = "·"
 const ORANGE = "\x1b[38;5;208m" // ANSI 256-color orange
 const DIM_GRAY = "\x1b[38;5;238m" // Dim gray for fill dots
 const RESET = "\x1b[0m" // Reset color
+const HIDE_CURSOR = "\x1b[?25l"
+const SHOW_CURSOR = "\x1b[?25h"
 
-// Static drop settings
-const TAIL_LENGTH = 8 // Length of the fading tail
-const NUM_STATIC_DROPS = 150 // Number of drops to render in static view
+const TAIL_LENGTH = 8
+const FRAME_INTERVAL = 80 // ms between frames
 
 // Shades from bright to dim for the tail effect (orange)
 const SHADES = [
@@ -34,54 +35,83 @@ interface GridCell {
   color: string
 }
 
-// Static drop - represents a frozen position of a falling column
-interface StaticDrop {
+// A single falling column stream
+interface Drop {
   column: number
-  y: number
-  chars: string[]
+  y: number // head position (moves down each tick)
+  speed: number // rows to advance per tick
+  chars: string[] // rotating binary characters in the tail
+  accumulator: number // fractional movement accumulator
 }
 
+// State
+let drops: Drop[] = []
+let width = process.stdout.columns || 80
+let height = process.stdout.rows || 24
+let animationTimer: ReturnType<typeof setInterval> | null = null
+
 /**
- * Generate random static drops that look like a paused animation
+ * Initialize drops to cover the screen — spread across columns with staggered starts
  */
-function generateStaticDrops(width: number, height: number): StaticDrop[] {
-  const drops: StaticDrop[] = []
-
-  for (let i = 0; i < NUM_STATIC_DROPS; i++) {
-    // Random column
-    const column = Math.floor(Math.random() * width)
-
-    // Random position in the screen (can be anywhere including partially visible)
-    const y = Math.floor(Math.random() * (height + TAIL_LENGTH))
-
-    // Random binary characters
-    const chars = Array.from({ length: TAIL_LENGTH }, () =>
-      Math.random() > 0.5 ? "1" : "0"
-    )
-
-    drops.push({ column, y, chars })
+function initDrops(): void {
+  drops = []
+  // Roughly one drop per 2 columns, density scales with terminal width
+  const numDrops = Math.floor(width / 2)
+  for (let i = 0; i < numDrops; i++) {
+    drops.push(createDrop(true))
   }
-
-  return drops
 }
 
 /**
- * Render static drops to a grid
+ * Create a single drop. If `randomStart` is true, scatter it across the screen
+ * for the initial fill; otherwise start above the viewport for continuous rain.
  */
-function renderStaticDrops(
-  drops: StaticDrop[],
-  grid: (GridCell | null)[][],
-  height: number
-): void {
+function createDrop(randomStart: boolean): Drop {
+  const column = Math.floor(Math.random() * width)
+  const speed = 0.3 + Math.random() * 0.7 // 0.3–1.0 rows per tick
+  const y = randomStart
+    ? Math.floor(Math.random() * (height + TAIL_LENGTH)) - TAIL_LENGTH
+    : -Math.floor(Math.random() * TAIL_LENGTH)
+  const chars = Array.from({ length: TAIL_LENGTH }, () =>
+    Math.random() > 0.5 ? "1" : "0"
+  )
+  return { column, y, speed, chars, accumulator: 0 }
+}
+
+/**
+ * Advance all drops, recycle those that have fully left the screen
+ */
+function tickDrops(): void {
+  for (let i = 0; i < drops.length; i++) {
+    const drop = drops[i]
+    drop.accumulator += drop.speed
+    while (drop.accumulator >= 1) {
+      drop.y++
+      drop.accumulator -= 1
+      // Randomly mutate one character in the tail for that flickering effect
+      const mutIdx = Math.floor(Math.random() * drop.chars.length)
+      drop.chars[mutIdx] = Math.random() > 0.5 ? "1" : "0"
+    }
+    // If the entire tail is below the screen, respawn
+    if (drop.y - TAIL_LENGTH > height) {
+      drops[i] = createDrop(false)
+    }
+  }
+}
+
+/**
+ * Render the current frame
+ */
+function render(): void {
+  // Build background grid from drops
+  const grid: (GridCell | null)[][] = Array.from({ length: height }, () =>
+    Array.from({ length: width }, () => null)
+  )
+
   for (const drop of drops) {
     for (let i = 0; i < drop.chars.length; i++) {
       const row = Math.floor(drop.y - i)
-      if (
-        row >= 0 &&
-        row < height &&
-        drop.column >= 0 &&
-        drop.column < grid[row].length
-      ) {
+      if (row >= 0 && row < height && drop.column >= 0 && drop.column < width) {
         const shadeIndex = Math.min(i, SHADES.length - 1)
         grid[row][drop.column] = {
           char: drop.chars[i],
@@ -90,30 +120,14 @@ function renderStaticDrops(
       }
     }
   }
-}
 
-function render(width: number, height: number): void {
-  // Generate random static drops for this render
-  const drops = generateStaticDrops(width, height)
-
-  // Create a grid for the background layer (falling characters)
-  const backgroundGrid: (GridCell | null)[][] = Array.from(
-    { length: height },
-    () => Array.from({ length: width }, () => null)
-  )
-
-  // Render all drops to the background grid
-  renderStaticDrops(drops, backgroundGrid, height)
-
+  // ASCII art dimensions and centering
   const artHeight = ASCII_ART.length
-  const artWidth = Math.max(...ASCII_ART.map((line) => line.length))
-
-  // Calculate vertical centering for ASCII art
+  const artMaxWidth = Math.max(...ASCII_ART.map((line) => line.length))
   const topPadding = Math.floor((height - artHeight) / 2)
 
   const lines: string[] = []
 
-  // Build each line by combining background and foreground
   for (let row = 0; row < height; row++) {
     const isArtRow = row >= topPadding && row < topPadding + artHeight
     const artLine = isArtRow ? ASCII_ART[row - topPadding] : null
@@ -129,59 +143,67 @@ function render(width: number, height: number): void {
         )
         const artCol = col - leftPadding
 
-        // If we're in the art region and the art has a character here
         if (artCol >= 0 && artCol < trimmedArt.length) {
-          const artChar = trimmedArt[artCol]
-          // ASCII art takes precedence - render in orange
-          line += ORANGE + artChar + RESET
+          line += ORANGE + trimmedArt[artCol] + RESET
         } else {
-          // Outside art region - show background or fill char
-          const bg = backgroundGrid[row][col]
-          if (bg) {
-            line += bg.color + bg.char + RESET
-          } else {
-            line += DIM_GRAY + FILL_CHAR + RESET
-          }
+          const bg = grid[row][col]
+          line += bg ? bg.color + bg.char + RESET : DIM_GRAY + FILL_CHAR + RESET
         }
       } else {
-        // Not an art row - show background or fill char
-        const bg = backgroundGrid[row][col]
-        if (bg) {
-          line += bg.color + bg.char + RESET
-        } else {
-          line += DIM_GRAY + FILL_CHAR + RESET
-        }
+        const bg = grid[row][col]
+        line += bg ? bg.color + bg.char + RESET : DIM_GRAY + FILL_CHAR + RESET
       }
     }
 
     lines.push(line)
   }
 
-  // Clear screen and render
-  process.stdout.write("\x1b[2J\x1b[H") // Clear screen and home cursor
+  process.stdout.write("\x1b[H") // Home cursor (no clear — reduces flicker)
   process.stdout.write(lines.join("\n"))
 }
 
-// Initial render
-const initialWidth = process.stdout.columns || 80
-const initialHeight = process.stdout.rows || 24
-render(initialWidth, initialHeight)
+/**
+ * Start the animation loop
+ */
+function startAnimation(): void {
+  if (animationTimer) return
+  process.stdout.write(HIDE_CURSOR)
+  process.stdout.write("\x1b[2J") // Clear screen once at start
+  initDrops()
+  render()
+  animationTimer = setInterval(() => {
+    tickDrops()
+    render()
+  }, FRAME_INTERVAL)
+}
 
-// Re-render only on terminal resize (static, no animation)
-process.stdout.on("resize", () => {
-  const width = process.stdout.columns || 80
-  const height = process.stdout.rows || 24
-  render(width, height)
-})
+/**
+ * Restart animation (e.g. on resize)
+ */
+function restartAnimation(): void {
+  if (animationTimer) {
+    clearInterval(animationTimer)
+    animationTimer = null
+  }
+  width = process.stdout.columns || 80
+  height = process.stdout.rows || 24
+  startAnimation()
+}
+
+// Start
+startAnimation()
+
+// Re-init on terminal resize
+process.stdout.on("resize", restartAnimation)
 
 // Keep the process running
 process.stdin.resume()
 
-// Handle Ctrl+C gracefully (though this pane will be killed by tmux)
-process.on("SIGINT", () => {
+function cleanup(): void {
+  if (animationTimer) clearInterval(animationTimer)
+  process.stdout.write(SHOW_CURSOR)
   process.exit(0)
-})
+}
 
-process.on("SIGTERM", () => {
-  process.exit(0)
-})
+process.on("SIGINT", cleanup)
+process.on("SIGTERM", cleanup)
