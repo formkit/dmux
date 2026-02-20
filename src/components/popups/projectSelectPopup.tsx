@@ -11,7 +11,6 @@ import * as fs from "fs"
 import CleanTextInput from "../inputs/CleanTextInput.js"
 import {
   PopupContainer,
-  PopupInputBox,
   PopupWrapper,
   DirectoryList,
   writeSuccessAndExit,
@@ -103,21 +102,9 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
       shouldAllowCancel={shouldAllowCancel}
     >
       <PopupContainer footer={footer}>
-        {/* Instructions */}
-        <Box marginBottom={1} flexDirection="column">
-          <Text dimColor>
-            Enter a repository path (repo root or any subdirectory)
-          </Text>
-        </Box>
-
-        {/* Input area with themed border */}
-        <Box
-          width="100%"
-          borderStyle={POPUP_CONFIG.inputBorderStyle}
-          borderColor={POPUP_CONFIG.inputBorderColor}
-          paddingX={POPUP_CONFIG.inputPadding.x}
-          paddingY={POPUP_CONFIG.inputPadding.y}
-        >
+        {/* Input line — no border, just a prompt character */}
+        <Box>
+          <Text color={POPUP_CONFIG.inputBorderColor} bold>{"❯ "}</Text>
           <CleanTextInput
             value={value}
             onChange={setValue}
@@ -130,11 +117,11 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
           />
         </Box>
 
-        {/* Directory suggestions (always shown) */}
+        {/* Directory suggestions — fixed height, no border */}
         <DirectoryList
           directories={directories}
           selectedIndex={selectedDirIndex}
-          maxVisible={8}
+          maxVisible={10}
         />
       </PopupContainer>
     </PopupWrapper>
