@@ -3,6 +3,8 @@ import { Box, Text, useInput, useApp } from 'ink';
 import { execSync, exec } from 'child_process';
 import CleanTextInput from '../inputs/CleanTextInput.js';
 import chalk from 'chalk';
+import { getPermissionFlags } from '../../utils/agentLaunch.js';
+import { SettingsManager } from '../../utils/settingsManager.js';
 
 interface MergePaneProps {
   pane: {
@@ -215,9 +217,18 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
     // Clear screen and exit
     process.stdout.write('\x1b[2J\x1b[H');
 
+    // Load settings for permission mode
+    const projectRoot = pane.worktreePath?.replace(/\/\.dmux\/worktrees\/[^/]+$/, '') || process.cwd();
+    const settingsManager = new SettingsManager(projectRoot);
+    const settings = settingsManager.getSettings();
+    const claudeFlags = getPermissionFlags('claude', settings.permissionMode);
+
     // Launch Claude to resolve conflicts in the main repository
     try {
-      execSync(`claude "${escapedPrompt}" --dangerously-skip-permissions`, {
+      const claudeCmd = claudeFlags
+        ? `claude "${escapedPrompt}" ${claudeFlags}`
+        : `claude "${escapedPrompt}"`;
+      execSync(claudeCmd, {
         stdio: 'inherit',
         cwd: mainRepoPath || process.cwd()
       });

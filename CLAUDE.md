@@ -246,6 +246,7 @@ dmux supports both global and project-specific settings stored in:
 
 - `enableAutopilotByDefault` (boolean): Automatically enable autopilot mode for new panes
 - `defaultAgent` ('claude' | 'opencode' | ''): Default agent for new panes (empty string means "ask each time")
+- `permissionMode` ('' | 'acceptEdits' | 'plan' | 'bypassPermissions'): Agent permission level (empty = agent default/ask for permissions, dmux defaults to 'acceptEdits')
 
 **Accessing Settings:**
 
@@ -257,7 +258,7 @@ dmux supports both global and project-specific settings stored in:
 
 ### 6. Pane Lifecycle
 
-**Creation**: Generate slug → create worktree → split tmux pane → launch agent with `--permission-mode=acceptEdits`
+**Creation**: Generate slug → create worktree → split tmux pane → launch agent with configured `permissionMode` flags (default: `acceptEdits`)
 **Auto-Cleanup**: Polls every 2s, removes dead panes from tracking
 **Merge**: AI-generated commit → merge to main → remove worktree → optional pane close
 

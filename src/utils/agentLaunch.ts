@@ -1,3 +1,5 @@
+import type { DmuxSettings } from '../types.js';
+
 export type AgentName = 'claude' | 'opencode' | 'codex';
 
 export interface AgentLaunchOption {
@@ -43,6 +45,45 @@ export function appendSlugSuffix(baseSlug: string, slugSuffix?: string): string 
   }
 
   return `${baseSlug}-${normalizedSuffix}`;
+}
+
+/**
+ * Returns the CLI permission flags for a given agent and permission mode setting.
+ * Empty string means the agent's true default (no flags — asks for permissions).
+ * Config files default to 'acceptEdits' to preserve existing behavior.
+ */
+export function getPermissionFlags(
+  agent: AgentName,
+  permissionMode: DmuxSettings['permissionMode']
+): string {
+  const mode = permissionMode || '';
+
+  if (agent === 'claude') {
+    switch (mode) {
+      case 'acceptEdits':
+        return '--permission-mode acceptEdits';
+      case 'plan':
+        return '--permission-mode plan';
+      case 'bypassPermissions':
+        return '--dangerously-skip-permissions';
+      default:
+        return '';
+    }
+  }
+
+  if (agent === 'codex') {
+    switch (mode) {
+      case 'acceptEdits':
+        return '--approval-mode auto-edit';
+      case 'bypassPermissions':
+        return '--dangerously-bypass-approvals-and-sandbox';
+      default:
+        return '';
+    }
+  }
+
+  // opencode has no permission flags
+  return '';
 }
 
 export function buildAgentLaunchOptions(

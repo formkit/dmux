@@ -15,6 +15,8 @@ import {
   deletePromptFile,
   writePromptFile,
 } from './promptStore.js';
+import { getPermissionFlags } from './agentLaunch.js';
+import { SettingsManager } from './settingsManager.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
@@ -101,6 +103,10 @@ export async function createConflictResolutionPane(
   // Construct the AI prompt for conflict resolution
   const prompt = `There are conflicts merging ${targetBranch} into ${sourceBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes. Once all conflicts are resolved, commit the merge.`;
 
+  // Load settings for permission mode
+  const settingsManager = new SettingsManager(targetRepoPath);
+  const settings = settingsManager.getSettings();
+
   let promptFilePath: string | null = null;
   try {
     promptFilePath = await writePromptFile(targetRepoPath, slug, prompt);
@@ -110,10 +116,13 @@ export async function createConflictResolutionPane(
 
   // Launch agent with the conflict resolution prompt
   if (agent === 'claude') {
+    const flags = getPermissionFlags('claude', settings.permissionMode);
     let claudeCmd: string;
     if (promptFilePath) {
       const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-      claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT" --dangerously-skip-permissions`;
+      claudeCmd = flags
+        ? `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT" ${flags}`
+        : `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"`;
       promptFilePath = null;
     } else {
       const escapedPrompt = prompt
@@ -121,22 +130,24 @@ export async function createConflictResolutionPane(
         .replace(/"/g, '\\"')
         .replace(/`/g, '\\`')
         .replace(/\$/g, '\\$');
-      claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
+      claudeCmd = flags ? `claude "${escapedPrompt}" ${flags}` : `claude "${escapedPrompt}"`;
     }
 
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
-    // Note: --dangerously-skip-permissions handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'codex') {
+    const flags = getPermissionFlags('codex', settings.permissionMode);
     let codexCmd: string;
     if (promptFilePath) {
       const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-      codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT" --dangerously-bypass-approvals-and-sandbox`;
+      codexCmd = flags
+        ? `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT" ${flags}`
+        : `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"`;
       promptFilePath = null;
     } else {
       const escapedPrompt = prompt
@@ -144,7 +155,7 @@ export async function createConflictResolutionPane(
         .replace(/"/g, '\\"')
         .replace(/`/g, '\\`')
         .replace(/\$/g, '\\$');
-      codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+      codexCmd = flags ? `codex "${escapedPrompt}" ${flags}` : `codex "${escapedPrompt}"`;
     }
 
     await tmuxService.sendShellCommand(paneInfo, codexCmd);

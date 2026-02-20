@@ -15,7 +15,7 @@ import { triggerHook, initializeHooksDirectory } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
-import { appendSlugSuffix } from './agentLaunch.js';
+import { appendSlugSuffix, getPermissionFlags } from './agentLaunch.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
 import {
   buildPromptReadAndDeleteSnippet,
@@ -385,6 +385,7 @@ export async function createPane(
   const hasInitialPrompt = !!(prompt && prompt.trim());
 
   if (agent === 'claude') {
+    const flags = getPermissionFlags('claude', settings.permissionMode);
     let claudeCmd: string;
     if (hasInitialPrompt) {
       let promptFilePath: string | null = null;
@@ -396,17 +397,19 @@ export async function createPane(
 
       if (promptFilePath) {
         const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-        claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT" --dangerously-skip-permissions`;
+        claudeCmd = flags
+          ? `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT" ${flags}`
+          : `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"`;
       } else {
         const escapedPrompt = prompt
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"')
           .replace(/`/g, '\\`')
           .replace(/\$/g, '\\$');
-        claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
+        claudeCmd = flags ? `claude "${escapedPrompt}" ${flags}` : `claude "${escapedPrompt}"`;
       }
     } else {
-      claudeCmd = `claude --dangerously-skip-permissions`;
+      claudeCmd = flags ? `claude ${flags}` : 'claude';
     }
     // Send the claude command (auto-quoted by sendShellCommand)
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
@@ -417,6 +420,7 @@ export async function createPane(
       // Ignore errors in background monitoring
     });
   } else if (agent === 'codex') {
+    const flags = getPermissionFlags('codex', settings.permissionMode);
     let codexCmd: string;
     if (hasInitialPrompt) {
       let promptFilePath: string | null = null;
@@ -428,17 +432,19 @@ export async function createPane(
 
       if (promptFilePath) {
         const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-        codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT" --dangerously-bypass-approvals-and-sandbox`;
+        codexCmd = flags
+          ? `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT" ${flags}`
+          : `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"`;
       } else {
         const escapedPrompt = prompt
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"')
           .replace(/`/g, '\\`')
           .replace(/\$/g, '\\$');
-        codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+        codexCmd = flags ? `codex "${escapedPrompt}" ${flags}` : `codex "${escapedPrompt}"`;
       }
     } else {
-      codexCmd = `codex --dangerously-bypass-approvals-and-sandbox`;
+      codexCmd = flags ? `codex ${flags}` : 'codex';
     }
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');

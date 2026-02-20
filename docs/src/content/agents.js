@@ -9,16 +9,16 @@ export function render() {
 
     <h3>Claude Code</h3>
     <p><a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener">Claude Code</a> is Anthropic's agentic coding tool. dmux launches it with:</p>
-    <pre><code data-lang="bash">claude --permission-mode=acceptEdits</code></pre>
-    <p>When autopilot is enabled, dmux adds the <code>--dangerously-skip-permissions</code> flag for fully autonomous operation.</p>
+    <pre><code data-lang="bash">claude --permission-mode acceptEdits</code></pre>
+    <p>You can configure the permission level in <a href="#/configuration">settings</a>, including using Claude's true default (ask for all permissions).</p>
 
     <h3>opencode</h3>
-    <p><a href="https://github.com/opencode-ai/opencode" target="_blank" rel="noopener">opencode</a> is an open-source coding agent. dmux launches it directly with your prompt.</p>
+    <p><a href="https://github.com/opencode-ai/opencode" target="_blank" rel="noopener">opencode</a> is an open-source coding agent. dmux launches it directly with your prompt. opencode has no permission flags.</p>
 
     <h3>Codex</h3>
     <p><a href="https://github.com/openai/codex" target="_blank" rel="noopener">Codex</a> is OpenAI's coding agent. dmux launches it with:</p>
-    <pre><code data-lang="bash">codex --approval-mode suggest</code></pre>
-    <p>When autopilot is enabled, dmux uses <code>--approval-mode full-auto</code> instead.</p>
+    <pre><code data-lang="bash">codex --approval-mode auto-edit</code></pre>
+    <p>You can configure the permission level in <a href="#/configuration">settings</a>.</p>
 
     <h2>Agent Detection</h2>
     <p>dmux automatically detects installed agents by searching:</p>
@@ -43,23 +43,28 @@ export function render() {
       <li><strong>API:</strong> <code>PATCH /api/settings</code> with <code>{"defaultAgent": "claude"}</code></li>
     </ul>
 
-    <h2>Autopilot Mode</h2>
-    <p>When <code>enableAutopilotByDefault</code> is enabled in <a href="#/configuration">settings</a>, agents are launched in their most autonomous mode:</p>
+    <h2>Permission Mode</h2>
+    <p>The <code>permissionMode</code> setting controls what permissions agents are granted when launched. Configure it via TUI (<kbd>s</kbd>), settings JSON, or the API.</p>
     <table>
       <thead>
-        <tr><th>Agent</th><th>Normal Mode</th><th>Autopilot Mode</th></tr>
+        <tr><th>Setting</th><th>Claude Code Flag</th><th>Codex Flag</th></tr>
       </thead>
       <tbody>
-        <tr><td>Claude Code</td><td><code>--permission-mode=acceptEdits</code></td><td><code>--dangerously-skip-permissions</code></td></tr>
-        <tr><td>opencode</td><td>(default)</td><td>(default)</td></tr>
-        <tr><td>Codex</td><td><code>--approval-mode suggest</code></td><td><code>--approval-mode full-auto</code></td></tr>
+        <tr><td>Agent default (ask for permissions)</td><td><em>(no flags)</em></td><td><em>(no flags)</em></td></tr>
+        <tr><td>Accept edits automatically</td><td><code>--permission-mode acceptEdits</code></td><td><code>--approval-mode auto-edit</code></td></tr>
+        <tr><td>Plan mode (Claude only)</td><td><code>--permission-mode plan</code></td><td><em>(no flags)</em></td></tr>
+        <tr><td>Bypass all permissions</td><td><code>--dangerously-skip-permissions</code></td><td><code>--dangerously-bypass-approvals-and-sandbox</code></td></tr>
       </tbody>
     </table>
+    <p>opencode has no permission flags — all modes map to no flags. The dmux default is "Accept edits automatically" — set to "Agent default" if you want agents to ask before every action.</p>
 
     <div class="callout callout-warning">
       <div class="callout-title">Caution</div>
-      Autopilot mode gives agents broad permissions to modify files and run commands without confirmation. Use it only in isolated environments where you trust the agent's actions.
+      "Bypass all permissions" gives agents broad permissions to modify files and run commands without confirmation. Use it only in isolated environments where you trust the agent's actions.
     </div>
+
+    <h2>Autopilot Mode</h2>
+    <p>When <code>enableAutopilotByDefault</code> is enabled in <a href="#/configuration">settings</a>, dmux automatically accepts agent options when no risk is detected. This is independent of the permission mode — autopilot controls dmux's behavior in response to agent prompts, while permission mode controls what the agent can do without asking.</p>
 
     <h2>Agent Status Detection</h2>
     <p>dmux monitors each agent pane to determine its current state. This is used to show status indicators in the sidebar and web dashboard.</p>

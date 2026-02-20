@@ -10,6 +10,8 @@ import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import type { DmuxPane, DmuxConfig } from '../types.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
+import { getPermissionFlags } from './agentLaunch.js';
+import { SettingsManager } from './settingsManager.js';
 
 export interface ReopenWorktreeOptions {
   slug: string;
@@ -146,13 +148,19 @@ export async function reopenWorktree(
     agent = 'opencode';
   }
 
+  // Load settings for permission mode
+  const settingsManager = new SettingsManager(projectRoot);
+  const settings = settingsManager.getSettings();
+
   // Resume the agent session
   if (agent === 'claude') {
-    const claudeCmd = 'claude --continue --dangerously-skip-permissions';
+    const flags = getPermissionFlags('claude', settings.permissionMode);
+    const claudeCmd = flags ? `claude --continue ${flags}` : 'claude --continue';
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'codex') {
-    const codexCmd = 'codex resume --last --dangerously-bypass-approvals-and-sandbox';
+    const flags = getPermissionFlags('codex', settings.permissionMode);
+    const codexCmd = flags ? `codex resume --last ${flags}` : 'codex resume --last';
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {

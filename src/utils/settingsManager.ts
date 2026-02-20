@@ -5,6 +5,11 @@ import type { DmuxSettings, SettingsScope, SettingDefinition } from '../types.js
 
 const GLOBAL_SETTINGS_PATH = join(homedir(), '.dmux.global.json');
 
+/** Defaults applied when no explicit value is set */
+const DEFAULT_SETTINGS: DmuxSettings = {
+  permissionMode: 'acceptEdits',
+};
+
 export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
     key: 'enableAutopilotByDefault',
@@ -22,6 +27,18 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: 'claude', label: 'Claude Code' },
       { value: 'opencode', label: 'OpenCode' },
       { value: 'codex', label: 'Codex' },
+    ],
+  },
+  {
+    key: 'permissionMode',
+    label: 'Permission Mode',
+    description: 'Controls what permissions agents are granted when launched',
+    type: 'select',
+    options: [
+      { value: '', label: 'Agent default (ask for permissions)' },
+      { value: 'acceptEdits', label: 'Accept edits automatically' },
+      { value: 'plan', label: 'Plan mode (Claude only)' },
+      { value: 'bypassPermissions', label: 'Bypass all permissions' },
     ],
   },
   {
@@ -73,10 +90,11 @@ export class SettingsManager {
   }
 
   /**
-   * Get merged settings (project settings override global)
+   * Get merged settings (project settings override global, with defaults applied)
    */
   getSettings(): DmuxSettings {
     return {
+      ...DEFAULT_SETTINGS,
       ...this.globalSettings,
       ...this.projectSettings,
     };
