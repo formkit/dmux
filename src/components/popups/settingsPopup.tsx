@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
+import { readFileSync } from 'fs';
 import type { SettingDefinition, DmuxSettings } from '../../types.js';
 import { POPUP_CONFIG } from './config.js';
 import {
@@ -280,10 +281,10 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
 // Entry point
 function main() {
   const resultFile = process.argv[2];
-  const settingsJson = process.argv[3];
+  const tempDataFile = process.argv[3];
 
-  if (!resultFile || !settingsJson) {
-    console.error('Error: Result file and settings JSON required');
+  if (!resultFile || !tempDataFile) {
+    console.error('Error: Result file and temp data file required');
     process.exit(1);
   }
 
@@ -295,9 +296,9 @@ function main() {
   };
 
   try {
-    data = JSON.parse(settingsJson);
+    data = JSON.parse(readFileSync(tempDataFile, 'utf-8'));
   } catch (error) {
-    console.error('Error: Failed to parse settings JSON');
+    console.error('Error: Failed to read settings data file');
     process.exit(1);
   }
 

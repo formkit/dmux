@@ -430,18 +430,17 @@ export class PopupManager {
     try {
       const result = await this.launchPopup<any>(
         "settingsPopup.js",
-        [
-          JSON.stringify({
-            settingDefinitions: SETTING_DEFINITIONS,
-            settings: this.config.settingsManager.getSettings(),
-            globalSettings: this.config.settingsManager.getGlobalSettings(),
-            projectSettings: this.config.settingsManager.getProjectSettings(),
-          }),
-        ],
+        [],
         {
           width: 70,
           height: Math.min(25, SETTING_DEFINITIONS.length + 8),
           title: "⚙️  Settings",
+        },
+        {
+          settingDefinitions: SETTING_DEFINITIONS,
+          settings: this.config.settingsManager.getSettings(),
+          globalSettings: this.config.settingsManager.getGlobalSettings(),
+          projectSettings: this.config.settingsManager.getProjectSettings(),
         }
       )
 
