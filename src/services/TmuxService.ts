@@ -630,6 +630,21 @@ export class TmuxService {
   }
 
   /**
+   * Load a tmux buffer directly from a file path.
+   * This avoids shell-escaping large or control-character-heavy payloads.
+   */
+  async loadBufferFromFile(bufferName: string, filePath: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        const quotedPath = `'${filePath.replace(/'/g, "'\\''")}'`;
+        this.execute(`tmux load-buffer -b '${bufferName}' ${quotedPath}`);
+      },
+      RetryStrategy.FAST,
+      `loadBufferFromFile(${bufferName})`
+    );
+  }
+
+  /**
    * Paste a tmux buffer to a pane
    */
   async pasteBuffer(bufferName: string, paneId: string): Promise<void> {

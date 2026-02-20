@@ -71,7 +71,7 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 const option = def.options.find(o => o.value === currentValue);
                 displayValue = option?.label || 'none';
               } else {
-                displayValue = String(currentValue);
+                displayValue = String(currentValue) || 'none';
               }
 
               scopeLabel = isProjectOverride ? ' - project setting' : (isGlobalSetting ? ' - global setting' : '');
@@ -129,6 +129,12 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 </Box>
               ))}
             </>
+          )}
+
+          {currentDef.type === 'text' && (
+            <Box>
+              <Text dimColor>(text input — use settings popup)</Text>
+            </Box>
           )}
 
           <Box marginTop={1}>

@@ -18,6 +18,16 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(),
 }));
 
+const mockEnqueueCleanup = vi.fn();
+
+vi.mock('../../src/services/WorktreeCleanupService.js', () => ({
+  WorktreeCleanupService: {
+    getInstance: vi.fn(() => ({
+      enqueueCleanup: mockEnqueueCleanup,
+    })),
+  },
+}));
+
 // Create a persistent mock state manager instance
 const mockStateManager = {
   getState: vi.fn(() => ({ projectRoot: '/test/project' })),
@@ -60,6 +70,7 @@ import fs from 'fs';
 describe('closeAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnqueueCleanup.mockReset();
   });
 
   describe('shell panes', () => {
@@ -217,7 +228,7 @@ describe('closeAction', () => {
   });
 
   describe('close execution - kill_and_clean', () => {
-    it('should remove worktree when kill_and_clean selected', async () => {
+    it('should queue worktree cleanup when kill_and_clean selected', async () => {
       const mockPane = createWorktreePane({
         worktreePath: '/test/project/.dmux/worktrees/my-feature',
       });
@@ -231,13 +242,13 @@ describe('closeAction', () => {
       const result = await closePane(mockPane, mockContext);
       await result.onSelect!('kill_and_clean');
 
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('git worktree remove'),
-        expect.anything()
-      );
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('--force'),
-        expect.anything()
+      expect(mockEnqueueCleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pane: mockPane,
+          paneProjectRoot: '/test/project',
+          mainRepoPath: '/test/project',
+          deleteBranch: false,
+        })
       );
     });
 
@@ -254,7 +265,6 @@ describe('closeAction', () => {
       await result.onSelect!('kill_and_clean');
 
       expect(triggerHook).toHaveBeenCalledWith('before_worktree_remove', expect.anything(), mockPane);
-      expect(triggerHook).toHaveBeenCalledWith('worktree_removed', expect.anything(), mockPane);
     });
 
     it('should NOT delete branch when kill_and_clean selected', async () => {
@@ -269,16 +279,13 @@ describe('closeAction', () => {
       const result = await closePane(mockPane, mockContext);
       await result.onSelect!('kill_and_clean');
 
-      // Should NOT call git branch -D
-      const gitBranchCalls = vi.mocked(execSync).mock.calls.filter(
-        ([cmd]) => typeof cmd === 'string' && cmd.includes('git branch -D')
-      );
-      expect(gitBranchCalls).toHaveLength(0);
+      const cleanupJob = mockEnqueueCleanup.mock.calls.at(-1)?.[0];
+      expect(cleanupJob?.deleteBranch).toBe(false);
     });
   });
 
   describe('close execution - kill_clean_branch', () => {
-    it('should remove worktree AND delete branch when kill_clean_branch selected', async () => {
+    it('should queue cleanup with branch deletion when kill_clean_branch selected', async () => {
       const mockPane = createWorktreePane({ slug: 'my-feature' });
       const mockContext = createMockContext([mockPane]);
 
@@ -296,17 +303,8 @@ describe('closeAction', () => {
       const result = await closePane(mockPane, mockContext); // Fixed: added missing mockContext
       await result.onSelect!('kill_clean_branch');
 
-      // Should remove worktree
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('git worktree remove'),
-        expect.anything()
-      );
-
-      // Should delete branch (branch name is quoted for shell safety)
-      expect(execSync).toHaveBeenCalledWith(
-        expect.stringContaining('git branch -D "my-feature"'),
-        expect.anything()
-      );
+      const cleanupJob = mockEnqueueCleanup.mock.calls.at(-1)?.[0];
+      expect(cleanupJob?.deleteBranch).toBe(true);
     });
   });
 
