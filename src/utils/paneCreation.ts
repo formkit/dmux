@@ -19,7 +19,6 @@ import { appendSlugSuffix } from './agentLaunch.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
 import {
   buildPromptReadAndDeleteSnippet,
-  deletePromptFile,
   writePromptFile,
 } from './promptStore.js';
 
@@ -444,37 +443,31 @@ export async function createPane(
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
-    await tmuxService.sendShellCommand(paneInfo, 'opencode');
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-
+    let opencodeCmd: string;
     if (hasInitialPrompt) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const bufName = `dmux_prompt_${Date.now()}`;
-      let promptLoaded = false;
       let promptFilePath: string | null = null;
-
       try {
         promptFilePath = await writePromptFile(projectRoot, slug, prompt);
-        await tmuxService.loadBufferFromFile(bufName, promptFilePath);
-        await deletePromptFile(promptFilePath);
-        promptLoaded = true;
       } catch {
-        // Fall back to escaped buffer if prompt file flow fails
+        // Fall back to inline escaping if prompt file write fails
       }
 
-      if (!promptLoaded) {
-        const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-        await tmuxService.setBuffer(bufName, promptEsc);
-        if (promptFilePath) {
-          await deletePromptFile(promptFilePath);
-        }
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        opencodeCmd = `opencode --prompt "${escapedPrompt}"`;
       }
-
-      await tmuxService.pasteBuffer(bufName, paneInfo);
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      await tmuxService.deleteBuffer(bufName);
-      await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    } else {
+      opencodeCmd = 'opencode';
     }
+    await tmuxService.sendShellCommand(paneInfo, opencodeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 
   // Keep focus on the new pane

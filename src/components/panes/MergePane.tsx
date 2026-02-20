@@ -206,20 +206,25 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
     // Exit the app and launch agent with conflict resolution prompt
     const fullPrompt = agentPrompt || `Fix the merge conflicts in the following files: ${conflictFiles.join(', ')}. Resolve them appropriately based on the changes from branch ${pane.slug} (${pane.prompt}) and ensure the code remains functional.`;
+    const escapedPrompt = fullPrompt
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/`/g, '\\`')
+      .replace(/\$/g, '\\$');
 
     // Clear screen and exit
     process.stdout.write('\x1b[2J\x1b[H');
 
     // Launch Claude to resolve conflicts in the main repository
     try {
-      execSync(`claude "${fullPrompt}" --dangerously-skip-permissions`, {
+      execSync(`claude "${escapedPrompt}" --dangerously-skip-permissions`, {
         stdio: 'inherit',
         cwd: mainRepoPath || process.cwd()
       });
     } catch {
       // Try opencode as fallback
       try {
-        execSync(`echo "${fullPrompt}" | opencode`, {
+        execSync(`opencode --prompt "${escapedPrompt}"`, {
           stdio: 'inherit',
           cwd: mainRepoPath || process.cwd()
         });

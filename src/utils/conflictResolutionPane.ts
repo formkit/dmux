@@ -150,33 +150,21 @@ export async function createConflictResolutionPane(
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
-    await tmuxService.sendShellCommand(paneInfo, 'opencode');
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-
-    // Wait for opencode to start, then paste the prompt
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    const bufName = `dmux_prompt_${Date.now()}`;
-    let promptLoaded = false;
-
+    let opencodeCmd: string;
     if (promptFilePath) {
-      try {
-        await tmuxService.loadBufferFromFile(bufName, promptFilePath);
-        await deletePromptFile(promptFilePath);
-        promptFilePath = null;
-        promptLoaded = true;
-      } catch {
-        // Fall back to escaped buffer content
-      }
+      const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+      opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"`;
+      promptFilePath = null;
+    } else {
+      const escapedPrompt = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+      opencodeCmd = `opencode --prompt "${escapedPrompt}"`;
     }
 
-    if (!promptLoaded) {
-      const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-      await tmuxService.setBuffer(bufName, promptEsc);
-    }
-
-    await tmuxService.pasteBuffer(bufName, paneInfo);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await tmuxService.deleteBuffer(bufName);
+    await tmuxService.sendShellCommand(paneInfo, opencodeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 
