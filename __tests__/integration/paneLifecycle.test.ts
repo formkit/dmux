@@ -59,6 +59,15 @@ vi.mock('../../src/services/LogService.js', () => ({
   },
 }));
 
+const mockEnqueueCleanup = vi.fn();
+vi.mock('../../src/services/WorktreeCleanupService.js', () => ({
+  WorktreeCleanupService: {
+    getInstance: vi.fn(() => ({
+      enqueueCleanup: mockEnqueueCleanup,
+    })),
+  },
+}));
+
 // Mock fs for reading config
 vi.mock('fs', () => ({
   default: {
@@ -78,6 +87,7 @@ describe('Pane Lifecycle Integration Tests', () => {
   beforeEach(() => {
     // Reset all mocks
     vi.clearAllMocks();
+    mockEnqueueCleanup.mockReset();
 
     // Create fresh test environment
     tmuxSession = createMockTmuxSession('dmux-test', 1);
@@ -374,7 +384,7 @@ describe('Pane Lifecycle Integration Tests', () => {
       );
     });
 
-    it('should remove worktree with kill_and_clean option', async () => {
+    it('should queue worktree cleanup with kill_and_clean option', async () => {
       const { closePane } = await import('../../src/actions/implementations/closeAction.js');
 
       const testPane: DmuxPane = {
@@ -399,22 +409,19 @@ describe('Pane Lifecycle Integration Tests', () => {
         await result.onSelect('kill_and_clean');
       }
 
-      // Verify git worktree remove was called
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining('git worktree remove'),
-        expect.any(Object)
+      expect(mockEnqueueCleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pane: testPane,
+          deleteBranch: false,
+        })
       );
     });
 
-    it('should handle worktree removal failure gracefully', async () => {
+    it('should handle background cleanup enqueue failure gracefully', async () => {
       const { closePane } = await import('../../src/actions/implementations/closeAction.js');
 
-      // Mock worktree removal failure
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes('worktree remove')) {
-          throw new Error('worktree removal failed');
-        }
-        return Buffer.from('');
+      mockEnqueueCleanup.mockImplementation(() => {
+        throw new Error('enqueue failed');
       });
 
       const testPane: DmuxPane = {
@@ -434,9 +441,14 @@ describe('Pane Lifecycle Integration Tests', () => {
       mockGetPanes.mockReturnValue([testPane]);
 
       const result = await closePane(testPane, mockContext);
+      let executeResult = result;
 
-      // Should still succeed (worktree cleanup is non-critical)
-      expect(result).toBeDefined();
+      if (result.type === 'choice' && result.onSelect) {
+        executeResult = await result.onSelect('kill_and_clean');
+      }
+
+      // Should still succeed (cleanup enqueue failures are non-critical)
+      expect(executeResult.type).toBe('success');
     });
 
     it('should trigger post-close hooks', async () => {

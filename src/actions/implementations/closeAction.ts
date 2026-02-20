@@ -11,6 +11,7 @@ import { StateManager } from '../../shared/StateManager.js';
 import { PaneLifecycleManager } from '../../services/PaneLifecycleManager.js';
 import { triggerHook } from '../../utils/hooks.js';
 import { LogService } from '../../services/LogService.js';
+import { WorktreeCleanupService } from '../../services/WorktreeCleanupService.js';
 import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
 import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../utils/paneProject.js';
 import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
@@ -91,6 +92,8 @@ async function executeCloseOption(
     stateManager.pauseConfigWatcher();
 
     try {
+      let startedBackgroundCleanup = false;
+
       // CRITICAL: Remove from config FIRST, before killing tmux pane
       // This prevents the race condition where polling detects "missing" pane
       // and recreates it before we finish closing
@@ -177,27 +180,19 @@ async function executeCloseOption(
         await triggerHook('before_worktree_remove', paneProjectRoot, pane);
 
         try {
-          execSync(`git worktree remove "${pane.worktreePath}" --force`, {
-            stdio: 'pipe',
-            cwd: mainRepoPath,
+          WorktreeCleanupService.getInstance().enqueueCleanup({
+            pane,
+            paneProjectRoot,
+            mainRepoPath,
+            deleteBranch: option === 'kill_clean_branch',
           });
-        } catch {
-          // Worktree might already be removed
-        }
-
-        // Trigger worktree_removed hook
-        await triggerHook('worktree_removed', paneProjectRoot, pane);
-
-        // Delete branch if requested
-        if (option === 'kill_clean_branch') {
-          try {
-            execSync(`git branch -D ${pane.slug}`, {
-              stdio: 'pipe',
-              cwd: mainRepoPath,
-            });
-          } catch {
-            // Branch might not exist or already deleted
-          }
+          startedBackgroundCleanup = true;
+        } catch (cleanupError) {
+          LogService.getInstance().warn(
+            `Failed to start background cleanup for pane ${pane.id}`,
+            'paneActions',
+            pane.id
+          );
         }
       }
 
@@ -265,7 +260,9 @@ async function executeCloseOption(
 
       return {
         type: 'success',
-        message: `Pane "${pane.slug}" closed successfully`,
+        message: startedBackgroundCleanup
+          ? `Pane "${pane.slug}" closed successfully (cleanup running in background)`
+          : `Pane "${pane.slug}" closed successfully`,
         dismissable: true,
       };
     } finally {
