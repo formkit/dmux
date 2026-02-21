@@ -8,7 +8,7 @@
   "homepage": "https://github.com/formkit/dmux#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/formkit/dmux.git"
+    "url": "git+https://github.com/standardagents/dmux.git"
   },
   "bugs": {
     "url": "https://github.com/formkit/dmux/issues"
