@@ -1,4 +1,4 @@
-export type AgentName = 'claude' | 'opencode' | 'codex';
+export type AgentName = 'claude' | 'opencode' | 'codex' | 'pi';
 
 export interface AgentLaunchOption {
   id: string;
@@ -11,12 +11,14 @@ const AGENT_LABELS: Record<AgentName, string> = {
   claude: 'Claude Code',
   opencode: 'OpenCode',
   codex: 'Codex',
+  pi: 'pi',
 };
 
 const AGENT_SLUG_SUFFIXES: Record<AgentName, string> = {
   claude: 'claude-code',
   opencode: 'opencode',
   codex: 'codex',
+  pi: 'pi',
 };
 
 export function getAgentLabel(agent: AgentName): string {

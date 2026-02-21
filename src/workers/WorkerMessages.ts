@@ -22,7 +22,7 @@ export interface OutboundMessage extends WorkerMessage {
 export interface WorkerConfig {
   paneId: string;
   tmuxPaneId: string;
-  agent?: 'claude' | 'opencode' | 'codex';
+  agent?: 'claude' | 'opencode' | 'codex' | 'pi';
   pollInterval?: number; // Default 1000ms
 }
 
