@@ -150,7 +150,11 @@ const sourceLabel = pathEq(sourcePath, projectRoot)
   : `worktree (${path.relative(projectRoot, sourcePath) || sourcePath})`;
 status('ok', 'Active source', `${sourcePath} [${sourceLabel}]`);
 
-const watchMarkers = ['dev:watch', 'tsx --watch src/index.ts'];
+const watchMarkers = [
+  'dev:watch',
+  'node --watch dist/index.js',
+  'tsx --watch src/index.ts',
+];
 const controlStartCommand = controlPane?.paneStartCommand || '';
 const watchInControl = watchMarkers.some((marker) => controlStartCommand.includes(marker));
 const watchInAnyPane = panes.some((pane) =>

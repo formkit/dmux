@@ -31,6 +31,7 @@ jobs:
 
       - run: pnpm install
       - run: pnpm build
+      - run: pnpm run smoke:pack
       - run: pnpm publish --no-git-checks --provenance --access public
 
       - name: Detect previous tag

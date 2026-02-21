@@ -40,7 +40,7 @@ What it does:
 
 1. Bootstraps local docs/hooks (`dev:bootstrap`)
 2. Compiles TypeScript once
-3. Launches dmux in dev mode
+3. Launches dmux in dev mode from `dist/index.js` (built runtime parity)
 4. Auto-promotes to watch mode when launched in tmux
 
 Result: changes in this worktree should recompile/restart automatically without repeated manual relaunches.

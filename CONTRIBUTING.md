@@ -22,7 +22,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` is the standard maintainer entrypoint for this repo. It bootstraps local dmux development requirements, then launches dmux with `DMUX_DEV=true` and a watch loop so TypeScript changes rebuild and restart automatically.
+`pnpm dev` is the standard maintainer entrypoint for this repo. It bootstraps local dmux development requirements, compiles TypeScript, then launches dmux from `dist/index.js` with `DMUX_DEV=true`. Inside tmux it auto-promotes to a watch loop so TypeScript changes rebuild and restart automatically.
 
 If reload behavior looks wrong, run:
 

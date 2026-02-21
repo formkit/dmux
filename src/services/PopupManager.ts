@@ -1,7 +1,4 @@
-import path from "path"
 import fs from "fs/promises"
-import { fileURLToPath } from "url"
-import { dirname } from "path"
 import {
   launchNodePopupNonBlocking,
   POPUP_POSITIONING,
@@ -18,9 +15,7 @@ import {
   buildAgentLaunchOptions,
   type AgentName,
 } from "../utils/agentLaunch.js"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+import { resolveDistPath } from "../utils/runtimePaths.js"
 
 export interface PopupManagerConfig {
   sidebarWidth: number
@@ -61,11 +56,7 @@ export class PopupManager {
    * Get the popup script path from project root
    */
   private getPopupScriptPath(scriptName: string): string {
-    const projectRootForPopup = __dirname.includes("/dist")
-      ? path.resolve(__dirname, "../..") // If in dist/services/, go up two levels
-      : path.resolve(__dirname, "../..") // If in src/services/, go up two levels
-
-    return path.join(projectRootForPopup, "dist", "components", "popups", scriptName)
+    return resolveDistPath("components", "popups", scriptName)
   }
 
   /**
