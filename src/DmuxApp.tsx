@@ -45,6 +45,7 @@ import {
 } from "./utils/agentLaunch.js"
 import { generateSlug } from "./utils/slug.js"
 import { resolveNextDevSourcePath } from "./utils/devSource.js"
+import { buildDevWatchRespawnCommand } from "./utils/devWatchCommand.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -531,7 +532,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     const sourcePaneId = controlPaneId || await tmuxService.getCurrentPaneId()
     await tmuxService.respawnPane(
       sourcePaneId,
-      `cd "${sourcePath}" && pnpm dev:watch`
+      buildDevWatchRespawnCommand(sourcePath)
     )
   }
 

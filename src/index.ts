@@ -26,6 +26,7 @@ import { getAvailableAgents } from './utils/agentDetection.js';
 import { createPane } from './utils/paneCreation.js';
 import { SettingsManager } from './utils/settingsManager.js';
 import { atomicWriteJson } from './utils/atomicWrite.js';
+import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
 import type { DmuxConfig, DmuxPane } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -139,7 +140,7 @@ class Dmux {
           this.resolveDevControlPane(sessionNameForCurrentTmux) || undefined;
         const targetPaneId = preferredControlPaneId || currentPaneId;
         const devDirectory = this.isWorktree() ? process.cwd() : this.projectRoot;
-        const devCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+        const devCommand = buildDevWatchRespawnCommand(devDirectory);
         const escapedDevCommand = devCommand.replace(/'/g, "'\\''");
         execSync(
           `tmux respawn-pane -k -t '${targetPaneId}' '${escapedDevCommand}'`,
@@ -183,7 +184,7 @@ class Dmux {
           try {
             const targetPane = this.resolveDevControlPane(this.sessionName);
             if (targetPane) {
-              const devCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+              const devCommand = buildDevWatchRespawnCommand(devDirectory);
               const escapedDevCommand = devCommand.replace(/'/g, "'\\''");
               execSync(
                 `tmux respawn-pane -k -t '${targetPane}' '${escapedDevCommand}'`,
@@ -212,7 +213,7 @@ class Dmux {
         // Determine the dmux command to use
         let dmuxCommand: string;
         if (isDev) {
-          dmuxCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+          dmuxCommand = buildDevWatchCommand(devDirectory);
         } else {
           // Check if we're running from a local installation
           // __dirname is 'dist' when compiled, so '../dmux' points to the wrapper

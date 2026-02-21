@@ -12,7 +12,7 @@ const scripts = packageJson.scripts || {};
 
 const requiredMarkers = {
   dev: 'node dist/index.js',
-  'dev:watch:run': 'node --watch dist/index.js',
+  'dev:watch:run': 'node scripts/dev-watch-run.js',
 };
 
 const disallowedMarkers = [

@@ -152,6 +152,7 @@ status('ok', 'Active source', `${sourcePath} [${sourceLabel}]`);
 
 const watchMarkers = [
   'dev:watch',
+  'node scripts/dev-watch-run.js',
   'node --watch dist/index.js',
   'tsx --watch src/index.ts',
 ];

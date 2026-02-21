@@ -16,6 +16,7 @@ import { TMUX_SPLIT_DELAY } from '../../constants/timing.js';
 import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../utils/paneProject.js';
 import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
 import { getPaneBranchName } from '../../utils/git.js';
+import { buildDevWatchRespawnCommand } from '../../utils/devWatchCommand.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -268,7 +269,7 @@ async function executeCloseOption(
         process.cwd() === pane.worktreePath
       ) {
         try {
-          const fallbackCommand = `cd "${sessionProjectRoot}" && pnpm dev:watch`;
+          const fallbackCommand = buildDevWatchRespawnCommand(sessionProjectRoot);
           const quotedCommand = `'${fallbackCommand.replace(/'/g, "'\\''")}'`;
           const configForRespawn: DmuxConfig = JSON.parse(fs.readFileSync(panesFile, 'utf-8'));
           const targetControlPaneId = configForRespawn.controlPaneId || execSync(
