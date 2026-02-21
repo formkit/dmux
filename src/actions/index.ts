@@ -25,6 +25,13 @@ export async function executeAction(
     case 'view':
       return actions.viewPane(pane, context);
 
+    case 'set_source':
+      return {
+        type: 'info',
+        message: 'Set source is handled by dev mode input flow',
+        dismissable: true,
+      };
+
     case 'close':
       return actions.closePane(pane, context);
 

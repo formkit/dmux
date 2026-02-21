@@ -8,16 +8,20 @@ import { SIDEBAR_WIDTH } from './layoutManager.js';
  * This pane displays ASCII art and has no command prompt
  *
  * @param controlPaneId - The ID of the control (sidebar) pane
+ * @param cwd - Optional working directory for the welcome pane shell process
  * @returns The pane ID of the created welcome pane, or undefined if creation failed
  */
-export async function createWelcomePane(controlPaneId: string): Promise<string | undefined> {
+export async function createWelcomePane(
+  controlPaneId: string,
+  cwd?: string
+): Promise<string | undefined> {
   const logService = LogService.getInstance();
   const tmuxService = TmuxService.getInstance();
 
   try {
     // Split horizontally to the right of the control pane
     // This creates a new pane that takes up the rest of the horizontal space
-    const welcomePaneId = await tmuxService.splitPane({ targetPane: controlPaneId });
+    const welcomePaneId = await tmuxService.splitPane({ targetPane: controlPaneId, cwd });
 
     if (!welcomePaneId) {
       logService.error('Failed to create welcome pane: no pane ID returned', 'WelcomePane');

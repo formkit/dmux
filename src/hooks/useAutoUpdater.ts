@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Worker } from 'worker_threads';
-import path from 'path';
 import { existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveDistPath } from '../utils/runtimePaths.js';
 
 interface UpdateInfo {
   currentVersion: string;
@@ -31,7 +28,7 @@ export default function useAutoUpdater(autoUpdater: any | undefined, setStatusMe
   useEffect(() => {
     let worker: Worker | null = null;
     let updateInterval: NodeJS.Timeout | null = null;
-    const workerPath = path.join(__dirname, '../workers/updateChecker.js');
+    const workerPath = resolveDistPath('workers', 'updateChecker.js');
     const configFile =
       autoUpdater && typeof autoUpdater.configFile === 'string'
         ? autoUpdater.configFile

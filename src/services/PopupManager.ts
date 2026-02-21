@@ -1,7 +1,4 @@
-import path from "path"
 import fs from "fs/promises"
-import { fileURLToPath } from "url"
-import { dirname } from "path"
 import {
   launchNodePopupNonBlocking,
   POPUP_POSITIONING,
@@ -18,14 +15,13 @@ import {
   buildAgentLaunchOptions,
   type AgentName,
 } from "../utils/agentLaunch.js"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+import { resolveDistPath } from "../utils/runtimePaths.js"
 
 export interface PopupManagerConfig {
   sidebarWidth: number
   projectRoot: string
   popupsSupported: boolean
+  isDevMode: boolean
   terminalWidth: number
   terminalHeight: number
   availableAgents: AgentName[]
@@ -60,11 +56,7 @@ export class PopupManager {
    * Get the popup script path from project root
    */
   private getPopupScriptPath(scriptName: string): string {
-    const projectRootForPopup = __dirname.includes("/dist")
-      ? path.resolve(__dirname, "../..") // If in dist/services/, go up two levels
-      : path.resolve(__dirname, "../..") // If in src/services/, go up two levels
-
-    return path.join(projectRootForPopup, "dist", "components", "popups", scriptName)
+    return resolveDistPath("components", "popups", scriptName)
   }
 
   /**
@@ -220,7 +212,11 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
-      const actions = getAvailableActions(pane, this.config.projectSettings)
+      const actions = getAvailableActions(
+        pane,
+        this.config.projectSettings,
+        this.config.isDevMode
+      )
       const result = await this.launchPopup<string>(
         "kebabMenuPopup.js",
         [pane.slug, JSON.stringify(actions)],
@@ -400,16 +396,18 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      const popupHeight = this.config.isDevMode ? 22 : 21
       const result = await this.launchPopup<{ action?: "hooks" }>(
         "shortcutsPopup.js",
         [],
         {
           width: 50,
-          height: 21,
+          height: popupHeight,
           title: "⌨️  Keyboard Shortcuts",
         },
         {
           hasSidebarLayout,
+          isDevMode: this.config.isDevMode,
         }
       )
 
@@ -428,11 +426,21 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      let settingsPopupWidth = 84
+      try {
+        // Use tmux client dimensions, not the dmux pane's stdout width.
+        const dims = await TmuxService.getInstance().getAllDimensions()
+        const maxAvailableWidth = dims.clientWidth - this.config.sidebarWidth - 2
+        settingsPopupWidth = Math.max(70, Math.min(84, maxAvailableWidth))
+      } catch {
+        // Keep a wider fallback and never regress below the previous fixed width.
+        settingsPopupWidth = 84
+      }
       const result = await this.launchPopup<any>(
         "settingsPopup.js",
         [],
         {
-          width: 70,
+          width: settingsPopupWidth,
           height: Math.min(25, SETTING_DEFINITIONS.length + 8),
           title: "⚙️  Settings",
         },

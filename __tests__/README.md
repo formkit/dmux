@@ -175,6 +175,6 @@ Actions have complex error handling:
 
 ## Related Documentation
 
-- [CLAUDE.md](../CLAUDE.md) - Full project documentation
+- [AGENTS.md](../AGENTS.md) - Full project documentation
 - [Phase 2 Refactoring](../context/REFACTOR.md) - Action extraction details
 - [Action Types](../src/actions/types.ts) - ActionResult specifications

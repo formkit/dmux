@@ -8,12 +8,14 @@ import {
   buildProjectActionLayout,
   type ProjectActionItem,
 } from "../../utils/projectActions.js"
+import { isActiveDevSourcePath } from "../../utils/devSource.js"
 
 interface PanesGridProps {
   panes: DmuxPane[]
   selectedIndex: number
   isLoading: boolean
   agentStatuses?: AgentStatusMap
+  activeDevSourcePath?: string
   fallbackProjectRoot: string
   fallbackProjectName: string
 }
@@ -23,6 +25,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   selectedIndex,
   isLoading,
   agentStatuses,
+  activeDevSourcePath,
   fallbackProjectRoot,
   fallbackProjectName,
 }) => {
@@ -90,11 +93,16 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
             const isLastPane = localIndex === group.panes.length - 1
             const nextPaneIndex = group.panes[localIndex + 1]?.index
             const isNextSelected = nextPaneIndex !== undefined && selectedIndex === nextPaneIndex
+            const isDevSource = isActiveDevSourcePath(
+              pane.worktreePath,
+              activeDevSourcePath
+            )
 
             return (
               <PaneCard
                 key={pane.id}
                 pane={paneWithStatus}
+                isDevSource={isDevSource}
                 selected={isSelected}
                 isFirstPane={isFirstPane}
                 isLastPane={isLastPane}

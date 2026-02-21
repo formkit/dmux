@@ -8,6 +8,7 @@ interface UseServicesProps {
   sidebarWidth: number
   projectRoot: string
   popupsSupported: boolean
+  isDevMode: boolean
   terminalWidth: number
   terminalHeight: number
   availableAgents: AgentName[]
@@ -27,6 +28,7 @@ export function useServices(props: UseServicesProps) {
       sidebarWidth: props.sidebarWidth,
       projectRoot: props.projectRoot,
       popupsSupported: props.popupsSupported,
+      isDevMode: props.isDevMode,
       terminalWidth: props.terminalWidth,
       terminalHeight: props.terminalHeight,
       availableAgents: props.availableAgents,
@@ -44,6 +46,7 @@ export function useServices(props: UseServicesProps) {
     props.sidebarWidth,
     props.projectRoot,
     props.popupsSupported,
+    props.isDevMode,
     props.terminalWidth,
     props.terminalHeight,
     props.availableAgents,

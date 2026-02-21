@@ -71,6 +71,10 @@ dmux creates a tmux pane for each task. Every pane gets its own git worktree and
 
 Full documentation is available at **[dmux.ai](https://dmux.ai)**, including setup guides, configuration, and hooks.
 
+## Contributing
+
+See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for the recommended local "dmux-on-dmux" development loop, hook setup, and PR workflow.
+
 ## License
 
 MIT

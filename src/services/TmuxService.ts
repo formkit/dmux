@@ -716,6 +716,21 @@ export class TmuxService {
   }
 
   /**
+   * Respawn a pane with a new command (DESTRUCTIVE - no retry)
+   * This kills the existing pane process and starts the provided command.
+   */
+  async respawnPane(paneId: string, command: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        const quotedCommand = `'${command.replace(/'/g, "'\\''")}'`;
+        this.execute(`tmux respawn-pane -k -t '${paneId}' ${quotedCommand}`);
+      },
+      RetryStrategy.NONE,
+      `respawnPane(${paneId})`
+    );
+  }
+
+  /**
    * Kill a window (DESTRUCTIVE - no retry)
    */
   async killWindow(windowId: string): Promise<void> {

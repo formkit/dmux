@@ -121,7 +121,7 @@ export async function createWelcomePaneCoordinated(
     }
 
     // Create the welcome pane
-    const welcomePaneId = await createWelcomePane(controlPaneId);
+    const welcomePaneId = await createWelcomePane(controlPaneId, projectRoot);
 
     if (welcomePaneId) {
       // Update config with new welcome pane ID (use atomic write)

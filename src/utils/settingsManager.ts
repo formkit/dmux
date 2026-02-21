@@ -25,7 +25,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: '', label: 'Agent default (ask)' },
       { value: 'plan', label: 'Plan mode (Claude only)' },
       { value: 'acceptEdits', label: 'Accept edits' },
-      { value: 'bypassPermissions', label: 'Bypass permissions (most permissive)' },
+      { value: 'bypassPermissions', label: 'Bypass permissions (max autonomy)' },
     ],
   },
   {

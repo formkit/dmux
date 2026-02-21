@@ -41,6 +41,7 @@ interface UseInputHandlingParams {
   isUpdating: boolean
   isLoading: boolean
   ignoreInput: boolean
+  isDevMode: boolean
   quitConfirmMode: boolean
   setQuitConfirmMode: (value: boolean) => void
 
@@ -70,6 +71,7 @@ interface UseInputHandlingParams {
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
   handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
+  setDevSourceFromPane: (pane: DmuxPane) => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
   loadPanes: () => Promise<void>
   cleanExit: () => void
@@ -97,6 +99,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     isUpdating,
     isLoading,
     ignoreInput,
+    isDevMode,
     quitConfirmMode,
     setQuitConfirmMode,
     showCommandPrompt,
@@ -118,6 +121,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     runCommandInternal,
     handlePaneCreationWithAgent,
     handleReopenWorktree,
+    setDevSourceFromPane,
     savePanes,
     loadPanes,
     cleanExit,
@@ -361,6 +365,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
       const selectedPane = panes[selectedIndex]
       const actionId = await popupManager.launchKebabMenuPopup(selectedPane)
       if (actionId) {
+        if (actionId === PaneAction.SET_SOURCE) {
+          await setDevSourceFromPane(selectedPane)
+          return
+        }
         await actionSystem.executeAction(actionId, selectedPane, {
           mainBranch: getMainBranch(),
         })
@@ -412,6 +420,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
       demos.forEach(demo => stateManager.showToast(demo.msg, demo.severity))
     } else if (input === "q") {
       cleanExit()
+    } else if (isDevMode && input === "S" && selectedIndex < panes.length) {
+      await setDevSourceFromPane(panes[selectedIndex])
+      return
     } else if (input === "r") {
       // Reopen closed worktree popup
       const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined

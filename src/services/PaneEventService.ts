@@ -11,12 +11,9 @@
 
 import { EventEmitter } from 'events';
 import { Worker } from 'worker_threads';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
 import { TmuxHookManager } from './TmuxHookManager.js';
 import { LogService } from './LogService.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveDistPath } from '../utils/runtimePaths.js';
 
 export type PaneEventMode = 'hooks' | 'polling' | 'disabled';
 
@@ -124,8 +121,7 @@ export class PaneEventService extends EventEmitter {
     if (!this.config) return;
 
     try {
-      // Worker file path - need to handle both dev and prod
-      const workerPath = path.join(__dirname, '..', 'workers', 'panePollingWorker.js');
+      const workerPath = resolveDistPath('workers', 'panePollingWorker.js');
 
       this.pollingWorker = new Worker(workerPath, {
         workerData: {

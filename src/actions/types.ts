@@ -96,6 +96,7 @@ export type ActionFunction = (
  */
 export enum PaneAction {
   VIEW = 'view',
+  SET_SOURCE = 'set_source',
   CLOSE = 'close',
   MERGE = 'merge',
   RENAME = 'rename',
@@ -136,6 +137,13 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     description: 'Jump to this pane',
     icon: '👁',
     shortcut: 'j',
+  },
+  [PaneAction.SET_SOURCE]: {
+    id: PaneAction.SET_SOURCE,
+    label: '[DEV] Toggle Source (Pane/Root)',
+    description: 'Toggle between this pane as source and project root',
+    icon: 'S',
+    requires: { worktree: true },
   },
   [PaneAction.CLOSE]: {
     id: PaneAction.CLOSE,
@@ -224,10 +232,12 @@ const HIDDEN_MENU_ACTIONS = new Set<PaneAction>([
  */
 export function getAvailableActions(
   pane: DmuxPane,
-  projectSettings?: any
+  projectSettings?: any,
+  isDevMode: boolean = false
 ): ActionMetadata[] {
   return Object.values(ACTION_REGISTRY).filter(action => {
     if (HIDDEN_MENU_ACTIONS.has(action.id)) return false;
+    if (action.id === PaneAction.SET_SOURCE && !isDevMode) return false;
     if (!action.requires) return true;
 
     const { worktree, testCommand, devCommand, runningProcess } = action.requires;
