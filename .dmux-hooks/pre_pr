@@ -1,0 +1,67 @@
+#!/bin/bash
+# pre_pr hook — Paranoid code review before PR creation
+#
+# Reviews the diff using Claude, fixes any issues found,
+# and commits the fixes. Runs BEFORE the PR is created (blocking).
+#
+# Available env vars:
+#   DMUX_WORKTREE_PATH  - Path to the worktree
+#   DMUX_BRANCH         - Branch name
+#   DMUX_PR_TITLE       - Proposed PR title
+#   DMUX_PR_BODY        - Proposed PR body
+#   DMUX_BASE_BRANCH    - Base branch (e.g., main)
+#   DMUX_SLUG           - Pane slug
+#   DMUX_PROMPT         - Original task prompt
+#
+# Exit 0 to continue with PR creation, non-zero to abort.
+
+set -e
+
+cd "$DMUX_WORKTREE_PATH"
+
+BASE_BRANCH="${DMUX_BASE_BRANCH:-main}"
+
+# Get the diff to review
+DIFF=$(git diff "$BASE_BRANCH"...HEAD 2>/dev/null || git diff HEAD~1 2>/dev/null || echo "")
+
+# Skip review if diff is empty
+if [ -z "$DIFF" ]; then
+  echo "[pre_pr] No changes to review, skipping."
+  exit 0
+fi
+
+echo "[pre_pr] Reviewing diff before PR creation..."
+
+# Truncate very large diffs to avoid token limits
+MAX_CHARS=12000
+if [ ${#DIFF} -gt $MAX_CHARS ]; then
+  DIFF="${DIFF:0:$MAX_CHARS}
+...(truncated)"
+fi
+
+# Run Claude with a paranoid review prompt
+# Uses --dangerously-skip-permissions so it can edit files and commit fixes
+claude --dangerously-skip-permissions -p "You are a paranoid code reviewer. Review the following diff and FIX any issues you find directly in the code.
+
+Review across these 6 lenses:
+1. **Correctness**: Logic errors, off-by-one, wrong variable, missing return, race conditions
+2. **Edge Cases**: Null/undefined, empty arrays, boundary values, concurrent access
+3. **Security**: Injection, XSS, SSRF, path traversal, secrets in code, unsafe deserialization
+4. **Error Handling**: Swallowed errors, missing try/catch, unhelpful error messages, resource leaks
+5. **Test Gaps**: Untested branches, missing edge case tests, assertions that don't verify behavior
+6. **Architecture**: Coupling, naming, single responsibility, API contract violations
+
+Rules:
+- Only fix REAL issues. Do not refactor for style or add unnecessary comments.
+- For each fix, stage the file with git add and commit with a descriptive message prefixed with 'fix(review):'.
+- If no issues are found, do nothing and exit cleanly.
+- Work in the current directory: $PWD
+
+Original task: $DMUX_PROMPT
+PR Title: $DMUX_PR_TITLE
+
+Diff to review:
+$DIFF"
+
+echo "[pre_pr] Review complete."
+exit 0

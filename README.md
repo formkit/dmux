@@ -65,7 +65,7 @@ dmux creates a tmux pane for each task. Every pane gets its own git worktree and
 - Node.js 18+
 - Git 2.20+
 - At least one agent: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), or [OpenCode](https://github.com/opencode-ai/opencode)
-- [OpenRouter API key](https://openrouter.ai/) (optional, for AI branch names and commit messages)
+- Optional: [GitHub CLI](https://cli.github.com/) (`gh`) for PR workflow
 
 ## Documentation
 

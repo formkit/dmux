@@ -26,6 +26,9 @@ export type HookType =
   | 'worktree_removed'
   | 'pre_merge'
   | 'post_merge'
+  | 'pre_pr'
+  | 'post_pr'
+  | 'post_ci_check'
   | 'run_test'
   | 'run_dev';
 
@@ -50,6 +53,15 @@ export interface HookEnvironment {
 
   // Merge-specific
   DMUX_TARGET_BRANCH?: string;
+
+  // PR-specific
+  DMUX_PR_NUMBER?: string;
+  DMUX_PR_URL?: string;
+  DMUX_PR_STATUS?: string;
+  DMUX_PR_TITLE?: string;
+  DMUX_PR_BODY?: string;
+  DMUX_BASE_BRANCH?: string;
+  DMUX_CI_STATUS?: string;
 
   // Additional custom data
   [key: string]: string | undefined;
@@ -117,6 +129,17 @@ export async function buildHookEnvironment(
     if (pane.worktreePath) {
       env.DMUX_WORKTREE_PATH = pane.worktreePath;
       env.DMUX_BRANCH = pane.slug; // Branch name matches slug
+    }
+
+    // PR-specific data
+    if ((pane as any).prNumber) {
+      env.DMUX_PR_NUMBER = String((pane as any).prNumber);
+    }
+    if ((pane as any).prUrl) {
+      env.DMUX_PR_URL = (pane as any).prUrl;
+    }
+    if ((pane as any).prStatus) {
+      env.DMUX_PR_STATUS = (pane as any).prStatus;
     }
   }
 
@@ -267,6 +290,9 @@ export function listAvailableHooks(projectRoot: string): HookType[] {
     'worktree_removed',
     'pre_merge',
     'post_merge',
+    'pre_pr',
+    'post_pr',
+    'post_ci_check',
     'run_test',
     'run_dev',
   ];

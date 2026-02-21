@@ -399,6 +399,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
       enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
       setStatusMessage("Layout reset")
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+    } else if (input === "P" && selectedIndex < panes.length) {
+      // Open PR for selected pane (Shift+P)
+      const selectedPane = panes[selectedIndex]
+      if (selectedPane.worktreePath) {
+        await actionSystem.executeAction(PaneAction.OPEN_PR as any, selectedPane)
+      }
     } else if (input === "T") {
       // Demo toasts (Shift+T) - cycles through different types
       const stateManager = StateManager.getInstance()

@@ -12,3 +12,4 @@ export { duplicatePane } from './duplicateAction.js';
 export { copyPath } from './copyPathAction.js';
 export { openInEditor } from './openInEditorAction.js';
 export { toggleAutopilot } from './toggleAutopilotAction.js';
+export { openPr } from './openPrAction.js';

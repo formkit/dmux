@@ -102,7 +102,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 │         (TypeScript/Node.js)            │
 ├─────────────────────────────────────────┤
 │           External Services             │
-│   (tmux, git, OpenRouter API)           │
+│   (tmux, git, GitHub CLI)               │
 └─────────────────────────────────────────┘
 ```
 
@@ -113,8 +113,9 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 - **UI Components**: ink-text-input for text input
 - **Styling**: chalk for terminal colors
 - **Language**: TypeScript 5.x with strict mode
-- **External APIs**: OpenRouter AI (gpt-4o-mini model)
-- **System Requirements**: tmux, git, and at least one agent CLI: Claude Code (`claude`) or opencode (`opencode`)
+- **AI Features**: Uses locally-installed agents (`claude --print`, `opencode run`) via unified agent harness
+- **System Requirements**: tmux, git, and at least one agent CLI: Claude Code (`claude`), opencode (`opencode`), or Codex (`codex`)
+- **Optional**: GitHub CLI (`gh`) for PR workflow
 
 ### File Structure
 
@@ -165,7 +166,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 
 - tmux 3.0+, Node.js 18+, Git 2.20+
 - At least one agent: `claude` or `opencode`
-- Optional: `OPENROUTER_API_KEY` for AI slug/commit generation
+- Optional: GitHub CLI (`gh`) for PR workflow
 
 ### Build Commands
 
@@ -282,10 +283,14 @@ interface DmuxPane {
 }
 ```
 
-### 3. OpenRouter Integration
+### 3. Agent Harness (`src/utils/agentHarness.ts`)
 
-- **Slug generation**: `gpt-4o-mini`, 10 tokens, fallback to timestamp
-- **Commit messages**: Analyzes git diff, conventional commits format
+Unified interface for calling locally-installed AI agents:
+- `callAgent(prompt, options?)` — resolves agent, builds command, returns result
+- `resolveAgent()` — finds available agent (explicit > `defaultAgent` setting > first available)
+- Supports `claude --print`, `opencode run`, `codex` commands
+- `json: true` option for structured responses
+- Used by: slug generation, commit messages, PR descriptions, pane analysis, conflict resolution
 
 ### 4. CleanTextInput Component (CRITICAL)
 
@@ -535,7 +540,7 @@ pnpm build     # TypeScript + frontend (vite)
 
 ### Testing Checklist
 
-- Outside/inside tmux, with/without OPENROUTER_API_KEY
+- Outside/inside tmux, with/without agent CLIs available
 - Pane cleanup, merge workflow, long prompts, rapid creation
 - Debug logging: `console.error('Debug:', variable)`
 
@@ -544,7 +549,7 @@ pnpm build     # TypeScript + frontend (vite)
 ### Common Issues
 
 1. **Agent not found**: Install `claude` or `opencode` CLI
-2. **API key issues**: Check `echo $OPENROUTER_API_KEY` and test with curl
+2. **Agent CLI issues**: Ensure `claude`, `opencode`, or `codex` is installed and in PATH
 3. **Panes not appearing**: Verify tmux 3.0+, git 2.20+, write permissions
 4. **Screen artifacts**: `Ctrl+L` or `tmux refresh-client`
 5. **Merge conflicts**: Manually resolve in worktree, retry merge

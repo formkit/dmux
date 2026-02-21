@@ -15,4 +15,5 @@ export {
   copyPath,
   openInEditor,
   toggleAutopilot,
+  openPr,
 } from './implementations/index.js';

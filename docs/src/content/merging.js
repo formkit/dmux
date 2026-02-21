@@ -22,14 +22,14 @@ export function render() {
     <p>Before merging, dmux checks for uncommitted changes in the worktree. If there are any, it:</p>
     <ol>
       <li>Stages all changes</li>
-      <li>Generates a commit message using AI (via OpenRouter)</li>
+      <li>Generates a commit message using your installed AI agent</li>
       <li>Creates the commit automatically</li>
     </ol>
     <p>The AI analyzes the git diff and generates a conventional commit message like <code>feat: add user authentication flow</code> or <code>fix: resolve null pointer in search handler</code>.</p>
 
     <div class="callout callout-info">
       <div class="callout-title">Note</div>
-      If OpenRouter is unavailable, dmux will use a generic commit message like "dmux: auto-commit changes".
+      If no agent is available, dmux will use a generic commit message like "dmux: auto-commit changes".
     </div>
 
     <h2>Handling Merge Conflicts</h2>

@@ -43,6 +43,15 @@ export interface DmuxPane {
   autopilot?: boolean;
   // Error message if pane analyzer encounters issues
   analyzerError?: string;
+  // PR/GitHub integration
+  prNumber?: number;
+  prUrl?: string;
+  prStatus?: 'open' | 'draft' | 'merged' | 'closed';
+  prChecks?: {
+    overall: 'pending' | 'success' | 'failure';
+    checks: Array<{ name: string; status: string; conclusion: string; url?: string }>;
+  };
+  prLastChecked?: number;
 }
 
 export interface PanePosition {

@@ -55,6 +55,9 @@ This directory contains hooks that run automatically at key lifecycle events in 
 - \`worktree_removed\` - After worktree removed
 - \`pre_merge\` - Before merge
 - \`post_merge\` - After merge
+- \`pre_pr\` - Before PR creation (blocking)
+- \`post_pr\` - After PR created
+- \`post_ci_check\` - When CI status changes
 - \`run_test\` - When running tests
 - \`run_dev\` - When starting dev server
 
@@ -322,6 +325,102 @@ echo "[Hook] Post-merge processing complete"
 `;
 
 /**
+ * Example: pre_pr hook (paranoid review)
+ */
+export const EXAMPLE_PRE_PR = `#!/bin/bash
+# Example: pre_pr hook
+#
+# This hook runs BEFORE a PR is created (blocking).
+# It reviews the diff using Claude with a paranoid review methodology,
+# fixes any issues found, and commits the fixes.
+#
+# Available environment variables:
+#   DMUX_WORKTREE_PATH - Path to the worktree
+#   DMUX_BRANCH        - Branch name
+#   DMUX_PR_TITLE      - Proposed PR title
+#   DMUX_PR_BODY       - Proposed PR body
+#   DMUX_BASE_BRANCH   - Base branch (e.g., main)
+#   DMUX_SLUG          - Pane slug
+#   DMUX_PROMPT        - Original task prompt
+#
+# Exit 0 to continue with PR creation, non-zero to abort.
+
+set -e
+
+cd "\$DMUX_WORKTREE_PATH"
+
+BASE_BRANCH="\${DMUX_BASE_BRANCH:-main}"
+
+# Get the diff to review
+DIFF=\$(git diff "\$BASE_BRANCH"...HEAD 2>/dev/null || git diff HEAD~1 2>/dev/null || echo "(no diff available)")
+
+# Skip review if diff is empty
+if [ -z "\$DIFF" ] || [ "\$DIFF" = "(no diff available)" ]; then
+  echo "[pre_pr] No changes to review, skipping."
+  exit 0
+fi
+
+echo "[pre_pr] Reviewing diff before PR creation..."
+
+# Truncate very large diffs to avoid token limits
+MAX_CHARS=12000
+if [ \${#DIFF} -gt \$MAX_CHARS ]; then
+  DIFF="\${DIFF:0:\$MAX_CHARS}
+...(truncated)"
+fi
+
+# Run Claude with a paranoid review prompt
+claude --dangerously-skip-permissions -p "You are a paranoid code reviewer. Review the following diff and FIX any issues you find directly in the code.
+
+Review across these 6 lenses:
+1. **Correctness**: Logic errors, off-by-one, wrong variable, missing return, race conditions
+2. **Edge Cases**: Null/undefined, empty arrays, boundary values, concurrent access
+3. **Security**: Injection, XSS, SSRF, path traversal, secrets in code, unsafe deserialization
+4. **Error Handling**: Swallowed errors, missing try/catch, unhelpful error messages, resource leaks
+5. **Test Gaps**: Untested branches, missing edge case tests, assertions that don't verify behavior
+6. **Architecture**: Coupling, naming, single responsibility, API contract violations
+
+Rules:
+- Only fix REAL issues. Do not refactor for style or add unnecessary comments.
+- For each fix, stage the file with git add and commit with a descriptive message.
+- If no issues are found, do nothing and exit cleanly.
+- Work in the current directory: \$PWD
+
+Original task: \$DMUX_PROMPT
+PR Title: \$DMUX_PR_TITLE
+
+Diff to review:
+\$DIFF"
+
+echo "[pre_pr] Review complete."
+exit 0
+`;
+
+/**
+ * Example: post_pr hook
+ */
+export const EXAMPLE_POST_PR = `#!/bin/bash
+# Example: post_pr hook
+#
+# This hook runs after a GitHub Pull Request is created.
+# Use it to notify teams, add labels, request reviewers, etc.
+
+set -e
+
+echo "[Hook] PR created: $DMUX_PR_URL"
+
+# Add labels
+if command -v gh &> /dev/null; then
+  gh pr edit "$DMUX_PR_NUMBER" --add-label "ai-generated" 2>/dev/null || true
+fi
+
+# Request reviewers (uncomment and customize)
+# gh pr edit "$DMUX_PR_NUMBER" --add-reviewer "@me" 2>/dev/null || true
+
+echo "[Hook] Post-PR processing complete"
+`;
+
+/**
  * All embedded examples for easy iteration
  */
 export const EXAMPLE_HOOKS = {
@@ -329,4 +428,6 @@ export const EXAMPLE_HOOKS = {
   'run_dev.example': EXAMPLE_RUN_DEV,
   'run_test.example': EXAMPLE_RUN_TEST,
   'post_merge.example': EXAMPLE_POST_MERGE,
+  'pre_pr.example': EXAMPLE_PRE_PR,
+  'post_pr.example': EXAMPLE_POST_PR,
 };

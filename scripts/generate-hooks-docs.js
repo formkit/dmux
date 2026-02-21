@@ -92,6 +92,15 @@ DMUX_BRANCH="fix-auth-bug"             # Same as slug
 DMUX_TARGET_BRANCH="main"              # Branch being merged into
 \`\`\`
 
+### PR Context (pre_pr, post_pr hooks)
+\`\`\`bash
+DMUX_PR_TITLE="feat: add auth"         # Proposed/actual PR title
+DMUX_PR_BODY="## Summary\\n..."         # Proposed/actual PR body (markdown)
+DMUX_BASE_BRANCH="main"               # PR base branch
+DMUX_PR_NUMBER="42"                    # PR number (post_pr only)
+DMUX_PR_URL="https://github.com/..."   # PR URL (post_pr only)
+\`\`\`
+
 ## HTTP Callback API
 
 Interactive hooks (\`run_test\` and \`run_dev\`) can update dmux UI via HTTP.
@@ -453,6 +462,8 @@ function generateHooksTable() {
     worktree_removed: ['After worktree removed', 'Cleanup external references'],
     pre_merge: ['Before merge operation', 'Run final tests, create backups'],
     post_merge: ['After successful merge', 'Deploy, close issues, notify team'],
+    pre_pr: ['Before PR creation', 'Code review, fix issues, run linters'],
+    post_pr: ['After PR created', 'Add labels, request reviewers, notify team'],
     run_test: ['When tests triggered', 'Run test suite, report status via HTTP'],
     run_dev: ['When dev server triggered', 'Start dev server, create tunnel, report URL'],
   };
@@ -485,6 +496,17 @@ function generateHooksTable() {
   mergeHooks.forEach(hook => {
     const [when, use] = hookDescriptions[hook] || ['', ''];
     table += `| \`${hook}\` | ${when} | ${use} |\n`;
+  });
+
+  table += '\n### PR Lifecycle Hooks\n\n';
+  table += '| Hook | When | Blocking | Common Use Cases |\n';
+  table += '|------|------|----------|------------------|\n';
+
+  const prHooks = ['pre_pr', 'post_pr'];
+  const prBlocking = { pre_pr: 'Yes (10 min timeout)', post_pr: 'No (async)' };
+  prHooks.forEach(hook => {
+    const [when, use] = hookDescriptions[hook] || ['', ''];
+    table += `| \`${hook}\` | ${when} | ${prBlocking[hook]} | ${use} |\n`;
   });
 
   table += '\n### Interactive Hooks (with HTTP callbacks)\n\n';

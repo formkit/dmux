@@ -158,6 +158,13 @@ export async function validateSystemRequirements(): Promise<ValidationResult> {
     }
   }
 
+  // Check for gh CLI (optional)
+  try {
+    execSync('gh --version', { encoding: 'utf-8', stdio: 'pipe' });
+  } catch {
+    warnings.push('GitHub CLI (gh) not found. PR workflow features will be unavailable. Install from https://cli.github.com/');
+  }
+
   return {
     canRun: checks.tmux.valid && checks.git.valid,
     warnings,

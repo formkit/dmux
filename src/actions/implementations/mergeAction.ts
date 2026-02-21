@@ -87,7 +87,46 @@ async function executeSingleRootMerge(
     return handleMergeIssues(pane, context, validation, mainRepoPath);
   }
 
-  // No issues detected, proceed with merge confirmation
+  // Check if gh is available for PR option
+  const { isGhAvailable } = await import('../../utils/ghCli.js');
+  if (await isGhAvailable()) {
+    return {
+      type: 'choice',
+      title: 'Merge or PR',
+      message: `How would you like to integrate "${pane.slug}" into ${validation.mainBranch}?`,
+      options: [
+        { id: 'merge', label: 'Merge locally', description: 'Merge branch into main locally' },
+        { id: 'pr', label: 'Open PR', description: 'Push and create GitHub Pull Request' },
+      ],
+      onSelect: async (optionId: string) => {
+        if (optionId === 'pr') {
+          const { openPr } = await import('./openPrAction.js');
+          return openPr(pane, context);
+        }
+        // Continue with local merge
+        return {
+          type: 'confirm',
+          title: 'Merge Worktree',
+          message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
+          confirmLabel: 'Merge',
+          cancelLabel: 'Cancel',
+          onConfirm: async () => {
+            await triggerHook('pre_merge', mainRepoPath, pane, {
+              DMUX_TARGET_BRANCH: validation.mainBranch,
+            });
+            return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
+          },
+          onCancel: async () => ({
+            type: 'info' as const,
+            message: 'Merge cancelled',
+            dismissable: true,
+          }),
+        };
+      },
+    };
+  }
+
+  // No gh available, proceed with merge confirmation directly
   return {
     type: 'confirm',
     title: 'Merge Worktree',

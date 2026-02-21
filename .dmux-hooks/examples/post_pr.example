@@ -1,0 +1,19 @@
+#!/bin/bash
+# Example: post_pr hook
+#
+# This hook runs after a GitHub Pull Request is created.
+# Use it to notify teams, add labels, request reviewers, etc.
+
+set -e
+
+echo "[Hook] PR created: $DMUX_PR_URL"
+
+# Add labels
+if command -v gh &> /dev/null; then
+  gh pr edit "$DMUX_PR_NUMBER" --add-label "ai-generated" 2>/dev/null || true
+fi
+
+# Request reviewers (uncomment and customize)
+# gh pr edit "$DMUX_PR_NUMBER" --add-reviewer "@me" 2>/dev/null || true
+
+echo "[Hook] Post-PR processing complete"

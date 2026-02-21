@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { Box, Text, useApp, useStdout, useInput } from "ink"
 import { TmuxService } from "./services/TmuxService.js"
 
@@ -36,6 +36,7 @@ import {
 import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
+import { PrStatusPoller } from "./services/PrStatusPoller.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
@@ -348,6 +349,24 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       statusDetector.off("status-updated", handleStatusUpdate)
     }
   }, [setPanes])
+
+  // PR status polling
+  const panesRef = useRef(panes)
+  panesRef.current = panes
+
+  useEffect(() => {
+    if (!projectRoot) return
+    const poller = new PrStatusPoller({
+      getPanes: () => panesRef.current,
+      savePanes: async (updatedPanes) => {
+        setPanes(updatedPanes)
+        await savePanes(updatedPanes)
+      },
+      projectRoot,
+    })
+    poller.start()
+    return () => poller.stop()
+  }, [projectRoot])
 
   // Note: No need to sync panes with StateManager here.
   // The ConfigWatcher automatically updates StateManager when the config file changes.

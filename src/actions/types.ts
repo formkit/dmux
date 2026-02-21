@@ -106,6 +106,7 @@ export enum PaneAction {
   COPY_PATH = 'copy_path',
   OPEN_IN_EDITOR = 'open_in_editor',
   TOGGLE_AUTOPILOT = 'toggle_autopilot',
+  OPEN_PR = 'open_pr',
 }
 
 /**
@@ -209,6 +210,14 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     description: 'Enable/disable automatic option acceptance',
     icon: '🤖',
     shortcut: 'a',
+    requires: { worktree: true },
+  },
+  [PaneAction.OPEN_PR]: {
+    id: PaneAction.OPEN_PR,
+    label: 'Open PR',
+    description: 'Push branch and create GitHub Pull Request',
+    icon: '↗',
+    shortcut: 'P',
     requires: { worktree: true },
   },
 };

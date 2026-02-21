@@ -46,6 +46,13 @@ vi.mock('../../src/utils/hooks.js', () => ({
   triggerHook: vi.fn(() => Promise.resolve()),
 }));
 
+// Mock agent harness
+const mockCallAgent = vi.fn();
+vi.mock('../../src/utils/agentHarness.js', () => ({
+  callAgent: (...args: any[]) => mockCallAgent(...args),
+  resolveAgent: vi.fn(() => Promise.resolve('claude')),
+}));
+
 describe('Git Operations Integration Tests', () => {
   let gitRepo: MockGitRepo;
 
@@ -472,35 +479,41 @@ index abc123..def456 100644
     });
 
     it('should generate commit message from AI', async () => {
-      // Mock OpenRouter API
-      global.fetch = vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              choices: [{ message: { content: 'feat: add JWT authentication' } }],
-            }),
-        } as Response)
-      );
+      // Mock execSync to return a diff
+      mockExecSync.mockImplementation((cmd: string, options?: any) => {
+        if (cmd.includes('diff --cached')) return 'diff --cached output';
+        if (cmd.includes('diff') && cmd.includes('--stat')) return 'file1.ts | 5 +++++';
+        return options?.encoding === 'utf-8' ? '' : Buffer.from('');
+      });
+
+      // Mock callAgent to return a commit message
+      mockCallAgent.mockResolvedValueOnce('feat: add JWT authentication');
 
       const { generateCommitMessage } = await import('../../src/utils/aiMerge.js');
 
-      const message = await generateCommitMessage('diff content here', '/test');
+      const message = await generateCommitMessage('/test');
 
       expect(message).toContain('feat:');
       expect(message).toContain('authentication');
     });
 
-    it('should fallback to manual commit when AI fails', async () => {
-      // Mock API failure
-      global.fetch = vi.fn(() => Promise.reject(new Error('API timeout')));
+    it('should fallback to null when AI fails', async () => {
+      // Mock execSync to return a diff
+      mockExecSync.mockImplementation((cmd: string, options?: any) => {
+        if (cmd.includes('diff --cached')) return 'diff --cached output';
+        if (cmd.includes('diff') && cmd.includes('--stat')) return 'file1.ts | 5 +++++';
+        return options?.encoding === 'utf-8' ? '' : Buffer.from('');
+      });
+
+      // Mock callAgent to return null (failure)
+      mockCallAgent.mockResolvedValueOnce(null);
 
       const { generateCommitMessage } = await import('../../src/utils/aiMerge.js');
 
-      const message = await generateCommitMessage('diff content', '/test');
+      const message = await generateCommitMessage('/test');
 
-      // Should return a fallback message or empty string
-      expect(message).toBeDefined();
+      // Should return null when agent fails
+      expect(message).toBeNull();
     });
   });
 

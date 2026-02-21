@@ -17,6 +17,12 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
     if (pane.agentStatus === 'working') return { icon: '✻', color: COLORS.working };
     if (pane.agentStatus === 'analyzing') return { icon: '⟳', color: COLORS.analyzing };
     if (pane.agentStatus === 'waiting') return { icon: '⚠', color: COLORS.waiting };
+    // PR status indicators
+    if (pane.prStatus === 'merged') return { icon: '⇡', color: COLORS.success };
+    if (pane.prChecks?.overall === 'success' && pane.prStatus === 'open') return { icon: '✓', color: COLORS.success };
+    if (pane.prChecks?.overall === 'failure' && pane.prStatus === 'open') return { icon: '✗', color: COLORS.error };
+    if (pane.prChecks?.overall === 'pending' && pane.prStatus === 'open') return { icon: '⏳', color: COLORS.warning };
+    if (pane.prStatus === 'open' || pane.prStatus === 'draft') return { icon: '↑', color: COLORS.info };
     if (pane.testStatus === 'running') return { icon: '⏳', color: COLORS.warning };
     if (pane.testStatus === 'failed') return { icon: '✗', color: COLORS.error };
     if (pane.testStatus === 'passed') return { icon: '✓', color: COLORS.success };
@@ -72,6 +78,8 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
     prevProps.pane.agentStatus === nextProps.pane.agentStatus &&
     prevProps.pane.testStatus === nextProps.pane.testStatus &&
     prevProps.pane.devStatus === nextProps.pane.devStatus &&
+    prevProps.pane.prStatus === nextProps.pane.prStatus &&
+    prevProps.pane.prChecks?.overall === nextProps.pane.prChecks?.overall &&
     prevProps.pane.autopilot === nextProps.pane.autopilot &&
     prevProps.pane.type === nextProps.pane.type &&
     prevProps.pane.shellType === nextProps.pane.shellType &&

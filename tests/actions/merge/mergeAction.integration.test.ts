@@ -75,6 +75,11 @@ vi.mock('../../../src/utils/aiMerge.js', () => ({
   getComprehensiveDiff: vi.fn(() => ({ diff: 'mock diff', summary: 'file1.ts' })),
 }));
 
+// Mock ghCli - default to gh not available so tests use existing merge flow
+vi.mock('../../../src/utils/ghCli.js', () => ({
+  isGhAvailable: vi.fn(() => Promise.resolve(false)),
+}));
+
 vi.mock('../../../src/shared/StateManager.js', () => ({
   StateManager: {
     getInstance: vi.fn(() => ({

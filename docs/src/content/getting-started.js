@@ -8,11 +8,6 @@ export function render() {
     <h2>Install dmux</h2>
     <pre><code data-lang="bash">npm -g i dmux</code></pre>
 
-    <h2>Set Up OpenRouter (Recommended)</h2>
-    <p>Before your first run, we recommend setting up an <a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a> API key. dmux uses it to generate smart branch names from your prompts and AI-powered commit messages when merging. Without it, branch names fall back to <code>dmux-{timestamp}</code> and commit messages will be generic.</p>
-    <pre><code data-lang="bash">export OPENROUTER_API_KEY="sk-or-..."</code></pre>
-    <p>Add this to your shell profile (<code>~/.zshrc</code> or <code>~/.bashrc</code>) so it persists across sessions. See <a href="#configuration">Configuration</a> for model options and details.</p>
-
     <h2>First Run</h2>
     <ol>
       <li>

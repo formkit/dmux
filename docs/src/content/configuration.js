@@ -79,46 +79,29 @@ curl -X PATCH http://127.0.0.1:PORT/api/settings \\
       <li>Built-in defaults — if neither file defines the setting</li>
     </ol>
 
-    <h2>OpenRouter Configuration</h2>
-    <p>dmux uses <a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a> for AI-powered features like smart branch naming and commit message generation.</p>
+    <h2>AI Features</h2>
+    <p>dmux uses your installed AI agents (Claude Code, OpenCode, or Codex) for smart features like branch naming, commit message generation, pane status detection, and PR descriptions. No external API keys required &mdash; dmux calls the same agents already running in your panes.</p>
 
-    <h3>Setting Up</h3>
-    <ol>
-      <li>Create an account at <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a></li>
-      <li>Generate an API key from the <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">keys page</a></li>
-      <li>Set the environment variable:
-        <pre><code data-lang="bash">export OPENROUTER_API_KEY="sk-or-v1-..."</code></pre>
-      </li>
-      <li>Add it to your shell profile for persistence:
-        <pre><code data-lang="bash"># Add to ~/.zshrc or ~/.bashrc
-echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
-      </li>
-    </ol>
-
-    <h3>How It's Used</h3>
     <table>
       <thead>
-        <tr><th>Feature</th><th>Model</th><th>Purpose</th></tr>
+        <tr><th>Feature</th><th>How It Works</th></tr>
       </thead>
       <tbody>
-        <tr><td>Slug generation</td><td>gpt-4o-mini</td><td>Convert prompts to short branch names</td></tr>
-        <tr><td>Commit messages</td><td>gpt-4o-mini</td><td>Generate conventional commit messages from diffs</td></tr>
-        <tr><td>Pane status</td><td>grok-4-fast (free)</td><td>Detect agent state from terminal output</td></tr>
+        <tr><td>Slug generation</td><td>Asks your agent to convert prompts into short branch names</td></tr>
+        <tr><td>Commit messages</td><td>Generates conventional commit messages from git diffs</td></tr>
+        <tr><td>Pane status</td><td>Detects agent state (working, idle, waiting) from terminal output</td></tr>
+        <tr><td>PR descriptions</td><td>Generates PR title and body from your prompt and diff</td></tr>
+        <tr><td>Conflict resolution</td><td>AI-powered merge conflict resolution</td></tr>
       </tbody>
     </table>
 
-    <h3>Without OpenRouter</h3>
-    <p>If <code>OPENROUTER_API_KEY</code> is not set, dmux still works but with reduced functionality:</p>
-    <ul>
-      <li>Branch names fall back to <code>dmux-{timestamp}</code></li>
-      <li>Commit messages fall back to <code>dmux: auto-commit changes</code></li>
-      <li>Pane status detection uses heuristics instead of LLM analysis</li>
-    </ul>
+    <p>If no agent is available, these features gracefully degrade (e.g., branch names fall back to <code>dmux-{timestamp}</code>).</p>
 
-    <div class="callout callout-tip">
-      <div class="callout-title">Tip</div>
-      OpenRouter provides free credits for new accounts, and the models dmux uses (gpt-4o-mini, grok-4-fast) are very inexpensive. Even heavy usage costs only pennies per day.
-    </div>
+    <h2>GitHub CLI Integration</h2>
+    <p>dmux can create GitHub Pull Requests directly from panes. Install the <a href="https://cli.github.com/" target="_blank" rel="noopener">GitHub CLI</a> (<code>gh</code>) to enable this:</p>
+    <pre><code data-lang="bash">brew install gh
+gh auth login</code></pre>
+    <p>When <code>gh</code> is available, pressing <kbd>m</kbd> on a pane offers "Open PR" alongside "Merge locally". You can also press <kbd>Shift+P</kbd> to open a PR directly.</p>
 
     <h2>Environment Variables</h2>
     <table>
@@ -126,7 +109,6 @@ echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
         <tr><th>Variable</th><th>Description</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>OPENROUTER_API_KEY</code></td><td>API key for OpenRouter AI features</td></tr>
         <tr><td><code>DMUX_SESSION</code></td><td>Override the tmux session name</td></tr>
       </tbody>
     </table>
