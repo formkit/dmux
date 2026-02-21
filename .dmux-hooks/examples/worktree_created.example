@@ -28,10 +28,8 @@ if [ -f "$DMUX_ROOT/.env.local" ]; then
   cp "$DMUX_ROOT/.env.local" "$DMUX_WORKTREE_PATH/.env.local"
 fi
 
-# Set custom git config for this worktree
-echo "[Hook] Configuring git"
-git config user.name "dmux-agent/$DMUX_SLUG"
-git config user.email "agent@dmux.local"
+# Keep existing git author identity.
+# Do not set git user.name/user.email in this hook.
 
 # Create a log entry
 echo "[$(date)] Created worktree: $DMUX_SLUG | Agent: $DMUX_AGENT | Prompt: $DMUX_PROMPT" \
