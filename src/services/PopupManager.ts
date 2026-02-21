@@ -435,11 +435,21 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      let settingsPopupWidth = 84
+      try {
+        // Use tmux client dimensions, not the dmux pane's stdout width.
+        const dims = await TmuxService.getInstance().getAllDimensions()
+        const maxAvailableWidth = dims.clientWidth - this.config.sidebarWidth - 2
+        settingsPopupWidth = Math.max(70, Math.min(84, maxAvailableWidth))
+      } catch {
+        // Keep a wider fallback and never regress below the previous fixed width.
+        settingsPopupWidth = 84
+      }
       const result = await this.launchPopup<any>(
         "settingsPopup.js",
         [],
         {
-          width: 70,
+          width: settingsPopupWidth,
           height: Math.min(25, SETTING_DEFINITIONS.length + 8),
           title: "⚙️  Settings",
         },
