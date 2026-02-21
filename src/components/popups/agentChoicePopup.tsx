@@ -63,6 +63,12 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
         (option) => option.agents.length === 1 && option.agents[0] === 'codex'
       );
       if (codexIdx >= 0) setSelectedIndex(codexIdx);
+    } else if (input.toLowerCase() === 'p') {
+      // Find pi index
+      const piIdx = options.findIndex(
+        (option) => option.agents.length === 1 && option.agents[0] === 'pi'
+      );
+      if (piIdx >= 0) setSelectedIndex(piIdx);
     } else if (/^[1-9]$/.test(input)) {
       const numericIndex = Number.parseInt(input, 10) - 1;
       if (numericIndex >= 0 && numericIndex < options.length) {

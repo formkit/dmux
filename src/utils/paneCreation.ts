@@ -25,7 +25,7 @@ import { isValidBranchName } from './git.js';
 
 export interface CreatePaneOptions {
   prompt: string;
-  agent?: 'claude' | 'opencode' | 'codex';
+  agent?: 'claude' | 'opencode' | 'codex' | 'pi';
   slugSuffix?: string;
   slugBase?: string;
   projectName: string;
@@ -60,7 +60,7 @@ async function waitForPaneReady(
  */
 export async function createPane(
   options: CreatePaneOptions,
-  availableAgents: Array<'claude' | 'opencode' | 'codex'>
+  availableAgents: Array<'claude' | 'opencode' | 'codex' | 'pi'>
 ): Promise<CreatePaneResult> {
   const {
     prompt,
@@ -498,6 +498,33 @@ export async function createPane(
       opencodeCmd = 'opencode';
     }
     await tmuxService.sendShellCommand(paneInfo, opencodeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  } else if (agent === 'pi') {
+    // pi has a different permission model - no skip-permissions flag needed
+    let piCmd: string;
+    if (hasInitialPrompt) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping
+      }
+
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        piCmd = `${promptBootstrap}; pi "$DMUX_PROMPT_CONTENT"`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        piCmd = `pi "${escapedPrompt}"`;
+      }
+    } else {
+      piCmd = 'pi';
+    }
+    await tmuxService.sendShellCommand(paneInfo, piCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 

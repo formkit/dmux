@@ -101,14 +101,46 @@ export async function findCodexCommand(): Promise<string | null> {
 }
 
 /**
+ * Find pi CLI command
+ */
+export async function findPiCommand(): Promise<string | null> {
+  try {
+    const userShell = process.env.SHELL || '/bin/bash';
+    const result = execSync(
+      `${userShell} -i -c "command -v pi 2>/dev/null || which pi 2>/dev/null"`,
+      { encoding: 'utf-8', stdio: 'pipe' }
+    ).trim();
+    if (result) return result.split('\n')[0];
+  } catch {}
+
+  const commonPaths = [
+    '/opt/homebrew/bin/pi',
+    '/usr/local/bin/pi',
+    `${process.env.HOME}/.local/bin/pi`,
+    `${process.env.HOME}/bin/pi`,
+    `${process.env.HOME}/.npm-global/bin/pi`,
+  ];
+
+  for (const p of commonPaths) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
  * Get all available agents
  */
-export async function getAvailableAgents(): Promise<Array<'claude' | 'opencode' | 'codex'>> {
-  const agents: Array<'claude' | 'opencode' | 'codex'> = [];
+export async function getAvailableAgents(): Promise<Array<'claude' | 'opencode' | 'codex' | 'pi'>> {
+  const agents: Array<'claude' | 'opencode' | 'codex' | 'pi'> = [];
 
   if (await findClaudeCommand()) agents.push('claude');
   if (await findOpencodeCommand()) agents.push('opencode');
   if (await findCodexCommand()) agents.push('codex');
+  if (await findPiCommand()) agents.push('pi');
 
   return agents;
 }

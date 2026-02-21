@@ -44,6 +44,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: 'claude', label: 'Claude Code' },
       { value: 'opencode', label: 'OpenCode' },
       { value: 'codex', label: 'Codex' },
+      { value: 'pi', label: 'pi' },
     ],
   },
   {

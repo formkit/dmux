@@ -12,7 +12,7 @@ interface Params {
   setIsCreatingPane: (v: boolean) => void;
   setStatusMessage: (msg: string) => void;
   loadPanes: () => Promise<void>;
-  availableAgents: Array<'claude' | 'opencode' | 'codex'>;
+  availableAgents: Array<'claude' | 'opencode' | 'codex' | 'pi'>;
 }
 
 interface CreateNewPaneOptions {
@@ -56,7 +56,7 @@ export default function usePaneCreation({
 
   const createNewPane = async (
     prompt: string,
-    agent?: 'claude' | 'opencode' | 'codex',
+    agent?: 'claude' | 'opencode' | 'codex' | 'pi',
     options: CreateNewPaneOptions = {}
   ): Promise<DmuxPane | null> => {
     const panesForCreation = options.existingPanes ?? panes;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import type { AgentName } from '../utils/agentLaunch.js';
+import { findPiCommand } from '../utils/agentDetection.js';
 
 export default function useAgentDetection() {
   const [availableAgents, setAvailableAgents] = useState<AgentName[]>([]);
@@ -16,6 +17,8 @@ export default function useAgentDetection() {
         if (hasopencode) agents.push('opencode');
         const hasCodex = await findCodexCommand();
         if (hasCodex) agents.push('codex');
+        const hasPi = await findPiCommand();
+        if (hasPi) agents.push('pi');
         setAvailableAgents(agents);
       } catch {}
     })();

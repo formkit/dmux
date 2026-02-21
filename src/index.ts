@@ -522,8 +522,8 @@ class Dmux {
   }
 
   private getPreferredAttachAgent(
-    availableAgents: Array<'claude' | 'opencode' | 'codex'>
-  ): 'claude' | 'opencode' | 'codex' | undefined {
+    availableAgents: Array<'claude' | 'opencode' | 'codex' | 'pi'>
+  ): 'claude' | 'opencode' | 'codex' | 'pi' | undefined {
     if (availableAgents.length === 0) {
       return undefined;
     }

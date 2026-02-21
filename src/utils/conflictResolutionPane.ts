@@ -21,7 +21,7 @@ export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
   targetBranch: string;      // Branch merging into (usually main)
   targetRepoPath: string;    // Path to the target repository (where merge will happen)
-  agent: 'claude' | 'opencode' | 'codex';
+  agent: 'claude' | 'opencode' | 'codex' | 'pi';
   projectName: string;
   existingPanes: DmuxPane[];
 }

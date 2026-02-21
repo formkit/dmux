@@ -14,7 +14,7 @@ import type {
 class PaneWorker {
   private paneId: string;
   private tmuxPaneId: string;
-  private agent?: 'claude' | 'opencode' | 'codex';
+  private agent?: 'claude' | 'opencode' | 'codex' | 'pi';
   private captureHistory: string[] = [];
   private pollInterval: NodeJS.Timeout | null = null;
   private pollIntervalMs: number;
