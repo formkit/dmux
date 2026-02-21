@@ -102,6 +102,7 @@ class Dmux {
 
     const inTmux = process.env.TMUX !== undefined;
     const isDev = process.env.DMUX_DEV === 'true';
+    const isDevWatch = process.env.DMUX_DEV_WATCH === 'true';
     const currentTmuxSessionName = inTmux
       ? this.getCurrentTmuxSessionName()
       : null;
@@ -128,6 +129,28 @@ class Dmux {
       }
     }
 
+    // If launched with `pnpm dev` from inside tmux, transparently upgrade this pane
+    // to watch mode so source changes apply without manual relaunches.
+    if (inTmux && isDev && !isDevWatch) {
+      try {
+        const tmuxService = TmuxService.getInstance();
+        const currentPaneId = await tmuxService.getCurrentPaneId();
+        const preferredControlPaneId =
+          this.resolveDevControlPane(sessionNameForCurrentTmux) || undefined;
+        const targetPaneId = preferredControlPaneId || currentPaneId;
+        const devDirectory = this.isWorktree() ? process.cwd() : this.projectRoot;
+        const devCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+        const escapedDevCommand = devCommand.replace(/'/g, "'\\''");
+        execSync(
+          `tmux respawn-pane -k -t '${targetPaneId}' '${escapedDevCommand}'`,
+          { stdio: 'pipe' }
+        );
+        return;
+      } catch {
+        // If promotion fails, continue with current process so dev is still usable.
+      }
+    }
+
     // Check for updates in background if needed
     this.checkForUpdatesBackground();
 
@@ -139,10 +162,39 @@ class Dmux {
 
     if (!inTmux) {
       // Check if project-specific session already exists
+      let sessionExists = false;
+      // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
+      let devDirectory = this.projectRoot;
+      if (isDev && this.isWorktree()) {
+        devDirectory = process.cwd();
+      }
+
       try {
         execSync(`tmux has-session -t ${this.sessionName} 2>/dev/null`, { stdio: 'pipe' });
-        // Session exists, will attach
+        sessionExists = true;
       } catch {
+        sessionExists = false;
+      }
+
+      if (sessionExists) {
+        // Existing session:
+        // In dev mode, always ensure watcher loop is running from the intended source.
+        if (isDev) {
+          try {
+            const targetPane = this.resolveDevControlPane(this.sessionName);
+            if (targetPane) {
+              const devCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+              const escapedDevCommand = devCommand.replace(/'/g, "'\\''");
+              execSync(
+                `tmux respawn-pane -k -t '${targetPane}' '${escapedDevCommand}'`,
+                { stdio: 'pipe' }
+              );
+            }
+          } catch {
+            // Best effort - if respawn fails, still attach.
+          }
+        }
+      } else {
         // Expected - session doesn't exist, create new one
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
@@ -157,12 +209,6 @@ class Dmux {
         ].join(' \\; ');
         execSync(`tmux ${sessionOptions}`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)
-        // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
-        let devDirectory = this.projectRoot;
-        if (isDev && this.isWorktree()) {
-          devDirectory = process.cwd();
-        }
-
         // Determine the dmux command to use
         let dmuxCommand: string;
         if (isDev) {
@@ -217,26 +263,40 @@ class Dmux {
         config.panes = [];
       }
 
-      // ALWAYS update controlPaneId with current pane (it changes on restart)
-      // This ensures layout manager always has the correct control pane ID
       const oldControlPaneId = config.controlPaneId;
-      const needsUpdate = oldControlPaneId !== controlPaneId;
+      const sessionPaneIds = execSync(
+        `tmux list-panes -t '${sessionNameForCurrentTmux}' -F "#{pane_id}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      )
+        .split('\n')
+        .map((paneId: string) => paneId.trim())
+        .filter(Boolean);
+
+      // Preserve an existing valid control pane ID when dmux is launched from a non-control pane.
+      // This prevents nested dmux UIs from accidentally hijacking control-pane ownership.
+      const preservedControlPaneId =
+        typeof oldControlPaneId === 'string' && sessionPaneIds.includes(oldControlPaneId)
+          ? oldControlPaneId
+          : undefined;
+      const nextControlPaneId = preservedControlPaneId || controlPaneId;
+      const needsUpdate = oldControlPaneId !== nextControlPaneId;
 
       if (needsUpdate) {
         if (oldControlPaneId) {
           LogService.getInstance().info(
-            `Control pane ID changed: ${oldControlPaneId} → ${controlPaneId}`,
+            `Control pane ID changed: ${oldControlPaneId} → ${nextControlPaneId}`,
             'Setup'
           );
         } else {
           LogService.getInstance().info(
-            `Setting initial control pane ID: ${controlPaneId}`,
+            `Setting initial control pane ID: ${nextControlPaneId}`,
             'Setup'
           );
         }
       }
 
-      config.controlPaneId = controlPaneId;
+      controlPaneId = nextControlPaneId;
+      config.controlPaneId = nextControlPaneId;
       config.controlPaneSize = SIDEBAR_WIDTH;
 
       // If this is initial load or control pane changed, resize the sidebar
@@ -386,6 +446,52 @@ class Dmux {
       if (result.status !== 0) return null;
       const sessionName = (result.stdout || '').trim();
       return sessionName || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveDevControlPane(sessionName: string): string | null {
+    // Prefer tracked control pane from config when available.
+    try {
+      if (fsSync.existsSync(this.panesFile)) {
+        const rawConfig = fsSync.readFileSync(this.panesFile, 'utf-8');
+        const parsedConfig = JSON.parse(rawConfig);
+        const trackedControlPane = parsedConfig?.controlPaneId;
+        if (typeof trackedControlPane === 'string' && trackedControlPane) {
+          const paneListResult = spawnSync(
+            'tmux',
+            ['list-panes', '-t', sessionName, '-F', '#{pane_id}'],
+            { encoding: 'utf-8', stdio: 'pipe' }
+          );
+          if (paneListResult.status === 0) {
+            const paneIds = (paneListResult.stdout || '')
+              .split('\n')
+              .map((id) => id.trim())
+              .filter(Boolean);
+            if (paneIds.includes(trackedControlPane)) {
+              return trackedControlPane;
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall through to first-pane fallback.
+    }
+
+    // Fallback: first pane in the target session.
+    try {
+      const firstPaneResult = spawnSync(
+        'tmux',
+        ['list-panes', '-t', sessionName, '-F', '#{pane_id}'],
+        { encoding: 'utf-8', stdio: 'pipe' }
+      );
+      if (firstPaneResult.status !== 0) return null;
+      const firstPane = (firstPaneResult.stdout || '')
+        .split('\n')
+        .map((id) => id.trim())
+        .find(Boolean);
+      return firstPane || null;
     } catch {
       return null;
     }

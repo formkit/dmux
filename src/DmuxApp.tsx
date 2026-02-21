@@ -38,12 +38,13 @@ import { useServices } from "./hooks/useServices.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
-import { dirname } from "path"
+import { dirname, resolve as resolvePath } from "path"
 import {
   getAgentSlugSuffix,
   type AgentName,
 } from "./utils/agentLaunch.js"
 import { generateSlug } from "./utils/slug.js"
+import { resolveNextDevSourcePath } from "./utils/devSource.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -64,6 +65,7 @@ import {
   buildProjectActionLayout,
   buildVisualNavigationRows,
 } from "./utils/projectActions.js"
+import { getPaneProjectRoot } from "./utils/paneProject.js"
 
 const DmuxApp: React.FC<DmuxAppProps> = ({
   panesFile,
@@ -76,6 +78,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 }) => {
   const { stdout } = useStdout()
   const terminalHeight = stdout?.rows || 40
+  const isDevMode = process.env.DMUX_DEV === "true"
 
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -254,6 +257,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     sidebarWidth: SIDEBAR_WIDTH,
     projectRoot: projectRoot || process.cwd(),
     popupsSupported,
+    isDevMode,
     terminalWidth,
     terminalHeight,
     availableAgents,
@@ -408,6 +412,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // getPanePositions moved to utils/tmux
 
   const sessionProjectRoot = projectRoot || process.cwd()
+  const activeDevSourcePath = isDevMode ? process.cwd() : undefined
   const projectActionLayout = useMemo(
     () => buildProjectActionLayout(panes, sessionProjectRoot, projectName),
     [panes, sessionProjectRoot, projectName]
@@ -517,6 +522,53 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     } finally {
       setIsCreatingPane(false)
     }
+  }
+
+  const restartDevSessionAtSource = async (sourcePath: string) => {
+    if (!isDevMode) return
+
+    const tmuxService = TmuxService.getInstance()
+    const sourcePaneId = controlPaneId || await tmuxService.getCurrentPaneId()
+    await tmuxService.respawnPane(
+      sourcePaneId,
+      `cd "${sourcePath}" && pnpm dev:watch`
+    )
+  }
+
+  const handleSetDevSourceFromPane = async (pane: DmuxPane) => {
+    if (!isDevMode) {
+      setStatusMessage("Source switching is only available in dev mode")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    if (!pane.worktreePath) {
+      setStatusMessage("Selected pane has no worktree path")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const paneProjectRoot = getPaneProjectRoot(pane, sessionProjectRoot)
+    if (paneProjectRoot !== sessionProjectRoot) {
+      setStatusMessage("Source can only be set from panes in this project")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const nextSource = resolveNextDevSourcePath(
+      pane.worktreePath,
+      resolvePath(process.cwd()),
+      resolvePath(sessionProjectRoot)
+    )
+
+    if (nextSource.toggledToRoot) {
+      setStatusMessage("Switching source to project root...")
+      await restartDevSessionAtSource(nextSource.nextSourcePath)
+      return
+    }
+
+    setStatusMessage(`Switching source to "${pane.slug}"...`)
+    await restartDevSessionAtSource(nextSource.nextSourcePath)
   }
 
   // Helper function to handle action results recursively
@@ -673,6 +725,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       // Remove it from our tracking
       const updatedPanes = panes.filter((p) => p.id !== paneId)
       savePanes(updatedPanes)
+
+      const removedPane = panes.find((p) => p.id === paneId)
+      if (
+        isDevMode &&
+        removedPane?.worktreePath &&
+        removedPane.worktreePath === process.cwd()
+      ) {
+        void restartDevSessionAtSource(sessionProjectRoot)
+      }
     },
   })
 
@@ -756,6 +817,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     isUpdating,
     isLoading,
     ignoreInput: ignoreInput || showHooksPrompt, // Block other input when hooks prompt is shown
+    isDevMode,
     quitConfirmMode,
     setQuitConfirmMode,
     showCommandPrompt,
@@ -777,6 +839,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     runCommandInternal,
     handlePaneCreationWithAgent,
     handleReopenWorktree,
+    setDevSourceFromPane: handleSetDevSourceFromPane,
     savePanes,
     loadPanes,
     cleanExit,
@@ -818,7 +881,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       footerLines += 1
     }
     // Add status line
-    if (updateAvailable || currentBranch || debugMessage) {
+    if (isDevMode || updateAvailable || currentBranch || debugMessage) {
       footerLines += 1
     }
     // Add line for each active status message
@@ -840,6 +903,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           selectedIndex={selectedIndex}
           isLoading={isLoading}
           agentStatuses={agentStatuses}
+          activeDevSourcePath={activeDevSourcePath}
           fallbackProjectRoot={projectRoot || process.cwd()}
           fallbackProjectName={projectName}
         />
@@ -908,8 +972,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       />
 
       {/* Status line - only for updates, branch info, and debug messages */}
-      {(updateAvailable || currentBranch || debugMessage) && (
+      {(isDevMode || updateAvailable || currentBranch || debugMessage) && (
         <Text dimColor>
+          {isDevMode && (
+            <Text color="yellow" bold>
+              DEV MODE{" "}
+            </Text>
+          )}
           {updateAvailable && updateInfo && (
             <Text color="red" bold>
               Update available: npm i -g dmux@latest{" "}
@@ -917,7 +986,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           )}
           {currentBranch && (
             <Text color="magenta">
-              dev: {currentBranch}
+              source: {currentBranch}
             </Text>
           )}
           {debugMessage && <Text dimColor> • {debugMessage}</Text>}

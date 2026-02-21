@@ -26,6 +26,7 @@ export interface PopupManagerConfig {
   sidebarWidth: number
   projectRoot: string
   popupsSupported: boolean
+  isDevMode: boolean
   terminalWidth: number
   terminalHeight: number
   availableAgents: AgentName[]
@@ -220,7 +221,11 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
-      const actions = getAvailableActions(pane, this.config.projectSettings)
+      const actions = getAvailableActions(
+        pane,
+        this.config.projectSettings,
+        this.config.isDevMode
+      )
       const result = await this.launchPopup<string>(
         "kebabMenuPopup.js",
         [pane.slug, JSON.stringify(actions)],
@@ -400,16 +405,18 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      const popupHeight = this.config.isDevMode ? 22 : 21
       const result = await this.launchPopup<{ action?: "hooks" }>(
         "shortcutsPopup.js",
         [],
         {
           width: 50,
-          height: 21,
+          height: popupHeight,
           title: "⌨️  Keyboard Shortcuts",
         },
         {
           hasSidebarLayout,
+          isDevMode: this.config.isDevMode,
         }
       )
 

@@ -259,6 +259,38 @@ async function executeCloseOption(
         await handleLastPaneRemoved(sessionProjectRoot);
       }
 
+      // Dev source fallback:
+      // If the pane being closed is the current dev source worktree, respawn
+      // the control pane from the root checkout.
+      if (
+        process.env.DMUX_DEV === 'true' &&
+        pane.worktreePath &&
+        process.cwd() === pane.worktreePath
+      ) {
+        try {
+          const fallbackCommand = `cd "${sessionProjectRoot}" && pnpm dev:watch`;
+          const quotedCommand = `'${fallbackCommand.replace(/'/g, "'\\''")}'`;
+          const configForRespawn: DmuxConfig = JSON.parse(fs.readFileSync(panesFile, 'utf-8'));
+          const targetControlPaneId = configForRespawn.controlPaneId || execSync(
+            'tmux display-message -p "#{pane_id}"',
+            { encoding: 'utf-8', stdio: 'pipe', timeout: 5000 }
+          ).trim();
+
+          if (targetControlPaneId) {
+            execSync(
+              `tmux respawn-pane -k -t '${targetControlPaneId}' ${quotedCommand}`,
+              { stdio: 'pipe', timeout: 5000 }
+            );
+          }
+        } catch (respawnError) {
+          LogService.getInstance().warn(
+            'Failed to respawn dev source at root after closing source pane',
+            'paneActions',
+            pane.id
+          );
+        }
+      }
+
       return {
         type: 'success',
         message: startedBackgroundCleanup
