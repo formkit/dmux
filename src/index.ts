@@ -313,11 +313,53 @@ class Dmux {
       // Create welcome pane if there are no dmux panes and no existing welcome pane
       // Check if welcome pane actually exists, not just if it's in config (handles tmux restarts)
       const { welcomePaneExists } = await import('./utils/welcomePane.js');
+      const normalizePathForComparison = (candidatePath?: string): string | null => {
+        if (!candidatePath) return null;
+
+        const resolvedPath = path.resolve(candidatePath);
+        try {
+          return fsSync.realpathSync(resolvedPath);
+        } catch {
+          return resolvedPath;
+        }
+      };
+      const normalizedProjectRoot = normalizePathForComparison(this.projectRoot);
+      const isProjectRootPath = (candidatePath?: string): boolean => {
+        const normalizedCandidatePath = normalizePathForComparison(candidatePath);
+        return !!normalizedProjectRoot &&
+          !!normalizedCandidatePath &&
+          normalizedCandidatePath === normalizedProjectRoot;
+      };
+      const getPaneCurrentPath = (paneId: string): string | undefined => {
+        try {
+          const escapedPaneId = paneId.replace(/'/g, "'\\''");
+          const panePath = execSync(
+            `tmux display-message -t '${escapedPaneId}' -p '#{pane_current_path}'`,
+            { encoding: 'utf-8', stdio: 'pipe' }
+          ).trim();
+
+          return panePath || undefined;
+        } catch {
+          return undefined;
+        }
+      };
 
       // Validate welcome pane existence
       let hasValidWelcomePane = false;
       if (config.welcomePaneId) {
         hasValidWelcomePane = await welcomePaneExists(config.welcomePaneId);
+
+        if (hasValidWelcomePane) {
+          const trackedWelcomePanePath = getPaneCurrentPath(config.welcomePaneId);
+          if (!isProjectRootPath(trackedWelcomePanePath)) {
+            LogService.getInstance().warn(
+              `Welcome pane ${config.welcomePaneId} has stale cwd '${trackedWelcomePanePath ?? 'unknown'}'; recreating`,
+              'Setup'
+            );
+            await destroyWelcomePane(config.welcomePaneId);
+            hasValidWelcomePane = false;
+          }
+        }
 
         if (!hasValidWelcomePane) {
           LogService.getInstance().info(
@@ -348,22 +390,38 @@ class Dmux {
       try {
         const escapedSessionName = sessionNameForCurrentTmux.replace(/'/g, "'\\''");
         const paneInfoOutput = execSync(
-          `tmux list-panes -t '${escapedSessionName}' -F "#{pane_id}::#{pane_title}"`,
+          `tmux list-panes -t '${escapedSessionName}' -F "#{pane_id}::#{pane_title}::#{pane_current_path}"`,
           { encoding: 'utf-8', stdio: 'pipe' }
         ).trim();
 
         if (paneInfoOutput) {
-          welcomePaneIdsInSession = paneInfoOutput
+          const welcomePanesInSession = paneInfoOutput
             .split('\n')
             .map((line: string) => {
-              const [paneId, paneTitle] = line.split('::');
-              return { paneId, paneTitle };
+              const [paneId, paneTitle, panePath] = line.split('::');
+              return { paneId, paneTitle, panePath };
             })
             .filter(({ paneId, paneTitle }) =>
               !!paneId &&
               paneTitle === 'Welcome' &&
               paneId !== controlPaneId
-            )
+            );
+
+          const staleWelcomePanes = welcomePanesInSession
+            .filter(({ panePath }) => !isProjectRootPath(panePath));
+          for (const stalePane of staleWelcomePanes) {
+            await destroyWelcomePane(stalePane.paneId);
+          }
+
+          if (staleWelcomePanes.length > 0) {
+            LogService.getInstance().warn(
+              `Discarded ${staleWelcomePanes.length} stale welcome pane(s) with non-root cwd`,
+              'Setup'
+            );
+          }
+
+          welcomePaneIdsInSession = welcomePanesInSession
+            .filter(({ panePath }) => isProjectRootPath(panePath))
             .map(({ paneId }) => paneId);
         }
       } catch {
@@ -412,7 +470,7 @@ class Dmux {
       if (controlPaneId && !hasAnyPanes) {
         if (!hasValidWelcomePane) {
           // Create new welcome pane
-          const welcomePaneId = await createWelcomePane(controlPaneId);
+          const welcomePaneId = await createWelcomePane(controlPaneId, this.projectRoot);
           if (welcomePaneId) {
             config.welcomePaneId = welcomePaneId;
             config.lastUpdated = new Date().toISOString();
