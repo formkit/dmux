@@ -38,6 +38,13 @@ import { useServices } from "./hooks/useServices.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { PrStatusPoller } from "./services/PrStatusPoller.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
+import {
+  getDmuxRoot,
+  pullLatest,
+  rebuild,
+  scheduleRestart,
+} from "./utils/hotReplace.js"
+import { killAll } from "./utils/killAll.js"
 import { fileURLToPath } from "url"
 import { dirname } from "path"
 import {
@@ -701,6 +708,62 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // clearScreen function removed - no longer used (was only used by removed jumpToPane function)
 
+  // Hot-replace: pull latest, rebuild, and restart dmux in-place
+  const handleHotReplace = async () => {
+    if (!controlPaneId) {
+      setStatusMessage("Hot-replace requires a control pane")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const confirmed = await popupManager.launchConfirmPopup(
+      "Hot Replace",
+      "Pull latest, rebuild, and restart dmux? All panes preserved.",
+      "Update & Restart",
+      "Cancel"
+    )
+    if (!confirmed) return
+
+    const dmuxRoot = getDmuxRoot()
+
+    try {
+      setStatusMessage("Pulling latest...")
+      pullLatest(dmuxRoot)
+    } catch (error: any) {
+      setStatusMessage(`Pull failed: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    try {
+      setStatusMessage("Rebuilding...")
+      rebuild(dmuxRoot)
+    } catch (error: any) {
+      setStatusMessage(`Build failed: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    setStatusMessage("Restarting...")
+    scheduleRestart(controlPaneId, dmuxRoot)
+    exit()
+    process.exit(0)
+  }
+
+  // Kill all: destroy the tmux session and all panes
+  const handleKillAll = async () => {
+    const confirmed = await popupManager.launchConfirmPopup(
+      "Kill All",
+      `Destroy tmux session '${sessionName}' and kill ALL panes? Worktrees/branches preserved. Cannot be undone.`,
+      "Kill All",
+      "Cancel"
+    )
+    if (!confirmed) return
+
+    await killAll(sessionName)
+    process.exit(0)
+  }
+
   // Cleanup function for exit
   const cleanExit = () => {
     // Clear screen before exiting Ink
@@ -796,6 +859,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     runCommandInternal,
     handlePaneCreationWithAgent,
     handleReopenWorktree,
+    handleHotReplace,
+    handleKillAll,
     savePanes,
     loadPanes,
     cleanExit,

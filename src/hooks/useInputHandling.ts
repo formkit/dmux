@@ -70,6 +70,8 @@ interface UseInputHandlingParams {
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
   handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
+  handleHotReplace: () => Promise<void>
+  handleKillAll: () => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
   loadPanes: () => Promise<void>
   cleanExit: () => void
@@ -118,6 +120,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
     runCommandInternal,
     handlePaneCreationWithAgent,
     handleReopenWorktree,
+    handleHotReplace,
+    handleKillAll,
     savePanes,
     loadPanes,
     cleanExit,
@@ -416,6 +420,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
       ]
       // Queue all demo toasts
       demos.forEach(demo => stateManager.showToast(demo.msg, demo.severity))
+    } else if (input === "u") {
+      // Hot-replace: pull, rebuild, restart (preserves panes)
+      await handleHotReplace()
+    } else if (input === "Q") {
+      // Kill all: destroy tmux session and all panes
+      await handleKillAll()
     } else if (input === "q") {
       cleanExit()
     } else if (input === "r") {
