@@ -341,6 +341,62 @@ class Dmux {
         }
       }
 
+      // Recovery + dedupe:
+      // If a welcome pane exists in tmux but config is stale/missing, adopt it.
+      // If multiple welcome panes exist, keep one and remove extras.
+      let welcomePaneIdsInSession: string[] = [];
+      try {
+        const escapedSessionName = sessionNameForCurrentTmux.replace(/'/g, "'\\''");
+        const paneInfoOutput = execSync(
+          `tmux list-panes -t '${escapedSessionName}' -F "#{pane_id}::#{pane_title}"`,
+          { encoding: 'utf-8', stdio: 'pipe' }
+        ).trim();
+
+        if (paneInfoOutput) {
+          welcomePaneIdsInSession = paneInfoOutput
+            .split('\n')
+            .map((line: string) => {
+              const [paneId, paneTitle] = line.split('::');
+              return { paneId, paneTitle };
+            })
+            .filter(({ paneId, paneTitle }) =>
+              !!paneId &&
+              paneTitle === 'Welcome' &&
+              paneId !== controlPaneId
+            )
+            .map(({ paneId }) => paneId);
+        }
+      } catch {
+        // Ignore detection failures - normal startup logic below remains safe.
+      }
+
+      if (!hasValidWelcomePane && welcomePaneIdsInSession.length > 0) {
+        const recoveredWelcomePaneId = welcomePaneIdsInSession[0];
+        config.welcomePaneId = recoveredWelcomePaneId;
+        config.lastUpdated = new Date().toISOString();
+        await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+        hasValidWelcomePane = true;
+        LogService.getInstance().warn(
+          `Recovered untracked welcome pane ${recoveredWelcomePaneId} from tmux state`,
+          'Setup'
+        );
+      }
+
+      if (hasValidWelcomePane && config.welcomePaneId) {
+        const duplicateWelcomePaneIds = welcomePaneIdsInSession
+          .filter((paneId) => paneId !== config.welcomePaneId);
+
+        if (duplicateWelcomePaneIds.length > 0) {
+          LogService.getInstance().warn(
+            `Detected ${duplicateWelcomePaneIds.length} duplicate welcome pane(s), cleaning up`,
+            'Setup'
+          );
+          for (const duplicatePaneId of duplicateWelcomePaneIds) {
+            await destroyWelcomePane(duplicatePaneId);
+          }
+        }
+      }
+
       // Check for untracked panes (terminal panes created outside dmux tracking)
       const trackedPaneIds = config.panes?.map((p: any) => p.paneId) ?? [];
       const untrackedPanes = await getUntrackedPanes(
