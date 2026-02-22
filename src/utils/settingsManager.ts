@@ -59,6 +59,12 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     ],
   },
   {
+    key: 'openrouterApiKey',
+    label: 'OpenRouter API Key',
+    description: 'API key for OpenRouter slug generation. Persisted to your shell config.',
+    type: 'text',
+  },
+  {
     key: 'useTmuxHooks',
     label: 'Use Tmux Hooks',
     description: 'Use tmux hooks for event-driven updates (lower CPU). If disabled, uses polling in a worker thread.',

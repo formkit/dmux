@@ -83,6 +83,15 @@ class Dmux {
     // Check for migration from old config location
     await this.migrateOldConfig();
 
+    // Inject OpenRouter API key from settings into process.env (for slug generation)
+    {
+      const startupSettings = new SettingsManager(this.projectRoot);
+      const savedApiKey = startupSettings.getSetting('openrouterApiKey');
+      if (savedApiKey && !process.env.OPENROUTER_API_KEY) {
+        process.env.OPENROUTER_API_KEY = savedApiKey;
+      }
+    }
+
     // Initialize config file if it doesn't exist
     if (!await this.fileExists(this.panesFile)) {
       const initialConfig = {
