@@ -69,7 +69,7 @@ dmux creates a tmux pane for each task. Every pane gets its own git worktree and
 
 ## Documentation
 
-Full documentation is available at **[dmux.ai](https://dmux.ai)**, including setup guides, configuration, hooks, and the HTTP API reference.
+Full documentation is available at **[dmux.ai](https://dmux.ai)**, including setup guides, configuration, and hooks.
 
 ## License
 

@@ -10,6 +10,8 @@ import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import type { DmuxPane, DmuxConfig } from '../types.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
+import { getPermissionFlags } from './agentLaunch.js';
+import { SettingsManager } from './settingsManager.js';
 
 export interface ReopenWorktreeOptions {
   slug: string;
@@ -40,6 +42,7 @@ export async function reopenWorktree(
     sessionProjectRoot: optionsSessionProjectRoot,
   } = options;
   const paneProjectName = path.basename(projectRoot);
+  const settings = new SettingsManager(projectRoot).getSettings();
   const sessionProjectRoot = optionsSessionProjectRoot
     || (optionsSessionConfigPath ? path.dirname(path.dirname(optionsSessionConfigPath)) : projectRoot);
 
@@ -148,11 +151,15 @@ export async function reopenWorktree(
 
   // Resume the agent session
   if (agent === 'claude') {
-    const claudeCmd = 'claude --continue --dangerously-skip-permissions';
+    const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
+    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+    const claudeCmd = `claude --continue${permissionSuffix}`;
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'codex') {
-    const codexCmd = 'codex resume --last --dangerously-bypass-approvals-and-sandbox';
+    const permissionFlags = getPermissionFlags('codex', settings.permissionMode);
+    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+    const codexCmd = `codex resume --last${permissionSuffix}`;
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
@@ -173,7 +180,7 @@ export async function reopenWorktree(
     projectName: paneProjectName,
     worktreePath,
     agent,
-    autopilot: false,
+    autopilot: settings.enableAutopilotByDefault ?? false,
   };
 
   // Handle welcome pane destruction if first content pane

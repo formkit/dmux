@@ -23,8 +23,17 @@ export function render() {
     <table>
       <tbody>
         <tr><td><strong>Type</strong></td><td><code>boolean</code></td></tr>
-        <tr><td><strong>Default</strong></td><td><code>false</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>true</code></td></tr>
         <tr><td><strong>Description</strong></td><td>Automatically accept options when no risk is detected for new panes. When enabled, agents will run with less user intervention.</td></tr>
+      </tbody>
+    </table>
+
+    <h3><code>permissionMode</code></h3>
+    <table>
+      <tbody>
+        <tr><td><strong>Type</strong></td><td><code>'' | 'plan' | 'acceptEdits' | 'bypassPermissions'</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>'bypassPermissions'</code></td></tr>
+        <tr><td><strong>Description</strong></td><td>Controls the permission flags dmux passes to launched agents. Use empty string to defer to each agent's own defaults.</td></tr>
       </tbody>
     </table>
 
@@ -46,29 +55,38 @@ export function render() {
       </tbody>
     </table>
 
+    <h3><code>baseBranch</code></h3>
+    <table>
+      <tbody>
+        <tr><td><strong>Type</strong></td><td><code>string</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>''</code> (current HEAD)</td></tr>
+        <tr><td><strong>Description</strong></td><td>Branch to create new worktrees from. Leave empty to use the current HEAD. The branch must exist in the repository.</td></tr>
+      </tbody>
+    </table>
+
+    <h3><code>branchPrefix</code></h3>
+    <table>
+      <tbody>
+        <tr><td><strong>Type</strong></td><td><code>string</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>''</code> (no prefix)</td></tr>
+        <tr><td><strong>Description</strong></td><td>Prefix for new branch names. For example, setting this to <code>feat/</code> will create branches like <code>feat/fix-auth</code>. The worktree directory name stays flat (just the slug).</td></tr>
+      </tbody>
+    </table>
+
     <h2>Accessing Settings</h2>
 
     <h3>TUI</h3>
     <p>Press <kbd>s</kbd> to open the settings dialog. You can switch between global and project scope, and toggle each setting.</p>
 
-    <h3>Web Dashboard</h3>
-    <p>Click the "Settings" button in the <a href="#/web-dashboard">web dashboard</a> header.</p>
-
-    <h3>REST API</h3>
-    <pre><code data-lang="bash"># Get all settings (merged)
-curl http://127.0.0.1:PORT/api/settings
-
-# Update a setting
-curl -X PATCH http://127.0.0.1:PORT/api/settings \\
-  -H "Content-Type: application/json" \\
-  -d '{"defaultAgent": "claude", "scope": "project"}'</code></pre>
-
     <h3>Manual Editing</h3>
     <p>You can edit the JSON files directly:</p>
     <pre><code data-lang="json">{
   "enableAutopilotByDefault": true,
+  "permissionMode": "bypassPermissions",
   "defaultAgent": "claude",
-  "useTmuxHooks": false
+  "useTmuxHooks": false,
+  "baseBranch": "develop",
+  "branchPrefix": "feat/"
 }</code></pre>
 
     <h2>Setting Precedence</h2>

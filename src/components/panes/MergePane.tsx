@@ -4,11 +4,14 @@ import { execSync, exec } from 'child_process';
 import CleanTextInput from '../inputs/CleanTextInput.js';
 import chalk from 'chalk';
 import { callAgent } from '../../utils/agentHarness.js';
+import { SettingsManager } from '../../utils/settingsManager.js';
+import { getPermissionFlags } from '../../utils/agentLaunch.js';
 
 interface MergePaneProps {
   pane: {
     id: string;
     slug: string;
+    branchName?: string;
     prompt: string;
     paneId: string;
     worktreePath?: string;
@@ -163,7 +166,8 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
     // Step 4: Attempt merge in the main repository
     setStatus('merging');
-    const mergeResult = runCommand(`git merge ${pane.slug} --no-ff`, mainRepoPath);
+    const mergeBranch = pane.branchName || pane.slug;
+    const mergeResult = runCommand(`git merge "${mergeBranch}" --no-ff`, mainRepoPath);
 
     if (!mergeResult.success) {
       // Check if it's a merge conflict
@@ -196,20 +200,29 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
 
     // Exit the app and launch agent with conflict resolution prompt
     const fullPrompt = agentPrompt || `Fix the merge conflicts in the following files: ${conflictFiles.join(', ')}. Resolve them appropriately based on the changes from branch ${pane.slug} (${pane.prompt}) and ensure the code remains functional.`;
+    const escapedPrompt = fullPrompt
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/`/g, '\\`')
+      .replace(/\$/g, '\\$');
 
     // Clear screen and exit
     process.stdout.write('\x1b[2J\x1b[H');
 
     // Launch Claude to resolve conflicts in the main repository
     try {
-      execSync(`claude "${fullPrompt}" --dangerously-skip-permissions`, {
+      const settings = new SettingsManager(mainRepoPath || process.cwd()).getSettings();
+      const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
+      const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+
+      execSync(`claude "${escapedPrompt}"${permissionSuffix}`, {
         stdio: 'inherit',
         cwd: mainRepoPath || process.cwd()
       });
     } catch {
       // Try opencode as fallback
       try {
-        execSync(`echo "${fullPrompt}" | opencode`, {
+        execSync(`opencode --prompt "${escapedPrompt}"`, {
           stdio: 'inherit',
           cwd: mainRepoPath || process.cwd()
         });

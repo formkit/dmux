@@ -679,6 +679,7 @@ class Dmux {
   private async ensureDmuxDirectory() {
     const dmuxDir = path.join(this.projectRoot, '.dmux');
     const worktreesDir = path.join(dmuxDir, 'worktrees');
+    const promptsDir = path.join(dmuxDir, 'prompts');
 
     // Create .dmux directory if it doesn't exist
     if (!await this.fileExists(dmuxDir)) {
@@ -688,6 +689,11 @@ class Dmux {
     // Create worktrees directory if it doesn't exist
     if (!await this.fileExists(worktreesDir)) {
       await fs.mkdir(worktreesDir, { recursive: true });
+    }
+
+    // Create prompts directory for file-backed initial agent prompts
+    if (!await this.fileExists(promptsDir)) {
+      await fs.mkdir(promptsDir, { recursive: true });
     }
 
     // Check if .dmux is ignored by either this repo's .gitignore or global gitignore

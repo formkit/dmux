@@ -8,6 +8,7 @@
 import type { DmuxPane } from '../../types.js';
 import type { ActionResult, ActionContext } from '../types.js';
 import { triggerHook } from '../../utils/hooks.js';
+import { getPaneBranchName } from '../../utils/git.js';
 import { executeMerge } from '../merge/mergeExecution.js';
 import {
   handleNothingToMerge,
@@ -80,7 +81,7 @@ async function executeSingleRootMerge(
 ): Promise<ActionResult> {
   const { validateMerge } = await import('../../utils/mergeValidation.js');
   const mainRepoPath = pane.worktreePath!.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
-  const validation = validateMerge(mainRepoPath, pane.worktreePath!, pane.slug);
+  const validation = validateMerge(mainRepoPath, pane.worktreePath!, getPaneBranchName(pane));
 
   // Handle detected issues
   if (!validation.canMerge) {

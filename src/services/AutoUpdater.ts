@@ -39,6 +39,9 @@ interface UpdateSettings {
   checkIntervalHours?: number;
   skipVersion?: string;
   autoUpdateEnabled?: boolean;
+  cachedCurrentVersion?: string;
+  cachedLatestVersion?: string;
+  cachedHasUpdate?: boolean;
 }
 
 export class AutoUpdater {
@@ -91,6 +94,30 @@ export class AutoUpdater {
 
     const intervalMs = (settings.checkIntervalHours || 24) * 60 * 60 * 1000;
     return now - settings.lastCheckTime > intervalMs;
+  }
+
+  async getCachedUpdateInfo(): Promise<UpdateInfo | null> {
+    const settings = await this.loadSettings();
+
+    // Ignore stale cache after the running dmux version changes.
+    if (settings.cachedCurrentVersion !== packageJson.version) {
+      return null;
+    }
+
+    if (
+      !settings.cachedLatestVersion ||
+      typeof settings.cachedHasUpdate !== 'boolean'
+    ) {
+      return null;
+    }
+
+    return {
+      currentVersion: packageJson.version,
+      latestVersion: settings.cachedLatestVersion,
+      hasUpdate: settings.cachedHasUpdate,
+      packageManager: null,
+      installMethod: 'unknown'
+    };
   }
 
   async getLatestVersion(): Promise<string | null> {
@@ -232,6 +259,11 @@ export class AutoUpdater {
     // Update last check time
     const settings = await this.loadSettings();
     settings.lastCheckTime = Date.now();
+    if (latestVersion) {
+      settings.cachedCurrentVersion = currentVersion;
+      settings.cachedLatestVersion = latestVersion;
+      settings.cachedHasUpdate = hasUpdate;
+    }
     await this.saveSettings(settings);
     
     return {

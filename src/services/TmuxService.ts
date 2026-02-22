@@ -568,7 +568,7 @@ export class TmuxService {
    * The command will be automatically quoted to prevent tmux from splitting on spaces.
    *
    * @example
-   * await tmuxService.sendShellCommand(paneId, 'claude "fix the bug" --dangerously-skip-permissions');
+   * await tmuxService.sendShellCommand(paneId, 'claude "fix the bug" --permission-mode acceptEdits');
    * await tmuxService.sendTmuxKeys(paneId, 'Enter'); // Then send Enter key
    *
    * @param paneId The tmux pane ID (e.g., "%1")
@@ -626,6 +626,21 @@ export class TmuxService {
       },
       RetryStrategy.FAST,
       `setBuffer(${bufferName})`
+    );
+  }
+
+  /**
+   * Load a tmux buffer directly from a file path.
+   * This avoids shell-escaping large or control-character-heavy payloads.
+   */
+  async loadBufferFromFile(bufferName: string, filePath: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        const quotedPath = `'${filePath.replace(/'/g, "'\\''")}'`;
+        this.execute(`tmux load-buffer -b '${bufferName}' ${quotedPath}`);
+      },
+      RetryStrategy.FAST,
+      `loadBufferFromFile(${bufferName})`
     );
   }
 

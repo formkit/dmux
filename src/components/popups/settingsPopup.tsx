@@ -7,6 +7,8 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
+import TextInput from 'ink-text-input';
+import { readFileSync } from 'fs';
 import type { SettingDefinition, DmuxSettings } from '../../types.js';
 import { POPUP_CONFIG } from './config.js';
 import {
@@ -34,12 +36,18 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editingKey, setEditingKey] = useState<string | undefined>();
   const [editingValueIndex, setEditingValueIndex] = useState(0);
+  const [textValue, setTextValue] = useState('');
   const [scopeIndex, setScopeIndex] = useState(0);
   const { exit } = useApp();
 
   const currentDef = editingKey ? settingDefinitions.find(d => d.key === editingKey) : null;
 
+  const isTextEditing = mode === 'edit' && currentDef?.type === 'text';
+
   useInput((input, key) => {
+    // When editing a text field, only handle escape — let TextInput handle everything else
+    if (isTextEditing && !key.escape) return;
+
     if (key.escape) {
       if (mode === 'list') {
         // Exit the popup - helper handles result writing
@@ -49,6 +57,7 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
         setMode('list');
         setEditingKey(undefined);
         setEditingValueIndex(0);
+        setTextValue('');
         setScopeIndex(0);
       }
     } else if (key.upArrow) {
@@ -84,13 +93,15 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
         // Enter edit mode for regular settings
         setEditingKey(currentDef.key);
         setMode('edit');
-        // Set initial value index based on current setting
+        // Set initial value based on current setting
         const currentValue = settings[currentDef.key as keyof DmuxSettings];
         if (currentDef.type === 'boolean') {
           setEditingValueIndex(currentValue ? 0 : 1);
         } else if (currentDef.type === 'select' && currentDef.options) {
           const optIndex = currentDef.options.findIndex(o => o.value === currentValue);
           setEditingValueIndex(Math.max(0, optIndex));
+        } else if (currentDef.type === 'text') {
+          setTextValue(typeof currentValue === 'string' ? currentValue : '');
         }
       } else if (mode === 'edit') {
         // Go to scope selection
@@ -108,6 +119,8 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
             newValue = editingValueIndex === 0;
           } else if (currentDef.type === 'select' && currentDef.options) {
             newValue = currentDef.options[editingValueIndex]?.value || '';
+          } else if (currentDef.type === 'text') {
+            newValue = textValue;
           }
 
           writeSuccessAndExit(resultFile, {
@@ -160,7 +173,7 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
                 const option = def.options.find(o => o.value === currentValue);
                 displayValue = option?.label || 'none';
               } else {
-                displayValue = String(currentValue);
+                displayValue = String(currentValue) || 'none';
               }
 
               scopeLabel = isProjectOverride ? ' - project' : (isGlobalSetting ? ' - global' : '');
@@ -220,8 +233,20 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
             </>
           )}
 
+          {currentDef.type === 'text' && (
+            <Box>
+              <Text>{'> '}</Text>
+              <TextInput
+                value={textValue}
+                onChange={setTextValue}
+                onSubmit={() => { setMode('scope'); setScopeIndex(0); }}
+                placeholder="Leave empty for default"
+              />
+            </Box>
+          )}
+
           <Box marginTop={1}>
-            <Text dimColor>↑↓ to navigate • Enter to select • ESC to back</Text>
+            <Text dimColor>{currentDef.type === 'text' ? 'Type a value • Enter to confirm • ESC to back' : '↑↓ to navigate • Enter to select • ESC to back'}</Text>
           </Box>
         </>
       )}
@@ -256,10 +281,10 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
 // Entry point
 function main() {
   const resultFile = process.argv[2];
-  const settingsJson = process.argv[3];
+  const tempDataFile = process.argv[3];
 
-  if (!resultFile || !settingsJson) {
-    console.error('Error: Result file and settings JSON required');
+  if (!resultFile || !tempDataFile) {
+    console.error('Error: Result file and temp data file required');
     process.exit(1);
   }
 
@@ -271,9 +296,9 @@ function main() {
   };
 
   try {
-    data = JSON.parse(settingsJson);
+    data = JSON.parse(readFileSync(tempDataFile, 'utf-8'));
   } catch (error) {
-    console.error('Error: Failed to parse settings JSON');
+    console.error('Error: Failed to read settings data file');
     process.exit(1);
   }
 

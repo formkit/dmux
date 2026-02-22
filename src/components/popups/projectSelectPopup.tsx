@@ -5,13 +5,12 @@
  * Runs in a tmux popup modal and writes result to a file.
  */
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useMemo, useRef } from "react"
 import { render, Box, Text, useApp, useInput } from "ink"
 import * as fs from "fs"
 import CleanTextInput from "../inputs/CleanTextInput.js"
 import {
   PopupContainer,
-  PopupInputBox,
   PopupWrapper,
   DirectoryList,
   writeSuccessAndExit,
@@ -21,7 +20,6 @@ import {
   expandTilde,
   parsePathInput,
   scanDirectories,
-  type DirEntry,
 } from "../../utils/dirScanner.js"
 
 interface ProjectSelectProps {
@@ -34,45 +32,69 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
   defaultValue,
 }) => {
   const [value, setValue] = useState(defaultValue)
-  const [directories, setDirectories] = useState<DirEntry[]>([])
-  const [selectedDirIndex, setSelectedDirIndex] = useState(0)
+  // -1 = nothing highlighted, user must press ↓ to enter the list
+  const [selectedDirIndex, setSelectedDirIndex] = useState(-1)
   const { exit } = useApp()
 
-  // Scan directories on every input change
-  useEffect(() => {
+  // Derive directories synchronously — no useEffect, no extra render cycle
+  const directories = useMemo(() => {
     const { parentDir, prefix } = parsePathInput(value)
-    const results = scanDirectories(parentDir, prefix)
-    setDirectories(results)
-    setSelectedDirIndex(0)
+    return scanDirectories(parentDir, prefix)
   }, [value])
+
+  // Reset selection when value changes (back to "nothing highlighted")
+  const prevValueRef = useRef(value)
+  if (value !== prevValueRef.current) {
+    prevValueRef.current = value
+    if (selectedDirIndex !== -1) {
+      setSelectedDirIndex(-1)
+    }
+  }
+
+  // Navigate into the highlighted directory (append to input)
+  const navigateIntoSelected = () => {
+    if (selectedDirIndex >= 0 && selectedDirIndex < directories.length) {
+      const selected = directories[selectedDirIndex]
+      if (selected) {
+        setValue(selected.fullPath + "/")
+      }
+    }
+  }
 
   // Handle keyboard navigation
   useInput((input, key) => {
-    // ESC progressive: first clear input, then let PopupWrapper close
+    // ESC: if something is highlighted, deselect it first;
+    // then clear input; then let PopupWrapper close
     if (key.escape) {
+      if (selectedDirIndex >= 0) {
+        setSelectedDirIndex(-1)
+        return
+      }
       if (value.length > 0) {
         setValue("")
         return
       }
-      // Let PopupWrapper handle close
       return
     }
 
-    // Arrow up/down — navigate directory list
-    if (key.upArrow) {
-      setSelectedDirIndex((prev) => Math.max(0, prev - 1))
-      return
-    }
+    // ↑/↓ — navigate directory list
     if (key.downArrow) {
-      setSelectedDirIndex((prev) =>
-        Math.min(directories.length - 1, prev + 1)
-      )
+      if (directories.length > 0) {
+        setSelectedDirIndex((prev) =>
+          Math.min(directories.length - 1, prev + 1)
+        )
+      }
+      return
+    }
+    if (key.upArrow) {
+      setSelectedDirIndex((prev) => Math.max(-1, prev - 1))
       return
     }
 
-    // Tab — complete selected directory
+    // Tab — autocomplete first match (or highlighted match)
     if (key.tab && directories.length > 0) {
-      const selected = directories[selectedDirIndex]
+      const idx = selectedDirIndex >= 0 ? selectedDirIndex : 0
+      const selected = directories[idx]
       if (selected) {
         setValue(selected.fullPath + "/")
       }
@@ -83,18 +105,25 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
   const handleSubmit = (submittedValue?: string) => {
     const finalValue = submittedValue || value
     if (!finalValue.trim()) return
-    // Expand tilde before submitting
+
+    // If a directory is highlighted, Enter navigates into it
+    if (selectedDirIndex >= 0) {
+      navigateIntoSelected()
+      return
+    }
+
+    // Nothing highlighted — submit the current value
     const expanded = expandTilde(finalValue)
     writeSuccessAndExit(resultFile, expanded, exit)
   }
 
   const shouldAllowCancel = () => {
-    // Block cancel if there's text in the input
+    if (selectedDirIndex >= 0) return false
     if (value.length > 0) return false
     return true
   }
 
-  const footer = `Tab complete • Enter submit • ${POPUP_CONFIG.cancelHint}`
+  const footer = `↓ browse • Tab complete • Enter submit • ${POPUP_CONFIG.cancelHint}`
 
   return (
     <PopupWrapper
@@ -103,38 +132,24 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
       shouldAllowCancel={shouldAllowCancel}
     >
       <PopupContainer footer={footer}>
-        {/* Instructions */}
-        <Box marginBottom={1} flexDirection="column">
-          <Text dimColor>
-            Enter a repository path (repo root or any subdirectory)
-          </Text>
-        </Box>
+        {/* Input — CleanTextInput renders its own "> " prompt */}
+        <CleanTextInput
+          value={value}
+          onChange={setValue}
+          onSubmit={handleSubmit}
+          placeholder="~/projects/my-app"
+          maxWidth={72}
+          cursorPosition={value.length}
+          disableUpDownArrows={true}
+          disableEscape={true}
+          ignoreFocus={true}
+        />
 
-        {/* Input area with themed border */}
-        <Box
-          width="100%"
-          borderStyle={POPUP_CONFIG.inputBorderStyle}
-          borderColor={POPUP_CONFIG.inputBorderColor}
-          paddingX={POPUP_CONFIG.inputPadding.x}
-          paddingY={POPUP_CONFIG.inputPadding.y}
-        >
-          <CleanTextInput
-            value={value}
-            onChange={setValue}
-            onSubmit={handleSubmit}
-            placeholder="~/projects/my-app"
-            maxWidth={72}
-            disableUpDownArrows={true}
-            disableEscape={true}
-            ignoreFocus={true}
-          />
-        </Box>
-
-        {/* Directory suggestions (always shown) */}
+        {/* Directory suggestions — fixed-height scroll area */}
         <DirectoryList
           directories={directories}
           selectedIndex={selectedDirIndex}
-          maxVisible={8}
+          maxVisible={10}
         />
       </PopupContainer>
     </PopupWrapper>

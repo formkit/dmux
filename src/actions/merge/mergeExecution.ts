@@ -8,6 +8,7 @@
 import type { ActionResult, ActionContext } from "../types.js"
 import type { DmuxPane } from "../../types.js"
 import { triggerHook } from "../../utils/hooks.js"
+import { getPaneBranchName } from "../../utils/git.js"
 
 /**
  * Execute merge with conflict handling
@@ -206,7 +207,7 @@ export async function executeMerge(
   }
 
   // Step 2: Merge worktree into main (bring changes back to main)
-  const step2 = mergeWorktreeIntoMain(mainRepoPath, pane.slug)
+  const step2 = mergeWorktreeIntoMain(mainRepoPath, getPaneBranchName(pane))
 
   if (!step2.success) {
     return {

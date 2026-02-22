@@ -15,8 +15,13 @@ import { triggerHook, initializeHooksDirectory } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
-import { appendSlugSuffix } from './agentLaunch.js';
+import { appendSlugSuffix, getPermissionFlags } from './agentLaunch.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
+import {
+  buildPromptReadAndDeleteSnippet,
+  writePromptFile,
+} from './promptStore.js';
+import { isValidBranchName } from './git.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -136,9 +141,16 @@ export async function createPane(
     DMUX_AGENT: agent || 'unknown',
   });
 
-  // Generate slug
+  // Validate branchPrefix before use
+  const branchPrefix = settings.branchPrefix || '';
+  if (branchPrefix && !isValidBranchName(branchPrefix)) {
+    throw new Error(`Invalid branch prefix: ${branchPrefix}`);
+  }
+
+  // Generate slug (filesystem-safe directory name) and branch name (may include prefix)
   const generatedSlug = slugBase || await generateSlug(prompt);
   const slug = appendSlugSuffix(generatedSlug, slugSuffix);
+  const branchName = branchPrefix ? `${branchPrefix}${slug}` : slug;
   const tmuxService = TmuxService.getInstance();
 
   const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
@@ -316,7 +328,7 @@ export async function createPane(
     // Check if branch already exists (from a deleted worktree)
     let branchExists = false;
     try {
-      execSync(`git show-ref --verify --quiet refs/heads/${slug}`, {
+      execSync(`git show-ref --verify --quiet "refs/heads/${branchName}"`, {
         stdio: 'pipe',
         cwd: projectRoot,
       });
@@ -325,13 +337,32 @@ export async function createPane(
       // Branch doesn't exist, which is good
     }
 
+    // Validate and resolve base branch for new worktrees
+    const baseBranch = settings.baseBranch || '';
+    if (baseBranch && !isValidBranchName(baseBranch)) {
+      throw new Error(`Invalid base branch name: ${baseBranch}`);
+    }
+    if (baseBranch) {
+      try {
+        execSync(`git rev-parse --verify "refs/heads/${baseBranch}"`, {
+          stdio: 'pipe',
+          cwd: projectRoot,
+        });
+      } catch {
+        throw new Error(
+          `Base branch "${baseBranch}" does not exist. Update the baseBranch setting to a valid branch name.`
+        );
+      }
+    }
+
     // Build worktree command:
     // - If branch exists, use it (don't create with -b)
-    // - If branch doesn't exist, create it with -b
+    // - If branch doesn't exist, create it with -b, optionally from a configured base branch
     // - DON'T silence errors (we want to see them in the pane for debugging)
+    const startPoint = baseBranch ? ` "${baseBranch}"` : '';
     const worktreeAddCmd = branchExists
-      ? `git worktree add "${worktreePath}" ${slug}`
-      : `git worktree add "${worktreePath}" -b ${slug}`;
+      ? `git worktree add "${worktreePath}" "${branchName}"`
+      : `git worktree add "${worktreePath}" -b "${branchName}"${startPoint}`;
     const worktreeCmd = `cd "${projectRoot}" && ${worktreeAddCmd} && cd "${worktreePath}"`;
 
     // Send the git worktree command (auto-quoted by sendShellCommand)
@@ -369,7 +400,7 @@ export async function createPane(
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await tmuxService.sendShellCommand(
       paneInfo,
-      `echo "Tip: Try running: git worktree prune && git branch -D ${slug}"`
+      `echo "Tip: Try running: git worktree prune && git branch -D ${branchName}"`
     );
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
     await new Promise((resolve) => setTimeout(resolve, TMUX_LAYOUT_APPLY_DELAY));
@@ -378,17 +409,33 @@ export async function createPane(
   }
 
   // Launch agent if specified
+  const hasInitialPrompt = !!(prompt && prompt.trim());
+
   if (agent === 'claude') {
+    const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
+    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
     let claudeCmd: string;
-    if (prompt && prompt.trim()) {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
+    if (hasInitialPrompt) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping if prompt file write fails
+      }
+
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        claudeCmd = `claude "${escapedPrompt}"${permissionSuffix}`;
+      }
     } else {
-      claudeCmd = `claude --dangerously-skip-permissions`;
+      claudeCmd = `claude${permissionSuffix}`;
     }
     // Send the claude command (auto-quoted by sendShellCommand)
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
@@ -399,33 +446,59 @@ export async function createPane(
       // Ignore errors in background monitoring
     });
   } else if (agent === 'codex') {
+    const permissionFlags = getPermissionFlags('codex', settings.permissionMode);
+    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
     let codexCmd: string;
-    if (prompt && prompt.trim()) {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+    if (hasInitialPrompt) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping if prompt file write fails
+      }
+
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        codexCmd = `codex "${escapedPrompt}"${permissionSuffix}`;
+      }
     } else {
-      codexCmd = `codex --dangerously-bypass-approvals-and-sandbox`;
+      codexCmd = `codex${permissionSuffix}`;
     }
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
-    await tmuxService.sendShellCommand(paneInfo, 'opencode');
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    let opencodeCmd: string;
+    if (hasInitialPrompt) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping if prompt file write fails
+      }
 
-    if (prompt && prompt.trim()) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const bufName = `dmux_prompt_${Date.now()}`;
-      const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-      await tmuxService.setBuffer(bufName, promptEsc);
-      await tmuxService.pasteBuffer(bufName, paneInfo);
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      await tmuxService.deleteBuffer(bufName);
-      await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        opencodeCmd = `opencode --prompt "${escapedPrompt}"`;
+      }
+    } else {
+      opencodeCmd = 'opencode';
     }
+    await tmuxService.sendShellCommand(paneInfo, opencodeCmd);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 
   // Keep focus on the new pane
@@ -435,6 +508,7 @@ export async function createPane(
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    branchName: branchName !== slug ? branchName : undefined, // Only store if different from slug
     prompt: prompt || 'No initial prompt',
     paneId: paneInfo,
     projectRoot,

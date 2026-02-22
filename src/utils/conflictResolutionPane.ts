@@ -10,6 +10,12 @@ import { enforceControlPaneSize, splitPane } from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
+import {
+  buildPromptReadAndDeleteSnippet,
+  deletePromptFile,
+  writePromptFile,
+} from './promptStore.js';
+import { getPermissionFlags } from './agentLaunch.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
@@ -28,6 +34,8 @@ export async function createConflictResolutionPane(
 ): Promise<DmuxPane> {
   const { sourceBranch, targetBranch, targetRepoPath, agent, projectName, existingPanes } = options;
   const tmuxService = TmuxService.getInstance();
+  const { SettingsManager } = await import('./settingsManager.js');
+  const settings = new SettingsManager(targetRepoPath).getSettings();
 
   // Generate slug for this conflict resolution session
   const slug = `merge-${sourceBranch}-into-${targetBranch}`.substring(0, 50);
@@ -96,47 +104,78 @@ export async function createConflictResolutionPane(
   // Construct the AI prompt for conflict resolution
   const prompt = `There are conflicts merging ${targetBranch} into ${sourceBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes. Once all conflicts are resolved, commit the merge.`;
 
+  let promptFilePath: string | null = null;
+  try {
+    promptFilePath = await writePromptFile(targetRepoPath, slug, prompt);
+  } catch {
+    // Fall back to escaped inline flows if prompt file creation fails
+  }
+
   // Launch agent with the conflict resolution prompt
   if (agent === 'claude') {
-    const escapedPrompt = prompt
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/`/g, '\\`')
-      .replace(/\$/g, '\\$');
-    const claudeCmd = `claude "${escapedPrompt}" --dangerously-skip-permissions`;
+    const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
+    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+    let claudeCmd: string;
+    if (promptFilePath) {
+      const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+      claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+      promptFilePath = null;
+    } else {
+      const escapedPrompt = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+      claudeCmd = `claude "${escapedPrompt}"${permissionSuffix}`;
+    }
 
     await tmuxService.sendShellCommand(paneInfo, claudeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
 
     // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
-    // Note: --dangerously-skip-permissions handles edit permissions, but not workspace trust
     autoApproveTrustPrompt(paneInfo).catch(() => {
       // Ignore errors in background monitoring
     });
   } else if (agent === 'codex') {
-    const escapedPrompt = prompt
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/`/g, '\\`')
-      .replace(/\$/g, '\\$');
-    const codexCmd = `codex "${escapedPrompt}" --dangerously-bypass-approvals-and-sandbox`;
+    const permissionFlags = getPermissionFlags('codex', settings.permissionMode);
+    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+    let codexCmd: string;
+    if (promptFilePath) {
+      const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+      codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+      promptFilePath = null;
+    } else {
+      const escapedPrompt = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+      codexCmd = `codex "${escapedPrompt}"${permissionSuffix}`;
+    }
 
     await tmuxService.sendShellCommand(paneInfo, codexCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   } else if (agent === 'opencode') {
-    await tmuxService.sendShellCommand(paneInfo, 'opencode');
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    let opencodeCmd: string;
+    if (promptFilePath) {
+      const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+      opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"`;
+      promptFilePath = null;
+    } else {
+      const escapedPrompt = prompt
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+      opencodeCmd = `opencode --prompt "${escapedPrompt}"`;
+    }
 
-    // Wait for opencode to start, then paste the prompt
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    const bufName = `dmux_prompt_${Date.now()}`;
-    const promptEsc = prompt.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-
-    await tmuxService.setBuffer(bufName, promptEsc);
-    await tmuxService.pasteBuffer(bufName, paneInfo);
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await tmuxService.deleteBuffer(bufName);
+    await tmuxService.sendShellCommand(paneInfo, opencodeCmd);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+  }
+
+  if (promptFilePath) {
+    await deletePromptFile(promptFilePath);
   }
 
   // Keep focus on the new pane

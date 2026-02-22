@@ -7,13 +7,15 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -30,3 +32,19 @@ jobs:
       - run: pnpm install
       - run: pnpm build
       - run: pnpm publish --no-git-checks --provenance --access public
+
+      - name: Detect previous tag
+        id: tags
+        run: |
+          previous_tag="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release with changelog
+        run: |
+          args=(--to "$GITHUB_REF_NAME")
+          if [ -n "${{ steps.tags.outputs.previous_tag }}" ]; then
+            args+=(--from "${{ steps.tags.outputs.previous_tag }}")
+          fi
+          npx --yes changelogithub@14.0.0 "${args[@]}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
