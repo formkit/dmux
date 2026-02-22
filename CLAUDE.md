@@ -97,7 +97,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 │         (TypeScript/Node.js)            │
 ├─────────────────────────────────────────┤
 │           External Services             │
-│  (tmux, git, GitHub CLI, OpenRouter*)   │
+│   (tmux, git, OpenRouter API*)           │
 └─────────────────────────────────────────┘
 ```
 
@@ -110,7 +110,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 - **Language**: TypeScript 5.x with strict mode
 - **AI Features**: Uses locally-installed agents (`claude --print`, `codex --quiet`) via unified agent harness; optional OpenRouter API for slug generation
 - **System Requirements**: tmux, git, and at least one agent CLI: Claude Code (`claude`), Codex (`codex`), or opencode (`opencode`)
-- **Optional**: GitHub CLI (`gh`) for PR workflow, `OPENROUTER_API_KEY` for OpenRouter slug generation
+- **Optional**: `OPENROUTER_API_KEY` for OpenRouter slug generation
 
 ### File Structure
 
@@ -159,7 +159,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 
 - tmux 3.0+, Node.js 18+, Git 2.20+
 - At least one agent: `claude`, `codex`, or `opencode`
-- Optional: GitHub CLI (`gh`) for PR workflow, `OPENROUTER_API_KEY` for OpenRouter slug generation
+- Optional: `OPENROUTER_API_KEY` for OpenRouter slug generation
 
 ### Build Commands
 
