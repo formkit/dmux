@@ -47,6 +47,18 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     ],
   },
   {
+    key: 'slugProvider',
+    label: 'Slug Generation Provider',
+    description: 'How to generate branch name slugs. OpenRouter requires OPENROUTER_API_KEY env var.',
+    type: 'select',
+    options: [
+      { value: 'auto', label: 'Auto (local agent)' },
+      { value: 'openrouter', label: 'OpenRouter API' },
+      { value: 'claude', label: 'Claude CLI' },
+      { value: 'codex', label: 'Codex CLI' },
+    ],
+  },
+  {
     key: 'useTmuxHooks',
     label: 'Use Tmux Hooks',
     description: 'Use tmux hooks for event-driven updates (lower CPU). If disabled, uses polling in a worker thread.',

@@ -21,7 +21,7 @@ import { TMUX_COLORS } from './theme/colors.js';
 import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
 import { getUntrackedPanes } from './utils/shellPaneDetection.js';
-import { runFirstRunOnboardingIfNeeded } from './utils/onboarding.js';
+
 import { getAvailableAgents } from './utils/agentDetection.js';
 import { createPane } from './utils/paneCreation.js';
 import { SettingsManager } from './utils/settingsManager.js';
@@ -82,9 +82,6 @@ class Dmux {
 
     // Check for migration from old config location
     await this.migrateOldConfig();
-
-    // First-run onboarding (tmux config + OpenRouter API key)
-    await runFirstRunOnboardingIfNeeded();
 
     // Initialize config file if it doesn't exist
     if (!await this.fileExists(this.panesFile)) {
