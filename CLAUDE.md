@@ -97,7 +97,7 @@ dmux is a sophisticated TypeScript-based tmux pane manager that creates AI-power
 │         (TypeScript/Node.js)            │
 ├─────────────────────────────────────────┤
 │           External Services             │
-│   (tmux, git, GitHub CLI)               │
+│  (tmux, git, GitHub CLI, OpenRouter*)   │
 └─────────────────────────────────────────┘
 ```
 
@@ -214,7 +214,7 @@ Converts natural language prompts into branch names:
 
 - Input: "fix the authentication bug in login flow"
 - Output: "fix-auth" or "auth-bug"
-- Fallback: `dmux-{timestamp}` if API unavailable
+- Fallback: `dmux-{timestamp}` if agent/API unavailable
 
 #### Commit Message Generation
 
@@ -527,9 +527,10 @@ pnpm build     # TypeScript + frontend (vite)
 
 1. **Agent not found**: Install `claude`, `codex`, or `opencode` CLI
 2. **Agent CLI issues**: Ensure `claude`, `codex`, or `opencode` is installed and in PATH
-3. **Panes not appearing**: Verify tmux 3.0+, git 2.20+, write permissions
-4. **Screen artifacts**: `Ctrl+L` or `tmux refresh-client`
-5. **Merge conflicts**: Manually resolve in worktree, retry merge
+3. **OpenRouter issues**: If using OpenRouter for slugs, check `echo $OPENROUTER_API_KEY` and test with curl
+4. **Panes not appearing**: Verify tmux 3.0+, git 2.20+, write permissions
+5. **Screen artifacts**: `Ctrl+L` or `tmux refresh-client`
+6. **Merge conflicts**: Manually resolve in worktree, retry merge
 
 ### Debug Commands
 
@@ -543,7 +544,7 @@ ps aux | grep dmux                    # Running processes
 
 - **Background operations** pause during dialogs to prevent input lag
 - `execSync` blocks event loop - TUI checks dialog state before polling
-- Slug generation falls back to timestamps if API unavailable
+- Slug generation falls back to timestamps if agent/API unavailable
 
 ## Recent Updates
 
