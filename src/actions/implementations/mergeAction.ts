@@ -5,6 +5,7 @@
  * Supports multi-merge: detects sub-worktrees and merges them all sequentially.
  */
 
+import { execSync } from 'child_process';
 import type { DmuxPane } from '../../types.js';
 import type { ActionResult, ActionContext } from '../types.js';
 import { triggerHook } from '../../utils/hooks.js';
@@ -16,6 +17,7 @@ import {
   handleWorktreeUncommitted,
   handleMergeConflict,
 } from '../merge/issueHandlers/index.js';
+import { LogService } from '../../services/LogService.js';
 
 /**
  * Merge a worktree into the main branch with comprehensive pre-checks.
@@ -88,67 +90,116 @@ async function executeSingleRootMerge(
     return handleMergeIssues(pane, context, validation, mainRepoPath);
   }
 
-  // Check if gh is available for PR option
-  const { isGhAvailable } = await import('../../utils/ghCli.js');
-  if (await isGhAvailable()) {
+  // Check for sibling panes sharing the same worktree
+  const siblingPanes = context.panes.filter(
+    p => p.id !== pane.id && p.worktreePath === pane.worktreePath
+  );
+
+  // Helper to kill sibling tmux panes and remove them from config
+  const closeSiblings = async () => {
+    for (const sibling of siblingPanes) {
+      try {
+        execSync(`tmux kill-pane -t '${sibling.paneId}'`, { stdio: 'pipe', timeout: 5000 });
+      } catch {
+        // Pane may already be gone
+      }
+    }
+    // Remove siblings from saved panes
+    const withoutSiblings = context.panes.filter(
+      p => !siblingPanes.some(s => s.id === p.id)
+    );
+    await context.savePanes(withoutSiblings);
+    LogService.getInstance().info(
+      `Closed ${siblingPanes.length} sibling pane(s) for merge of ${pane.slug}`,
+      'mergeAction',
+    );
+  };
+
+  // Helper that produces the merge-or-PR confirmation flow
+  const buildMergeConfirmation = async (): Promise<ActionResult> => {
+    // Check if gh is available for PR option
+    const { isGhAvailable } = await import('../../utils/ghCli.js');
+    if (await isGhAvailable()) {
+      return {
+        type: 'choice',
+        title: 'Merge or PR',
+        message: `How would you like to integrate "${pane.slug}" into ${validation.mainBranch}?`,
+        options: [
+          { id: 'merge', label: 'Merge locally', description: 'Merge branch into main locally' },
+          { id: 'pr', label: 'Open PR', description: 'Push and create GitHub Pull Request' },
+        ],
+        onSelect: async (optionId: string) => {
+          if (optionId === 'pr') {
+            const { openPr } = await import('./openPrAction.js');
+            return openPr(pane, context);
+          }
+          // Continue with local merge
+          return {
+            type: 'confirm',
+            title: 'Merge Worktree',
+            message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
+            confirmLabel: 'Merge',
+            cancelLabel: 'Cancel',
+            onConfirm: async () => {
+              await triggerHook('pre_merge', mainRepoPath, pane, {
+                DMUX_TARGET_BRANCH: validation.mainBranch,
+              });
+              return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
+            },
+            onCancel: async () => ({
+              type: 'info' as const,
+              message: 'Merge cancelled',
+              dismissable: true,
+            }),
+          };
+        },
+      };
+    }
+
+    // No gh available, proceed with merge confirmation directly
     return {
-      type: 'choice',
-      title: 'Merge or PR',
-      message: `How would you like to integrate "${pane.slug}" into ${validation.mainBranch}?`,
-      options: [
-        { id: 'merge', label: 'Merge locally', description: 'Merge branch into main locally' },
-        { id: 'pr', label: 'Open PR', description: 'Push and create GitHub Pull Request' },
-      ],
-      onSelect: async (optionId: string) => {
-        if (optionId === 'pr') {
-          const { openPr } = await import('./openPrAction.js');
-          return openPr(pane, context);
-        }
-        // Continue with local merge
-        return {
-          type: 'confirm',
-          title: 'Merge Worktree',
-          message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
-          confirmLabel: 'Merge',
-          cancelLabel: 'Cancel',
-          onConfirm: async () => {
-            await triggerHook('pre_merge', mainRepoPath, pane, {
-              DMUX_TARGET_BRANCH: validation.mainBranch,
-            });
-            return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
-          },
-          onCancel: async () => ({
-            type: 'info' as const,
-            message: 'Merge cancelled',
-            dismissable: true,
-          }),
-        };
+      type: 'confirm',
+      title: 'Merge Worktree',
+      message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
+      confirmLabel: 'Merge',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        await triggerHook('pre_merge', mainRepoPath, pane, {
+          DMUX_TARGET_BRANCH: validation.mainBranch,
+        });
+        return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
       },
+      onCancel: async () => ({
+        type: 'info' as const,
+        message: 'Merge cancelled',
+        dismissable: true,
+      }),
+    };
+  };
+
+  // If siblings exist, show warning first, then proceed with normal merge flow
+  if (siblingPanes.length > 0) {
+    const siblingNames = siblingPanes.map(s => s.slug).join(', ');
+    return {
+      type: 'confirm',
+      title: 'Sibling Agents Active',
+      message: `${siblingPanes.length} other agent(s) (${siblingNames}) are using this worktree. Merging will close them all. Proceed?`,
+      confirmLabel: 'Continue',
+      cancelLabel: 'Cancel',
+      onConfirm: async () => {
+        await closeSiblings();
+        return buildMergeConfirmation();
+      },
+      onCancel: async () => ({
+        type: 'info' as const,
+        message: 'Merge cancelled',
+        dismissable: true,
+      }),
     };
   }
 
-  // No gh available, proceed with merge confirmation directly
-  return {
-    type: 'confirm',
-    title: 'Merge Worktree',
-    message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
-    confirmLabel: 'Merge',
-    cancelLabel: 'Cancel',
-    onConfirm: async () => {
-      // Trigger pre_merge hook before starting merge
-      await triggerHook('pre_merge', mainRepoPath, pane, {
-        DMUX_TARGET_BRANCH: validation.mainBranch,
-      });
-      return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
-    },
-    onCancel: async () => {
-      return {
-        type: 'info',
-        message: 'Merge cancelled',
-        dismissable: true,
-      };
-    },
-  };
+  // No siblings — proceed with standard merge flow
+  return buildMergeConfirmation();
 }
 
 /**

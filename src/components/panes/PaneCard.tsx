@@ -9,9 +9,10 @@ interface PaneCardProps {
   isFirstPane: boolean;
   isLastPane: boolean;
   isNextSelected: boolean;
+  siblingCount: number;
 }
 
-const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, isLastPane, isNextSelected }) => {
+const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, isLastPane, isNextSelected, siblingCount }) => {
   // Get status indicator
   const getStatusIcon = () => {
     if (pane.agentStatus === 'working') return { icon: '✻', color: COLORS.working };
@@ -60,6 +61,9 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
           {pane.autopilot && (
             <Text color={COLORS.success}> (ap)</Text>
           )}
+          {siblingCount > 0 && (
+            <Text color="gray"> ({siblingCount + 1})</Text>
+          )}
         </Box>
         <Text color={borderColor}> │</Text>
       </Box>
@@ -87,7 +91,8 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
     prevProps.selected === nextProps.selected &&
     prevProps.isFirstPane === nextProps.isFirstPane &&
     prevProps.isLastPane === nextProps.isLastPane &&
-    prevProps.isNextSelected === nextProps.isNextSelected
+    prevProps.isNextSelected === nextProps.isNextSelected &&
+    prevProps.siblingCount === nextProps.siblingCount
   );
 });
 

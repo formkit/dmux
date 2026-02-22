@@ -13,3 +13,7 @@ export { copyPath } from './copyPathAction.js';
 export { openInEditor } from './openInEditorAction.js';
 export { toggleAutopilot } from './toggleAutopilotAction.js';
 export { openPr } from './openPrAction.js';
+
+// attachAgent is handled directly via the 'a' keyboard shortcut in useInputHandling.
+// This stub exists to document the action in the system.
+export { attachAgentToWorktree as attachAgent } from '../../utils/attachAgent.js';
