@@ -533,12 +533,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await handleCreatePaneInProject()
       return
     } else if (!isLoading && input === "n") {
-      // Main session hotkey only
-      await handleCreateAgentPane(projectRoot)
+      await handleCreateAgentPane(getActiveProjectRoot())
       return
     } else if (!isLoading && input === "t") {
-      // Main session hotkey only
-      await handleCreateTerminalPane(projectRoot)
+      await handleCreateTerminalPane(getActiveProjectRoot())
       return
     } else if (
       !isLoading &&

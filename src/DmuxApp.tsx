@@ -65,6 +65,7 @@ import { PaneEventService } from "./services/PaneEventService.js"
 import {
   buildProjectActionLayout,
   buildVisualNavigationRows,
+  buildGroupStartRows,
 } from "./utils/projectActions.js"
 import { getPaneProjectRoot } from "./utils/paneProject.js"
 
@@ -426,9 +427,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       : buildVisualNavigationRows(projectActionLayout),
     [isLoading, projectActionLayout]
   )
+  const groupStartRows = useMemo(
+    () => isLoading ? [] : buildGroupStartRows(projectActionLayout),
+    [isLoading, projectActionLayout]
+  )
 
   // Navigation logic moved to hook
-  const { getCardGridPosition, findCardInDirection } = useNavigation(navigationRows)
+  const { getCardGridPosition, findCardInDirection } = useNavigation(navigationRows, groupStartRows)
 
   // findCardInDirection provided by useNavigation
 
