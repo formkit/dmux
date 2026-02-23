@@ -588,7 +588,7 @@ export class PopupManager {
       branch: string
       hasUncommittedChanges: boolean
     }>
-  ): Promise<{ slug: string; path: string } | null> {
+  ): Promise<{ slug: string; path: string; agent: string | null } | null> {
     if (!this.checkPopupSupport()) return null
 
     try {
@@ -598,7 +598,7 @@ export class PopupManager {
         lastModified: wt.lastModified.toISOString(),
       }))
 
-      const result = await this.launchPopup<{ slug: string; path: string }>(
+      const result = await this.launchPopup<{ slug: string; path: string; agent: string | null }>(
         "reopenWorktreePopup.js",
         [],
         {

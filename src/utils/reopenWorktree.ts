@@ -20,6 +20,7 @@ export interface ReopenWorktreeOptions {
   sessionConfigPath?: string; // Shared dmux config path for this session
   sessionProjectRoot?: string; // Session root for welcome pane/layout state
   existingPanes: DmuxPane[];
+  agent?: string | null; // Agent used when the pane was originally created
 }
 
 export interface ReopenWorktreeResult {
@@ -40,6 +41,7 @@ export async function reopenWorktree(
     existingPanes,
     sessionConfigPath: optionsSessionConfigPath,
     sessionProjectRoot: optionsSessionProjectRoot,
+    agent: optionsAgent,
   } = options;
   const paneProjectName = path.basename(projectRoot);
   const settings = new SettingsManager(projectRoot).getSettings();
@@ -138,18 +140,26 @@ export async function reopenWorktree(
   // Wait for CD to complete
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  // Detect which agent to use - check what's available, prefer claude
+  // Use the agent from metadata if available, otherwise fall back to detection
   const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('./agentDetection.js');
-  let agent: 'claude' | 'opencode' | 'codex' = 'claude';
-  if (await findClaudeCommand()) {
-    agent = 'claude';
-  } else if (await findCodexCommand()) {
-    agent = 'codex';
-  } else if (await findOpencodeCommand()) {
-    agent = 'opencode';
+  let agent: 'claude' | 'opencode' | 'codex' | null = null;
+  if (optionsAgent === 'claude' || optionsAgent === 'opencode' || optionsAgent === 'codex') {
+    agent = optionsAgent;
+  } else if (optionsAgent === null) {
+    // Explicitly agentless (e.g. created with `w`) — leave as null, skip launch
+    agent = null;
+  } else {
+    // No metadata (older worktree) — fall back to detection, prefer claude
+    if (await findClaudeCommand()) {
+      agent = 'claude';
+    } else if (await findCodexCommand()) {
+      agent = 'codex';
+    } else if (await findOpencodeCommand()) {
+      agent = 'opencode';
+    }
   }
 
-  // Resume the agent session
+  // Resume the agent session (skip if agentless)
   if (agent === 'claude') {
     const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
     const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
@@ -179,7 +189,7 @@ export async function reopenWorktree(
     projectRoot,
     projectName: paneProjectName,
     worktreePath,
-    agent,
+    agent: agent ?? undefined,
     autopilot: settings.enableAutopilotByDefault ?? false,
   };
 

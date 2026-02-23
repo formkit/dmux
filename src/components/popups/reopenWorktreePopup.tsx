@@ -17,6 +17,7 @@ interface OrphanedWorktree {
   lastModified: string; // ISO date string
   branch: string;
   hasUncommittedChanges: boolean;
+  agent?: string | null;
 }
 
 interface ReopenWorktreePopupProps {
@@ -63,7 +64,7 @@ const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
     } else if (key.return && worktrees.length > 0) {
       // User selected a worktree to reopen
       const selected = worktrees[selectedIndex];
-      writeSuccessAndExit(resultFile, { slug: selected.slug, path: selected.path }, exit);
+      writeSuccessAndExit(resultFile, { slug: selected.slug, path: selected.path, agent: selected.agent ?? null }, exit);
     }
   });
 

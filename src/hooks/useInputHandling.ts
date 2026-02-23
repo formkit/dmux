@@ -69,7 +69,7 @@ interface UseInputHandlingParams {
   copyNonGitFiles: (worktreePath: string, sourceProjectRoot?: string) => Promise<void>
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
-  handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
+  handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string, agent?: string | null) => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
   loadPanes: () => Promise<void>
   cleanExit: () => void
@@ -431,7 +431,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
       const result = await popupManager.launchReopenWorktreePopup(orphanedWorktrees)
       if (result) {
-        await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
+        await handleReopenWorktree(result.slug, result.path, targetProjectRoot, result.agent)
       }
       return
     } else if (

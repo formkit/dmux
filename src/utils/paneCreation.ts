@@ -386,6 +386,17 @@ export async function createPane(
     // Give a bit more time for git to finish setting up the worktree
     await new Promise((resolve) => setTimeout(resolve, 500));
 
+    // Write agent metadata so reopen knows which agent to resume
+    try {
+      fs.writeFileSync(
+        path.join(worktreePath, '.dmux-meta.json'),
+        JSON.stringify({ agent: agent || null }),
+        'utf-8'
+      );
+    } catch {
+      // Non-fatal — reopen will fall back to agent detection
+    }
+
     // Initialize .dmux-hooks if this is a hooks editing session
     if (isHooksEditingSession) {
       initializeHooksDirectory(worktreePath);

@@ -226,6 +226,7 @@ export interface OrphanedWorktree {
   lastModified: Date;
   branch: string;
   hasUncommittedChanges: boolean;
+  agent?: string | null;
 }
 
 /**
@@ -276,11 +277,19 @@ export async function getOrphanedWorktreesAsync(
           // Use default date if stat fails
         }
 
-        // Get branch name and check for changes in parallel
+        // Get branch name, uncommitted changes, and agent metadata in parallel
         const [branch, hasChanges] = await Promise.all([
           getCurrentBranchAsync(worktreePath).then(b => b || slug),
           hasUncommittedChangesAsync(worktreePath)
         ]);
+
+        let agent: string | null | undefined;
+        try {
+          const meta = JSON.parse(await fsPromises.readFile(path.join(worktreePath, '.dmux-meta.json'), 'utf-8'));
+          agent = meta.agent ?? null;
+        } catch {
+          // No metadata file — older worktree, agent unknown (undefined = fall back to detection on reopen)
+        }
 
         return {
           slug,
@@ -288,6 +297,7 @@ export async function getOrphanedWorktreesAsync(
           lastModified,
           branch,
           hasUncommittedChanges: hasChanges,
+          ...(agent !== undefined ? { agent } : {}),
         };
       });
 
@@ -367,12 +377,21 @@ export function getOrphanedWorktrees(
       // Check for uncommitted changes
       const hasChanges = hasUncommittedChanges(worktreePath);
 
+      let agent: string | null | undefined;
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(worktreePath, '.dmux-meta.json'), 'utf-8'));
+        agent = meta.agent ?? null;
+      } catch {
+        // No metadata file — older worktree, agent unknown (undefined = fall back to detection on reopen)
+      }
+
       orphaned.push({
         slug,
         path: worktreePath,
         lastModified,
         branch,
         hasUncommittedChanges: hasChanges,
+        ...(agent !== undefined ? { agent } : {}),
       });
     }
 

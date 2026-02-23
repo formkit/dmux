@@ -487,7 +487,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const handleReopenWorktree = async (
     slug: string,
     worktreePath: string,
-    targetProjectRoot?: string
+    targetProjectRoot?: string,
+    agent?: string | null
   ) => {
     try {
       setIsCreatingPane(true)
@@ -501,6 +502,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         sessionProjectRoot: projectRoot || process.cwd(),
         sessionConfigPath: panesFile,
         existingPanes: panes,
+        agent,
       })
 
       // Save the pane
