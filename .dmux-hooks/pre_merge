@@ -1,0 +1,20 @@
+#!/bin/bash
+# Example: pre_merge hook
+#
+# Runs safety checks before merge. Non-zero exit aborts merge.
+
+set -euo pipefail
+
+echo "[Hook] Running pre-merge checks for $DMUX_SLUG"
+
+cd "$DMUX_WORKTREE_PATH"
+
+if [ "${DMUX_SKIP_PRE_MERGE:-0}" = "1" ]; then
+  echo "[Hook] DMUX_SKIP_PRE_MERGE=1, skipping checks"
+  exit 0
+fi
+
+pnpm run typecheck
+pnpm run test
+
+echo "[Hook] Pre-merge checks passed"

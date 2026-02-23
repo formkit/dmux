@@ -26,6 +26,7 @@ import { getAvailableAgents } from './utils/agentDetection.js';
 import { createPane } from './utils/paneCreation.js';
 import { SettingsManager } from './utils/settingsManager.js';
 import { atomicWriteJson } from './utils/atomicWrite.js';
+import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
 import type { DmuxConfig, DmuxPane } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,6 +103,7 @@ class Dmux {
 
     const inTmux = process.env.TMUX !== undefined;
     const isDev = process.env.DMUX_DEV === 'true';
+    const isDevWatch = process.env.DMUX_DEV_WATCH === 'true';
     const currentTmuxSessionName = inTmux
       ? this.getCurrentTmuxSessionName()
       : null;
@@ -128,6 +130,28 @@ class Dmux {
       }
     }
 
+    // If launched with `pnpm dev` from inside tmux, transparently upgrade this pane
+    // to watch mode so source changes apply without manual relaunches.
+    if (inTmux && isDev && !isDevWatch) {
+      try {
+        const tmuxService = TmuxService.getInstance();
+        const currentPaneId = await tmuxService.getCurrentPaneId();
+        const preferredControlPaneId =
+          this.resolveDevControlPane(sessionNameForCurrentTmux) || undefined;
+        const targetPaneId = preferredControlPaneId || currentPaneId;
+        const devDirectory = this.isWorktree() ? process.cwd() : this.projectRoot;
+        const devCommand = buildDevWatchRespawnCommand(devDirectory);
+        const escapedDevCommand = devCommand.replace(/'/g, "'\\''");
+        execSync(
+          `tmux respawn-pane -k -t '${targetPaneId}' '${escapedDevCommand}'`,
+          { stdio: 'pipe' }
+        );
+        return;
+      } catch {
+        // If promotion fails, continue with current process so dev is still usable.
+      }
+    }
+
     // Check for updates in background if needed
     this.checkForUpdatesBackground();
 
@@ -139,10 +163,39 @@ class Dmux {
 
     if (!inTmux) {
       // Check if project-specific session already exists
+      let sessionExists = false;
+      // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
+      let devDirectory = this.projectRoot;
+      if (isDev && this.isWorktree()) {
+        devDirectory = process.cwd();
+      }
+
       try {
         execSync(`tmux has-session -t ${this.sessionName} 2>/dev/null`, { stdio: 'pipe' });
-        // Session exists, will attach
+        sessionExists = true;
       } catch {
+        sessionExists = false;
+      }
+
+      if (sessionExists) {
+        // Existing session:
+        // In dev mode, always ensure watcher loop is running from the intended source.
+        if (isDev) {
+          try {
+            const targetPane = this.resolveDevControlPane(this.sessionName);
+            if (targetPane) {
+              const devCommand = buildDevWatchRespawnCommand(devDirectory);
+              const escapedDevCommand = devCommand.replace(/'/g, "'\\''");
+              execSync(
+                `tmux respawn-pane -k -t '${targetPane}' '${escapedDevCommand}'`,
+                { stdio: 'pipe' }
+              );
+            }
+          } catch {
+            // Best effort - if respawn fails, still attach.
+          }
+        }
+      } else {
         // Expected - session doesn't exist, create new one
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
@@ -157,16 +210,10 @@ class Dmux {
         ].join(' \\; ');
         execSync(`tmux ${sessionOptions}`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)
-        // In dev mode, use current directory if we're in a worktree, otherwise use projectRoot
-        let devDirectory = this.projectRoot;
-        if (isDev && this.isWorktree()) {
-          devDirectory = process.cwd();
-        }
-
         // Determine the dmux command to use
         let dmuxCommand: string;
         if (isDev) {
-          dmuxCommand = `cd "${devDirectory}" && pnpm dev:watch`;
+          dmuxCommand = buildDevWatchCommand(devDirectory);
         } else {
           // Check if we're running from a local installation
           // __dirname is 'dist' when compiled, so '../dmux' points to the wrapper
@@ -217,26 +264,40 @@ class Dmux {
         config.panes = [];
       }
 
-      // ALWAYS update controlPaneId with current pane (it changes on restart)
-      // This ensures layout manager always has the correct control pane ID
       const oldControlPaneId = config.controlPaneId;
-      const needsUpdate = oldControlPaneId !== controlPaneId;
+      const sessionPaneIds = execSync(
+        `tmux list-panes -t '${sessionNameForCurrentTmux}' -F "#{pane_id}"`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      )
+        .split('\n')
+        .map((paneId: string) => paneId.trim())
+        .filter(Boolean);
+
+      // Preserve an existing valid control pane ID when dmux is launched from a non-control pane.
+      // This prevents nested dmux UIs from accidentally hijacking control-pane ownership.
+      const preservedControlPaneId =
+        typeof oldControlPaneId === 'string' && sessionPaneIds.includes(oldControlPaneId)
+          ? oldControlPaneId
+          : undefined;
+      const nextControlPaneId = preservedControlPaneId || controlPaneId;
+      const needsUpdate = oldControlPaneId !== nextControlPaneId;
 
       if (needsUpdate) {
         if (oldControlPaneId) {
           LogService.getInstance().info(
-            `Control pane ID changed: ${oldControlPaneId} → ${controlPaneId}`,
+            `Control pane ID changed: ${oldControlPaneId} → ${nextControlPaneId}`,
             'Setup'
           );
         } else {
           LogService.getInstance().info(
-            `Setting initial control pane ID: ${controlPaneId}`,
+            `Setting initial control pane ID: ${nextControlPaneId}`,
             'Setup'
           );
         }
       }
 
-      config.controlPaneId = controlPaneId;
+      controlPaneId = nextControlPaneId;
+      config.controlPaneId = nextControlPaneId;
       config.controlPaneSize = SIDEBAR_WIDTH;
 
       // If this is initial load or control pane changed, resize the sidebar
@@ -253,11 +314,53 @@ class Dmux {
       // Create welcome pane if there are no dmux panes and no existing welcome pane
       // Check if welcome pane actually exists, not just if it's in config (handles tmux restarts)
       const { welcomePaneExists } = await import('./utils/welcomePane.js');
+      const normalizePathForComparison = (candidatePath?: string): string | null => {
+        if (!candidatePath) return null;
+
+        const resolvedPath = path.resolve(candidatePath);
+        try {
+          return fsSync.realpathSync(resolvedPath);
+        } catch {
+          return resolvedPath;
+        }
+      };
+      const normalizedProjectRoot = normalizePathForComparison(this.projectRoot);
+      const isProjectRootPath = (candidatePath?: string): boolean => {
+        const normalizedCandidatePath = normalizePathForComparison(candidatePath);
+        return !!normalizedProjectRoot &&
+          !!normalizedCandidatePath &&
+          normalizedCandidatePath === normalizedProjectRoot;
+      };
+      const getPaneCurrentPath = (paneId: string): string | undefined => {
+        try {
+          const escapedPaneId = paneId.replace(/'/g, "'\\''");
+          const panePath = execSync(
+            `tmux display-message -t '${escapedPaneId}' -p '#{pane_current_path}'`,
+            { encoding: 'utf-8', stdio: 'pipe' }
+          ).trim();
+
+          return panePath || undefined;
+        } catch {
+          return undefined;
+        }
+      };
 
       // Validate welcome pane existence
       let hasValidWelcomePane = false;
       if (config.welcomePaneId) {
         hasValidWelcomePane = await welcomePaneExists(config.welcomePaneId);
+
+        if (hasValidWelcomePane) {
+          const trackedWelcomePanePath = getPaneCurrentPath(config.welcomePaneId);
+          if (!isProjectRootPath(trackedWelcomePanePath)) {
+            LogService.getInstance().warn(
+              `Welcome pane ${config.welcomePaneId} has stale cwd '${trackedWelcomePanePath ?? 'unknown'}'; recreating`,
+              'Setup'
+            );
+            await destroyWelcomePane(config.welcomePaneId);
+            hasValidWelcomePane = false;
+          }
+        }
 
         if (!hasValidWelcomePane) {
           LogService.getInstance().info(
@@ -281,6 +384,78 @@ class Dmux {
         }
       }
 
+      // Recovery + dedupe:
+      // If a welcome pane exists in tmux but config is stale/missing, adopt it.
+      // If multiple welcome panes exist, keep one and remove extras.
+      let welcomePaneIdsInSession: string[] = [];
+      try {
+        const escapedSessionName = sessionNameForCurrentTmux.replace(/'/g, "'\\''");
+        const paneInfoOutput = execSync(
+          `tmux list-panes -t '${escapedSessionName}' -F "#{pane_id}::#{pane_title}::#{pane_current_path}"`,
+          { encoding: 'utf-8', stdio: 'pipe' }
+        ).trim();
+
+        if (paneInfoOutput) {
+          const welcomePanesInSession = paneInfoOutput
+            .split('\n')
+            .map((line: string) => {
+              const [paneId, paneTitle, panePath] = line.split('::');
+              return { paneId, paneTitle, panePath };
+            })
+            .filter(({ paneId, paneTitle }) =>
+              !!paneId &&
+              paneTitle === 'Welcome' &&
+              paneId !== controlPaneId
+            );
+
+          const staleWelcomePanes = welcomePanesInSession
+            .filter(({ panePath }) => !isProjectRootPath(panePath));
+          for (const stalePane of staleWelcomePanes) {
+            await destroyWelcomePane(stalePane.paneId);
+          }
+
+          if (staleWelcomePanes.length > 0) {
+            LogService.getInstance().warn(
+              `Discarded ${staleWelcomePanes.length} stale welcome pane(s) with non-root cwd`,
+              'Setup'
+            );
+          }
+
+          welcomePaneIdsInSession = welcomePanesInSession
+            .filter(({ panePath }) => isProjectRootPath(panePath))
+            .map(({ paneId }) => paneId);
+        }
+      } catch {
+        // Ignore detection failures - normal startup logic below remains safe.
+      }
+
+      if (!hasValidWelcomePane && welcomePaneIdsInSession.length > 0) {
+        const recoveredWelcomePaneId = welcomePaneIdsInSession[0];
+        config.welcomePaneId = recoveredWelcomePaneId;
+        config.lastUpdated = new Date().toISOString();
+        await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+        hasValidWelcomePane = true;
+        LogService.getInstance().warn(
+          `Recovered untracked welcome pane ${recoveredWelcomePaneId} from tmux state`,
+          'Setup'
+        );
+      }
+
+      if (hasValidWelcomePane && config.welcomePaneId) {
+        const duplicateWelcomePaneIds = welcomePaneIdsInSession
+          .filter((paneId) => paneId !== config.welcomePaneId);
+
+        if (duplicateWelcomePaneIds.length > 0) {
+          LogService.getInstance().warn(
+            `Detected ${duplicateWelcomePaneIds.length} duplicate welcome pane(s), cleaning up`,
+            'Setup'
+          );
+          for (const duplicatePaneId of duplicateWelcomePaneIds) {
+            await destroyWelcomePane(duplicatePaneId);
+          }
+        }
+      }
+
       // Check for untracked panes (terminal panes created outside dmux tracking)
       const trackedPaneIds = config.panes?.map((p: any) => p.paneId) ?? [];
       const untrackedPanes = await getUntrackedPanes(
@@ -296,7 +471,7 @@ class Dmux {
       if (controlPaneId && !hasAnyPanes) {
         if (!hasValidWelcomePane) {
           // Create new welcome pane
-          const welcomePaneId = await createWelcomePane(controlPaneId);
+          const welcomePaneId = await createWelcomePane(controlPaneId, this.projectRoot);
           if (welcomePaneId) {
             config.welcomePaneId = welcomePaneId;
             config.lastUpdated = new Date().toISOString();
@@ -386,6 +561,52 @@ class Dmux {
       if (result.status !== 0) return null;
       const sessionName = (result.stdout || '').trim();
       return sessionName || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveDevControlPane(sessionName: string): string | null {
+    // Prefer tracked control pane from config when available.
+    try {
+      if (fsSync.existsSync(this.panesFile)) {
+        const rawConfig = fsSync.readFileSync(this.panesFile, 'utf-8');
+        const parsedConfig = JSON.parse(rawConfig);
+        const trackedControlPane = parsedConfig?.controlPaneId;
+        if (typeof trackedControlPane === 'string' && trackedControlPane) {
+          const paneListResult = spawnSync(
+            'tmux',
+            ['list-panes', '-t', sessionName, '-F', '#{pane_id}'],
+            { encoding: 'utf-8', stdio: 'pipe' }
+          );
+          if (paneListResult.status === 0) {
+            const paneIds = (paneListResult.stdout || '')
+              .split('\n')
+              .map((id) => id.trim())
+              .filter(Boolean);
+            if (paneIds.includes(trackedControlPane)) {
+              return trackedControlPane;
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall through to first-pane fallback.
+    }
+
+    // Fallback: first pane in the target session.
+    try {
+      const firstPaneResult = spawnSync(
+        'tmux',
+        ['list-panes', '-t', sessionName, '-F', '#{pane_id}'],
+        { encoding: 'utf-8', stdio: 'pipe' }
+      );
+      if (firstPaneResult.status !== 0) return null;
+      const firstPane = (firstPaneResult.stdout || '')
+        .split('\n')
+        .map((id) => id.trim())
+        .find(Boolean);
+      return firstPane || null;
     } catch {
       return null;
     }

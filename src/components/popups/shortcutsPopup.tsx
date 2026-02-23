@@ -12,6 +12,7 @@ import { POPUP_CONFIG } from './config.js';
 interface ShortcutsPopupAppProps {
   resultFile: string;
   hasSidebarLayout: boolean;
+  isDevMode: boolean;
 }
 
 interface ShortcutActionResult {
@@ -21,6 +22,7 @@ interface ShortcutActionResult {
 const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   resultFile,
   hasSidebarLayout,
+  isDevMode,
 }) => {
   const { exit } = useApp();
 
@@ -44,11 +46,14 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'p', description: 'Create pane in another project' },
     { key: 'N', description: 'Create pane in another project (legacy)' },
     { key: 'r', description: 'Reopen closed worktree' },
+    ...(isDevMode
+      ? [{ key: 'S', description: '[DEV] Use selected pane as source (toggle)' }]
+      : []),
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
     { key: 'h', description: 'Create or modify hooks with AI' },
     ...(hasSidebarLayout ? [{ key: 'L', description: 'Toggle sidebar layout' }] : []),
-    { key: 'q', description: 'Quit dmux (Ctrl+C twice)' },
+    { key: 'q', description: 'Quit dmux immediately' },
     { key: '↑↓←→', description: 'Navigate panes spatially' },
     { key: 'Enter', description: 'Select highlighted item' },
     { key: 'Esc', description: 'Cancel/close dialog' },
@@ -98,6 +103,7 @@ const main = async () => {
     render(<ShortcutsPopupApp
       resultFile={resultFile}
       hasSidebarLayout={data.hasSidebarLayout || false}
+      isDevMode={data.isDevMode === true}
     />);
   } catch (error) {
     console.error('Failed to read data file:', error);

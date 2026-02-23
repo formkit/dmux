@@ -140,9 +140,8 @@ if [ -f "$DMUX_ROOT/.env.local" ]; then
   cp "$DMUX_ROOT/.env.local" "$DMUX_WORKTREE_PATH/.env.local"
 fi
 
-# Configure git user for this worktree
-git config user.email "ai-agent@example.com"
-git config user.name "dmux/$DMUX_SLUG"
+# Keep existing git author identity.
+# Do not override user.name/user.email in this hook.
 ```
 
 ---

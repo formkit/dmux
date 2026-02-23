@@ -2,6 +2,7 @@ import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
 import type { LayoutConfig } from '../utils/layoutManager.js';
 import type { LayoutConfiguration } from './LayoutCalculator.js';
+import { resolveDistPath } from '../utils/runtimePaths.js';
 
 // Spacer pane identifier
 const SPACER_PANE_TITLE = 'dmux-spacer';
@@ -85,7 +86,7 @@ export class SpacerManager {
 
       // Create a new pane running our spacer-pane script (just dots, no ASCII art)
       // This will split from the currently active pane (the last content pane)
-      const scriptPath = `${process.cwd()}/dist/spacer-pane.js`;
+      const scriptPath = resolveDistPath('spacer-pane.js');
 
       const newPaneId = this.tmuxService.splitPaneSync({
         command: `node '${scriptPath}'`

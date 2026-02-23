@@ -1,5 +1,9 @@
 import { TmuxService } from "../services/TmuxService.js"
 import { ASCII_ART_RENDER_DELAY } from "../constants/timing.js"
+import fs from "fs"
+import path from "path"
+import { fileURLToPath } from "url"
+import { resolveDistPath } from "./runtimePaths.js"
 
 export interface RenderAsciiArtOptions {
   paneId: string
@@ -26,18 +30,12 @@ export async function renderAsciiArt(
   const { paneId } = options
   const tmuxService = TmuxService.getInstance()
 
-  // Find the decorative pane script - check both dist and src directories
-  const path = await import("path")
-  const { fileURLToPath } = await import("url")
-  const fs = await import("fs")
-
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-  // Try multiple possible locations
+  // Prefer package dist path first to keep runtime behavior aligned.
   const possiblePaths = [
+    resolveDistPath("panes", "decorative-pane.js"),
     path.join(__dirname, "..", "panes", "decorative-pane.js"),
-    path.join(__dirname, "..", "..", "dist", "panes", "decorative-pane.js"),
-    path.join(process.cwd(), "dist", "panes", "decorative-pane.js"),
   ]
 
   let scriptPath = possiblePaths[0] // Default

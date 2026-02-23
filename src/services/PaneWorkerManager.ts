@@ -1,7 +1,5 @@
 import { Worker } from 'worker_threads';
 import { randomUUID } from 'crypto';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import type { DmuxPane } from '../types.js';
 import type { WorkerMessageBus } from './WorkerMessageBus.js';
 import type {
@@ -11,8 +9,7 @@ import type {
 } from '../workers/WorkerMessages.js';
 import { LogService } from './LogService.js';
 import { WORKER_BACKOFF_BASE } from '../constants/timing.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveDistPath } from '../utils/runtimePaths.js';
 
 interface WorkerInfo {
   worker: Worker;
@@ -33,16 +30,7 @@ export class PaneWorkerManager {
 
   constructor(messageBus: WorkerMessageBus) {
     this.messageBus = messageBus;
-    // Path to compiled worker file
-    // In dev mode with tsx, __dirname is src/services, but workers are in dist/
-    // In production, __dirname is dist/services, so relative path works
-    if (process.env.DMUX_DEV === 'true') {
-      // Development: use dist folder relative to project root
-      this.workerPath = path.join(__dirname, '..', '..', 'dist', 'workers', 'PaneWorker.js');
-    } else {
-      // Production: use relative path from dist/services to dist/workers
-      this.workerPath = path.join(__dirname, '..', 'workers', 'PaneWorker.js');
-    }
+    this.workerPath = resolveDistPath('workers', 'PaneWorker.js');
   }
 
   /**

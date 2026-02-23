@@ -5,13 +5,14 @@ import { COLORS } from '../../theme/colors.js';
 
 interface PaneCardProps {
   pane: DmuxPane;
+  isDevSource: boolean;
   selected: boolean;
   isFirstPane: boolean;
   isLastPane: boolean;
   isNextSelected: boolean;
 }
 
-const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, isLastPane, isNextSelected }) => {
+const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected, isFirstPane, isLastPane, isNextSelected }) => {
   // Get status indicator
   const getStatusIcon = () => {
     if (pane.agentStatus === 'working') return { icon: '✻', color: COLORS.working };
@@ -44,8 +45,11 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
         <Box width={contentWidth}>
           <Text color={status.color}>{status.icon} </Text>
           <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
-            {pane.slug.substring(0, 25)}
+            {pane.slug.substring(0, isDevSource ? 18 : 25)}
           </Text>
+          {isDevSource && (
+            <Text color="yellow"> [source]</Text>
+          )}
           {pane.type === 'shell' ? (
             <Text color="cyan"> [{pane.shellType || 'shell'}]</Text>
           ) : pane.agent && (
@@ -76,6 +80,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
     prevProps.pane.type === nextProps.pane.type &&
     prevProps.pane.shellType === nextProps.pane.shellType &&
     prevProps.pane.agent === nextProps.pane.agent &&
+    prevProps.isDevSource === nextProps.isDevSource &&
     prevProps.selected === nextProps.selected &&
     prevProps.isFirstPane === nextProps.isFirstPane &&
     prevProps.isLastPane === nextProps.isLastPane &&
