@@ -3,10 +3,31 @@
  *
  * This file contains all documentation that gets written to .dmux-hooks/
  * when the directory is initialized. The AGENTS_MD content is auto-generated
- * and imported from generated-agents-doc.ts
+ * and imported from generated-agents-doc.ts when available.
  */
+const AGENTS_MD_FALLBACK = `# dmux Hooks
 
-import { AGENTS_MD } from './generated-agents-doc.js';
+Full AGENTS.md hook documentation has not been generated in this checkout yet.
+
+Run:
+
+\`\`\`bash
+pnpm run generate:hooks-docs
+\`\`\`
+
+Then restart dmux.
+`;
+
+let AGENTS_MD: string;
+const GENERATED_AGENTS_DOC_MODULE = './generated-agents-doc' + '.js';
+try {
+  const docsModule = await import(GENERATED_AGENTS_DOC_MODULE);
+  AGENTS_MD = typeof docsModule.AGENTS_MD === 'string'
+    ? docsModule.AGENTS_MD
+    : AGENTS_MD_FALLBACK;
+} catch {
+  AGENTS_MD = AGENTS_MD_FALLBACK;
+}
 
 /**
  * Main documentation - gets written as both AGENTS.md and CLAUDE.md
