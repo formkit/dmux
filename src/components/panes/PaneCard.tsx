@@ -49,7 +49,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, selected, isFirstPane, i
           {pane.type === 'shell' ? (
             <Text color="cyan"> [{pane.shellType || 'shell'}]</Text>
           ) : pane.agent && (
-            <Text color="gray"> [{pane.agent === 'claude' ? 'cc' : 'oc'}]</Text>
+            <Text color="gray"> [{pane.agent === 'claude' ? 'cc' : pane.agent === 'codex' ? 'cx' : 'oc'}]</Text>
           )}
           {pane.autopilot && (
             <Text color={COLORS.success}> (ap)</Text>
