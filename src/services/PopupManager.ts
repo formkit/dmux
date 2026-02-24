@@ -14,6 +14,7 @@ import { getAvailableActions, type PaneAction } from "../actions/index.js"
 import { INPUT_IGNORE_DELAY } from "../constants/timing.js"
 import {
   getAgentDefinitions,
+  isAgentName,
   resolveEnabledAgentsSelection,
   type AgentName,
 } from "../utils/agentLaunch.js"
@@ -532,6 +533,35 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      const isConflictAgentChoice =
+        /conflict resolution/i.test(title || "") &&
+        options.length > 0 &&
+        options.every((option) => isAgentName(option.id))
+
+      if (isConflictAgentChoice) {
+        const result = await this.launchPopup<string>(
+          "singleAgentChoicePopup.js",
+          [],
+          {
+            width: 72,
+            height: Math.max(12, Math.min(20, options.length + 8)),
+            title: title || "Choose Agent",
+          },
+          {
+            title,
+            message,
+            options: options.map((option) => ({
+              id: option.id,
+              label: option.label,
+              description: option.description,
+              default: option.default,
+            })),
+          }
+        )
+
+        return this.handleResult(result)
+      }
+
       const result = await this.launchPopup<string>(
         "choicePopup.js",
         [],
