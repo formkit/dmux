@@ -1,26 +1,45 @@
 import React, { memo } from 'react';
 import { Box, Text } from 'ink';
+import stringWidth from 'string-width';
 import type { DmuxPane } from '../../types.js';
 import { COLORS } from '../../theme/colors.js';
-import { getAgentShortLabel } from '../../utils/agentLaunch.js';
 
 interface PaneCardProps {
   pane: DmuxPane;
   isDevSource: boolean;
   selected: boolean;
-  isFirstPane: boolean;
-  isLastPane: boolean;
-  isNextSelected: boolean;
-  siblingCount: number;
 }
 
-const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected, isFirstPane, isLastPane, isNextSelected, siblingCount }) => {
+const ROW_WIDTH = 40;
+const RIGHT_COLUMN_WIDTH = 10;
+const LEFT_COLUMN_WIDTH = ROW_WIDTH - RIGHT_COLUMN_WIDTH;
+
+const clipToWidth = (value: string, maxWidth: number): string => {
+  if (maxWidth <= 0) return '';
+  if (stringWidth(value) <= maxWidth) return value;
+
+  let clipped = '';
+  let currentWidth = 0;
+
+  for (const char of value) {
+    const charWidth = stringWidth(char);
+    if (currentWidth + charWidth > maxWidth) {
+      break;
+    }
+    clipped += char;
+    currentWidth += charWidth;
+  }
+
+  return clipped;
+};
+
+const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected }) => {
   // Get status indicator
   const getStatusIcon = () => {
     if (pane.agentStatus === 'working') return { icon: '✻', color: COLORS.working };
     if (pane.agentStatus === 'analyzing') return { icon: '⟳', color: COLORS.analyzing };
-    if (pane.agentStatus === 'waiting') return { icon: '⚠', color: COLORS.waiting };
-    if (pane.testStatus === 'running') return { icon: '⏳', color: COLORS.warning };
+    if (pane.agentStatus === 'waiting') return { icon: '△', color: COLORS.waiting };
+    if (pane.testStatus === 'running') return { icon: '⧖', color: COLORS.warning };
     if (pane.testStatus === 'failed') return { icon: '✗', color: COLORS.error };
     if (pane.testStatus === 'passed') return { icon: '✓', color: COLORS.success };
     if (pane.devStatus === 'running') return { icon: '▶', color: COLORS.success };
@@ -28,53 +47,49 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected, i
   };
 
   const status = getStatusIcon();
-  const borderColor = selected ? COLORS.borderSelected : COLORS.border;
-  const bottomBorderColor = (selected || isNextSelected) ? COLORS.borderSelected : COLORS.border;
-  const lineWidth = 38; // 40 - 2 for border characters
-  const contentWidth = 36; // 38 - 2 for spaces after borders
+
+  // Right-aligned columns: [cc] = 4 chars, (ap) = 4 chars, space between = 1
+  const hasAgent = pane.type === 'shell' || !!pane.agent;
+  const agentTag = pane.type === 'shell'
+    ? (pane.shellType || 'sh').substring(0, 2)
+    : pane.agent === 'claude' ? 'cc' : pane.agent ? 'oc' : null;
+  const apTag = pane.autopilot ? 'ap' : null;
+
+  // Keep non-title segments fixed; only slug is allowed to clip.
+  const prefix = selected ? '▸' : ' ';
+  const statusText = `${status.icon} `;
+  const sourceText = isDevSource ? '★ ' : '';
+  const agentText = hasAgent ? ` [${agentTag}]` : '     ';
+  const autopilotText = apTag ? ` (${apTag})` : '     ';
+  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText);
+  const maxSlugWidth = Math.max(0, LEFT_COLUMN_WIDTH - fixedLeftWidth);
+  const slugText = clipToWidth(pane.slug, maxSlugWidth);
 
   return (
-    <Box flexDirection="column" width="100%">
-      {isFirstPane && (
-        <Box>
-          <Text color={borderColor}>╭</Text>
-          <Text color={borderColor}>{'─'.repeat(lineWidth)}</Text>
-          <Text color={borderColor}>╮</Text>
-        </Box>
-      )}
-      <Box width={40}>
-        <Text color={borderColor}>│ </Text>
-        <Box width={contentWidth}>
-          <Text color={status.color}>{status.icon} </Text>
-          <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
-            {pane.slug.substring(0, isDevSource ? 18 : 25)}
-          </Text>
-          {isDevSource && (
-            <Text color="yellow"> [source]</Text>
-          )}
-          {pane.type === 'shell' ? (
-            <Text color="cyan"> [{pane.shellType || 'shell'}]</Text>
-          ) : pane.agent && (
-            <Text color="gray"> [{getAgentShortLabel(pane.agent)}]</Text>
-          )}
-          {pane.autopilot && (
-            <Text color={COLORS.success}> (ap)</Text>
-          )}
-          {siblingCount > 0 && (
-            <Text color="gray"> ({siblingCount + 1})</Text>
-          )}
-        </Box>
-        <Text color={borderColor}> │</Text>
+    <Box width={ROW_WIDTH}>
+      <Box width={LEFT_COLUMN_WIDTH}>
+        <Text color={selected ? COLORS.selected : COLORS.border}>{prefix}</Text>
+        <Text color={status.color}>{statusText}</Text>
+        {isDevSource && (
+          <Text color="yellow">{sourceText}</Text>
+        )}
+        <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
+          {slugText}
+        </Text>
       </Box>
-      <Box>
-        <Text color={bottomBorderColor}>{isLastPane ? '╰' : '├'}</Text>
-        <Text color={bottomBorderColor}>{'─'.repeat(lineWidth)}</Text>
-        <Text color={bottomBorderColor}>{isLastPane ? '╯' : '┤'}</Text>
+      <Box width={RIGHT_COLUMN_WIDTH} justifyContent="flex-end">
+        {agentTag
+          ? <Text color={pane.type === 'shell' ? 'cyan' : 'gray'}>{agentText}</Text>
+          : <Text>{agentText}</Text>
+        }
+        {apTag
+          ? <Text color={COLORS.success}>{autopilotText}</Text>
+          : <Text>{autopilotText}</Text>
+        }
       </Box>
     </Box>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison for memoization - only re-render if relevant props changed
   return (
     prevProps.pane.id === nextProps.pane.id &&
     prevProps.pane.slug === nextProps.pane.slug &&
@@ -86,11 +101,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected, i
     prevProps.pane.shellType === nextProps.pane.shellType &&
     prevProps.pane.agent === nextProps.pane.agent &&
     prevProps.isDevSource === nextProps.isDevSource &&
-    prevProps.selected === nextProps.selected &&
-    prevProps.isFirstPane === nextProps.isFirstPane &&
-    prevProps.isLastPane === nextProps.isLastPane &&
-    prevProps.isNextSelected === nextProps.isNextSelected &&
-    prevProps.siblingCount === nextProps.siblingCount
+    prevProps.selected === nextProps.selected
   );
 });
 

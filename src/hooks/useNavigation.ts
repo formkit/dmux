@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-export default function useNavigation(navigationRows: number[][]) {
+export default function useNavigation(navigationRows: number[][], groupStartRows: number[] = []) {
   const indexToPosition = useMemo(() => {
     const map = new Map<number, { row: number; col: number }>();
     navigationRows.forEach((rowItems, row) => {
@@ -38,13 +38,33 @@ export default function useNavigation(navigationRows: number[][]) {
           }
           break;
         case 'left':
-          if (currentPos.col > 0) {
+          if (groupStartRows.length > 0) {
+            // Jump to previous project group's first pane
+            const currentGroupIdx = groupStartRows.findIndex((start, i) => {
+              const next = groupStartRows[i + 1] ?? navigationRows.length;
+              return currentPos.row >= start && currentPos.row < next;
+            });
+            if (currentGroupIdx > 0) {
+              const targetRow = navigationRows[groupStartRows[currentGroupIdx - 1]];
+              return targetRow?.[0] ?? null;
+            }
+          } else if (currentPos.col > 0) {
             const row = navigationRows[currentPos.row];
             return row?.[currentPos.col - 1] ?? null;
           }
           break;
         case 'right':
-          if (navigationRows[currentPos.row] && currentPos.col < navigationRows[currentPos.row].length - 1) {
+          if (groupStartRows.length > 0) {
+            // Jump to next project group's first pane
+            const currentGroupIdx = groupStartRows.findIndex((start, i) => {
+              const next = groupStartRows[i + 1] ?? navigationRows.length;
+              return currentPos.row >= start && currentPos.row < next;
+            });
+            if (currentGroupIdx >= 0 && currentGroupIdx < groupStartRows.length - 1) {
+              const targetRow = navigationRows[groupStartRows[currentGroupIdx + 1]];
+              return targetRow?.[0] ?? null;
+            }
+          } else if (navigationRows[currentPos.row] && currentPos.col < navigationRows[currentPos.row].length - 1) {
             const row = navigationRows[currentPos.row];
             return row?.[currentPos.col + 1] ?? null;
           }
@@ -53,7 +73,7 @@ export default function useNavigation(navigationRows: number[][]) {
 
       return null;
     };
-  }, [indexToPosition, navigationRows]);
+  }, [indexToPosition, navigationRows, groupStartRows]);
 
   return { getCardGridPosition, findCardInDirection };
 }

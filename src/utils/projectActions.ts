@@ -140,12 +140,25 @@ export function buildVisualNavigationRows(
     for (const entry of group.panes) {
       rows.push([entry.index]);
     }
-
-    const actions = actionByProject.get(group.projectRoot);
-    if (actions?.newAgent && actions.terminal) {
-      rows.push([actions.newAgent.index, actions.terminal.index]);
-    }
   }
 
   return rows;
+}
+
+/**
+ * Build an array of row indices where each project group starts.
+ * Used by left/right navigation to jump between project groups.
+ */
+export function buildGroupStartRows(
+  layout: ProjectActionLayout
+): number[] {
+  if (!layout.multiProjectMode) return [];
+
+  const starts: number[] = [];
+  let row = 0;
+  for (const group of layout.groups) {
+    starts.push(row);
+    row += group.panes.length;
+  }
+  return starts;
 }

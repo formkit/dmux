@@ -23,9 +23,9 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
 
   useInput((input, key) => {
     if (key.upArrow) {
-      setSelectedIndex(Math.max(0, selectedIndex - 1));
+      setSelectedIndex(selectedIndex <= 0 ? actions.length - 1 : selectedIndex - 1);
     } else if (key.downArrow) {
-      setSelectedIndex(Math.min(actions.length - 1, selectedIndex + 1));
+      setSelectedIndex(selectedIndex >= actions.length - 1 ? 0 : selectedIndex + 1);
     } else if (key.return) {
       // User selected an action
       const selectedAction = actions[selectedIndex];

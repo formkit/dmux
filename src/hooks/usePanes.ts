@@ -126,7 +126,7 @@ export default function usePanes(
         await destroyWelcomePaneIfNeeded(panesFile, panesRef.current.length, finalPanes.length);
 
         // Enforce pane titles always match slug (worktree name)
-        await enforcePaneTitles(finalPanes, allPaneIds);
+        await enforcePaneTitles(finalPanes, allPaneIds, controlPaneId);
 
         // Check if panes changed (compare IDs and paneIds only)
         const currentPaneIds = panesRef.current.map(p => `${p.id}:${p.paneId}`).sort().join(',');

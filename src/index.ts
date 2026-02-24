@@ -209,7 +209,7 @@ class Dmux {
           `set-option -t ${this.sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
           `set-option -t ${this.sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
           `set-option -t ${this.sessionName} pane-border-format " #{pane_title} "`,
-          `select-pane -t ${this.sessionName} -T "dmux v${packageJson.version} - ${this.projectName}"`,
+          `select-pane -t ${this.sessionName} -T "dmux"`,
         ].join(' \\; ');
         execSync(`tmux ${sessionOptions}`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)

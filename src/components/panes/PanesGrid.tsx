@@ -35,17 +35,6 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   )
   const paneGroups = actionLayout.groups
 
-  // Compute sibling count map: how many other panes share the same worktree
-  const siblingCountMap = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const pane of panes) {
-      if (!pane.worktreePath) continue
-      const count = panes.filter(p => p.worktreePath === pane.worktreePath).length - 1
-      map.set(pane.id, count)
-    }
-    return map
-  }, [panes])
-
   const actionsByProject = useMemo(() => {
     const map = new Map<string, { newAgent?: ProjectActionItem; terminal?: ProjectActionItem }>()
     for (const action of actionLayout.actionItems) {
@@ -60,38 +49,73 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
     return map
   }, [actionLayout.actionItems])
 
-  const renderActionLabel = (action: ProjectActionItem | undefined, label: "new-agent" | "terminal") => {
-    if (!action) return null
+  // Determine which project group the current selection belongs to
+  const activeProjectRoot = useMemo(() => {
+    // Check if selection is a pane
+    const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+    if (selectedPane) {
+      const group = paneGroups.find(g => g.panes.some(e => e.index === selectedIndex))
+      return group?.projectRoot
+    }
+    // Check if selection is an action item
+    const selectedAction = actionLayout.actionItems.find(a => a.index === selectedIndex)
+    return selectedAction?.projectRoot
+  }, [selectedIndex, panes, paneGroups, actionLayout.actionItems])
 
-    if (label === "new-agent") {
-      if (action.hotkey === "n") {
-        return <><Text color={COLORS.accent}>[n]</Text>ew agent</>
+  const renderActionRow = (
+    newAgentAction: ProjectActionItem,
+    terminalAction: ProjectActionItem,
+    selIdx: number,
+    isActiveGroup: boolean,
+    navigable: boolean
+  ) => {
+    const newSelected = navigable && selIdx === newAgentAction.index
+    const termSelected = navigable && selIdx === terminalAction.index
+    const eitherSelected = newSelected || termSelected
+
+    const renderLabel = (kind: "new-agent" | "terminal", isSelected: boolean) => {
+      const color = isSelected ? COLORS.selected : COLORS.border
+      const showHotkey = isActiveGroup
+      if (kind === "new-agent") {
+        return showHotkey
+          ? <Text color={color} bold={isSelected}><Text color="cyan">[n]</Text>ew agent</Text>
+          : <Text color={color} bold={isSelected}>new agent</Text>
       }
-      return <>new agent</>
+      return showHotkey
+        ? <Text color={color} bold={isSelected}><Text color="cyan">[t]</Text>erminal</Text>
+        : <Text color={color} bold={isSelected}>terminal</Text>
     }
 
-    if (action.hotkey === "t") {
-      return <><Text color={COLORS.accent}>[t]</Text>erminal</>
-    }
-    return <>terminal</>
+    return (
+      <Box width={40} justifyContent="flex-end">
+        {renderLabel("new-agent", newSelected)}
+        <Text color={COLORS.border}>{"  "}</Text>
+        {renderLabel("terminal", termSelected)}
+      </Box>
+    )
   }
 
   return (
     <Box flexDirection="column">
       {paneGroups.map((group, groupIndex) => (
         <Box key={group.projectRoot} flexDirection="column">
-          {paneGroups.length > 1 && (
-            <Box flexDirection="column">
-              {groupIndex > 0 && (
-                <Text color={COLORS.border}>{"─".repeat(40)}</Text>
-              )}
-              <Box width={40}>
-                <Text color={COLORS.accent}> {group.projectName}</Text>
-              </Box>
-            </Box>
-          )}
+          {(() => {
+            const isActive = activeProjectRoot === group.projectRoot
+            const color = isActive ? COLORS.selected : COLORS.border
+            const headerWidth = 40
+            const nameSection = `⣿⣿ ${group.projectName} `
+            const remaining = Math.max(0, headerWidth - nameSection.length)
+            const fill = "⣿".repeat(remaining)
+            return (
+              <Text color={color}>
+                <Text dimColor>⣿⣿</Text>
+                <Text> {group.projectName} </Text>
+                <Text dimColor>{fill}</Text>
+              </Text>
+            )
+          })()}
 
-          {group.panes.map((entry, localIndex) => {
+          {group.panes.map((entry) => {
             const pane = entry.pane
             // Apply the runtime status to the pane
             const paneWithStatus = {
@@ -100,10 +124,6 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
             }
             const paneIndex = entry.index
             const isSelected = selectedIndex === paneIndex
-            const isFirstPane = localIndex === 0
-            const isLastPane = localIndex === group.panes.length - 1
-            const nextPaneIndex = group.panes[localIndex + 1]?.index
-            const isNextSelected = nextPaneIndex !== undefined && selectedIndex === nextPaneIndex
             const isDevSource = isActiveDevSourcePath(
               pane.worktreePath,
               activeDevSourcePath
@@ -115,15 +135,16 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
                 pane={paneWithStatus}
                 isDevSource={isDevSource}
                 selected={isSelected}
-                isFirstPane={isFirstPane}
-                isLastPane={isLastPane}
-                isNextSelected={isNextSelected}
-                siblingCount={siblingCountMap.get(pane.id) || 0}
+
               />
             )
           })}
 
-          {!isLoading && actionLayout.multiProjectMode && (() => {
+          {!isLoading && actionLayout.multiProjectMode && activeProjectRoot !== group.projectRoot && (
+            <Text>{" "}</Text>
+          )}
+
+          {!isLoading && actionLayout.multiProjectMode && activeProjectRoot === group.projectRoot && (() => {
             const groupActions = actionsByProject.get(group.projectRoot)
             const newAgentAction = groupActions?.newAgent
             const terminalAction = groupActions?.terminal
@@ -132,69 +153,10 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
               return null
             }
 
-            return (
-              <Box marginTop={1} flexDirection="row" gap={1}>
-                <Box
-                  borderStyle="round"
-                  borderColor={
-                    selectedIndex === newAgentAction.index
-                      ? COLORS.borderSelected
-                      : COLORS.border
-                  }
-                  paddingX={1}
-                >
-                  <Text
-                    color={
-                      selectedIndex === newAgentAction.index
-                        ? COLORS.success
-                        : COLORS.border
-                    }
-                  >
-                    +{" "}
-                  </Text>
-                  <Text
-                    color={
-                      selectedIndex === newAgentAction.index
-                        ? COLORS.selected
-                        : COLORS.unselected
-                    }
-                    bold={selectedIndex === newAgentAction.index}
-                  >
-                    {renderActionLabel(newAgentAction, "new-agent")}
-                  </Text>
-                </Box>
-                <Box
-                  borderStyle="round"
-                  borderColor={
-                    selectedIndex === terminalAction.index
-                      ? COLORS.borderSelected
-                      : COLORS.border
-                  }
-                  paddingX={1}
-                >
-                  <Text
-                    color={
-                      selectedIndex === terminalAction.index
-                        ? COLORS.success
-                        : COLORS.border
-                    }
-                  >
-                    +{" "}
-                  </Text>
-                  <Text
-                    color={
-                      selectedIndex === terminalAction.index
-                        ? COLORS.selected
-                        : COLORS.unselected
-                    }
-                    bold={selectedIndex === terminalAction.index}
-                  >
-                    {renderActionLabel(terminalAction, "terminal")}
-                  </Text>
-                </Box>
-              </Box>
-            )
+            return renderActionRow(newAgentAction, terminalAction, selectedIndex, true, false)
           })()}
+
+          {groupIndex < paneGroups.length - 1 && <Text>{" "}</Text>}
         </Box>
       ))}
 
@@ -206,66 +168,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
           return null
         }
 
-        return (
-        <Box marginTop={panes.length === 0 ? 1 : 0} flexDirection="row" gap={1}>
-          <Box
-            borderStyle="round"
-            borderColor={
-              selectedIndex === newAgentAction.index
-                ? COLORS.borderSelected
-                : COLORS.border
-            }
-            paddingX={1}
-          >
-            <Text
-              color={
-                selectedIndex === newAgentAction.index ? COLORS.success : COLORS.border
-              }
-            >
-              +{" "}
-            </Text>
-            <Text
-              color={
-                selectedIndex === newAgentAction.index
-                  ? COLORS.selected
-                  : COLORS.unselected
-              }
-              bold={selectedIndex === newAgentAction.index}
-            >
-              <Text color={COLORS.accent}>[n]</Text>ew agent
-            </Text>
-          </Box>
-          <Box
-            borderStyle="round"
-            borderColor={
-              selectedIndex === terminalAction.index
-                ? COLORS.borderSelected
-                : COLORS.border
-            }
-            paddingX={1}
-          >
-            <Text
-              color={
-                selectedIndex === terminalAction.index
-                  ? COLORS.success
-                  : COLORS.border
-              }
-            >
-              +{" "}
-            </Text>
-            <Text
-              color={
-                selectedIndex === terminalAction.index
-                  ? COLORS.selected
-                  : COLORS.unselected
-              }
-              bold={selectedIndex === terminalAction.index}
-            >
-              <Text color={COLORS.accent}>[t]</Text>erminal
-            </Text>
-          </Box>
-        </Box>
-        )
+        return renderActionRow(newAgentAction, terminalAction, selectedIndex, true, true)
       })()}
     </Box>
   )

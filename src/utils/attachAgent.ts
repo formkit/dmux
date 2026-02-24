@@ -159,8 +159,7 @@ export async function attachAgentToWorktree(
 
   // Re-set the dmux sidebar title
   try {
-    const sessionProjectName = path.basename(sessionProjectRoot);
-    await tmuxService.setPaneTitle(originalPaneId, `dmux-${sessionProjectName}`);
+    await tmuxService.setPaneTitle(originalPaneId, "dmux");
   } catch {
     // Ignore title errors
   }

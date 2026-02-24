@@ -16,7 +16,8 @@ import { StateManager } from '../shared/StateManager.js';
  */
 export async function enforcePaneTitles(
   panes: DmuxPane[],
-  allPaneIds: string[]
+  allPaneIds: string[],
+  controlPaneId?: string
 ): Promise<void> {
   const tmuxService = TmuxService.getInstance();
   const sessionProjectRoot = StateManager.getInstance().getState().projectRoot;
@@ -29,6 +30,19 @@ export async function enforcePaneTitles(
     }
   } catch {
     // Fall back to per-pane title lookups below.
+  }
+
+  // Enforce control pane title stays "dmux"
+  if (controlPaneId) {
+    try {
+      const controlTitle = titleByPaneId.get(controlPaneId)
+        ?? await tmuxService.getPaneTitle(controlPaneId);
+      if (controlTitle !== 'dmux') {
+        await tmuxService.setPaneTitle(controlPaneId, 'dmux');
+      }
+    } catch {
+      // Ignore - control pane might not exist yet
+    }
   }
 
   for (const pane of panes) {

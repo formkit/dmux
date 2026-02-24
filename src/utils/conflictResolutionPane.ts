@@ -214,7 +214,7 @@ export async function createConflictResolutionPane(
 
   // Re-set the title for the dmux pane
   try {
-    await tmuxService.setPaneTitle(originalPaneId, `dmux-${projectName}`);
+    await tmuxService.setPaneTitle(originalPaneId, "dmux");
   } catch {
     // Ignore if setting title fails
   }
