@@ -1,6 +1,5 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import { getAvailableAgents } from './agentDetection.js';
 import { LogService } from '../services/LogService.js';
 
 /**
@@ -137,7 +136,6 @@ export async function validateSystemRequirements(): Promise<ValidationResult> {
   const checks = {
     tmux: checkTmuxVersion('3.0'),
     git: checkGitVersion('2.20'),
-    agents: await getAvailableAgents()
   };
 
   const errors: string[] = [];
@@ -146,17 +144,6 @@ export async function validateSystemRequirements(): Promise<ValidationResult> {
   // Collect errors
   errors.push(...checks.tmux.errors);
   errors.push(...checks.git.errors);
-
-  // Warnings for missing agents
-  if (checks.agents.length === 0) {
-    warnings.push('No agents found (claude, opencode, or codex). You will not be able to use AI features.');
-  } else {
-    const allAgents: Array<'claude' | 'opencode' | 'codex'> = ['claude', 'opencode', 'codex'];
-    const missing = allAgents.filter(a => !checks.agents.includes(a));
-    if (missing.length > 0) {
-      warnings.push(`Agent(s) not found: ${missing.map(a => `'${a}'`).join(', ')}. Available: ${checks.agents.map(a => `'${a}'`).join(', ')}.`);
-    }
-  }
 
   return {
     canRun: checks.tmux.valid && checks.git.valid,

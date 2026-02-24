@@ -7,11 +7,27 @@ import { createConflictResolutionPaneForMerge } from '../../../src/actions/merge
 import type { DmuxPane } from '../../../src/types.js';
 import type { ActionContext } from '../../../src/actions/types.js';
 
+const findClaudeCommandMock = vi.fn(() => Promise.resolve(true));
+const findOpencodeCommandMock = vi.fn(() => Promise.resolve(true));
+const findCodexCommandMock = vi.fn(() => Promise.resolve(false));
+
+const getInstalledAgentsMock = vi.fn(async () => {
+  const agents: Array<'claude' | 'opencode' | 'codex'> = [];
+  if (await findClaudeCommandMock()) agents.push('claude');
+  if (await findOpencodeCommandMock()) agents.push('opencode');
+  if (await findCodexCommandMock()) agents.push('codex');
+  return agents;
+});
+
+const filterEnabledAgentsMock = vi.fn((agents: Array<'claude' | 'opencode' | 'codex'>) => agents);
+
 // Mock agent detection
 vi.mock('../../../src/utils/agentDetection.js', () => ({
-  findClaudeCommand: vi.fn(() => Promise.resolve(true)),
-  findOpencodeCommand: vi.fn(() => Promise.resolve(true)),
-  findCodexCommand: vi.fn(() => Promise.resolve(false)),
+  findClaudeCommand: findClaudeCommandMock,
+  findOpencodeCommand: findOpencodeCommandMock,
+  findCodexCommand: findCodexCommandMock,
+  getInstalledAgents: getInstalledAgentsMock,
+  filterEnabledAgents: filterEnabledAgentsMock,
 }));
 
 // Mock conflict resolution pane creation
@@ -100,7 +116,7 @@ describe('Conflict Resolution', () => {
       const result = await createConflictResolutionPaneForMerge(mockPane, mockContext, 'main', '/test/main');
 
       expect(result.type).toBe('error');
-      expect(result.message).toContain('No AI agents available');
+      expect(result.message).toContain('No enabled AI agents available');
     });
 
     it('should prompt for agent choice when multiple agents available', async () => {

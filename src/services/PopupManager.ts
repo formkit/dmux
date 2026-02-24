@@ -13,7 +13,9 @@ import type { DmuxPane, ProjectSettings } from "../types.js"
 import { getAvailableActions, type PaneAction } from "../actions/index.js"
 import { INPUT_IGNORE_DELAY } from "../constants/timing.js"
 import {
-  buildAgentLaunchOptions,
+  getAgentDefinitions,
+  isAgentName,
+  resolveEnabledAgentsSelection,
   type AgentName,
 } from "../utils/agentLaunch.js"
 import { resolveDistPath } from "../utils/runtimePaths.js"
@@ -26,7 +28,6 @@ export interface PopupManagerConfig {
   terminalWidth: number
   terminalHeight: number
   availableAgents: AgentName[]
-  agentChoice: AgentName | null
   settingsManager: any
   projectSettings: ProjectSettings
 }
@@ -288,14 +289,11 @@ export class PopupManager {
 
     try {
       const agentsJson = JSON.stringify(this.config.availableAgents)
-      const defaultAgent =
-        this.config.agentChoice || this.config.availableAgents[0] || "claude"
-      const popupOptionsCount = buildAgentLaunchOptions(this.config.availableAgents).length
-      const popupHeight = Math.max(12, popupOptionsCount * 2 + 7)
+      const popupHeight = Math.max(12, this.config.availableAgents.length + 8)
 
       const result = await this.launchPopup<AgentName[]>(
         "agentChoicePopup.js",
-        [agentsJson, defaultAgent],
+        [agentsJson],
         {
           width: 72,
           height: popupHeight,
@@ -460,11 +458,60 @@ export class PopupManager {
         if (result.data?.action === "hooks") {
           await onLaunchHooks()
           return null
+        } else if (result.data?.action === "enabledAgents") {
+          return await this.launchEnabledAgentsPopup()
         } else if (result.data) {
           return result.data
         }
       }
       return null
+    } catch (error: any) {
+      this.showTempMessage(`Failed to launch popup: ${error.message}`)
+      return null
+    }
+  }
+
+  async launchEnabledAgentsPopup(): Promise<{
+    key: "enabledAgents";
+    value: AgentName[];
+    scope: "global" | "project";
+  } | null> {
+    if (!this.checkPopupSupport()) return null
+
+    try {
+      const settings = this.config.settingsManager.getSettings()
+      const configuredEnabled = resolveEnabledAgentsSelection(settings.enabledAgents)
+      const definitions = getAgentDefinitions().map((definition) => ({
+        id: definition.id,
+        name: definition.name,
+        defaultEnabled: definition.defaultEnabled,
+      }))
+
+      const result = await this.launchPopup<{
+        enabledAgents: AgentName[];
+        scope: "global" | "project";
+      }>(
+        "enabledAgentsPopup.js",
+        [],
+        {
+          width: 74,
+          height: Math.min(30, definitions.length + 12),
+          title: "Enabled Agents",
+        },
+        {
+          agents: definitions,
+          enabledAgents: configuredEnabled,
+        }
+      )
+
+      const data = this.handleResult(result)
+      if (!data) return null
+
+      return {
+        key: "enabledAgents",
+        value: data.enabledAgents,
+        scope: data.scope,
+      }
     } catch (error: any) {
       this.showTempMessage(`Failed to launch popup: ${error.message}`)
       return null
@@ -486,6 +533,35 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      const isConflictAgentChoice =
+        /conflict resolution/i.test(title || "") &&
+        options.length > 0 &&
+        options.every((option) => isAgentName(option.id))
+
+      if (isConflictAgentChoice) {
+        const result = await this.launchPopup<string>(
+          "singleAgentChoicePopup.js",
+          [],
+          {
+            width: 72,
+            height: Math.max(12, Math.min(20, options.length + 8)),
+            title: title || "Choose Agent",
+          },
+          {
+            title,
+            message,
+            options: options.map((option) => ({
+              id: option.id,
+              label: option.label,
+              description: option.description,
+              default: option.default,
+            })),
+          }
+        )
+
+        return this.handleResult(result)
+      }
+
       const result = await this.launchPopup<string>(
         "choicePopup.js",
         [],

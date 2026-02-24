@@ -38,7 +38,7 @@ This document contains everything an AI agent needs to create, modify, and under
 
 ## What You're Working On
 
-You are editing hooks for **dmux**, a tmux pane manager that creates AI-powered development workflows. Each pane runs in its own git worktree with an AI agent (Claude Code or opencode).
+You are editing hooks for **dmux**, a tmux pane manager that creates AI-powered development workflows. Each pane runs in its own git worktree with an AI agent.
 
 ## Your Goal
 
@@ -77,7 +77,7 @@ DMUX_SERVER_PORT="3142"                # HTTP server port
 DMUX_PANE_ID="dmux-1234567890"         # dmux pane identifier
 DMUX_SLUG="fix-auth-bug"               # Branch/worktree name
 DMUX_PROMPT="Fix authentication bug"   # User's prompt
-DMUX_AGENT="claude"                    # Agent type (claude|opencode)
+DMUX_AGENT="claude"                    # Agent type (registry id, e.g. claude, codex, opencode)
 DMUX_TMUX_PANE_ID="%38"                # tmux pane ID
 \`\`\`
 

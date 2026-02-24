@@ -535,6 +535,18 @@ export class TmuxService {
   }
 
   /**
+   * Get the current foreground command for a pane as reported by tmux.
+   */
+  async getPaneCurrentCommand(paneId: string): Promise<string> {
+    return this.executeWithRetry(
+      () =>
+        this.execute(`tmux display-message -t '${paneId}' -p '#{pane_current_command}'`).trim(),
+      RetryStrategy.FAST,
+      `getPaneCurrentCommand(${paneId})`
+    );
+  }
+
+  /**
    * Set global tmux option
    */
   async setOption(option: string, value: string): Promise<void> {
@@ -620,8 +632,8 @@ export class TmuxService {
   async setBuffer(bufferName: string, content: string): Promise<void> {
     await this.executeWithRetry(
       () => {
-        // Escape content for shell
-        const escaped = content.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+        // Single-quoted shell args preserve backslashes/newlines as-is.
+        const escaped = content.replace(/'/g, "'\\''");
         this.execute(`tmux set-buffer -b '${bufferName}' -- '${escaped}'`);
       },
       RetryStrategy.FAST,

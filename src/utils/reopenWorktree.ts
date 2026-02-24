@@ -10,8 +10,15 @@ import { SIDEBAR_WIDTH, recalculateAndApplyLayout } from './layoutManager.js';
 import type { DmuxPane, DmuxConfig } from '../types.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
-import { getPermissionFlags } from './agentLaunch.js';
+import {
+  AGENT_IDS,
+  buildAgentCommand,
+  buildResumeCommand,
+  type AgentName,
+} from './agentLaunch.js';
+import { ensureGeminiFolderTrusted } from './geminiTrust.js';
 import { SettingsManager } from './settingsManager.js';
+import { filterEnabledAgents, getInstalledAgents } from './agentDetection.js';
 
 export interface ReopenWorktreeOptions {
   slug: string;
@@ -28,7 +35,7 @@ export interface ReopenWorktreeResult {
 
 /**
  * Reopens a closed worktree by creating a new pane in the existing worktree
- * and running `claude --continue` to resume the previous session
+ * and launching the best available agent resume command.
  */
 export async function reopenWorktree(
   options: ReopenWorktreeOptions
@@ -138,32 +145,32 @@ export async function reopenWorktree(
   // Wait for CD to complete
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  // Detect which agent to use - check what's available, prefer claude
-  const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('./agentDetection.js');
-  let agent: 'claude' | 'opencode' | 'codex' = 'claude';
-  if (await findClaudeCommand()) {
-    agent = 'claude';
-  } else if (await findCodexCommand()) {
-    agent = 'codex';
-  } else if (await findOpencodeCommand()) {
-    agent = 'opencode';
-  }
+  // Detect which agent to use - prefer enabled agents and then fallback order.
+  const installedAgents = await getInstalledAgents();
+  const enabledAgents = filterEnabledAgents(installedAgents, settings.enabledAgents);
+  const candidateAgents = enabledAgents.length > 0 ? enabledAgents : installedAgents;
+  const preferredOrder: AgentName[] = [
+    'claude',
+    'codex',
+    'opencode',
+    ...AGENT_IDS.filter((agent) =>
+      !['claude', 'codex', 'opencode'].includes(agent)
+    ),
+  ];
+  const agent = preferredOrder.find((candidate) =>
+    candidateAgents.includes(candidate)
+  );
 
-  // Resume the agent session
-  if (agent === 'claude') {
-    const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
-    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
-    const claudeCmd = `claude --continue${permissionSuffix}`;
-    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-  } else if (agent === 'codex') {
-    const permissionFlags = getPermissionFlags('codex', settings.permissionMode);
-    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
-    const codexCmd = `codex resume --last${permissionSuffix}`;
-    await tmuxService.sendShellCommand(paneInfo, codexCmd);
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-  } else if (agent === 'opencode') {
-    await tmuxService.sendShellCommand(paneInfo, 'opencode');
+  // Resume the agent session (or start interactive mode when no resume command is available).
+  if (agent) {
+    if (agent === 'gemini') {
+      ensureGeminiFolderTrusted(worktreePath);
+    }
+
+    const resumeCommand =
+      buildResumeCommand(agent, settings.permissionMode)
+      || buildAgentCommand(agent, settings.permissionMode);
+    await tmuxService.sendShellCommand(paneInfo, resumeCommand);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
 

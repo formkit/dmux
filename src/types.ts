@@ -1,3 +1,5 @@
+import type { AgentName } from './utils/agentLaunch.js';
+
 // Agent status with new analyzing state
 export type AgentStatus = 'idle' | 'analyzing' | 'waiting' | 'working';
 
@@ -29,7 +31,7 @@ export interface DmuxPane {
   devWindowId?: string;   // Background window for dev server
   devStatus?: 'running' | 'stopped';
   devUrl?: string;        // Detected dev server URL
-  agent?: 'claude' | 'opencode' | 'codex';
+  agent?: AgentName;
   agentStatus?: AgentStatus;  // Agent working/attention status
   lastAgentCheck?: number;  // Timestamp of last status check
   lastDeterministicStatus?: 'ambiguous' | 'working';  // For LLM detection coordination
@@ -76,7 +78,9 @@ export interface DmuxSettings {
   // Autopilot settings
   enableAutopilotByDefault?: boolean;
   // Agent selection
-  defaultAgent?: 'claude' | 'opencode' | 'codex';
+  defaultAgent?: AgentName | '';
+  // Which agents appear in new-pane selection
+  enabledAgents?: AgentName[];
   // Tmux hooks for event-driven updates (low CPU)
   // true = use hooks, false = use polling, undefined = not yet asked
   useTmuxHooks?: boolean;

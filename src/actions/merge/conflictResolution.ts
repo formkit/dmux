@@ -9,6 +9,12 @@ import type { ActionResult, ActionContext } from '../types.js';
 import type { DmuxPane } from '../../types.js';
 import { TmuxService } from '../../services/TmuxService.js';
 import { getPaneBranchName } from '../../utils/git.js';
+import {
+  getAgentDescription,
+  getAgentLabel,
+  isAgentName,
+  type AgentName,
+} from '../../utils/agentLaunch.js';
 
 /**
  * Create a new pane for AI-assisted conflict resolution
@@ -19,18 +25,17 @@ export async function createConflictResolutionPaneForMerge(
   targetBranch: string,
   targetRepoPath: string
 ): Promise<ActionResult> {
-  // First, check which agents are available
-  const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../utils/agentDetection.js');
-
-  const availableAgents: Array<'claude' | 'opencode' | 'codex'> = [];
-  if (await findClaudeCommand()) availableAgents.push('claude');
-  if (await findOpencodeCommand()) availableAgents.push('opencode');
-  if (await findCodexCommand()) availableAgents.push('codex');
+  // First, check which agents are available and enabled.
+  const { filterEnabledAgents, getInstalledAgents } = await import('../../utils/agentDetection.js');
+  const { SettingsManager } = await import('../../utils/settingsManager.js');
+  const settings = new SettingsManager(targetRepoPath).getSettings();
+  const installedAgents = await getInstalledAgents();
+  const availableAgents = filterEnabledAgents(installedAgents, settings.enabledAgents);
 
   if (availableAgents.length === 0) {
     return {
       type: 'error',
-      message: 'No AI agents available. Please install claude, opencode, or codex.',
+      message: 'No enabled AI agents available. Enable an agent in Settings > Enabled Agents.',
       dismissable: true,
     };
   }
@@ -43,17 +48,24 @@ export async function createConflictResolutionPaneForMerge(
       message: 'Which agent would you like to use to resolve merge conflicts?',
       options: availableAgents.map(agent => ({
         id: agent,
-        label: agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : 'OpenCode',
-        description: agent === 'claude' ? 'Anthropic Claude' : agent === 'codex' ? 'OpenAI Codex CLI' : 'Open-source alternative',
+        label: getAgentLabel(agent),
+        description: getAgentDescription(agent),
         default: agent === 'claude',
       })),
       onSelect: async (agentId: string) => {
+        if (!isAgentName(agentId)) {
+          return {
+            type: 'error',
+            message: `Unsupported agent: ${agentId}`,
+            dismissable: true,
+          };
+        }
         return createAndLaunchConflictPane(
           pane,
           context,
           targetBranch,
           targetRepoPath,
-          agentId as 'claude' | 'opencode' | 'codex'
+          agentId
         );
       },
       dismissable: true,
@@ -78,7 +90,7 @@ async function createAndLaunchConflictPane(
   context: ActionContext,
   targetBranch: string,
   targetRepoPath: string,
-  agent: 'claude' | 'opencode' | 'codex'
+  agent: AgentName
 ): Promise<ActionResult> {
   try {
     const { createConflictResolutionPane } = await import('../../utils/conflictResolutionPane.js');

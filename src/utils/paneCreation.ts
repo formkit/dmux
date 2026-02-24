@@ -15,18 +15,36 @@ import { triggerHook, initializeHooksDirectory } from './hooks.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
 import { LogService } from '../services/LogService.js';
-import { appendSlugSuffix, launchAgentInPane } from './agentLaunch.js';
+import {
+  appendSlugSuffix,
+  buildAgentCommand,
+  buildInitialPromptCommand,
+  getAgentProcessName,
+  getPromptTransport,
+  getSendKeysPostPasteDelayMs,
+  getSendKeysPrePrompt,
+  getSendKeysReadyDelayMs,
+  getSendKeysSubmit,
+  type AgentName,
+} from './agentLaunch.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
+import {
+  buildPromptReadAndDeleteSnippet,
+  writePromptFile,
+} from './promptStore.js';
+import { ensureGeminiFolderTrusted } from './geminiTrust.js';
 import { isValidBranchName } from './git.js';
+import { sendPromptViaTmux } from './agentPromptDispatch.js';
 
 export interface CreatePaneOptions {
   prompt: string;
-  agent?: 'claude' | 'opencode' | 'codex';
+  agent?: AgentName;
   slugSuffix?: string;
   slugBase?: string;
   projectName: string;
   existingPanes: DmuxPane[];
   projectRoot?: string; // Target repository root for the new pane
+  skipAgentSelection?: boolean; // Explicitly allow creating pane with no agent
   sessionConfigPath?: string; // Shared dmux config file for the current session
   sessionProjectRoot?: string; // Session root that owns sidebar/welcome pane state
 }
@@ -56,7 +74,7 @@ async function waitForPaneReady(
  */
 export async function createPane(
   options: CreatePaneOptions,
-  availableAgents: Array<'claude' | 'opencode' | 'codex'>
+  availableAgents: AgentName[]
 ): Promise<CreatePaneResult> {
   const {
     prompt,
@@ -64,6 +82,7 @@ export async function createPane(
     existingPanes,
     slugSuffix,
     slugBase,
+    skipAgentSelection = false,
     sessionConfigPath: optionsSessionConfigPath,
     sessionProjectRoot: optionsSessionProjectRoot,
   } = options;
@@ -109,8 +128,8 @@ export async function createPane(
     || (optionsSessionConfigPath ? path.dirname(path.dirname(optionsSessionConfigPath)) : projectRoot);
   const paneProjectName = path.basename(projectRoot);
 
-  // If no agent specified, check settings for default agent
-  if (!agent && settings.defaultAgent) {
+  // If no agent specified, check settings for default agent unless caller explicitly disabled auto-selection.
+  if (!agent && !skipAgentSelection && settings.defaultAgent) {
     // Only use default if it's available
     if (availableAgents.includes(settings.defaultAgent)) {
       agent = settings.defaultAgent;
@@ -118,7 +137,7 @@ export async function createPane(
   }
 
   // Determine if we need agent choice
-  if (!agent && availableAgents.length > 1) {
+  if (!agent && !skipAgentSelection && availableAgents.length > 1) {
     // Need to ask which agent to use
     return {
       pane: null as any,
@@ -127,7 +146,7 @@ export async function createPane(
   }
 
   // Auto-select agent if only one is available or if not specified
-  if (!agent && availableAgents.length === 1) {
+  if (!agent && !skipAgentSelection && availableAgents.length === 1) {
     agent = availableAgents[0];
   }
 
@@ -321,18 +340,6 @@ export async function createPane(
       // Ignore prune errors, proceed anyway
     }
 
-    // Check if branch already exists (from a deleted worktree)
-    let branchExists = false;
-    try {
-      execSync(`git show-ref --verify --quiet "refs/heads/${branchName}"`, {
-        stdio: 'pipe',
-        cwd: projectRoot,
-      });
-      branchExists = true;
-    } catch {
-      // Branch doesn't exist, which is good
-    }
-
     // Validate and resolve base branch for new worktrees
     const baseBranch = settings.baseBranch || '';
     if (baseBranch && !isValidBranchName(baseBranch)) {
@@ -351,32 +358,51 @@ export async function createPane(
       }
     }
 
-    // Build worktree command:
-    // - If branch exists, use it (don't create with -b)
-    // - If branch doesn't exist, create it with -b, optionally from a configured base branch
-    // - DON'T silence errors (we want to see them in the pane for debugging)
-    const startPoint = baseBranch ? ` "${baseBranch}"` : '';
-    const worktreeAddCmd = branchExists
-      ? `git worktree add "${worktreePath}" "${branchName}"`
-      : `git worktree add "${worktreePath}" -b "${branchName}"${startPoint}`;
-    const worktreeCmd = `cd "${projectRoot}" && ${worktreeAddCmd} && cd "${worktreePath}"`;
-
-    // Send the git worktree command (auto-quoted by sendShellCommand)
-    await tmuxService.sendShellCommand(paneInfo, worktreeCmd);
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-
-    // Wait for worktree to actually exist on the filesystem
+    const maxWorktreeAttempts = 3;
     const maxWaitTime = 5000; // 5 seconds max
     const checkInterval = 100; // Check every 100ms
-    const startTime = Date.now();
+    let worktreeCreated = fs.existsSync(worktreePath);
 
-    while (!fs.existsSync(worktreePath) && (Date.now() - startTime) < maxWaitTime) {
-      await new Promise((resolve) => setTimeout(resolve, checkInterval));
+    for (let attempt = 1; attempt <= maxWorktreeAttempts && !worktreeCreated; attempt++) {
+      // Check if branch already exists (from a deleted worktree or a previous attempt)
+      let branchExists = false;
+      try {
+        execSync(`git show-ref --verify --quiet "refs/heads/${branchName}"`, {
+          stdio: 'pipe',
+          cwd: projectRoot,
+        });
+        branchExists = true;
+      } catch {
+        // Branch doesn't exist yet
+      }
+
+      // Build worktree command:
+      // - If branch exists, use it (don't create with -b)
+      // - If branch doesn't exist, create it with -b, optionally from a configured base branch
+      const startPoint = baseBranch ? ` "${baseBranch}"` : '';
+      const worktreeAddCmd = branchExists
+        ? `git worktree add "${worktreePath}" "${branchName}"`
+        : `git worktree add "${worktreePath}" -b "${branchName}"${startPoint}`;
+      const worktreeCmd = `cd "${projectRoot}" && ${worktreeAddCmd} && cd "${worktreePath}"`;
+
+      // Send the git worktree command (auto-quoted by sendShellCommand)
+      await tmuxService.sendShellCommand(paneInfo, worktreeCmd);
+      await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+
+      const startTime = Date.now();
+      while (!fs.existsSync(worktreePath) && (Date.now() - startTime) < maxWaitTime) {
+        await new Promise((resolve) => setTimeout(resolve, checkInterval));
+      }
+
+      worktreeCreated = fs.existsSync(worktreePath);
+      if (!worktreeCreated && attempt < maxWorktreeAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
     }
 
     // Verify worktree was created successfully
-    if (!fs.existsSync(worktreePath)) {
-      throw new Error(`Worktree directory not created at ${worktreePath} after ${maxWaitTime}ms`);
+    if (!worktreeCreated) {
+      throw new Error(`Worktree directory not created at ${worktreePath} after ${maxWorktreeAttempts} attempts`);
     }
 
     // Give a bit more time for git to finish setting up the worktree
@@ -405,18 +431,78 @@ export async function createPane(
   }
 
   // Launch agent if specified
-  if (agent) {
-    await launchAgentInPane({
-      paneId: paneInfo,
-      agent,
-      prompt,
-      slug,
-      projectRoot,
-      permissionMode: settings.permissionMode,
-    });
+  const hasInitialPrompt = !!(prompt && prompt.trim());
 
-    // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
+  if (agent) {
+    if (agent === 'gemini') {
+      const geminiWorkspacePath = fs.existsSync(worktreePath)
+        ? worktreePath
+        : projectRoot;
+      ensureGeminiFolderTrusted(geminiWorkspacePath);
+    }
+
+    const promptTransport = getPromptTransport(agent);
+    const shouldSendPromptViaTmux = hasInitialPrompt && promptTransport === 'send-keys';
+    let baselineCommand: string | undefined;
+    if (shouldSendPromptViaTmux) {
+      try {
+        baselineCommand = await tmuxService.getPaneCurrentCommand(paneInfo);
+      } catch {
+        baselineCommand = undefined;
+      }
+    }
+
+    let launchCommand: string;
+    if (hasInitialPrompt && !shouldSendPromptViaTmux) {
+      let promptFilePath: string | null = null;
+      try {
+        promptFilePath = await writePromptFile(projectRoot, slug, prompt);
+      } catch {
+        // Fall back to inline escaping if prompt file write fails
+      }
+
+      if (promptFilePath) {
+        const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
+        launchCommand = `${promptBootstrap}; ${buildInitialPromptCommand(
+          agent,
+          '"$DMUX_PROMPT_CONTENT"',
+          settings.permissionMode
+        )}`;
+      } else {
+        const escapedPrompt = prompt
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/`/g, '\\`')
+          .replace(/\$/g, '\\$');
+        launchCommand = buildInitialPromptCommand(
+          agent,
+          `"${escapedPrompt}"`,
+          settings.permissionMode
+        );
+      }
+    } else {
+      launchCommand = buildAgentCommand(agent, settings.permissionMode);
+    }
+
+    await tmuxService.sendShellCommand(paneInfo, launchCommand);
+    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+
+    if (shouldSendPromptViaTmux) {
+      await sendPromptViaTmux({
+        paneId: paneInfo,
+        prompt,
+        tmuxService,
+        expectedCommand: getAgentProcessName(agent),
+        baselineCommand,
+        prePromptKeys: getSendKeysPrePrompt(agent),
+        submitKeys: getSendKeysSubmit(agent),
+        postPasteDelayMs: getSendKeysPostPasteDelayMs(agent),
+        readyDelayMs: getSendKeysReadyDelayMs(agent),
+      });
+    }
+
     if (agent === 'claude') {
+      // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
       autoApproveTrustPrompt(paneInfo, prompt).catch(() => {
         // Ignore errors in background monitoring
       });
