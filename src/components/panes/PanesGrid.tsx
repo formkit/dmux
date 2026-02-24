@@ -35,17 +35,6 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   )
   const paneGroups = actionLayout.groups
 
-  // Compute sibling count map: how many other panes share the same worktree
-  const siblingCountMap = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const pane of panes) {
-      if (!pane.worktreePath) continue
-      const count = panes.filter(p => p.worktreePath === pane.worktreePath).length - 1
-      map.set(pane.id, count)
-    }
-    return map
-  }, [panes])
-
   const actionsByProject = useMemo(() => {
     const map = new Map<string, { newAgent?: ProjectActionItem; terminal?: ProjectActionItem }>()
     for (const action of actionLayout.actionItems) {
@@ -98,8 +87,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
     }
 
     return (
-      <Box width={40}>
-        <Text color={eitherSelected ? COLORS.selected : COLORS.border}>{eitherSelected ? "▸" : " "} </Text>
+      <Box width={40} justifyContent="flex-end">
         {renderLabel("new-agent", newSelected)}
         <Text color={COLORS.border}>{"  "}</Text>
         {renderLabel("terminal", termSelected)}
@@ -111,7 +99,21 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
     <Box flexDirection="column">
       {paneGroups.map((group, groupIndex) => (
         <Box key={group.projectRoot} flexDirection="column">
-          <Text dimColor>{"══ "}{group.projectName}</Text>
+          {(() => {
+            const isActive = activeProjectRoot === group.projectRoot
+            const color = isActive ? COLORS.selected : COLORS.border
+            const headerWidth = 40
+            const nameSection = `⣿⣿ ${group.projectName} `
+            const remaining = Math.max(0, headerWidth - nameSection.length)
+            const fill = "⣿".repeat(remaining)
+            return (
+              <Text color={color}>
+                <Text dimColor>⣿⣿</Text>
+                <Text> {group.projectName} </Text>
+                <Text dimColor>{fill}</Text>
+              </Text>
+            )
+          })()}
 
           {group.panes.map((entry) => {
             const pane = entry.pane
@@ -133,7 +135,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
                 pane={paneWithStatus}
                 isDevSource={isDevSource}
                 selected={isSelected}
-                siblingCount={siblingCountMap.get(pane.id) || 0}
+
               />
             )
           })}
@@ -153,6 +155,8 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
 
             return renderActionRow(newAgentAction, terminalAction, selectedIndex, true, false)
           })()}
+
+          {groupIndex < paneGroups.length - 1 && <Text>{" "}</Text>}
         </Box>
       ))}
 

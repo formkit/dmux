@@ -39,25 +39,24 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
 
   const shortcuts = [
     { key: 'j', description: 'Jump to selected pane' },
-    { key: 'm', description: 'Open kebab menu for selected pane' },
+    { key: 'm', description: 'Open pane menu' },
     { key: 'x', description: 'Close selected pane' },
-    { key: 'a', description: 'Attach agent to selected worktree' },
-    { key: 'n', description: 'Create new pane (main project)' },
-    { key: 't', description: 'Create terminal pane (main project)' },
-    { key: 'p', description: 'Create pane in another project' },
-    { key: 'N', description: 'Create pane in another project (legacy)' },
+    { key: 'a', description: 'Attach agent to worktree' },
+    { key: 'n', description: 'New agent pane' },
+    { key: 't', description: 'New terminal pane' },
+    { key: 'p', description: 'New pane in another project' },
     { key: 'r', description: 'Reopen closed worktree' },
     ...(isDevMode
-      ? [{ key: 'S', description: '[DEV] Use selected pane as source (toggle)' }]
+      ? [{ key: 'S', description: '[DEV] Toggle source pane' }]
       : []),
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
-    { key: 'h', description: 'Create or modify hooks with AI' },
+    { key: 'h', description: 'Manage hooks with AI' },
     ...(hasSidebarLayout ? [{ key: 'L', description: 'Toggle sidebar layout' }] : []),
-    { key: 'q', description: 'Quit dmux immediately' },
-    { key: '↑↓←→', description: 'Navigate panes spatially' },
-    { key: 'Enter', description: 'Select highlighted item' },
-    { key: 'Esc', description: 'Cancel/close dialog' },
+    { key: 'q', description: 'Quit dmux' },
+    { key: '↑↓←→', description: 'Navigate panes' },
+    { key: 'Enter', description: 'Select / open menu' },
+    { key: 'Esc', description: 'Cancel / close' },
     { key: '?', description: 'Show this help' },
   ];
 

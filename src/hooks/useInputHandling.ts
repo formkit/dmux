@@ -227,6 +227,22 @@ export function useInputHandling(params: UseInputHandlingParams) {
     await handlePaneCreationWithAgent(prompt, hooksProjectRoot)
   }
 
+  const openPaneMenu = async (pane: DmuxPane) => {
+    const actionId = await popupManager.launchKebabMenuPopup(pane)
+    if (!actionId) {
+      return
+    }
+
+    if (actionId === PaneAction.SET_SOURCE) {
+      await setDevSourceFromPane(pane)
+      return
+    }
+
+    await actionSystem.executeAction(actionId, pane, {
+      mainBranch: getMainBranch(),
+    })
+  }
+
   useInput(async (input: string, key: any) => {
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
@@ -440,16 +456,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     } else if (input === "m" && selectedIndex < panes.length) {
       // Open kebab menu popup for selected pane
       const selectedPane = panes[selectedIndex]
-      const actionId = await popupManager.launchKebabMenuPopup(selectedPane)
-      if (actionId) {
-        if (actionId === PaneAction.SET_SOURCE) {
-          await setDevSourceFromPane(selectedPane)
-          return
-        }
-        await actionSystem.executeAction(actionId, selectedPane, {
-          mainBranch: getMainBranch(),
-        })
-      }
+      await openPaneMenu(selectedPane)
     } else if (input === "s") {
       // Open settings popup
       const result = await popupManager.launchSettingsPopup(async () => {
@@ -565,12 +572,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
       setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex])
     } else if (key.return && selectedIndex < panes.length) {
-      // Jump to pane (NEW: using action system)
-      StateManager.getInstance().setDebugMessage(
-        `Jumping to pane: ${panes[selectedIndex].slug}`
-      )
-      setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex])
+      // Open pane menu for selected pane
+      await openPaneMenu(panes[selectedIndex])
+      return
     }
   })
 }

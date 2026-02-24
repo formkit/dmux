@@ -674,12 +674,27 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       // Mark pane as closing to prevent race condition with worker
       await lifecycleManager.beginClose(paneId, 'user requested')
 
+      // Adjust selectedIndex before removing from list
+      const removedIndex = panes.findIndex((p) => p.paneId === paneId)
+      if (removedIndex >= 0 && selectedIndex >= panes.length - 1) {
+        setSelectedIndex(Math.max(0, panes.length - 2))
+      }
+
       // Remove from panes list
       const updatedPanes = panes.filter((p) => p.paneId !== paneId)
       savePanes(updatedPanes)
 
       // Mark close as completed (no more lock needed)
       await lifecycleManager.completeClose(paneId)
+
+      // Return focus to control pane
+      if (controlPaneId) {
+        try {
+          await TmuxService.getInstance().selectPane(controlPaneId)
+        } catch {
+          // Ignore - control pane might not exist
+        }
+      }
     },
     onActionResult: handleActionResult,
     popupLaunchers: popupsSupported
