@@ -5,9 +5,61 @@ export function render() {
     <h1>What is dmux?</h1>
     <p class="lead">dmux is a tool for running multiple coding agents (Claude Code, Codex, or OpenCode) in parallel using tmux and git worktrees. It provides hooks to automate every portion of the worktree lifecycle, supports multiple projects in the same session, as well as multiple worktrees under the root directory. If you provide an OpenRouter key, it will write your commit messages for you, name your window panes, and auto-advance annoying babysitting tasks.</p>
 
-    <video class="dmux-video" autoplay loop muted playsinline>
-      <source src="/dmux.mp4" type="video/mp4" />
-    </video>
+    <div class="agent-cloud">
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/claude.svg" alt="Claude Code" class="agent-cloud-logo" />
+        <span>Claude Code</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/opencode.svg" alt="OpenCode" class="agent-cloud-logo" />
+        <span>OpenCode</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/codex.svg" alt="Codex" class="agent-cloud-logo" />
+        <span>Codex</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/cline.svg" alt="Cline" class="agent-cloud-logo" />
+        <span>Cline</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/gemini.svg" alt="Gemini CLI" class="agent-cloud-logo" />
+        <span>Gemini</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/qwen.svg" alt="Qwen CLI" class="agent-cloud-logo" />
+        <span>Qwen</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/amp.svg" alt="Amp" class="agent-cloud-logo" />
+        <span>Amp</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/pi.svg" alt="pi CLI" class="agent-cloud-logo" />
+        <span>pi</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/cursor.svg" alt="Cursor" class="agent-cloud-logo" />
+        <span>Cursor</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/copilot.svg" alt="GitHub Copilot" class="agent-cloud-logo" />
+        <span>Copilot</span>
+      </a>
+      <a href="#/agents" class="agent-cloud-item">
+        <img src="/agents/crush.svg" alt="Crush" class="agent-cloud-logo" />
+        <span>Crush</span>
+      </a>
+    </div>
+
+    <div class="video-wrap">
+      <video class="dmux-video" id="dmux-video" autoplay loop muted playsinline>
+        <source src="/dmux.mp4" type="video/mp4" />
+      </video>
+      <button class="video-fullscreen" onclick="document.getElementById('dmux-video').requestFullscreen()" title="Fullscreen">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
 
     <div class="sa-banner">
       <div class="sa-banner-inner">

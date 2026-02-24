@@ -3,22 +3,7 @@ export const meta = { title: 'Agents' };
 export function render() {
   return `
     <h1>Agents</h1>
-    <p class="lead">dmux supports three AI coding agents. Each agent is automatically detected if its CLI is installed and available in your PATH.</p>
-
-    <h2>Supported Agents</h2>
-
-    <h3>Claude Code</h3>
-    <p><a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener">Claude Code</a> is Anthropic's agentic coding tool. dmux launches it with your prompt plus flags from <code>permissionMode</code>:</p>
-    <pre><code data-lang="bash">claude "your prompt" [permission flags from permissionMode]</code></pre>
-    <p>By default, dmux uses <code>"permissionMode": "bypassPermissions"</code>, which maps to <code>--dangerously-skip-permissions</code> for Claude.</p>
-
-    <h3>opencode</h3>
-    <p><a href="https://github.com/opencode-ai/opencode" target="_blank" rel="noopener">opencode</a> is an open-source coding agent. dmux launches it directly with your prompt.</p>
-
-    <h3>Codex</h3>
-    <p><a href="https://github.com/openai/codex" target="_blank" rel="noopener">Codex</a> is OpenAI's coding agent. dmux launches it with your prompt plus flags from <code>permissionMode</code>:</p>
-    <pre><code data-lang="bash">codex "your prompt" [permission flags from permissionMode]</code></pre>
-    <p>By default, dmux uses <code>"permissionMode": "bypassPermissions"</code>, which maps to <code>--dangerously-bypass-approvals-and-sandbox</code> for Codex.</p>
+    <p class="lead">dmux supports 11 AI coding agents. Each agent is automatically detected if its CLI is installed and available in your PATH.</p>
 
     <h2>Agent Detection</h2>
     <p>dmux automatically detects installed agents by searching:</p>
@@ -34,6 +19,9 @@ export function render() {
       </li>
     </ol>
     <p>If only one agent is found, dmux uses it automatically. If multiple agents are available, you'll be prompted to choose (unless <code>defaultAgent</code> is set in <a href="#/configuration">configuration</a>).</p>
+
+    <h2>Enabling Agents</h2>
+    <p>Only Claude Code, OpenCode, and Codex are enabled by default. To use other agents, open settings by pressing <kbd>s</kbd> and toggle on the agents you want available in the agent selector.</p>
 
     <h2>Default Agent</h2>
     <p>To skip the agent selection dialog, set a default agent:</p>
