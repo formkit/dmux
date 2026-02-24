@@ -821,6 +821,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     savePanes,
     loadPanes,
     cleanExit,
+    availableAgents,
+    panesFile,
     projectRoot: sessionProjectRoot,
     projectActionItems: projectActionLayout.actionItems,
     findCardInDirection,

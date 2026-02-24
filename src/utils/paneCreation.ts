@@ -569,7 +569,7 @@ export async function createPane(
 /**
  * Auto-approve Claude trust prompts
  */
-async function autoApproveTrustPrompt(
+export async function autoApproveTrustPrompt(
   paneInfo: string,
   prompt: string
 ): Promise<void> {
