@@ -17,12 +17,13 @@ export async function handleWorktreeUncommitted(
   issue: WorktreeUncommittedIssue,
   pane: DmuxPane,
   context: ActionContext,
+  mainBranch: string,
   retryMerge: () => Promise<ActionResult>
 ): Promise<ActionResult> {
   return {
     type: 'choice',
     title: 'Worktree Has Uncommitted Changes',
-    message: `Changes in:\n${issue.files.slice(0, 5).map(f => ` •  ${f}`).join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`,
+    message: `This worktree has uncommitted changes that must be committed before merge.`,
     options: [
       {
         id: 'commit_automatic',
@@ -46,6 +47,13 @@ export async function handleWorktreeUncommitted(
         description: 'Resolve manually later',
       },
     ],
+    data: {
+      kind: 'merge_uncommitted',
+      repoPath: pane.worktreePath!,
+      targetBranch: mainBranch,
+      files: issue.files,
+      diffMode: 'target-branch',
+    },
     onSelect: async (optionId: string) => {
       if (optionId === 'cancel') {
         return { type: 'info', message: 'Merge cancelled', dismissable: true };

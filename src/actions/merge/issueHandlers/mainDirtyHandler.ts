@@ -25,12 +25,7 @@ export async function handleMainDirty(
   const { stashChanges } = await import('../../../utils/mergeValidation.js');
 
   LogService.getInstance().info(`Issue files: ${JSON.stringify(issue.files)}`, 'mainDirtyHandler');
-  const formattedFiles = issue.files.slice(0, 5).map(f => {
-    const formatted = ` •  ${f}`;
-    LogService.getInstance().info(`File: "${f}" → "${formatted}"`, 'mainDirtyHandler');
-    return formatted;
-  });
-  const message = `${mainBranch} has uncommitted changes in:\n${formattedFiles.join('\n')}${issue.files.length > 5 ? '\n  ...' : ''}`;
+  const message = `${mainBranch} has uncommitted changes that must be committed or stashed before merge.`;
   LogService.getInstance().info(`Final message: ${JSON.stringify(message)}`, 'mainDirtyHandler');
 
   return {
@@ -65,6 +60,13 @@ export async function handleMainDirty(
         description: 'Resolve manually later',
       },
     ],
+    data: {
+      kind: 'merge_uncommitted',
+      repoPath: mainRepoPath,
+      targetBranch: mainBranch,
+      files: issue.files,
+      diffMode: 'working-tree',
+    },
     onSelect: async (optionId: string) => {
       if (optionId === 'cancel') {
         return { type: 'info', message: 'Merge cancelled', dismissable: true };

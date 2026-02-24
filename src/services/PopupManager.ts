@@ -39,6 +39,44 @@ interface PopupOptions {
   positioning?: "standard" | "centered" | "large"
 }
 
+interface MergeUncommittedChoiceData {
+  kind: "merge_uncommitted"
+  repoPath: string
+  targetBranch: string
+  files: string[]
+  diffMode?: "working-tree" | "target-branch"
+}
+
+function isMergeUncommittedChoiceData(
+  data: unknown
+): data is MergeUncommittedChoiceData {
+  if (!data || typeof data !== "object") return false
+
+  const candidate = data as Record<string, unknown>
+  if (candidate.kind !== "merge_uncommitted") return false
+  if (typeof candidate.repoPath !== "string" || candidate.repoPath.length === 0) {
+    return false
+  }
+  if (
+    typeof candidate.targetBranch !== "string"
+    || candidate.targetBranch.length === 0
+  ) {
+    return false
+  }
+  if (!Array.isArray(candidate.files) || !candidate.files.every((file) => typeof file === "string")) {
+    return false
+  }
+  if (
+    candidate.diffMode !== undefined
+    && candidate.diffMode !== "working-tree"
+    && candidate.diffMode !== "target-branch"
+  ) {
+    return false
+  }
+
+  return true
+}
+
 export class PopupManager {
   private config: PopupManagerConfig
   private setStatusMessage: (msg: string) => void
@@ -289,11 +327,19 @@ export class PopupManager {
 
     try {
       const agentsJson = JSON.stringify(this.config.availableAgents)
+      const settings = this.config.settingsManager.getSettings()
+      const defaultAgent = settings.defaultAgent
+      const initialSelectedAgents =
+        defaultAgent &&
+        isAgentName(defaultAgent) &&
+        this.config.availableAgents.includes(defaultAgent)
+          ? [defaultAgent]
+          : []
       const popupHeight = Math.max(12, this.config.availableAgents.length + 8)
 
       const result = await this.launchPopup<AgentName[]>(
         "agentChoicePopup.js",
-        [agentsJson],
+        [agentsJson, JSON.stringify(initialSelectedAgents)],
         {
           width: 72,
           height: popupHeight,
@@ -528,11 +574,32 @@ export class PopupManager {
       description?: string
       danger?: boolean
       default?: boolean
-    }>
+    }>,
+    data?: unknown
   ): Promise<string | null> {
     if (!this.checkPopupSupport()) return null
 
     try {
+      if (isMergeUncommittedChoiceData(data)) {
+        const result = await this.launchPopup<string>(
+          "mergeUncommittedChoicePopup.js",
+          [],
+          {
+            width: 94,
+            height: 30,
+            title: title || "Uncommitted Changes",
+          },
+          {
+            title,
+            message,
+            options,
+            ...data,
+          }
+        )
+
+        return this.handleResult(result)
+      }
+
       const isConflictAgentChoice =
         /conflict resolution/i.test(title || "") &&
         options.length > 0 &&

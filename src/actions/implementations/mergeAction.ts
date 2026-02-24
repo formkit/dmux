@@ -189,7 +189,13 @@ async function handleMergeIssues(
 
   const worktreeUncommitted = issues.find((i: any) => i.type === 'worktree_uncommitted');
   if (worktreeUncommitted) {
-    return handleWorktreeUncommitted(worktreeUncommitted, pane, context, retryMerge);
+    return handleWorktreeUncommitted(
+      worktreeUncommitted,
+      pane,
+      context,
+      mainBranch,
+      retryMerge
+    );
   }
 
   const mergeConflict = issues.find((i: any) => i.type === 'merge_conflict');

@@ -27,7 +27,12 @@ interface UseActionSystemParams {
   // Popup launchers (optional - falls back to inline dialogs if not provided)
   popupLaunchers?: {
     launchConfirmPopup?: (title: string, message: string, yesLabel?: string, noLabel?: string) => Promise<boolean>;
-    launchChoicePopup?: (title: string, message: string, options: Array<{id: string, label: string, description?: string, danger?: boolean, default?: boolean}>) => Promise<string | null>;
+    launchChoicePopup?: (
+      title: string,
+      message: string,
+      options: Array<{id: string, label: string, description?: string, danger?: boolean, default?: boolean}>,
+      data?: unknown
+    ) => Promise<string | null>;
     launchInputPopup?: (title: string, message: string, placeholder?: string, defaultValue?: string) => Promise<string | null>;
     launchProgressPopup?: (message: string, type: 'info' | 'success' | 'error', timeout: number) => Promise<void>;
   };
@@ -68,7 +73,8 @@ async function handleResultWithPopups(
     const selectedId = await popupLaunchers.launchChoicePopup(
       result.title || 'Choose',
       result.message,
-      result.options || []
+      result.options || [],
+      result.data
     );
 
     if (selectedId && result.onSelect) {

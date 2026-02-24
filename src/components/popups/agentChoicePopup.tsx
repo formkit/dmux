@@ -12,22 +12,33 @@ import { POPUP_CONFIG } from './config.js';
 import {
   getAgentLabel,
   getAgentShortLabel,
+  isAgentName,
   type AgentName,
 } from '../../utils/agentLaunch.js';
 
 interface AgentChoicePopupProps {
   resultFile: string;
   availableAgents: AgentName[];
+  initialSelectedAgents: AgentName[];
 }
 
 const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
   resultFile,
   availableAgents,
+  initialSelectedAgents,
 }) => {
   const { exit } = useApp();
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(() => {
+    const firstSelectedIndex = availableAgents.findIndex((agent) =>
+      initialSelectedAgents.includes(agent)
+    );
+    return firstSelectedIndex >= 0 ? firstSelectedIndex : 0;
+  });
   const [selectedAgents, setSelectedAgents] = useState<Set<AgentName>>(
-    () => new Set<AgentName>()
+    () =>
+      new Set<AgentName>(
+        availableAgents.filter((agent) => initialSelectedAgents.includes(agent))
+      )
   );
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -139,6 +150,7 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
 function main() {
   const resultFile = process.argv[2];
   const agentsJson = process.argv[3];
+  const initialSelectedJson = process.argv[4];
 
   if (!resultFile || !agentsJson) {
     console.error('Error: Result file and agents JSON required');
@@ -153,10 +165,25 @@ function main() {
     process.exit(1);
   }
 
+  let initialSelectedAgents: AgentName[] = [];
+  if (initialSelectedJson) {
+    try {
+      const parsed = JSON.parse(initialSelectedJson);
+      if (Array.isArray(parsed)) {
+        initialSelectedAgents = parsed.filter((agent): agent is AgentName =>
+          isAgentName(agent)
+        );
+      }
+    } catch {
+      // Ignore invalid initial selection payloads and fall back to no preselection.
+    }
+  }
+
   render(
     <AgentChoicePopupApp
       resultFile={resultFile}
       availableAgents={availableAgents}
+      initialSelectedAgents={initialSelectedAgents}
     />
   );
 }

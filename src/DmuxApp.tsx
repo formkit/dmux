@@ -585,7 +585,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       const selectedId = await popupManager.launchChoicePopup(
         result.title || "Choose Option",
         result.message,
-        result.options
+        result.options,
+        result.data
       )
       if (selectedId) {
         const nextResult = await result.onSelect(selectedId)

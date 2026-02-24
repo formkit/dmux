@@ -108,6 +108,13 @@ describe('Issue Handlers', () => {
       expect(result.type).toBe('choice');
       expect(result.title).toBe('Main Branch Has Uncommitted Changes');
       expect(result.options).toHaveLength(5);
+      expect(result.data).toMatchObject({
+        kind: 'merge_uncommitted',
+        repoPath: '/test/main',
+        targetBranch: 'main',
+        files: ['file1.ts', 'file2.ts'],
+        diffMode: 'working-tree',
+      });
       expect(result.options?.map(o => o.id)).toEqual([
         'commit_automatic',
         'commit_ai_editable',
@@ -204,11 +211,24 @@ describe('Issue Handlers', () => {
     );
 
     it('should present commit options', async () => {
-      const result = await handleWorktreeUncommitted(mockIssue, mockPane, mockContext, mockRetryMerge);
+      const result = await handleWorktreeUncommitted(
+        mockIssue,
+        mockPane,
+        mockContext,
+        'main',
+        mockRetryMerge
+      );
 
       expect(result.type).toBe('choice');
       expect(result.title).toBe('Worktree Has Uncommitted Changes');
       expect(result.options).toHaveLength(4);
+      expect(result.data).toMatchObject({
+        kind: 'merge_uncommitted',
+        repoPath: '/test/worktree',
+        targetBranch: 'main',
+        files: ['file1.ts', 'file2.ts'],
+        diffMode: 'target-branch',
+      });
       expect(result.options?.map(o => o.id)).toEqual([
         'commit_automatic',
         'commit_ai_editable',
@@ -218,7 +238,13 @@ describe('Issue Handlers', () => {
     });
 
     it('should handle cancel option', async () => {
-      const result = await handleWorktreeUncommitted(mockIssue, mockPane, mockContext, mockRetryMerge);
+      const result = await handleWorktreeUncommitted(
+        mockIssue,
+        mockPane,
+        mockContext,
+        'main',
+        mockRetryMerge
+      );
 
       if (result.type === 'choice' && result.onSelect) {
         const cancelResult = await result.onSelect('cancel');
@@ -228,7 +254,13 @@ describe('Issue Handlers', () => {
     });
 
     it('should handle commit options through commitMessageHandler', async () => {
-      const result = await handleWorktreeUncommitted(mockIssue, mockPane, mockContext, mockRetryMerge);
+      const result = await handleWorktreeUncommitted(
+        mockIssue,
+        mockPane,
+        mockContext,
+        'main',
+        mockRetryMerge
+      );
 
       if (result.type === 'choice' && result.onSelect) {
         const commitResult = await result.onSelect('commit_automatic');

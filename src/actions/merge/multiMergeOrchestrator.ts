@@ -326,7 +326,7 @@ async function handleMainDirtyForWorktree(
   return {
     type: 'choice',
     title: `${progressPrefix}: Main Branch Has Changes`,
-    message: `${mainBranch} in ${worktree.repoName} has uncommitted changes:\n${files.slice(0, 3).map(f => ` • ${f}`).join('\n')}${files.length > 3 ? '\n  ...' : ''}`,
+    message: `${mainBranch} in ${worktree.repoName} has uncommitted changes. Review files below, then choose how to proceed.`,
     options: [
       {
         id: 'commit_automatic',
@@ -350,6 +350,13 @@ async function handleMainDirtyForWorktree(
         description: 'Continue with other repositories',
       },
     ],
+    data: {
+      kind: 'merge_uncommitted',
+      repoPath: worktree.parentRepoPath,
+      targetBranch: mainBranch,
+      files,
+      diffMode: 'working-tree',
+    },
     onSelect: async (optionId: string) => {
       if (optionId === 'skip') {
         return onComplete(false, 'skipped');
@@ -392,7 +399,7 @@ async function handleUncommittedForWorktree(
   return {
     type: 'choice',
     title: `${progressPrefix}: Uncommitted Changes`,
-    message: `${worktree.repoName} worktree has uncommitted changes:\n${files.slice(0, 3).map(f => ` • ${f}`).join('\n')}${files.length > 3 ? '\n  ...' : ''}`,
+    message: `${worktree.repoName} worktree has uncommitted changes. Review files below, then choose how to proceed.`,
     options: [
       {
         id: 'commit_automatic',
@@ -416,6 +423,13 @@ async function handleUncommittedForWorktree(
         description: 'Continue with other repositories',
       },
     ],
+    data: {
+      kind: 'merge_uncommitted',
+      repoPath: worktree.worktreePath,
+      targetBranch: validation.mainBranch,
+      files,
+      diffMode: 'target-branch',
+    },
     onSelect: async (optionId: string) => {
       if (optionId === 'skip') {
         return onComplete(false, 'skipped');
