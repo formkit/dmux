@@ -32,6 +32,34 @@ Core behavior:
 - `src/actions/implementations/closeAction.ts`: close behavior + source fallback on source-pane removal
 - `src/components/panes/*`: pane list rendering (includes source indicator)
 
+## Adding a new agent to the registry
+
+The agent registry is centralized in `src/utils/agentLaunch.ts`.
+
+1. Add the new ID to `AGENT_IDS` (this updates the `AgentName` type).
+2. Add a full entry in `AGENT_REGISTRY` for that ID with:
+   - metadata (`name`, `shortLabel`, `description`, `slugSuffix`)
+   - install detection (`installTestCommand`, `commonPaths`)
+   - launch behavior (`promptCommand`, `promptTransport`, plus `promptOption` or `sendKeys*` fields when needed)
+   - permission mapping (`permissionFlags`) and `defaultEnabled`
+   - optional resume behavior (`resumeCommandTemplate`) and startup command split (`noPromptCommand`)
+3. Keep `shortLabel` unique and exactly 2 characters (enforced at runtime).
+
+Most UI/settings surfaces consume `getAgentDefinitions()`, so they pick up registry additions automatically (for example, enabled-agents settings and chooser popups).
+
+Related places to verify after adding an agent:
+
+- `src/utils/agentDetection.ts` for install detection behavior
+- `__tests__/agentLaunch.test.ts` for registry/permission/command expectations
+- `docs/src/content/agents.js` (static docs page; update supported-agent docs when behavior changes)
+
+Recommended validation:
+
+```bash
+pnpm run typecheck
+pnpm run test
+```
+
 ## Maintainer local workflow (dmux-on-dmux)
 
 `pnpm dev` is the standard entry point when editing dmux.

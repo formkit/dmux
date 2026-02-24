@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
+import { render, Box, Text, useInput, useApp, useStdout } from 'ink';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import {
@@ -44,6 +44,15 @@ interface MergeUncommittedChoicePopupProps {
 const MAX_VISIBLE_FILES = 9;
 const DIFF_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 const DIFF_SCROLL_PAGE_SIZE = 10;
+const QUICKLOOK_MIN_VISIBLE_LINES = 8;
+const QUICKLOOK_HEADER_LINES = 3;
+const QUICKLOOK_LAYOUT_CHROME_LINES = (
+  (POPUP_CONFIG.containerPadding.y * 2)
+  + QUICKLOOK_HEADER_LINES
+  + 1 // header block marginBottom
+  + POPUP_CONFIG.sectionSpacing
+  + 1 // footer text line
+);
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -142,6 +151,7 @@ const MergeUncommittedChoicePopupApp: React.FC<MergeUncommittedChoicePopupProps>
   data,
 }) => {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const optionCount = data.options.length;
   const fileCount = data.files.length;
   const totalRows = optionCount + fileCount;
@@ -161,6 +171,11 @@ const MergeUncommittedChoicePopupApp: React.FC<MergeUncommittedChoicePopupProps>
     () => getVisibleFileWindow(data.files, selectedFileIndex),
     [data.files, selectedFileIndex]
   );
+  const terminalRows = stdout?.rows || process.stdout.rows || 40;
+  const maxVisibleDiffLines = Math.max(
+    QUICKLOOK_MIN_VISIBLE_LINES,
+    terminalRows - QUICKLOOK_LAYOUT_CHROME_LINES
+  );
 
   const openQuicklook = (filePath: string) => {
     const diffText = getDiffText(data, filePath);
@@ -174,7 +189,7 @@ const MergeUncommittedChoicePopupApp: React.FC<MergeUncommittedChoicePopupProps>
 
   useInput((input, key) => {
     if (quicklook) {
-      const maxVisibleLines = Math.max(8, (process.stdout.rows || 40) - 14);
+      const maxVisibleLines = maxVisibleDiffLines;
       const maxOffset = Math.max(0, quicklook.lines.length - maxVisibleLines);
 
       if (key.upArrow) {
@@ -254,7 +269,6 @@ const MergeUncommittedChoicePopupApp: React.FC<MergeUncommittedChoicePopupProps>
 
   const hasFilesAbove = fileWindow.start > 0;
   const hasFilesBelow = fileWindow.end < fileCount;
-  const maxVisibleDiffLines = Math.max(8, (process.stdout.rows || 40) - 14);
   const quicklookVisibleLines = quicklook
     ? quicklook.lines.slice(quicklook.offset, quicklook.offset + maxVisibleDiffLines)
     : [];
