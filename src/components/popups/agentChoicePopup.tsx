@@ -1,98 +1,130 @@
 #!/usr/bin/env node
 
 /**
- * Standalone popup for choosing one agent or an A/B agent pair
- * Runs in a tmux popup modal and writes result to a file
+ * Standalone popup for choosing one or more agents.
+ * Runs in a tmux popup modal and writes result to a file.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
-import { PopupFooters, POPUP_CONFIG } from './config.js';
+import { POPUP_CONFIG } from './config.js';
 import {
-  buildAgentLaunchOptions,
+  getAgentLabel,
+  getAgentShortLabel,
   type AgentName,
 } from '../../utils/agentLaunch.js';
 
 interface AgentChoicePopupProps {
   resultFile: string;
   availableAgents: AgentName[];
-  defaultAgent?: AgentName;
 }
 
 const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
   resultFile,
   availableAgents,
-  defaultAgent
 }) => {
-  const options = buildAgentLaunchOptions(availableAgents);
-  const [selectedIndex, setSelectedIndex] = useState(() => {
-    const defaultSingleAgent = defaultAgent || availableAgents[0] || 'claude';
-    const defaultIdx = options.findIndex(
-      (option) =>
-        option.agents.length === 1 && option.agents[0] === defaultSingleAgent
-    );
-    return Math.max(0, defaultIdx);
-  });
   const { exit } = useApp();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedAgents, setSelectedAgents] = useState<Set<AgentName>>(
+    () => new Set<AgentName>()
+  );
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const selectedOption = options[selectedIndex] || options[0];
+  const orderedSelections = useMemo(
+    () => availableAgents.filter((agent) => selectedAgents.has(agent)),
+    [availableAgents, selectedAgents]
+  );
+  const selectedCount = orderedSelections.length;
+
+  const toggleSelectedAgent = () => {
+    const agent = availableAgents[selectedIndex];
+    if (!agent) return;
+
+    setSelectedAgents((prev) => {
+      const next = new Set(prev);
+      if (next.has(agent)) {
+        next.delete(agent);
+      } else {
+        next.add(agent);
+      }
+      return next;
+    });
+    setValidationError(null);
+  };
 
   useInput((input, key) => {
-    if (options.length === 0) return;
+    if (availableAgents.length === 0) {
+      if (key.return) {
+        writeSuccessAndExit(resultFile, [], exit);
+      }
+      return;
+    }
 
     if (key.upArrow) {
-      setSelectedIndex(Math.max(0, selectedIndex - 1));
-    } else if (key.downArrow) {
-      setSelectedIndex(Math.min(options.length - 1, selectedIndex + 1));
-    } else if (key.leftArrow || input.toLowerCase() === 'c') {
-      // Find Claude index
-      const claudeIdx = options.findIndex(
-        (option) => option.agents.length === 1 && option.agents[0] === 'claude'
-      );
-      if (claudeIdx >= 0) setSelectedIndex(claudeIdx);
-    } else if (key.rightArrow || input.toLowerCase() === 'o') {
-      // Find OpenCode index
-      const opencodeIdx = options.findIndex(
-        (option) => option.agents.length === 1 && option.agents[0] === 'opencode'
-      );
-      if (opencodeIdx >= 0) setSelectedIndex(opencodeIdx);
-    } else if (input.toLowerCase() === 'x') {
-      // Find codex index
-      const codexIdx = options.findIndex(
-        (option) => option.agents.length === 1 && option.agents[0] === 'codex'
-      );
-      if (codexIdx >= 0) setSelectedIndex(codexIdx);
-    } else if (/^[1-9]$/.test(input)) {
-      const numericIndex = Number.parseInt(input, 10) - 1;
-      if (numericIndex >= 0 && numericIndex < options.length) {
-        setSelectedIndex(numericIndex);
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
+      return;
+    }
+
+    if (key.downArrow) {
+      setSelectedIndex((prev) => Math.min(availableAgents.length - 1, prev + 1));
+      return;
+    }
+
+    if (input === ' ') {
+      toggleSelectedAgent();
+      return;
+    }
+
+    if (key.return) {
+      if (orderedSelections.length === 0) {
+        setValidationError('Select at least one agent.');
+        return;
       }
-    } else if (key.return) {
-      if (!selectedOption) return;
-      // User confirmed choice
-      writeSuccessAndExit(resultFile, selectedOption.agents, exit);
+      writeSuccessAndExit(resultFile, orderedSelections, exit);
     }
   });
 
   return (
     <PopupWrapper resultFile={resultFile}>
-      <PopupContainer footer={PopupFooters.choice()}>
-        {/* Options */}
-        <Box flexDirection="column">
-          {options.length === 0 && (
-            <Text dimColor>No agents available</Text>
+      <PopupContainer footer="↑↓ navigate • Space toggle • Enter launch • ESC cancel">
+        <Box marginBottom={1}>
+          <Text dimColor>
+            Select one or more agents, then press Enter to launch.
+          </Text>
+          <Text color={POPUP_CONFIG.titleColor}>
+            Selected: {selectedCount}/{availableAgents.length}
+          </Text>
+          {validationError && (
+            <Text color="red">{validationError}</Text>
           )}
-          {options.map((option, index) => {
-            const isSelected = index === selectedIndex;
+        </Box>
+
+        <Box flexDirection="column">
+          {availableAgents.length === 0 && (
+            <Text dimColor>No enabled agents available</Text>
+          )}
+          {availableAgents.map((agent, index) => {
+            const isSelectedRow = index === selectedIndex;
+            const isChecked = selectedAgents.has(agent);
+            const marker = isChecked ? '◉' : '◎';
+            const markerColor = isChecked ? POPUP_CONFIG.successColor : 'white';
+
             return (
-              <Box key={option.id} marginBottom={index < options.length - 1 ? 1 : 0}>
+              <Box key={agent}>
+                <Text color={markerColor} bold={isChecked}>
+                  {marker}
+                </Text>
                 <Text
-                  color={isSelected ? POPUP_CONFIG.titleColor : 'white'}
-                  bold={isSelected}
+                  color={isSelectedRow ? POPUP_CONFIG.titleColor : 'white'}
+                  bold={isSelectedRow}
                 >
-                  {isSelected ? '▶ ' : '  '}
-                  {index + 1}. {option.label}
+                  {' '}
+                  {getAgentLabel(agent)}
+                </Text>
+                <Text color={isSelectedRow ? POPUP_CONFIG.titleColor : 'gray'}>
+                  {' '}
+                  {getAgentShortLabel(agent)}
                 </Text>
               </Box>
             );
@@ -107,7 +139,6 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
 function main() {
   const resultFile = process.argv[2];
   const agentsJson = process.argv[3];
-  const defaultAgent = process.argv[4] as AgentName | undefined;
 
   if (!resultFile || !agentsJson) {
     console.error('Error: Result file and agents JSON required');
@@ -117,7 +148,7 @@ function main() {
   let availableAgents: AgentName[];
   try {
     availableAgents = JSON.parse(agentsJson);
-  } catch (error) {
+  } catch {
     console.error('Error: Failed to parse agents JSON');
     process.exit(1);
   }
@@ -126,7 +157,6 @@ function main() {
     <AgentChoicePopupApp
       resultFile={resultFile}
       availableAgents={availableAgents}
-      defaultAgent={defaultAgent}
     />
   );
 }

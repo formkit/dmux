@@ -12,7 +12,6 @@ interface UseServicesProps {
   terminalWidth: number
   terminalHeight: number
   availableAgents: AgentName[]
-  agentChoice: AgentName | null
   settingsManager: any
   projectSettings: ProjectSettings
 
@@ -32,7 +31,6 @@ export function useServices(props: UseServicesProps) {
       terminalWidth: props.terminalWidth,
       terminalHeight: props.terminalHeight,
       availableAgents: props.availableAgents,
-      agentChoice: props.agentChoice,
       settingsManager: props.settingsManager,
       projectSettings: props.projectSettings,
     }
@@ -50,7 +48,6 @@ export function useServices(props: UseServicesProps) {
     props.terminalWidth,
     props.terminalHeight,
     props.availableAgents,
-    props.agentChoice,
     props.settingsManager,
     props.projectSettings,
     props.setStatusMessage,

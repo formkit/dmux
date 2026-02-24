@@ -8,7 +8,6 @@ import useProjectSettings from "./hooks/useProjectSettings.js"
 import useTerminalWidth from "./hooks/useTerminalWidth.js"
 import useNavigation from "./hooks/useNavigation.js"
 import useAutoUpdater from "./hooks/useAutoUpdater.js"
-import useAgentDetection from "./hooks/useAgentDetection.js"
 import useAgentStatus from "./hooks/useAgentStatus.js"
 import usePaneRunner from "./hooks/usePaneRunner.js"
 import usePaneCreation from "./hooks/usePaneCreation.js"
@@ -40,10 +39,9 @@ import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname, resolve as resolvePath } from "path"
 import {
-  getAgentSlugSuffix,
+  resolveEnabledAgentsSelection,
   type AgentName,
 } from "./utils/agentLaunch.js"
-import { generateSlug } from "./utils/slug.js"
 import { resolveNextDevSourcePath } from "./utils/devSource.js"
 import { buildDevWatchRespawnCommand } from "./utils/devWatchCommand.js"
 
@@ -120,10 +118,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Flag to ignore input temporarily after popup closes (prevents buffered keys)
   const [ignoreInput, setIgnoreInput] = useState(false)
 
-  // Agent selection state
-  const { availableAgents } = useAgentDetection()
-  const [agentChoice, setAgentChoice] = useState<AgentName | null>(
-    null
+  // Agent selection is settings-driven.
+  // Installation checks are performed lazily in the Enabled Agents settings popup.
+  const availableAgents = resolveEnabledAgentsSelection(
+    settingsManager.getSettings().enabledAgents
   )
 
   // Popup support detection
@@ -240,7 +238,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Spinner animation and branch detection now handled in hooks
 
   // Pane creation
-  const { createNewPane: createNewPaneHook } = usePaneCreation({
+  const {
+    createNewPane: createNewPaneHook,
+    createPanesForAgents: createPanesForAgentsHook,
+  } = usePaneCreation({
     panes,
     savePanes,
     projectName,
@@ -262,7 +263,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     terminalWidth,
     terminalHeight,
     availableAgents,
-    agentChoice,
     settingsManager,
     projectSettings,
 
@@ -395,13 +395,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Update checking moved to useAutoUpdater
 
-  // Set default agent choice when detection completes
-  useEffect(() => {
-    if (agentChoice == null && availableAgents.length > 0) {
-      setAgentChoice(availableAgents[0] || "claude")
-    }
-  }, [availableAgents])
-
   // Welcome pane is now fully event-based:
   // - Created at startup (in src/index.ts)
   // - Destroyed when first pane is created (in paneCreation.ts)
@@ -444,49 +437,33 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     const agents = availableAgents
 
     const createPanesForAgents = async (selectedAgents: AgentName[]) => {
-      const dedupedAgents = selectedAgents.filter(
-        (agent, index) => selectedAgents.indexOf(agent) === index
-      )
-
-      let panesForCreation = panes
-      const isMultiLaunch = dedupedAgents.length > 1
-      const slugBase = isMultiLaunch ? await generateSlug(prompt) : undefined
-
-      for (const selectedAgent of dedupedAgents) {
-        const pane = await createNewPaneHook(prompt, selectedAgent, {
-          existingPanes: panesForCreation,
-          slugSuffix: isMultiLaunch
-            ? getAgentSlugSuffix(selectedAgent)
-            : undefined,
-          slugBase,
-          targetProjectRoot,
-        })
-
-        if (!pane) {
-          return
-        }
-
-        panesForCreation = [...panesForCreation, pane]
-      }
+      await createPanesForAgentsHook(prompt, selectedAgents, {
+        existingPanes: panes,
+        targetProjectRoot,
+      })
     }
 
     if (agents.length === 0) {
-      await createNewPaneHook(prompt, undefined, { targetProjectRoot })
-    } else if (agents.length === 1) {
-      await createPanesForAgents([agents[0]])
-    } else {
-      // Multiple agents available - check for default agent setting first
-      const settings = settingsManager.getSettings()
-      if (settings.defaultAgent && agents.includes(settings.defaultAgent)) {
-        await createPanesForAgents([settings.defaultAgent])
-      } else {
-        // Show agent choice popup
-        const selectedAgents = await popupManager.launchAgentChoicePopup()
-        if (selectedAgents && selectedAgents.length > 0) {
-          await createPanesForAgents(selectedAgents)
-        }
-      }
+      await createNewPaneHook(prompt, undefined, {
+        targetProjectRoot,
+        skipAgentSelection: true,
+      })
+      return
     }
+
+    // Always show the checklist when at least one enabled agent exists.
+    // This preserves the "select none for terminal" behavior consistently.
+    const selectedAgents = await popupManager.launchAgentChoicePopup()
+    if (selectedAgents === null) {
+      return
+    }
+    if (selectedAgents.length === 0) {
+      setStatusMessage("Select at least one agent")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    await createPanesForAgents(selectedAgents)
   }
 
   // Helper function to reopen a closed worktree

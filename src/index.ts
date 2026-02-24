@@ -22,11 +22,14 @@ import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
 import { getUntrackedPanes } from './utils/shellPaneDetection.js';
 import { runFirstRunOnboardingIfNeeded } from './utils/onboarding.js';
-import { getAvailableAgents } from './utils/agentDetection.js';
 import { createPane } from './utils/paneCreation.js';
 import { SettingsManager } from './utils/settingsManager.js';
 import { atomicWriteJson } from './utils/atomicWrite.js';
 import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
+import {
+  resolveEnabledAgentsSelection,
+  type AgentName,
+} from './utils/agentLaunch.js';
 import type { DmuxConfig, DmuxPane } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -743,8 +746,8 @@ class Dmux {
   }
 
   private getPreferredAttachAgent(
-    availableAgents: Array<'claude' | 'opencode' | 'codex'>
-  ): 'claude' | 'opencode' | 'codex' | undefined {
+    availableAgents: AgentName[]
+  ): AgentName | undefined {
     if (availableAgents.length === 0) {
       return undefined;
     }
@@ -774,7 +777,9 @@ class Dmux {
       const configRaw = await fs.readFile(context.sessionConfigPath, 'utf-8');
       const config: DmuxConfig = JSON.parse(configRaw);
       const existingPanes = Array.isArray(config.panes) ? config.panes : [];
-      const availableAgents = await getAvailableAgents();
+      const availableAgents = resolveEnabledAgentsSelection(
+        new SettingsManager(this.projectRoot).getSettings().enabledAgents
+      );
       let selectedAgent = this.getPreferredAttachAgent(availableAgents);
 
       const prompt = `Explore ${this.projectName} and ask what to work on first.`;
@@ -794,7 +799,7 @@ class Dmux {
       if (creation.needsAgentChoice) {
         selectedAgent = availableAgents[0];
         if (!selectedAgent) {
-          throw new Error('No supported agent CLI found (claude, opencode, codex)');
+          throw new Error('No enabled agents configured for pane creation');
         }
 
         creation = await createPane(

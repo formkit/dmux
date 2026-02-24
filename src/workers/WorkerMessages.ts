@@ -1,5 +1,7 @@
 // Message protocol for worker communication
 
+import type { AgentName } from '../utils/agentLaunch.js';
+
 export interface WorkerMessage {
   id: string;          // Unique message ID for request/response pairing
   type: string;        // Message type
@@ -22,7 +24,7 @@ export interface OutboundMessage extends WorkerMessage {
 export interface WorkerConfig {
   paneId: string;
   tmuxPaneId: string;
-  agent?: 'claude' | 'opencode' | 'codex';
+  agent?: AgentName;
   pollInterval?: number; // Default 1000ms
 }
 

@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { Box, Text } from 'ink';
 import type { DmuxPane } from '../../types.js';
 import { COLORS } from '../../theme/colors.js';
+import { getAgentShortLabel } from '../../utils/agentLaunch.js';
 
 interface PaneCardProps {
   pane: DmuxPane;
@@ -53,7 +54,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected, i
           {pane.type === 'shell' ? (
             <Text color="cyan"> [{pane.shellType || 'shell'}]</Text>
           ) : pane.agent && (
-            <Text color="gray"> [{pane.agent === 'claude' ? 'cc' : 'oc'}]</Text>
+            <Text color="gray"> [{getAgentShortLabel(pane.agent)}]</Text>
           )}
           {pane.autopilot && (
             <Text color={COLORS.success}> (ap)</Text>

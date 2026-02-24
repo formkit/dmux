@@ -2,6 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { randomUUID } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
 import { TmuxService } from '../services/TmuxService.js';
+import type { AgentName } from '../utils/agentLaunch.js';
 import type {
   WorkerConfig,
   InboundMessage,
@@ -14,7 +15,7 @@ import type {
 class PaneWorker {
   private paneId: string;
   private tmuxPaneId: string;
-  private agent?: 'claude' | 'opencode' | 'codex';
+  private agent?: AgentName;
   private captureHistory: string[] = [];
   private pollInterval: NodeJS.Timeout | null = null;
   private pollIntervalMs: number;

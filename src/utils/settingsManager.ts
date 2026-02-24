@@ -3,6 +3,12 @@ import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type { DmuxSettings, SettingsScope, SettingDefinition } from '../types.js';
 import { isValidBranchName } from './git.js';
+import {
+  getAgentDefinitions,
+  getDefaultEnabledAgents,
+  isAgentName,
+  type AgentName,
+} from './agentLaunch.js';
 
 const GLOBAL_SETTINGS_PATH = join(homedir(), '.dmux.global.json');
 const PERMISSION_MODES = ['', 'plan', 'acceptEdits', 'bypassPermissions'] as const;
@@ -13,7 +19,13 @@ const DEFAULT_SETTINGS: DmuxSettings = {
   // Most permissive defaults for new dmux setups.
   permissionMode: 'bypassPermissions',
   enableAutopilotByDefault: true,
+  enabledAgents: getDefaultEnabledAgents(),
 };
+
+const AGENT_OPTIONS = getAgentDefinitions().map((agent) => ({
+  value: agent.id,
+  label: agent.name,
+}));
 
 export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
@@ -41,10 +53,14 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     type: 'select',
     options: [
       { value: '', label: 'Ask each time' },
-      { value: 'claude', label: 'Claude Code' },
-      { value: 'opencode', label: 'OpenCode' },
-      { value: 'codex', label: 'Codex' },
+      ...AGENT_OPTIONS,
     ],
+  },
+  {
+    key: 'enabledAgents' as any,
+    label: 'Enabled Agents',
+    description: 'Select which agents appear in the new pane selection list',
+    type: 'action' as any,
   },
   {
     key: 'useTmuxHooks',
@@ -116,11 +132,17 @@ export class SettingsManager {
    * Get merged settings (project settings override global)
    */
   getSettings(): DmuxSettings {
-    return {
+    const merged: DmuxSettings = {
       ...DEFAULT_SETTINGS,
       ...this.globalSettings,
       ...this.projectSettings,
     };
+
+    if (Array.isArray(merged.enabledAgents)) {
+      merged.enabledAgents = [...merged.enabledAgents];
+    }
+
+    return merged;
   }
 
   /**
@@ -162,6 +184,15 @@ export class SettingsManager {
     if (key === 'permissionMode' && typeof value === 'string' && !isPermissionMode(value)) {
       throw new Error(`Invalid permissionMode: "${value}"`);
     }
+    if (key === 'enabledAgents') {
+      if (!Array.isArray(value)) {
+        throw new Error('Invalid enabledAgents: expected an array of agent IDs');
+      }
+      const invalidAgents = value.filter((agent) => !isAgentName(agent));
+      if (invalidAgents.length > 0) {
+        throw new Error(`Invalid enabledAgents: ${invalidAgents.join(', ')}`);
+      }
+    }
 
     if (scope === 'global') {
       this.globalSettings[key] = value;
@@ -178,6 +209,18 @@ export class SettingsManager {
   updateSettings(settings: Partial<DmuxSettings>, scope: SettingsScope): void {
     if (typeof settings.permissionMode === 'string' && !isPermissionMode(settings.permissionMode)) {
       throw new Error(`Invalid permissionMode: "${settings.permissionMode}"`);
+    }
+    if (settings.enabledAgents !== undefined) {
+      if (!Array.isArray(settings.enabledAgents)) {
+        throw new Error('Invalid enabledAgents: expected an array of agent IDs');
+      }
+      const invalidAgents = settings.enabledAgents.filter(
+        (agent) => !isAgentName(agent)
+      );
+      if (invalidAgents.length > 0) {
+        throw new Error(`Invalid enabledAgents: ${invalidAgents.join(', ')}`);
+      }
+      settings.enabledAgents = settings.enabledAgents as AgentName[];
     }
     if (typeof settings.baseBranch === 'string' && settings.baseBranch !== '' && !isValidBranchName(settings.baseBranch)) {
       throw new Error('Invalid baseBranch: contains characters not allowed in git branch names');

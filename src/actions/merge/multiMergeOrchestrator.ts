@@ -10,6 +10,12 @@ import type { DmuxPane } from '../../types.js';
 import type { WorktreeInfo, MergeQueueItem, MultiMergeResult } from './types.js';
 import type { MergeValidationResult } from '../../utils/mergeValidation.js';
 import { getWorktreeDisplayLabel } from '../../utils/worktreeDiscovery.js';
+import {
+  getAgentDescription,
+  getAgentLabel,
+  isAgentName,
+  type AgentName,
+} from '../../utils/agentLaunch.js';
 
 /**
  * Build the merge queue from detected worktrees
@@ -527,24 +533,23 @@ async function launchConflictResolutionForSubWorktree(
   const { worktree, validation } = item;
   const { mainBranch } = validation;
 
-  // Check which agents are available
-  const { findClaudeCommand, findOpencodeCommand, findCodexCommand } = await import('../../utils/agentDetection.js');
-
-  const availableAgents: Array<'claude' | 'opencode' | 'codex'> = [];
-  if (await findClaudeCommand()) availableAgents.push('claude');
-  if (await findOpencodeCommand()) availableAgents.push('opencode');
-  if (await findCodexCommand()) availableAgents.push('codex');
+  // Check which agents are available and enabled
+  const { filterEnabledAgents, getInstalledAgents } = await import('../../utils/agentDetection.js');
+  const { SettingsManager } = await import('../../utils/settingsManager.js');
+  const settings = new SettingsManager(worktree.parentRepoPath).getSettings();
+  const installedAgents = await getInstalledAgents();
+  const availableAgents = filterEnabledAgents(installedAgents, settings.enabledAgents);
 
   if (availableAgents.length === 0) {
     return {
       type: 'error',
-      message: 'No AI agents available. Please install claude, opencode, or codex.',
+      message: 'No enabled AI agents available. Enable an agent in Settings > Enabled Agents.',
       dismissable: true,
     };
   }
 
   // Helper to create pane with chosen agent
-  const createPaneWithAgent = async (agent: 'claude' | 'opencode' | 'codex'): Promise<ActionResult> => {
+  const createPaneWithAgent = async (agent: AgentName): Promise<ActionResult> => {
     return createAndMonitorConflictPane(
       pane,
       context,
@@ -565,12 +570,19 @@ async function launchConflictResolutionForSubWorktree(
       message: `Which agent should resolve conflicts in ${worktree.repoName}?`,
       options: availableAgents.map(agent => ({
         id: agent,
-        label: agent === 'claude' ? 'Claude Code' : agent === 'codex' ? 'Codex' : 'OpenCode',
-        description: agent === 'claude' ? 'Anthropic Claude' : agent === 'codex' ? 'OpenAI Codex CLI' : 'Open-source alternative',
+        label: getAgentLabel(agent),
+        description: getAgentDescription(agent),
         default: agent === 'claude',
       })),
       onSelect: async (agentId: string) => {
-        return createPaneWithAgent(agentId as 'claude' | 'opencode' | 'codex');
+        if (!isAgentName(agentId)) {
+          return {
+            type: 'error',
+            message: `Unsupported agent: ${agentId}`,
+            dismissable: true,
+          };
+        }
+        return createPaneWithAgent(agentId);
       },
       dismissable: true,
     };
@@ -590,7 +602,7 @@ async function createAndMonitorConflictPane(
   queue: MergeQueueItem[],
   currentIndex: number,
   result: MultiMergeResult,
-  agent: 'claude' | 'opencode' | 'codex',
+  agent: AgentName,
   onComplete: (success: boolean, error?: string) => Promise<ActionResult>
 ): Promise<ActionResult> {
   const { worktree, validation } = item;

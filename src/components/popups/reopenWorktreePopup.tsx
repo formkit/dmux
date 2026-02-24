@@ -54,6 +54,7 @@ const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { exit } = useApp();
+  const maxVisible = 8;
 
   useInput((input, key) => {
     if (key.upArrow) {
@@ -80,19 +81,47 @@ const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
     );
   }
 
+  const totalWorktrees = worktrees.length;
+  let startIndex = 0;
+  let endIndex = Math.min(maxVisible, totalWorktrees);
+
+  if (selectedIndex >= endIndex) {
+    endIndex = selectedIndex + 1;
+    startIndex = Math.max(0, endIndex - maxVisible);
+  } else if (selectedIndex < startIndex) {
+    startIndex = selectedIndex;
+    endIndex = Math.min(startIndex + maxVisible, totalWorktrees);
+  }
+
+  if (selectedIndex >= maxVisible / 2 && totalWorktrees > maxVisible) {
+    startIndex = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
+    endIndex = Math.min(startIndex + maxVisible, totalWorktrees);
+    startIndex = Math.max(0, endIndex - maxVisible);
+  }
+
+  const visibleWorktrees = worktrees.slice(startIndex, endIndex);
+  const showScrollIndicators = totalWorktrees > maxVisible;
+
   return (
     <PopupWrapper resultFile={resultFile}>
       <PopupContainer footer={PopupFooters.choice()}>
         <Box marginBottom={1}>
-          <Text dimColor>Select a worktree to reopen with Claude:</Text>
+          <Text dimColor>Select a worktree to reopen:</Text>
         </Box>
+
+        {showScrollIndicators && startIndex > 0 && (
+          <Box marginBottom={1}>
+            <Text dimColor>↑ {startIndex} more above</Text>
+          </Box>
+        )}
 
         {/* Worktree list */}
         <Box flexDirection="column">
-          {worktrees.map((worktree, index) => {
+          {visibleWorktrees.map((worktree, idx) => {
+            const index = startIndex + idx;
             const isSelected = index === selectedIndex;
             return (
-              <Box key={worktree.slug} marginBottom={index < worktrees.length - 1 ? 1 : 0}>
+              <Box key={worktree.slug} marginBottom={idx < visibleWorktrees.length - 1 ? 1 : 0}>
                 <Box flexDirection="column">
                   <Text
                     color={isSelected ? POPUP_CONFIG.titleColor : 'white'}
@@ -115,6 +144,12 @@ const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
             );
           })}
         </Box>
+
+        {showScrollIndicators && endIndex < totalWorktrees && (
+          <Box marginTop={1}>
+            <Text dimColor>↓ {totalWorktrees - endIndex} more below</Text>
+          </Box>
+        )}
 
         {/* Legend */}
         <Box marginTop={1}>

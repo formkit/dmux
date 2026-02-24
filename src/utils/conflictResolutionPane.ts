@@ -15,13 +15,25 @@ import {
   deletePromptFile,
   writePromptFile,
 } from './promptStore.js';
-import { getPermissionFlags } from './agentLaunch.js';
+import { ensureGeminiFolderTrusted } from './geminiTrust.js';
+import {
+  buildAgentCommand,
+  buildInitialPromptCommand,
+  getAgentProcessName,
+  getPromptTransport,
+  getSendKeysPostPasteDelayMs,
+  getSendKeysPrePrompt,
+  getSendKeysReadyDelayMs,
+  getSendKeysSubmit,
+  type AgentName,
+} from './agentLaunch.js';
+import { sendPromptViaTmux } from './agentPromptDispatch.js';
 
 export interface ConflictResolutionPaneOptions {
   sourceBranch: string;      // Branch being merged (the worktree branch)
   targetBranch: string;      // Branch merging into (usually main)
   targetRepoPath: string;    // Path to the target repository (where merge will happen)
-  agent: 'claude' | 'opencode' | 'codex';
+  agent: AgentName;
   projectName: string;
   existingPanes: DmuxPane[];
 }
@@ -103,22 +115,40 @@ export async function createConflictResolutionPane(
 
   // Construct the AI prompt for conflict resolution
   const prompt = `There are conflicts merging ${targetBranch} into ${sourceBranch}. Both are valid changes, so please keep both feature sets and merge them intelligently. Check git status to see the conflicting files, then resolve each conflict to preserve both sets of changes. Once all conflicts are resolved, commit the merge.`;
+  const shouldSendPromptViaTmux = getPromptTransport(agent) === 'send-keys';
 
   let promptFilePath: string | null = null;
-  try {
-    promptFilePath = await writePromptFile(targetRepoPath, slug, prompt);
-  } catch {
-    // Fall back to escaped inline flows if prompt file creation fails
+  if (!shouldSendPromptViaTmux) {
+    try {
+      promptFilePath = await writePromptFile(targetRepoPath, slug, prompt);
+    } catch {
+      // Fall back to escaped inline flows if prompt file creation fails
+    }
   }
 
   // Launch agent with the conflict resolution prompt
-  if (agent === 'claude') {
-    const permissionFlags = getPermissionFlags('claude', settings.permissionMode);
-    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
-    let claudeCmd: string;
-    if (promptFilePath) {
+  {
+    if (agent === 'gemini') {
+      ensureGeminiFolderTrusted(targetRepoPath);
+    }
+
+    let baselineCommand: string | undefined;
+    if (shouldSendPromptViaTmux) {
+      try {
+        baselineCommand = await tmuxService.getPaneCurrentCommand(paneInfo);
+      } catch {
+        baselineCommand = undefined;
+      }
+    }
+
+    let launchCommand: string;
+    if (promptFilePath && !shouldSendPromptViaTmux) {
       const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-      claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+      launchCommand = `${promptBootstrap}; ${buildInitialPromptCommand(
+        agent,
+        '"$DMUX_PROMPT_CONTENT"',
+        settings.permissionMode
+      )}`;
       promptFilePath = null;
     } else {
       const escapedPrompt = prompt
@@ -126,52 +156,40 @@ export async function createConflictResolutionPane(
         .replace(/"/g, '\\"')
         .replace(/`/g, '\\`')
         .replace(/\$/g, '\\$');
-      claudeCmd = `claude "${escapedPrompt}"${permissionSuffix}`;
+      launchCommand = buildInitialPromptCommand(
+        agent,
+        `"${escapedPrompt}"`,
+        settings.permissionMode
+      );
     }
 
-    await tmuxService.sendShellCommand(paneInfo, claudeCmd);
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-
-    // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
-    autoApproveTrustPrompt(paneInfo).catch(() => {
-      // Ignore errors in background monitoring
-    });
-  } else if (agent === 'codex') {
-    const permissionFlags = getPermissionFlags('codex', settings.permissionMode);
-    const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
-    let codexCmd: string;
-    if (promptFilePath) {
-      const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-      codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
-      promptFilePath = null;
-    } else {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      codexCmd = `codex "${escapedPrompt}"${permissionSuffix}`;
+    if (!launchCommand) {
+      launchCommand = buildAgentCommand(agent, settings.permissionMode);
     }
 
-    await tmuxService.sendShellCommand(paneInfo, codexCmd);
+    await tmuxService.sendShellCommand(paneInfo, launchCommand);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
-  } else if (agent === 'opencode') {
-    let opencodeCmd: string;
-    if (promptFilePath) {
-      const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-      opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"`;
-      promptFilePath = null;
-    } else {
-      const escapedPrompt = prompt
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/`/g, '\\`')
-        .replace(/\$/g, '\\$');
-      opencodeCmd = `opencode --prompt "${escapedPrompt}"`;
+
+    if (shouldSendPromptViaTmux) {
+      await sendPromptViaTmux({
+        paneId: paneInfo,
+        prompt,
+        tmuxService,
+        expectedCommand: getAgentProcessName(agent),
+        baselineCommand,
+        prePromptKeys: getSendKeysPrePrompt(agent),
+        submitKeys: getSendKeysSubmit(agent),
+        postPasteDelayMs: getSendKeysPostPasteDelayMs(agent),
+        readyDelayMs: getSendKeysReadyDelayMs(agent),
+      });
     }
 
-    await tmuxService.sendShellCommand(paneInfo, opencodeCmd);
-    await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
+    if (agent === 'claude') {
+      // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
+      autoApproveTrustPrompt(paneInfo).catch(() => {
+        // Ignore errors in background monitoring
+      });
+    }
   }
 
   if (promptFilePath) {
