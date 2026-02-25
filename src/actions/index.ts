@@ -32,6 +32,13 @@ export async function executeAction(
         dismissable: true,
       };
 
+    case 'attach_agent':
+      return {
+        type: 'info',
+        message: 'Attach agent is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
     case 'close':
       return actions.closePane(pane, context);
 

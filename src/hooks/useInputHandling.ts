@@ -238,9 +238,116 @@ export function useInputHandling(params: UseInputHandlingParams) {
       return
     }
 
+    if (actionId === PaneAction.ATTACH_AGENT) {
+      await attachAgentsToPane(pane)
+      return
+    }
+
     await actionSystem.executeAction(actionId, pane, {
       mainBranch: getMainBranch(),
     })
+  }
+
+  const attachAgentsToPane = async (selectedPane: DmuxPane) => {
+    if (!selectedPane.worktreePath) {
+      setStatusMessage("Cannot attach agent: this pane has no worktree")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    // Warn if agent is actively working
+    if (selectedPane.agentStatus === "working") {
+      const confirmed = await popupManager.launchConfirmPopup(
+        "Agent Active",
+        `Agent in "${selectedPane.slug}" is currently working. Attach another agent anyway?`,
+        "Attach",
+        "Cancel"
+      )
+      if (!confirmed) return
+    }
+
+    let selectedAgents: AgentName[] = []
+    if (availableAgents.length === 0) {
+      setStatusMessage("No agents available")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    } else if (availableAgents.length === 1) {
+      selectedAgents = [availableAgents[0]]
+    } else {
+      const agents = await popupManager.launchAgentChoicePopup()
+      if (agents === null) {
+        return
+      }
+      if (agents.length === 0) {
+        setStatusMessage("Select at least one agent")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        return
+      }
+      selectedAgents = agents
+    }
+
+    // Prompt input
+    const promptValue = await popupManager.launchNewPanePopup(
+      getPaneProjectRoot(selectedPane, projectRoot)
+    )
+    if (!promptValue) return
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(
+        selectedAgents.length > 1
+          ? `Attaching ${selectedAgents.length} agents...`
+          : "Attaching agent..."
+      )
+
+      const { attachAgentToWorktree } = await import("../utils/attachAgent.js")
+      const createdPanes: DmuxPane[] = []
+      const failedAgents: AgentName[] = []
+
+      for (const agent of selectedAgents) {
+        try {
+          const result = await attachAgentToWorktree({
+            targetPane: selectedPane,
+            prompt: promptValue,
+            agent,
+            existingPanes: [...panes, ...createdPanes],
+            sessionProjectRoot: projectRoot,
+            sessionConfigPath: panesFile,
+          })
+          createdPanes.push(result.pane)
+        } catch {
+          failedAgents.push(agent)
+        }
+      }
+
+      if (createdPanes.length > 0) {
+        const updatedPanes = [...panes, ...createdPanes]
+        await savePanes(updatedPanes)
+        await loadPanes()
+      }
+
+      if (failedAgents.length === 0) {
+        setStatusMessage(
+          `Attached ${createdPanes.length} agent${createdPanes.length === 1 ? "" : "s"} to ${selectedPane.slug}`
+        )
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } else if (createdPanes.length === 0) {
+        setStatusMessage(
+          `Failed to attach agents: ${failedAgents.join(", ")}`
+        )
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      } else {
+        setStatusMessage(
+          `Attached ${createdPanes.length}/${selectedAgents.length} agents to ${selectedPane.slug} (${failedAgents.length} failed)`
+        )
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to attach agent: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
   }
 
   useInput(async (input: string, key: any) => {
@@ -384,74 +491,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
 
     if (input === "a" && selectedIndex < panes.length) {
-      // Attach agent to selected pane's worktree
-      const selectedPane = panes[selectedIndex]
-      if (!selectedPane.worktreePath) {
-        setStatusMessage("Cannot attach agent: this pane has no worktree")
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-        return
-      }
-
-      // Warn if agent is actively working
-      if (selectedPane.agentStatus === "working") {
-        const confirmed = await popupManager.launchConfirmPopup(
-          "Agent Active",
-          `Agent in "${selectedPane.slug}" is currently working. Attach another agent anyway?`,
-          "Attach",
-          "Cancel"
-        )
-        if (!confirmed) return
-      }
-
-      // Agent choice (single agent only, no A/B pairs)
-      let chosenAgent: import("../utils/agentLaunch.js").AgentName | null = null
-      if (availableAgents.length === 0) {
-        setStatusMessage("No agents available")
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-        return
-      } else if (availableAgents.length === 1) {
-        chosenAgent = availableAgents[0]
-      } else {
-        const agents = await popupManager.launchAgentChoicePopup()
-        if (agents && agents.length > 0) {
-          chosenAgent = agents[0] // Single agent for attach (no A/B)
-        }
-      }
-      if (!chosenAgent) return
-
-      // Prompt input
-      const promptValue = await popupManager.launchNewPanePopup(
-        getPaneProjectRoot(selectedPane, projectRoot)
-      )
-      if (!promptValue) return
-
-      // Attach agent to worktree
-      try {
-        setIsCreatingPane(true)
-        setStatusMessage("Attaching agent...")
-
-        const { attachAgentToWorktree } = await import("../utils/attachAgent.js")
-        const result = await attachAgentToWorktree({
-          targetPane: selectedPane,
-          prompt: promptValue,
-          agent: chosenAgent,
-          existingPanes: panes,
-          sessionProjectRoot: projectRoot,
-          sessionConfigPath: panesFile,
-        })
-
-        const updatedPanes = [...panes, result.pane]
-        await savePanes(updatedPanes)
-        await loadPanes()
-
-        setStatusMessage(`Attached ${chosenAgent} to ${selectedPane.slug}`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      } catch (error: any) {
-        setStatusMessage(`Failed to attach agent: ${error.message}`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
-      } finally {
-        setIsCreatingPane(false)
-      }
+      await attachAgentsToPane(panes[selectedIndex])
       return
     } else if (input === "m" && selectedIndex < panes.length) {
       // Open kebab menu popup for selected pane
