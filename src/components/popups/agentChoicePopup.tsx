@@ -40,13 +40,13 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
         availableAgents.filter((agent) => initialSelectedAgents.includes(agent))
       )
   );
-  const [validationError, setValidationError] = useState<string | null>(null);
 
   const orderedSelections = useMemo(
     () => availableAgents.filter((agent) => selectedAgents.has(agent)),
     [availableAgents, selectedAgents]
   );
   const selectedCount = orderedSelections.length;
+  const focusedAgent = availableAgents[selectedIndex];
 
   const toggleSelectedAgent = () => {
     const agent = availableAgents[selectedIndex];
@@ -61,7 +61,6 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
       }
       return next;
     });
-    setValidationError(null);
   };
 
   useInput((input, key) => {
@@ -88,11 +87,13 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
     }
 
     if (key.return) {
-      if (orderedSelections.length === 0) {
-        setValidationError('Select at least one agent.');
-        return;
-      }
-      writeSuccessAndExit(resultFile, orderedSelections, exit);
+      const launchAgents =
+        orderedSelections.length > 0
+          ? orderedSelections
+          : focusedAgent
+            ? [focusedAgent]
+            : [];
+      writeSuccessAndExit(resultFile, launchAgents, exit);
     }
   });
 
@@ -101,14 +102,11 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
       <PopupContainer footer="↑↓ navigate • Space toggle • Enter launch • ESC cancel">
         <Box marginBottom={1}>
           <Text dimColor>
-            Select one or more agents, then press Enter to launch.
+            Space toggles selection. Enter launches selected agents, or the focused agent if none are selected.
           </Text>
           <Text color={POPUP_CONFIG.titleColor}>
             Selected: {selectedCount}/{availableAgents.length}
           </Text>
-          {validationError && (
-            <Text color="red">{validationError}</Text>
-          )}
         </Box>
 
         <Box flexDirection="column">
