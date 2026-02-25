@@ -1,6 +1,6 @@
 {
   "name": "dmux",
-  "version": "5.3.0",
+  "version": "5.4.0",
   "description": "Tmux pane manager with AI agent integration for parallel development workflows",
   "type": "module",
   "author": "Justin Schroeder",
