@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { getApiBaseUrl, getModelList } from '../config/apiConfig.js';
 
 export const callClaudeCode = async (prompt: string): Promise<string | null> => {
   try {
@@ -24,11 +25,11 @@ export const generateSlug = async (prompt: string): Promise<string> => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (apiKey) {
     // Try multiple models with fallback
-    const models = ['google/gemini-2.5-flash', 'x-ai/grok-4-fast:free', 'openai/gpt-4o-mini'];
+    const models = getModelList();
 
     for (const model of models) {
       try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const response = await fetch(getApiBaseUrl(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

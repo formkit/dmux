@@ -26,6 +26,8 @@ describe('openInEditorAction', () => {
   });
 
   it('should open worktree in default editor (code)', async () => {
+    // Clear any EDITOR env var to test default behavior
+    delete process.env.EDITOR;
     const mockPane = createMockPane({
       worktreePath: '/test/worktree/path',
     });
@@ -119,6 +121,8 @@ describe('openInEditorAction', () => {
   });
 
   it('should handle paths with spaces and special characters', async () => {
+    // Clear any EDITOR env var to test default behavior
+    delete process.env.EDITOR;
     const mockPane = createMockPane({
       worktreePath: '/test/path with spaces/worktree',
     });

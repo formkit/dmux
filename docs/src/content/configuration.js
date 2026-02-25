@@ -138,6 +138,66 @@ echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
       OpenRouter provides free credits for new accounts, and the models dmux uses (gpt-4o-mini, grok-4-fast) are very inexpensive. Even heavy usage costs only pennies per day.
     </div>
 
+
+    <h2>Alibaba Cloud Coding Plan Integration</h2>
+    <p>dmux supports Alibaba Cloud Coding Plan as an OpenRouter-compatible provider for AI features. This allows you to use Alibaba Cloud's Qwen models for branch naming, commit messages, and pane status detection.</p>
+
+    <h3>Setting Up Alibaba Cloud Coding Plan</h3>
+    <p>To use Alibaba Cloud Coding Plan instead of OpenRouter, configure the following environment variables:</p>
+    <pre><code data-lang="bash"># Use Alibaba Cloud Coding Plan endpoint
+export OPENROUTER_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+# Your Alibaba Cloud API key
+export OPENROUTER_API_KEY="sk-..."
+
+# Optional: Specify which models to use
+export DMUX_MODELS="qwen-coder-plus,qwen-max"
+
+# Add to ~/.zshrc or ~/.bashrc for persistence
+echo 'export OPENROUTER_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"' >> ~/.zshrc
+echo 'export OPENROUTER_API_KEY="sk-..."' >> ~/.zshrc
+echo 'export DMUX_MODELS="qwen-coder-plus,qwen-max"' >> ~/.zshrc
+source ~/.zshrc</code></pre>
+
+    <h3>Available Alibaba Cloud Models</h3>
+    <p>Alibaba Cloud Coding Plan provides several Qwen models compatible with dmux:</p>
+    <table>
+      <thead>
+        <tr><th>Model ID</th><th>Best For</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>qwen-coder-plus</td><td>Code-related tasks (branch names, commit messages)</td></tr>
+        <tr><td>qwen-max</td><td>Complex reasoning and analysis</td></tr>
+        <tr><td>qwen-plus</td><td>General-purpose tasks</td></tr>
+        <tr><td>qwen-turbo</td><td>Fast, lightweight operations</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Model Configuration</h3>
+    <p>Use the <code>DMUX_MODELS</code> environment variable to specify which models dmux should use:</p>
+    <pre><code data-lang="bash"># Use a single model for all features
+export DMUX_MODELS="qwen-coder-plus"
+
+# Use different models (dmux will try them in order)
+export DMUX_MODELS="qwen-coder-plus,qwen-max"
+
+# Recommended configuration for best performance
+export DMUX_MODELS="qwen-coder-plus"</code></pre>
+
+    <h3>Backward Compatibility</h3>
+    <p>The new environment variables are fully backward compatible:</p>
+    <ul>
+      <li>If <code>OPENROUTER_BASE_URL</code> is not set, dmux uses the default OpenRouter endpoint</li>
+      <li>If <code>DMUX_MODELS</code> is not set, dmux uses the default models (gpt-4o-mini, grok-4-fast)</li>
+      <li>Existing OpenRouter configurations continue to work without any changes</li>
+      <li>You can switch between OpenRouter and Alibaba Cloud Coding Plan by changing environment variables</li>
+    </ul>
+
+    <div class="callout callout-info">
+      <div class="callout-title">Note</div>
+      <p>When using Alibaba Cloud Coding Plan, the <code>OPENROUTER_BASE_URL</code> must be set to the compatible-mode endpoint. The API key format is different from OpenRouter keys.</p>
+    </div>
+
     <h2>Environment Variables</h2>
     <table>
       <thead>
@@ -145,6 +205,8 @@ echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
       </thead>
       <tbody>
         <tr><td><code>OPENROUTER_API_KEY</code></td><td>API key for OpenRouter AI features</td></tr>
+        <tr><td><code>OPENROUTER_BASE_URL</code></td><td>Custom base URL for OpenRouter API (defaults to <code>https://openrouter.ai/api/v1</code>). Use this to connect to OpenRouter-compatible services like Alibaba Cloud Coding Plan.</td></tr>
+        <tr><td><code>DMUX_MODELS</code></td><td>Comma-separated list of model IDs to use for AI features. When set, overrides default model selection. Example: <code>qwen-coder-plus,qwen-max</code></td></tr>
         <tr><td><code>DMUX_SESSION</code></td><td>Override the tmux session name</td></tr>
       </tbody>
     </table>

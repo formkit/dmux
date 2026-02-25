@@ -4,6 +4,8 @@ import { execSync, exec } from 'child_process';
 import CleanTextInput from '../inputs/CleanTextInput.js';
 import chalk from 'chalk';
 import { SettingsManager } from '../../utils/settingsManager.js';
+import { getApiBaseUrl } from '../../config/apiConfig.js';
+
 import { getPermissionFlags } from '../../utils/agentLaunch.js';
 
 interface MergePaneProps {
@@ -106,7 +108,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
         return `chore: merge ${pane.slug} into ${mainBranch}`;
       }
 
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch(getApiBaseUrl(), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,

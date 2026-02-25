@@ -1,6 +1,8 @@
 import { createHash } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
 import { LogService } from './LogService.js';
+import { getApiBaseUrl, getModelList } from '../config/apiConfig.js';
+
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';
@@ -28,11 +30,8 @@ interface CacheEntry {
 
 export class PaneAnalyzer {
   private apiKey: string;
-  private modelStack: string[] = [
-    'google/gemini-2.5-flash',
-    'x-ai/grok-4-fast:free',
-    'openai/gpt-4o-mini'
-  ];
+  private modelStack: string[] = getModelList();
+
 
   // Content-hash based cache to avoid repeated API calls for identical content
   private cache = new Map<string, CacheEntry>();
@@ -98,7 +97,7 @@ export class PaneAnalyzer {
     maxTokens: number,
     signal?: AbortSignal
   ): Promise<any> {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(getApiBaseUrl(), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,

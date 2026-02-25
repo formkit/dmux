@@ -4,6 +4,8 @@
  * Uses AI to help resolve merge conflicts intelligently
  */
 
+import { getApiBaseUrl, getModelList } from '../config/apiConfig.js';
+
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
@@ -36,12 +38,12 @@ async function callOpenRouter(prompt: string, maxTokens: number = 1000, timeoutM
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
 
-  const models = ['google/gemini-2.5-flash', 'x-ai/grok-4-fast:free', 'openai/gpt-4o-mini'];
+  const models = getModelList();
 
   for (const model of models) {
     try {
       const response = await fetchWithTimeout(
-        'https://openrouter.ai/api/v1/chat/completions',
+        getApiBaseUrl(),
         {
           method: 'POST',
           headers: {
