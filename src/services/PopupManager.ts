@@ -629,12 +629,26 @@ export class PopupManager {
         return this.handleResult(result)
       }
 
+      const messageLines = message.split("\n").reduce((count, line) => {
+        return count + Math.max(1, Math.ceil(line.length / 65))
+      }, 0)
+      const optionLines = options.reduce((count, option, index) => {
+        const optionRowHeight = option.description ? 2 : 1
+        const optionSpacing = index < options.length - 1 ? 1 : 0
+        return count + optionRowHeight + optionSpacing
+      }, 0)
+      const maxHeight = Math.max(12, Math.min(35, this.config.terminalHeight - 4))
+      const calculatedHeight = Math.max(
+        12,
+        Math.min(maxHeight, messageLines + optionLines + 6)
+      )
+
       const result = await this.launchPopup<string>(
         "choicePopup.js",
         [],
         {
           width: 70,
-          height: Math.min(25, options.length * 3 + 8),
+          height: calculatedHeight,
           title: title || "Choose Option",
         },
         { title, message, options }

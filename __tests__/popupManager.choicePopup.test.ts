@@ -82,4 +82,31 @@ describe('PopupManager launchChoicePopup', () => {
       }
     );
   });
+
+  it('sizes generic choice popup height based on multiline message content', async () => {
+    const manager = createPopupManager(['claude', 'codex']) as any;
+    manager.checkPopupSupport = vi.fn(() => true);
+    manager.launchPopup = vi.fn().mockResolvedValue({
+      success: true,
+      data: 'kill_only',
+    });
+
+    const message = [
+      'This worktree is still in use by 2 other panes.',
+      'Other panes on this worktree:',
+      '  - worktree-agent-panes-a5',
+      '  - worktree-agent-panes-a6',
+      'Close those panes to enable worktree/branch deletion.',
+    ].join('\n');
+
+    await manager.launchChoicePopup(
+      'Close Pane',
+      message,
+      [{ id: 'kill_only', label: 'Just close pane', description: 'Keep worktree and branch' }],
+      undefined
+    );
+
+    const [, , popupOptions] = manager.launchPopup.mock.calls[0];
+    expect(popupOptions.height).toBeGreaterThan(11);
+  });
 });

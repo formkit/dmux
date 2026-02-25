@@ -17,6 +17,7 @@ import { deriveProjectRootFromWorktreePath, getPaneProjectRoot } from '../../uti
 import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
 import { getPaneBranchName } from '../../utils/git.js';
 import { buildDevWatchRespawnCommand } from '../../utils/devWatchCommand.js';
+import { isActiveDevSourcePath } from '../../utils/devSource.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -28,6 +29,48 @@ export async function closePane(
   // For shell panes (no worktree), close immediately without options
   if (pane.type === 'shell' || !pane.worktreePath) {
     return executeCloseOption(pane, context, 'kill_only');
+  }
+
+  const siblingPanesOnWorktree = context.panes.filter(candidate =>
+    candidate.id !== pane.id &&
+    isActiveDevSourcePath(candidate.worktreePath, pane.worktreePath)
+  );
+
+  if (siblingPanesOnWorktree.length > 0) {
+    const siblingLabel = siblingPanesOnWorktree.length === 1
+      ? '1 other pane'
+      : `${siblingPanesOnWorktree.length} other panes`;
+    const MAX_LISTED_SIBLINGS = 5;
+    const listedSiblings = siblingPanesOnWorktree
+      .slice(0, MAX_LISTED_SIBLINGS)
+      .map(sibling => `  - ${sibling.slug}`);
+    const remainingSiblings = siblingPanesOnWorktree.length - listedSiblings.length;
+    const remainingSiblingLine = remainingSiblings > 0
+      ? [`  - +${remainingSiblings} more`]
+      : [];
+
+    return {
+      type: 'choice',
+      title: 'Close Pane',
+      message: [
+        `This worktree is still in use by ${siblingLabel}.`,
+        'Other panes on this worktree:',
+        ...listedSiblings,
+        ...remainingSiblingLine,
+      ].join('\n'),
+      options: [
+        {
+          id: 'kill_only',
+          label: 'Just close pane',
+          description: 'Keep worktree and branch',
+          default: true,
+        },
+      ],
+      onSelect: async (optionId: string) => {
+        return executeCloseOption(pane, context, optionId);
+      },
+      dismissable: true,
+    };
   }
 
   // For worktree panes, present options
@@ -272,13 +315,22 @@ async function executeCloseOption(
         await handleLastPaneRemoved(sessionProjectRoot);
       }
 
+      const hasRemainingPaneForWorktree = Boolean(
+        pane.worktreePath &&
+        updatedPanes.some(candidate =>
+          isActiveDevSourcePath(candidate.worktreePath, pane.worktreePath)
+        )
+      );
+
       // Dev source fallback:
-      // If the pane being closed is the current dev source worktree, respawn
-      // the control pane from the root checkout.
+      // If the pane being closed is the current dev source worktree and no
+      // sibling panes remain on that worktree, respawn the control pane from
+      // the root checkout.
       if (
         process.env.DMUX_DEV === 'true' &&
         pane.worktreePath &&
-        process.cwd() === pane.worktreePath
+        isActiveDevSourcePath(pane.worktreePath, process.cwd()) &&
+        !hasRemainingPaneForWorktree
       ) {
         try {
           const fallbackCommand = buildDevWatchRespawnCommand(sessionProjectRoot);
