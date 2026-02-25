@@ -10,6 +10,7 @@
 
 import { EventEmitter } from 'events';
 import { execAsync } from '../utils/execAsync.js';
+import { buildPaneExitedHookCommandForSession } from '../utils/tmuxHookCommands.js';
 import { LogService } from './LogService.js';
 
 export type HookEvent = 'pane-created' | 'pane-closed' | 'pane-resized' | 'pane-focus-changed';
@@ -172,11 +173,15 @@ export class TmuxHookManager extends EventEmitter {
     try {
       // Create hook commands that send SIGUSR2 to this process
       // We add a comment marker so we can identify our hooks later
+      const paneExitedHookCommand = buildPaneExitedHookCommandForSession(
+        this.pid,
+        this.sessionName
+      );
       const hookCommands = [
         // Pane split (new pane created)
         `tmux set-hook -t '${this.sessionName}' after-split-window 'run-shell "kill -USR2 ${this.pid} 2>/dev/null || true # dmux-hook"'`,
-        // Pane closed
-        `tmux set-hook -t '${this.sessionName}' pane-exited 'run-shell "kill -USR2 ${this.pid} 2>/dev/null || true # dmux-hook"'`,
+        // Pane closed (includes control-pane recovery if needed)
+        `tmux set-hook -t '${this.sessionName}' pane-exited '${paneExitedHookCommand}'`,
         // Window/client resized
         `tmux set-hook -t '${this.sessionName}' client-resized 'run-shell "kill -USR2 ${this.pid} 2>/dev/null || true # dmux-hook"'`,
         // Pane focus changed
