@@ -22,6 +22,8 @@ import {
 } from './useShellDetection.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { PaneEventService, type PaneEventMode } from '../services/PaneEventService.js';
+import { enforceControlPaneSize } from '../utils/tmux.js';
+import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
 
 // Use p-queue for proper concurrency control instead of manual write lock
 // This prevents race conditions and provides better visibility into queue state
@@ -146,10 +148,23 @@ export default function usePanes(
           if (idsChanged || shellPanesAdded || shellPanesRemoved) {
             await saveUpdatedPaneConfig(panesFile, finalPanes, withWriteLock);
 
-            // If shell panes were removed and we now have 0 panes, recreate welcome pane
-            if (shellPanesRemoved && finalPanes.length === 0) {
-              const sessionProjectRoot = path.dirname(path.dirname(panesFile));
-              await handleLastPaneRemoval(sessionProjectRoot);
+            if (shellPanesRemoved) {
+              // If shell panes were removed and we now have 0 panes, recreate welcome pane.
+              if (finalPanes.length === 0) {
+                const sessionProjectRoot = path.dirname(path.dirname(panesFile));
+                await handleLastPaneRemoval(sessionProjectRoot);
+              } else if (controlPaneId) {
+                // Manual shell exits bypass closeAction's layout recalc path.
+                // Re-apply layout so adjacent panes are rebalanced.
+                try {
+                  await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH);
+                } catch (error) {
+                  LogService.getInstance().debug(
+                    `Layout rebalance after shell close failed: ${error instanceof Error ? error.message : String(error)}`,
+                    'usePanes'
+                  );
+                }
+              }
             }
           }
         }
