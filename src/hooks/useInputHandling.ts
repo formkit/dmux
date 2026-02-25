@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { useInput } from "ink"
 import type { DmuxPane } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
@@ -136,6 +137,37 @@ export function useInputHandling(params: UseInputHandlingParams) {
     projectActionItems,
     findCardInDirection,
   } = params
+
+  const layoutRefreshDebounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (layoutRefreshDebounceRef.current) {
+        clearTimeout(layoutRefreshDebounceRef.current)
+        layoutRefreshDebounceRef.current = null
+      }
+    }
+  }, [])
+
+  const queueLayoutRefresh = () => {
+    if (!controlPaneId) {
+      return
+    }
+
+    if (layoutRefreshDebounceRef.current) {
+      clearTimeout(layoutRefreshDebounceRef.current)
+    }
+
+    layoutRefreshDebounceRef.current = setTimeout(async () => {
+      layoutRefreshDebounceRef.current = null
+      try {
+        await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, { forceLayout: true })
+      } catch (error: any) {
+        setStatusMessage(`Setting saved but layout refresh failed: ${error?.message || String(error)}`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
+    }, 250)
+  }
 
   const handleCreateAgentPane = async (targetProjectRoot: string) => {
     const promptValue = await popupManager.launchNewPanePopup(targetProjectRoot)
@@ -553,13 +585,53 @@ export function useInputHandling(params: UseInputHandlingParams) {
         })
       })
       if (result) {
-        settingsManager.updateSetting(
-          result.key as keyof import("../types.js").DmuxSettings,
-          result.value,
-          result.scope
-        )
-        setStatusMessage(`Setting saved (${result.scope})`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        try {
+          const updates = Array.isArray((result as any).updates)
+            ? (result as any).updates
+            : [result]
+
+          let savedCount = 0
+          let layoutBoundsUpdated = false
+          let lastScope: "global" | "project" | null = null
+
+          for (const update of updates) {
+            if (
+              !update
+              || typeof update.key !== "string"
+              || (update.scope !== "global" && update.scope !== "project")
+            ) {
+              continue
+            }
+
+            settingsManager.updateSetting(
+              update.key as keyof import("../types.js").DmuxSettings,
+              update.value,
+              update.scope
+            )
+            savedCount += 1
+            lastScope = update.scope
+
+            if (update.key === "minPaneWidth" || update.key === "maxPaneWidth") {
+              layoutBoundsUpdated = true
+            }
+          }
+
+          if (layoutBoundsUpdated) {
+            queueLayoutRefresh()
+          }
+
+          if (savedCount > 0) {
+            const statusMessage =
+              savedCount === 1
+                ? `Setting saved (${lastScope})`
+                : `${savedCount} settings saved`
+            setStatusMessage(statusMessage)
+            setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+          }
+        } catch (error: any) {
+          setStatusMessage(`Failed to save setting: ${error?.message || String(error)}`)
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+        }
       }
     } else if (input === "l") {
       // Open logs popup

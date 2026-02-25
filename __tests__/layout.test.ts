@@ -294,5 +294,20 @@ describe('layout calculation', () => {
       expect(layout.rows).toBe(0);
       expect(layout.paneDistribution).toEqual([]);
     });
+
+    it('allows single-row layout when max pane width is reduced below default min', () => {
+      const config = {
+        ...DEFAULT_LAYOUT_CONFIG,
+        MAX_COMFORTABLE_WIDTH: 40,
+      };
+
+      // 6 panes at max width 40 + sidebar/borders fits exactly in one row:
+      // 40 (sidebar) + 6*40 + 5 borders = 285
+      const layout = calculateOptimalLayout(6, 285, 60, config);
+
+      expect(layout.cols).toBe(6);
+      expect(layout.rows).toBe(1);
+      expect(layout.actualPaneWidth).toBeLessThanOrEqual(40);
+    });
   });
 });

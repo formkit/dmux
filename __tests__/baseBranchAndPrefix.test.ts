@@ -339,4 +339,28 @@ describe('setting definitions', () => {
     expect(values).toContain('fix/');
     expect(values).toContain('chore/');
   });
+
+  it('maxPaneWidth is a bounded number setting', async () => {
+    const { SETTING_DEFINITIONS } = await import('../src/utils/settingsManager.js');
+    const def = SETTING_DEFINITIONS.find(d => d.key === 'maxPaneWidth');
+
+    expect(def).toBeDefined();
+    expect(def!.type).toBe('number');
+    expect(def!.min).toBe(40);
+    expect(def!.max).toBe(300);
+    expect(def!.step).toBe(1);
+    expect(def!.shiftStep).toBe(10);
+  });
+
+  it('minPaneWidth is a bounded number setting', async () => {
+    const { SETTING_DEFINITIONS } = await import('../src/utils/settingsManager.js');
+    const def = SETTING_DEFINITIONS.find(d => d.key === 'minPaneWidth');
+
+    expect(def).toBeDefined();
+    expect(def!.type).toBe('number');
+    expect(def!.min).toBe(40);
+    expect(def!.max).toBe(300);
+    expect(def!.step).toBe(1);
+    expect(def!.shiftStep).toBe(10);
+  });
 });

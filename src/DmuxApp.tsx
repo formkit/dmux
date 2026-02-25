@@ -263,6 +263,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     isDevMode,
     terminalWidth,
     terminalHeight,
+    controlPaneId,
     availableAgents,
     settingsManager,
     projectSettings,

@@ -89,6 +89,10 @@ export interface DmuxSettings {
   baseBranch?: string;
   // Prefix for branch names (e.g. 'feat/' produces 'feat/fix-auth')
   branchPrefix?: string;
+  // Preferred minimum content pane width in characters
+  minPaneWidth?: number;
+  // Preferred maximum content pane width in characters
+  maxPaneWidth?: number;
 }
 
 export type SettingsScope = 'global' | 'project';
@@ -97,8 +101,12 @@ export interface SettingDefinition {
   key: keyof DmuxSettings | string;
   label: string;
   description: string;
-  type: 'boolean' | 'select' | 'text' | 'action';
+  type: 'boolean' | 'select' | 'text' | 'number' | 'action';
   options?: Array<{ value: string; label: string }>;
+  min?: number;
+  max?: number;
+  step?: number;
+  shiftStep?: number;
 }
 
 export interface DmuxAppProps {

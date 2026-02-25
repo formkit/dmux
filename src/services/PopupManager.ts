@@ -27,6 +27,7 @@ export interface PopupManagerConfig {
   isDevMode: boolean
   terminalWidth: number
   terminalHeight: number
+  controlPaneId?: string
   availableAgents: AgentName[]
   settingsManager: any
   projectSettings: ProjectSettings
@@ -469,7 +470,11 @@ export class PopupManager {
 
   async launchSettingsPopup(
     onLaunchHooks: () => Promise<void>
-  ): Promise<{ key: string; value: any; scope: "global" | "project" } | null> {
+  ): Promise<
+    | { key: string; value: any; scope: "global" | "project" }
+    | { updates: Array<{ key: string; value: any; scope: "global" | "project" }> }
+    | null
+  > {
     if (!this.checkPopupSupport()) return null
 
     try {
@@ -496,18 +501,49 @@ export class PopupManager {
           settings: this.config.settingsManager.getSettings(),
           globalSettings: this.config.settingsManager.getGlobalSettings(),
           projectSettings: this.config.settingsManager.getProjectSettings(),
+          projectRoot: this.config.projectRoot,
+          controlPaneId: this.config.controlPaneId,
         }
       )
 
       if (result.success) {
+        const data = result.data ?? {}
+        const pendingUpdates = Array.isArray(data.updates)
+          ? data.updates.filter(
+              (update: any) =>
+                typeof update?.key === "string"
+                && (update?.scope === "global" || update?.scope === "project")
+            )
+          : []
+
         // Check if this is an action result
-        if (result.data?.action === "hooks") {
+        if (data.action === "hooks") {
           await onLaunchHooks()
-          return null
-        } else if (result.data?.action === "enabledAgents") {
-          return await this.launchEnabledAgentsPopup()
-        } else if (result.data) {
-          return result.data
+          return pendingUpdates.length > 0 ? { updates: pendingUpdates } : null
+        }
+
+        if (data.action === "enabledAgents") {
+          const enabledAgentsUpdate = await this.launchEnabledAgentsPopup()
+          if (enabledAgentsUpdate) {
+            pendingUpdates.push(enabledAgentsUpdate)
+          }
+          return pendingUpdates.length > 0 ? { updates: pendingUpdates } : null
+        }
+
+        if (typeof data.key === "string" && (data.scope === "global" || data.scope === "project")) {
+          if (pendingUpdates.length > 0) {
+            return {
+              updates: [
+                ...pendingUpdates,
+                { key: data.key, value: data.value, scope: data.scope },
+              ],
+            }
+          }
+          return { key: data.key, value: data.value, scope: data.scope }
+        }
+
+        if (pendingUpdates.length > 0) {
+          return { updates: pendingUpdates }
         }
       }
       return null

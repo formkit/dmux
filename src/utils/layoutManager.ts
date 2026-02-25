@@ -2,6 +2,16 @@ import { getWindowDimensions } from './tmux.js';
 import { TmuxService } from '../services/TmuxService.js';
 import { LogService } from '../services/LogService.js';
 import { TMUX_PANE_CREATION_DELAY, TMUX_SIDEBAR_SETTLE_DELAY } from '../constants/timing.js';
+import {
+  DEFAULT_MIN_PANE_WIDTH,
+  DEFAULT_MAX_PANE_WIDTH,
+  MAX_MIN_PANE_WIDTH,
+  MAX_MAX_PANE_WIDTH,
+  MIN_MIN_PANE_WIDTH,
+  MIN_MAX_PANE_WIDTH,
+} from '../constants/layout.js';
+import { SettingsManager } from './settingsManager.js';
+import { StateManager } from '../shared/StateManager.js';
 
 // Import new focused classes
 import { LayoutCalculator, type LayoutConfiguration } from '../layout/LayoutCalculator.js';
@@ -21,8 +31,8 @@ export interface LayoutConfig {
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   SIDEBAR_WIDTH: 40,
-  MIN_COMFORTABLE_WIDTH: 50,
-  MAX_COMFORTABLE_WIDTH: 80,
+  MIN_COMFORTABLE_WIDTH: DEFAULT_MIN_PANE_WIDTH,
+  MAX_COMFORTABLE_WIDTH: DEFAULT_MAX_PANE_WIDTH,
   MIN_COMFORTABLE_HEIGHT: 15,
 };
 
@@ -36,7 +46,64 @@ export const MIN_COMFORTABLE_HEIGHT = DEFAULT_LAYOUT_CONFIG.MIN_COMFORTABLE_HEIG
 export type { LayoutConfiguration };
 
 // Cache last layout dimensions to avoid unnecessary spacer recreation
-let lastLayoutDimensions: { width: number; height: number; paneCount: number } | null = null;
+let lastLayoutDimensions: {
+  width: number;
+  height: number;
+  paneCount: number;
+  minPaneWidth: number;
+  maxPaneWidth: number;
+} | null = null;
+
+function clampMinPaneWidth(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_MIN_PANE_WIDTH;
+  }
+
+  const rounded = Math.round(value);
+  return Math.max(MIN_MIN_PANE_WIDTH, Math.min(MAX_MIN_PANE_WIDTH, rounded));
+}
+
+function clampMaxPaneWidth(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_MAX_PANE_WIDTH;
+  }
+
+  const rounded = Math.round(value);
+  return Math.max(MIN_MAX_PANE_WIDTH, Math.min(MAX_MAX_PANE_WIDTH, rounded));
+}
+
+function resolveLayoutConfig(config?: LayoutConfig): LayoutConfig {
+  if (config) {
+    return config;
+  }
+
+  try {
+    const stateProjectRoot = StateManager.getInstance().getState().projectRoot;
+    const settings = new SettingsManager(stateProjectRoot || process.cwd()).getSettings();
+    const minPaneWidth = clampMinPaneWidth(settings.minPaneWidth);
+    const maxPaneWidth = clampMaxPaneWidth(settings.maxPaneWidth);
+    let normalizedMinPaneWidth = minPaneWidth;
+    let normalizedMaxPaneWidth = maxPaneWidth;
+    if (normalizedMinPaneWidth > normalizedMaxPaneWidth) {
+      normalizedMaxPaneWidth = normalizedMinPaneWidth;
+    }
+
+    if (
+      normalizedMinPaneWidth === DEFAULT_LAYOUT_CONFIG.MIN_COMFORTABLE_WIDTH &&
+      normalizedMaxPaneWidth === DEFAULT_LAYOUT_CONFIG.MAX_COMFORTABLE_WIDTH
+    ) {
+      return DEFAULT_LAYOUT_CONFIG;
+    }
+
+    return {
+      ...DEFAULT_LAYOUT_CONFIG,
+      MIN_COMFORTABLE_WIDTH: normalizedMinPaneWidth,
+      MAX_COMFORTABLE_WIDTH: normalizedMaxPaneWidth,
+    };
+  } catch {
+    return DEFAULT_LAYOUT_CONFIG;
+  }
+}
 
 /**
  * MASTER LAYOUT FUNCTION
@@ -59,35 +126,45 @@ export async function recalculateAndApplyLayout(
   contentPaneIds: string[],
   terminalWidth: number,
   terminalHeight: number,
-  config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
-  options?: { force?: boolean }
+  config?: LayoutConfig,
+  options?: { force?: boolean; suppressLogs?: boolean; disableSpacer?: boolean }
 ): Promise<void> {
   // Wrap entire function in try-catch to prevent crashes during resize
   try {
+    const suppressLogs = options?.suppressLogs === true;
+
     // Validate inputs to prevent crashes from bad data
     if (!controlPaneId || typeof controlPaneId !== 'string') {
-      LogService.getInstance().warn('Invalid controlPaneId, skipping layout', 'Layout');
+      if (!suppressLogs) {
+        LogService.getInstance().warn('Invalid controlPaneId, skipping layout', 'Layout');
+      }
       return;
     }
     if (terminalWidth <= 0 || terminalHeight <= 0) {
-      LogService.getInstance().warn(
-        `Invalid terminal dimensions: ${terminalWidth}x${terminalHeight}, skipping layout`,
-        'Layout'
-      );
+      if (!suppressLogs) {
+        LogService.getInstance().warn(
+          `Invalid terminal dimensions: ${terminalWidth}x${terminalHeight}, skipping layout`,
+          'Layout'
+        );
+      }
       return;
     }
 
-    // Create class instances with config
-    const calculator = new LayoutCalculator(config);
-    const spacerManager = new SpacerManager(config);
-    const layoutApplier = new TmuxLayoutApplier(config);
+    const effectiveConfig = resolveLayoutConfig(config);
+
+    // Create class instances with resolved config
+    const calculator = new LayoutCalculator(effectiveConfig);
+    const spacerManager = new SpacerManager(effectiveConfig);
+    const layoutApplier = new TmuxLayoutApplier(effectiveConfig);
 
     // Step 1: Filter out any existing spacer from content panes
     let existingSpacerId: string | null = null;
     try {
       existingSpacerId = spacerManager.findSpacerPane();
     } catch (error) {
-      LogService.getInstance().debug(`Failed to find spacer pane: ${error}`, 'Layout');
+      if (!suppressLogs) {
+        LogService.getInstance().debug(`Failed to find spacer pane: ${error}`, 'Layout');
+      }
     }
 
     // CRITICAL FIX: Validate that content panes actually exist in tmux before proceeding
@@ -99,41 +176,50 @@ export async function recalculateAndApplyLayout(
       validContentPaneIds = contentPaneIds.filter(id => {
         if (id === existingSpacerId) return false; // Filter out spacer
         if (!allTmuxPaneIds.includes(id)) {
-          LogService.getInstance().debug(`Skipping stale pane ID ${id} (no longer exists in tmux)`, 'Layout');
+          if (!suppressLogs) {
+            LogService.getInstance().debug(`Skipping stale pane ID ${id} (no longer exists in tmux)`, 'Layout');
+          }
           return false;
         }
         return true;
       });
     } catch (error) {
       // If we can't get tmux pane list, use the provided IDs but filter spacer
-      LogService.getInstance().debug(`Failed to validate pane IDs: ${error}`, 'Layout');
+      if (!suppressLogs) {
+        LogService.getInstance().debug(`Failed to validate pane IDs: ${error}`, 'Layout');
+      }
       validContentPaneIds = contentPaneIds.filter(id => id !== existingSpacerId);
     }
     const realContentPanes = validContentPaneIds;
     const forceLayout = options?.force === true;
+    const disableSpacer = options?.disableSpacer === true;
 
     // Check if dimensions and pane count have changed since last layout.
     const dimensionsUnchanged =
       lastLayoutDimensions &&
       lastLayoutDimensions.width === terminalWidth &&
       lastLayoutDimensions.height === terminalHeight &&
-      lastLayoutDimensions.paneCount === realContentPanes.length;
+      lastLayoutDimensions.paneCount === realContentPanes.length &&
+      lastLayoutDimensions.minPaneWidth === effectiveConfig.MIN_COMFORTABLE_WIDTH &&
+      lastLayoutDimensions.maxPaneWidth === effectiveConfig.MAX_COMFORTABLE_WIDTH;
 
     if (dimensionsUnchanged && !forceLayout) {
       // Layout unchanged - skip ALL layout operations to prevent Ink redraw.
       return;
     }
 
-    if (forceLayout) {
-      LogService.getInstance().info(
-        `Forcing layout apply: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
-        'layout'
-      );
-    } else {
-      LogService.getInstance().info(
-        `Layout dimensions changed: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
-        'layout'
-      );
+    if (!suppressLogs) {
+      if (forceLayout) {
+        LogService.getInstance().info(
+          `Forcing layout apply: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
+          'layout'
+        );
+      } else {
+        LogService.getInstance().info(
+          `Layout dimensions changed: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
+          'layout'
+        );
+      }
     }
 
     // Update last layout dimensions
@@ -141,6 +227,8 @@ export async function recalculateAndApplyLayout(
       width: terminalWidth,
       height: terminalHeight,
       paneCount: realContentPanes.length,
+      minPaneWidth: effectiveConfig.MIN_COMFORTABLE_WIDTH,
+      maxPaneWidth: effectiveConfig.MAX_COMFORTABLE_WIDTH,
     };
 
   // Step 2: Calculate layout for real content panes only
@@ -151,7 +239,8 @@ export async function recalculateAndApplyLayout(
   );
 
   // Step 3: Determine if we need a spacer pane
-  const needsSpacer = spacerManager.needsSpacerPane(realContentPanes.length, layout);
+  const needsSpacer =
+    !disableSpacer && spacerManager.needsSpacerPane(realContentPanes.length, layout);
 
   // Step 4: Manage spacer pane creation/destruction
   // ALWAYS destroy existing spacer on layout recalc to ensure fresh positioning
@@ -203,10 +292,12 @@ export async function recalculateAndApplyLayout(
       }
 
       if (!paneVerified) {
-        LogService.getInstance().warn(
-          `Spacer pane ${spacerId} not verified, continuing anyway`,
-          'Layout'
-        );
+        if (!suppressLogs) {
+          LogService.getInstance().warn(
+            `Spacer pane ${spacerId} not verified, continuing anyway`,
+            'Layout'
+          );
+        }
         // Don't throw - continue and let it fail with better logs
       }
     } catch (error) {
@@ -372,7 +463,9 @@ export async function recalculateAndApplyLayout(
     const currentPaneIds = tmuxService.getAllPaneIdsSync();
     const validFinalPanes = finalContentPanes.filter(id => {
       if (!currentPaneIds.includes(id)) {
-        LogService.getInstance().debug(`Pane ${id} disappeared before layout application`, 'Layout');
+        if (!suppressLogs) {
+          LogService.getInstance().debug(`Pane ${id} disappeared before layout application`, 'Layout');
+        }
         return false;
       }
       return true;
@@ -380,25 +473,31 @@ export async function recalculateAndApplyLayout(
 
     // Only proceed if we still have the same panes (or if spacer was the only one removed)
     if (validFinalPanes.length < finalContentPanes.length - (spacerId ? 1 : 0)) {
-      LogService.getInstance().warn(
-        `Panes changed during layout calculation (${finalContentPanes.length} → ${validFinalPanes.length}), skipping layout apply`,
-        'Layout'
-      );
+      if (!suppressLogs) {
+        LogService.getInstance().warn(
+          `Panes changed during layout calculation (${finalContentPanes.length} → ${validFinalPanes.length}), skipping layout apply`,
+          'Layout'
+        );
+      }
       return;
     }
 
     // Also verify control pane still exists
     if (!currentPaneIds.includes(actualControlPaneId)) {
-      LogService.getInstance().warn(
-        `Control pane ${actualControlPaneId} no longer exists, skipping layout apply`,
-        'Layout'
-      );
+      if (!suppressLogs) {
+        LogService.getInstance().warn(
+          `Control pane ${actualControlPaneId} no longer exists, skipping layout apply`,
+          'Layout'
+        );
+      }
       return;
     }
 
     layoutApplier.applyPaneLayout(actualControlPaneId, validFinalPanes, finalLayout, terminalHeight);
   } catch (validationError) {
-    LogService.getInstance().debug(`Final validation failed: ${validationError}, attempting layout anyway`, 'Layout');
+    if (!suppressLogs) {
+      LogService.getInstance().debug(`Final validation failed: ${validationError}, attempting layout anyway`, 'Layout');
+    }
     layoutApplier.applyPaneLayout(actualControlPaneId, finalContentPanes, finalLayout, terminalHeight);
   }
   } catch (error) {
