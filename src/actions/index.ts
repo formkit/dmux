@@ -39,6 +39,13 @@ export async function executeAction(
         dismissable: true,
       };
 
+    case 'open_terminal_in_worktree':
+      return {
+        type: 'info',
+        message: 'Open terminal in worktree is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
     case 'close':
       return actions.closePane(pane, context);
 

@@ -25,4 +25,11 @@ describe('attach_agent dispatcher', () => {
     expect(result.type).toBe('info');
     expect(result.message).toContain('Attach agent');
   });
+
+  it('does not return unknown action for open_terminal_in_worktree', async () => {
+    const result = await executeAction(PaneAction.OPEN_TERMINAL_IN_WORKTREE, pane, context);
+
+    expect(result.type).toBe('info');
+    expect(result.message).toContain('Open terminal in worktree');
+  });
 });

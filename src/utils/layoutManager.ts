@@ -59,7 +59,8 @@ export async function recalculateAndApplyLayout(
   contentPaneIds: string[],
   terminalWidth: number,
   terminalHeight: number,
-  config: LayoutConfig = DEFAULT_LAYOUT_CONFIG
+  config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
+  options?: { force?: boolean }
 ): Promise<void> {
   // Wrap entire function in try-catch to prevent crashes during resize
   try {
@@ -109,33 +110,38 @@ export async function recalculateAndApplyLayout(
       validContentPaneIds = contentPaneIds.filter(id => id !== existingSpacerId);
     }
     const realContentPanes = validContentPaneIds;
+    const forceLayout = options?.force === true;
 
-  // Check if dimensions and pane count have changed since last layout
-  const dimensionsUnchanged =
-    lastLayoutDimensions &&
-    lastLayoutDimensions.width === terminalWidth &&
-    lastLayoutDimensions.height === terminalHeight &&
-    lastLayoutDimensions.paneCount === realContentPanes.length;
+    // Check if dimensions and pane count have changed since last layout.
+    const dimensionsUnchanged =
+      lastLayoutDimensions &&
+      lastLayoutDimensions.width === terminalWidth &&
+      lastLayoutDimensions.height === terminalHeight &&
+      lastLayoutDimensions.paneCount === realContentPanes.length;
 
-  if (dimensionsUnchanged) {
-    // Layout unchanged - skip ALL layout operations to prevent Ink redraw
-    // This prevents the dmux UI from being cleared on resize when nothing changed
-    // (Removed noisy debug log that fires on every check)
-    return;
-  }
+    if (dimensionsUnchanged && !forceLayout) {
+      // Layout unchanged - skip ALL layout operations to prevent Ink redraw.
+      return;
+    }
 
-  // Only log when dimensions actually change (much less noisy)
-  LogService.getInstance().info(
-    `Layout dimensions changed: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
-    'layout'
-  );
+    if (forceLayout) {
+      LogService.getInstance().info(
+        `Forcing layout apply: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
+        'layout'
+      );
+    } else {
+      LogService.getInstance().info(
+        `Layout dimensions changed: ${terminalWidth}x${terminalHeight}, ${realContentPanes.length} panes`,
+        'layout'
+      );
+    }
 
-  // Update last layout dimensions
-  lastLayoutDimensions = {
-    width: terminalWidth,
-    height: terminalHeight,
-    paneCount: realContentPanes.length,
-  };
+    // Update last layout dimensions
+    lastLayoutDimensions = {
+      width: terminalWidth,
+      height: terminalHeight,
+      paneCount: realContentPanes.length,
+    };
 
   // Step 2: Calculate layout for real content panes only
   const layout = calculator.calculateOptimalLayout(

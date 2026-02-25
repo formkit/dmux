@@ -176,6 +176,45 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
+  const openTerminalInWorktree = async (selectedPane: DmuxPane) => {
+    if (!selectedPane.worktreePath) {
+      setStatusMessage("Cannot open terminal: this pane has no worktree")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const targetProjectRoot = getPaneProjectRoot(selectedPane, projectRoot)
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(`Opening terminal in ${selectedPane.slug}...`)
+
+      const tmuxService = TmuxService.getInstance()
+      const newPaneId = await tmuxService.splitPane({ cwd: selectedPane.worktreePath })
+
+      // Wait for pane creation to settle
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
+
+      const shellPane = await createShellPane(
+        newPaneId,
+        getNextDmuxId(panes)
+      )
+      shellPane.projectRoot = targetProjectRoot
+      await savePanes([...panes, shellPane])
+
+      setStatusMessage(`Opened terminal in ${selectedPane.slug}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+
+      // Force a reload to ensure tmux metadata and pane IDs are in sync
+      await loadPanes()
+    } catch (error: any) {
+      setStatusMessage(`Failed to open terminal in worktree: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
+  }
+
   const handleCreatePaneInProject = async () => {
     const selectedAction = getProjectActionByIndex(projectActionItems, selectedIndex)
     const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
@@ -240,6 +279,11 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     if (actionId === PaneAction.ATTACH_AGENT) {
       await attachAgentsToPane(pane)
+      return
+    }
+
+    if (actionId === PaneAction.OPEN_TERMINAL_IN_WORKTREE) {
+      await openTerminalInWorktree(pane)
       return
     }
 
@@ -493,6 +537,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
     if (input === "a" && selectedIndex < panes.length) {
       await attachAgentsToPane(panes[selectedIndex])
       return
+    } else if (input === "A" && selectedIndex < panes.length) {
+      await openTerminalInWorktree(panes[selectedIndex])
+      return
     } else if (input === "m" && selectedIndex < panes.length) {
       // Open kebab menu popup for selected pane
       const selectedPane = panes[selectedIndex]
@@ -528,9 +575,14 @@ export function useInputHandling(params: UseInputHandlingParams) {
       }
     } else if (input === "L" && controlPaneId) {
       // Reset layout to sidebar configuration (Shift+L)
-      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
-      setStatusMessage("Layout reset")
-      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      try {
+        await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, { forceLayout: true })
+        setStatusMessage("Layout reset")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } catch (error: any) {
+        setStatusMessage(`Failed to reset layout: ${error?.message || String(error)}`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
     } else if (input === "T") {
       // Demo toasts (Shift+T) - cycles through different types
       const stateManager = StateManager.getInstance()

@@ -408,7 +408,8 @@ export const calculateOptimalColumns = (
  */
 export const enforceControlPaneSize = async (
   controlPaneId: string,
-  width: number
+  width: number,
+  options?: { forceLayout?: boolean }
 ): Promise<void> => {
   const logService = LogService.getInstance();
   const tmuxService = TmuxService.getInstance();
@@ -466,7 +467,9 @@ export const enforceControlPaneSize = async (
       controlPaneId,
       contentPanes,
       dimensions.width,
-      dimensions.height
+      dimensions.height,
+      undefined,
+      { force: options?.forceLayout === true }
     );
 
     // Refresh to apply changes (but don't select the pane - don't steal focus!)
