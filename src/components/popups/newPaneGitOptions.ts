@@ -1,6 +1,13 @@
 import { execSync } from 'child_process';
 
 export const MAX_VISIBLE_BRANCHES = 10;
+export const BASE_BRANCH_ERROR_MESSAGE = 'Base branch must match an existing local branch (choose from the list).';
+
+export interface BaseBranchEnterResolution {
+  accepted: boolean;
+  nextValue: string;
+  error?: string;
+}
 
 export function loadLocalBranchNames(repoRoot: string): string[] {
   try {
@@ -75,4 +82,39 @@ export function isValidBaseBranchOverride(value: string, availableBranches: stri
   const trimmed = value.trim();
   if (!trimmed) return true;
   return availableBranches.includes(trimmed);
+}
+
+export function resolveBaseBranchEnter(input: {
+  baseBranch: string;
+  availableBranches: string[];
+  filteredBranches: string[];
+  selectedIndex: number;
+}): BaseBranchEnterResolution {
+  if (input.filteredBranches.length > 0 && input.selectedIndex < input.filteredBranches.length) {
+    return {
+      accepted: true,
+      nextValue: input.filteredBranches[input.selectedIndex],
+    };
+  }
+
+  const trimmed = input.baseBranch.trim();
+  if (!trimmed) {
+    return {
+      accepted: true,
+      nextValue: '',
+    };
+  }
+
+  if (input.availableBranches.includes(trimmed)) {
+    return {
+      accepted: true,
+      nextValue: trimmed,
+    };
+  }
+
+  return {
+    accepted: false,
+    nextValue: trimmed,
+    error: BASE_BRANCH_ERROR_MESSAGE,
+  };
 }

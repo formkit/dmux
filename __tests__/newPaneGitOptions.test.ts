@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BASE_BRANCH_ERROR_MESSAGE,
   clampSelectedIndex,
   filterBranches,
   getVisibleBranchWindow,
   isValidBaseBranchOverride,
   parseBranchList,
+  resolveBaseBranchEnter,
 } from '../src/components/popups/newPaneGitOptions.js';
 
 describe('new pane git options helpers', () => {
@@ -48,5 +50,62 @@ describe('new pane git options helpers', () => {
     expect(isValidBaseBranchOverride('develop', branches)).toBe(true);
     expect(isValidBaseBranchOverride('Develop', branches)).toBe(false);
     expect(isValidBaseBranchOverride('feature/missing', branches)).toBe(false);
+  });
+
+  it('accepts highlighted branch on Enter in base-branch field', () => {
+    const resolution = resolveBaseBranchEnter({
+      baseBranch: 'fea',
+      availableBranches: ['main', 'feature/foo'],
+      filteredBranches: ['feature/foo'],
+      selectedIndex: 0,
+    });
+
+    expect(resolution).toEqual({
+      accepted: true,
+      nextValue: 'feature/foo',
+    });
+  });
+
+  it('accepts highlighted branch on Enter even with empty input', () => {
+    const resolution = resolveBaseBranchEnter({
+      baseBranch: '',
+      availableBranches: ['main', 'feature/foo'],
+      filteredBranches: ['feature/foo', 'main'],
+      selectedIndex: 1,
+    });
+
+    expect(resolution).toEqual({
+      accepted: true,
+      nextValue: 'main',
+    });
+  });
+
+  it('accepts exact typed branch when no filtered list is available', () => {
+    const resolution = resolveBaseBranchEnter({
+      baseBranch: 'develop',
+      availableBranches: ['main', 'develop'],
+      filteredBranches: [],
+      selectedIndex: 0,
+    });
+
+    expect(resolution).toEqual({
+      accepted: true,
+      nextValue: 'develop',
+    });
+  });
+
+  it('rejects invalid base branch on Enter with strict message', () => {
+    const resolution = resolveBaseBranchEnter({
+      baseBranch: 'missing-branch',
+      availableBranches: ['main', 'develop'],
+      filteredBranches: [],
+      selectedIndex: 0,
+    });
+
+    expect(resolution).toEqual({
+      accepted: false,
+      nextValue: 'missing-branch',
+      error: BASE_BRANCH_ERROR_MESSAGE,
+    });
   });
 });

@@ -32,6 +32,18 @@ function detectPopupRunner(): string | null {
   return null;
 }
 
+function getLocalBranchesByRecentCommit(): string[] {
+  const raw = execSync(
+    "git for-each-ref --sort=-committerdate --format='%(refname:short)' refs/heads",
+    { encoding: 'utf-8', stdio: 'pipe' }
+  );
+
+  return raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 async function poll<T>(
   fn: () => T | Promise<T>,
   predicate: (value: T) => boolean,
@@ -60,12 +72,32 @@ async function waitForPaneText(
   expectedText: string,
   timeoutMs = 15000
 ): Promise<void> {
-  await poll(
-    () => capturePane(server, session),
-    (paneText) => paneText.includes(expectedText),
-    timeoutMs,
-    150
-  );
+  let lastPaneText = '';
+  try {
+    await poll(
+      () => {
+        const paneText = capturePane(server, session);
+        lastPaneText = paneText;
+        return paneText;
+      },
+      (paneText) => paneText.includes(expectedText),
+      timeoutMs,
+      150
+    );
+  } catch {
+    throw new Error(
+      `Timed out waiting for pane text: "${expectedText}"\nLast pane:\n${lastPaneText}`
+    );
+  }
+}
+
+async function readPopupResult(resultFile: string): Promise<any | null> {
+  try {
+    const raw = await fsp.readFile(resultFile, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 const runE2E = process.env.DMUX_E2E === '1';
@@ -158,6 +190,219 @@ describe.sequential('dmux e2e: new pane git options popup', () => {
       // Strict validation should block submission, so no result file yet.
       const resultExists = fs.existsSync(resultFile);
       expect(resultExists).toBe(false);
+    } finally {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+      try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 120000);
+
+  it.runIf(canRun)('cycles prompt/base/branch with Tab and Shift+Tab', async () => {
+    const server = `dmux-e2e-gitopt-${Date.now()}`;
+    const session = 'dmux-e2e-gitopt-cycle';
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dmux-e2e-gitopt-'));
+    const resultFile = path.join(tempDir, 'result.json');
+    const existingBaseBranch = execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+
+    try {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+
+      execSync(`tmux -L ${server} -f /dev/null new-session -d -s ${session} -n main bash`, { stdio: 'pipe' });
+
+      const popupCommand = `${popupRunner} "${resultFile}" "${process.cwd()}" 1`;
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${popupCommand}' Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'cycle prompt'`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, 'cycle prompt');
+
+      // Enter from prompt -> base branch field.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${existingBaseBranch}'`, { stdio: 'pipe' });
+
+      // Tab from base -> branch field.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Tab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Branch/worktree name override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'feat/e2e-cycle'`, { stdio: 'pipe' });
+
+      // Tab from branch -> prompt.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Tab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 ' updated'`, { stdio: 'pipe' });
+
+      // Tab prompt -> base, then Shift+Tab (BTab) base -> prompt.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Tab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 BTab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+
+      // Return to branch and submit.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Tab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Tab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Branch/worktree name override (optional)');
+
+      // Submit from branch field.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      const payload = await poll(
+        () => readPopupResult(resultFile),
+        (value) => !!value
+      );
+
+      expect(payload.success).toBe(true);
+      expect(typeof payload.data.prompt).toBe('string');
+      expect(payload.data.prompt.trim().length).toBeGreaterThan(0);
+      expect(payload.data.prompt).toContain('updated');
+      expect(payload.data.baseBranch).toBe(existingBaseBranch);
+      expect(payload.data.branchName).toBe('feat/e2e-cycle');
+    } finally {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+      try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 120000);
+
+  it.runIf(canRun)('does not auto-accept highlighted base branch when tabbing fields', async () => {
+    const server = `dmux-e2e-gitopt-${Date.now()}`;
+    const session = 'dmux-e2e-gitopt-tab-noaccept';
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dmux-e2e-gitopt-'));
+    const resultFile = path.join(tempDir, 'result.json');
+    const existingBaseBranch = execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+    const partialBase = existingBaseBranch.slice(0, Math.min(3, existingBaseBranch.length));
+
+    try {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+
+      execSync(`tmux -L ${server} -f /dev/null new-session -d -s ${session} -n main bash`, { stdio: 'pipe' });
+
+      const popupCommand = `${popupRunner} "${resultFile}" "${process.cwd()}" 1`;
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${popupCommand}' Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'tab no accept prompt'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${partialBase}'`, { stdio: 'pipe' });
+
+      // Tab to branch field should not auto-select highlighted branch.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Tab`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Branch/worktree name override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'feat/e2e-tab-noaccept'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await sleep(700);
+      expect(fs.existsSync(resultFile)).toBe(false);
+      await waitForPaneText(server, session, 'Base branch must match an existing local branch');
+    } finally {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+      try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 120000);
+
+  it.runIf(canRun)('accepts highlighted branch on Enter after typing partial branch text', async () => {
+    const server = `dmux-e2e-gitopt-${Date.now()}`;
+    const session = 'dmux-e2e-gitopt-enter-fill';
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dmux-e2e-gitopt-'));
+    const resultFile = path.join(tempDir, 'result.json');
+    const branches = getLocalBranchesByRecentCommit();
+    const topBranch = branches[0];
+    const partial = topBranch.slice(0, Math.min(3, topBranch.length));
+    const expectedBranch = branches.find((branch) => branch.toLowerCase().includes(partial.toLowerCase())) || topBranch;
+
+    try {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+
+      execSync(`tmux -L ${server} -f /dev/null new-session -d -s ${session} -n main bash`, { stdio: 'pipe' });
+
+      const popupCommand = `${popupRunner} "${resultFile}" "${process.cwd()}" 1`;
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${popupCommand}' Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'enter fill prompt'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${partial}'`, { stdio: 'pipe' });
+
+      // Enter should accept highlighted branch and move to branch-name field.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Branch/worktree name override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'feat/e2e-enter-fill'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      const payload = await poll(
+        () => readPopupResult(resultFile),
+        (value) => !!value
+      );
+
+      expect(payload.success).toBe(true);
+      expect(payload.data.baseBranch).toBe(expectedBranch);
+      expect(payload.data.branchName).toBe('feat/e2e-enter-fill');
+    } finally {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+      try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 120000);
+
+  it.runIf(canRun)('uses up/down arrows to change highlighted branch before Enter', async () => {
+    const server = `dmux-e2e-gitopt-${Date.now()}`;
+    const session = 'dmux-e2e-gitopt-arrows';
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dmux-e2e-gitopt-'));
+    const resultFile = path.join(tempDir, 'result.json');
+    const branches = getLocalBranchesByRecentCommit();
+
+    // We need at least two branches to verify down-arrow selection change.
+    expect(branches.length).toBeGreaterThan(1);
+    const expectedSelected = branches[1];
+
+    try {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+
+      execSync(`tmux -L ${server} -f /dev/null new-session -d -s ${session} -n main bash`, { stdio: 'pipe' });
+
+      const popupCommand = `${popupRunner} "${resultFile}" "${process.cwd()}" 1`;
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${popupCommand}' Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'arrow selection prompt'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+
+      // Down selects second branch, up returns to first, down selects second again.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Down`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Up`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Down`, { stdio: 'pipe' });
+
+      // Enter should accept current highlighted branch.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Branch/worktree name override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'feat/e2e-arrow-select'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      const payload = await poll(
+        () => readPopupResult(resultFile),
+        (value) => !!value
+      );
+
+      expect(payload.success).toBe(true);
+      expect(payload.data.baseBranch).toBe(expectedSelected);
+      expect(payload.data.branchName).toBe('feat/e2e-arrow-select');
     } finally {
       try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
       try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
