@@ -410,6 +410,105 @@ describe.sequential('dmux e2e: new pane git options popup', () => {
     }
   }, 120000);
 
+  it.runIf(canRun)('treats Delete key as forward-delete in base branch input', async () => {
+    const server = `dmux-e2e-gitopt-${Date.now()}`;
+    const session = 'dmux-e2e-gitopt-delete-forward';
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dmux-e2e-gitopt-'));
+    const resultFile = path.join(tempDir, 'result.json');
+    const existingBaseBranch = execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+
+    try {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+
+      execSync(`tmux -L ${server} -f /dev/null new-session -d -s ${session} -n main bash`, { stdio: 'pipe' });
+
+      const popupCommand = `${popupRunner} "${resultFile}" "${process.cwd()}" 1`;
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${popupCommand}' Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'delete forward prompt'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+
+      // Build base branch value and put cursor before trailing marker char.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${existingBaseBranch}x'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Left`, { stdio: 'pipe' });
+
+      // Delete should remove the char to the right (x), preserving the valid base branch.
+      // Use a literal escape sequence to avoid tmux key-name normalization ambiguity.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 -l "$(printf '\\033[3~')"`, { stdio: 'pipe' });
+
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+      await waitForPaneText(server, session, '▶ Branch/worktree name override (optional)');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'feat/e2e-delete-forward'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      const payload = await poll(
+        () => readPopupResult(resultFile),
+        (value) => !!value
+      );
+
+      expect(payload.success).toBe(true);
+      expect(payload.data.baseBranch).toBe(existingBaseBranch);
+      expect(payload.data.branchName).toBe('feat/e2e-delete-forward');
+    } finally {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+      try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 120000);
+
+  it.runIf(canRun)('uses Backspace as left-delete in base branch input', async () => {
+    const server = `dmux-e2e-gitopt-${Date.now()}`;
+    const session = 'dmux-e2e-gitopt-backspace-left';
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dmux-e2e-gitopt-'));
+    const resultFile = path.join(tempDir, 'result.json');
+    const existingBaseBranch = execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+
+    try {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+
+      execSync(`tmux -L ${server} -f /dev/null new-session -d -s ${session} -n main bash`, { stdio: 'pipe' });
+
+      const popupCommand = `${popupRunner} "${resultFile}" "${process.cwd()}" 1`;
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${popupCommand}' Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, 'Enter a prompt for your AI agent.');
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 'backspace left prompt'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await waitForPaneText(server, session, '▶ Base branch override (optional)');
+
+      // Build base branch value and put cursor before trailing marker char.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 '${existingBaseBranch}x'`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Left`, { stdio: 'pipe' });
+
+      // Backspace should remove the char to the left of cursor, leaving an invalid
+      // branch text (existing branch minus last char + trailing marker), so submit
+      // should be blocked by strict validation.
+      // Use a literal DEL byte to match real backspace terminal behavior.
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 -l "$(printf '\\177')"`, { stdio: 'pipe' });
+      execSync(`tmux -L ${server} send-keys -t ${session}:0.0 Enter`, { stdio: 'pipe' });
+
+      await sleep(700);
+      expect(fs.existsSync(resultFile)).toBe(false);
+      await waitForPaneText(server, session, 'Base branch must match an existing local branch');
+    } finally {
+      try { execSync(`tmux -L ${server} kill-session -t ${session}`, { stdio: 'pipe' }); } catch {}
+      try { execSync(`tmux -L ${server} kill-server`, { stdio: 'pipe' }); } catch {}
+      try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 120000);
+
   it.runIf(!canRun)('skipped: tmux or popup runner unavailable', () => {
     // Intentionally empty
   });

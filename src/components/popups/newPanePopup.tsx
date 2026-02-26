@@ -12,7 +12,6 @@
 
 import React, { useState, useEffect } from "react"
 import { render, Box, Text, useApp, useInput } from "ink"
-import TextInput from "ink-text-input"
 import {
   PopupContainer,
   PopupWrapper,
@@ -21,6 +20,7 @@ import {
 } from "./shared/index.js"
 import { PopupFooters, POPUP_CONFIG } from "./config.js"
 import CleanTextInput from "../inputs/CleanTextInput.js"
+import InlineCursorInput from "../inputs/InlineCursorInput.js"
 import { scanProjectFiles, fuzzyMatchFiles } from "../../utils/fileScanner.js"
 import {
   BASE_BRANCH_ERROR_MESSAGE,
@@ -562,7 +562,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
               marginBottom={0}
               flexDirection="column"
             >
-              <TextInput
+              <InlineCursorInput
                 value={baseBranch}
                 onChange={setBaseBranch}
                 focus={activeGitField === 'baseBranch'}
@@ -620,7 +620,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
               paddingX={POPUP_CONFIG.inputPadding.x}
               paddingY={POPUP_CONFIG.inputPadding.y}
             >
-              <TextInput
+              <InlineCursorInput
                 value={branchName}
                 onChange={setBranchName}
                 focus={activeGitField === 'branchName'}
