@@ -53,6 +53,12 @@ export class LayoutCalculator {
       MAX_COMFORTABLE_WIDTH,
       MIN_COMFORTABLE_HEIGHT,
     } = this.config;
+    // If users lower MAX below the default MIN (e.g. max=40), use the lower value
+    // for feasibility checks so those narrower-but-intentional layouts are considered.
+    const minFeasiblePaneWidth = Math.max(
+      1,
+      Math.min(MIN_COMFORTABLE_WIDTH, MAX_COMFORTABLE_WIDTH)
+    );
 
     // Special case: welcome pane or no panes
     if (numContentPanes === 0) {
@@ -76,7 +82,7 @@ export class LayoutCalculator {
 
       // Calculate minimum required dimensions (can we fit at MIN width?)
       const minRequiredWidth =
-        SIDEBAR_WIDTH + cols * MIN_COMFORTABLE_WIDTH + columnBorders;
+        SIDEBAR_WIDTH + cols * minFeasiblePaneWidth + columnBorders;
       const minRequiredHeight = rows * MIN_COMFORTABLE_HEIGHT + rowBorders;
 
       // Check if this layout fits in terminal at minimum comfortable size

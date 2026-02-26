@@ -26,6 +26,7 @@ import { createPane } from './utils/paneCreation.js';
 import { SettingsManager } from './utils/settingsManager.js';
 import { atomicWriteJson } from './utils/atomicWrite.js';
 import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
+import { buildPaneExitedHookCommandForSession } from './utils/tmuxHookCommands.js';
 import {
   resolveEnabledAgentsSelection,
   type AgentName,
@@ -1109,12 +1110,14 @@ class Dmux {
       // Set up hooks that send SIGUSR2 to dmux process for pane events
       // This allows immediate detection of pane changes
       const pid = process.pid;
+      const paneExitedHookCommand = buildPaneExitedHookCommandForSession(pid, sessionName);
 
       // Detect manually created panes via Ctrl+b %
-      execSync(`tmux set-hook -t '${sessionName}' after-split-window 'run-shell "kill -USR2 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
+      execSync(`tmux set-hook -t '${sessionName}' after-split-window 'run-shell "kill -USR2 ${pid} 2>/dev/null || true # dmux-hook"'`, { stdio: 'pipe' });
 
-      // Detect pane closures via Ctrl+b x or process exit
-      execSync(`tmux set-hook -t '${sessionName}' pane-exited 'run-shell "kill -USR2 ${pid} 2>/dev/null || true"'`, { stdio: 'pipe' });
+      // Detect pane closures via Ctrl+b x or process exit.
+      // If the control pane is closed, this also recreates a replacement pane.
+      execSync(`tmux set-hook -t '${sessionName}' pane-exited '${paneExitedHookCommand}'`, { stdio: 'pipe' });
 
       // LogService.getInstance().debug(`Set up pane detection hooks for session ${this.sessionName}`, 'Setup');
     } catch (error) {

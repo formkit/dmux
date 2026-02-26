@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { useInput } from "ink"
 import type { DmuxPane } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
@@ -137,6 +138,37 @@ export function useInputHandling(params: UseInputHandlingParams) {
     findCardInDirection,
   } = params
 
+  const layoutRefreshDebounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (layoutRefreshDebounceRef.current) {
+        clearTimeout(layoutRefreshDebounceRef.current)
+        layoutRefreshDebounceRef.current = null
+      }
+    }
+  }, [])
+
+  const queueLayoutRefresh = () => {
+    if (!controlPaneId) {
+      return
+    }
+
+    if (layoutRefreshDebounceRef.current) {
+      clearTimeout(layoutRefreshDebounceRef.current)
+    }
+
+    layoutRefreshDebounceRef.current = setTimeout(async () => {
+      layoutRefreshDebounceRef.current = null
+      try {
+        await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, { forceLayout: true })
+      } catch (error: any) {
+        setStatusMessage(`Setting saved but layout refresh failed: ${error?.message || String(error)}`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
+    }, 250)
+  }
+
   const handleCreateAgentPane = async (targetProjectRoot: string) => {
     const promptValue = await popupManager.launchNewPanePopup(targetProjectRoot)
     if (promptValue) {
@@ -173,6 +205,45 @@ export function useInputHandling(params: UseInputHandlingParams) {
       setIsCreatingPane(false)
       setStatusMessage(`Failed to create terminal pane: ${error.message}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    }
+  }
+
+  const openTerminalInWorktree = async (selectedPane: DmuxPane) => {
+    if (!selectedPane.worktreePath) {
+      setStatusMessage("Cannot open terminal: this pane has no worktree")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const targetProjectRoot = getPaneProjectRoot(selectedPane, projectRoot)
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(`Opening terminal in ${selectedPane.slug}...`)
+
+      const tmuxService = TmuxService.getInstance()
+      const newPaneId = await tmuxService.splitPane({ cwd: selectedPane.worktreePath })
+
+      // Wait for pane creation to settle
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
+
+      const shellPane = await createShellPane(
+        newPaneId,
+        getNextDmuxId(panes)
+      )
+      shellPane.projectRoot = targetProjectRoot
+      await savePanes([...panes, shellPane])
+
+      setStatusMessage(`Opened terminal in ${selectedPane.slug}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+
+      // Force a reload to ensure tmux metadata and pane IDs are in sync
+      await loadPanes()
+    } catch (error: any) {
+      setStatusMessage(`Failed to open terminal in worktree: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
     }
   }
 
@@ -238,9 +309,121 @@ export function useInputHandling(params: UseInputHandlingParams) {
       return
     }
 
+    if (actionId === PaneAction.ATTACH_AGENT) {
+      await attachAgentsToPane(pane)
+      return
+    }
+
+    if (actionId === PaneAction.OPEN_TERMINAL_IN_WORKTREE) {
+      await openTerminalInWorktree(pane)
+      return
+    }
+
     await actionSystem.executeAction(actionId, pane, {
       mainBranch: getMainBranch(),
     })
+  }
+
+  const attachAgentsToPane = async (selectedPane: DmuxPane) => {
+    if (!selectedPane.worktreePath) {
+      setStatusMessage("Cannot attach agent: this pane has no worktree")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    // Warn if agent is actively working
+    if (selectedPane.agentStatus === "working") {
+      const confirmed = await popupManager.launchConfirmPopup(
+        "Agent Active",
+        `Agent in "${selectedPane.slug}" is currently working. Attach another agent anyway?`,
+        "Attach",
+        "Cancel"
+      )
+      if (!confirmed) return
+    }
+
+    let selectedAgents: AgentName[] = []
+    if (availableAgents.length === 0) {
+      setStatusMessage("No agents available")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    } else if (availableAgents.length === 1) {
+      selectedAgents = [availableAgents[0]]
+    } else {
+      const agents = await popupManager.launchAgentChoicePopup()
+      if (agents === null) {
+        return
+      }
+      if (agents.length === 0) {
+        setStatusMessage("Select at least one agent")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        return
+      }
+      selectedAgents = agents
+    }
+
+    // Prompt input
+    const promptValue = await popupManager.launchNewPanePopup(
+      getPaneProjectRoot(selectedPane, projectRoot)
+    )
+    if (!promptValue) return
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(
+        selectedAgents.length > 1
+          ? `Attaching ${selectedAgents.length} agents...`
+          : "Attaching agent..."
+      )
+
+      const { attachAgentToWorktree } = await import("../utils/attachAgent.js")
+      const createdPanes: DmuxPane[] = []
+      const failedAgents: AgentName[] = []
+
+      for (const agent of selectedAgents) {
+        try {
+          const result = await attachAgentToWorktree({
+            targetPane: selectedPane,
+            prompt: promptValue,
+            agent,
+            existingPanes: [...panes, ...createdPanes],
+            sessionProjectRoot: projectRoot,
+            sessionConfigPath: panesFile,
+          })
+          createdPanes.push(result.pane)
+        } catch {
+          failedAgents.push(agent)
+        }
+      }
+
+      if (createdPanes.length > 0) {
+        const updatedPanes = [...panes, ...createdPanes]
+        await savePanes(updatedPanes)
+        await loadPanes()
+      }
+
+      if (failedAgents.length === 0) {
+        setStatusMessage(
+          `Attached ${createdPanes.length} agent${createdPanes.length === 1 ? "" : "s"} to ${selectedPane.slug}`
+        )
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } else if (createdPanes.length === 0) {
+        setStatusMessage(
+          `Failed to attach agents: ${failedAgents.join(", ")}`
+        )
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      } else {
+        setStatusMessage(
+          `Attached ${createdPanes.length}/${selectedAgents.length} agents to ${selectedPane.slug} (${failedAgents.length} failed)`
+        )
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
+    } catch (error: any) {
+      setStatusMessage(`Failed to attach agent: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
   }
 
   useInput(async (input: string, key: any) => {
@@ -384,74 +567,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
 
     if (input === "a" && selectedIndex < panes.length) {
-      // Attach agent to selected pane's worktree
-      const selectedPane = panes[selectedIndex]
-      if (!selectedPane.worktreePath) {
-        setStatusMessage("Cannot attach agent: this pane has no worktree")
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-        return
-      }
-
-      // Warn if agent is actively working
-      if (selectedPane.agentStatus === "working") {
-        const confirmed = await popupManager.launchConfirmPopup(
-          "Agent Active",
-          `Agent in "${selectedPane.slug}" is currently working. Attach another agent anyway?`,
-          "Attach",
-          "Cancel"
-        )
-        if (!confirmed) return
-      }
-
-      // Agent choice (single agent only, no A/B pairs)
-      let chosenAgent: import("../utils/agentLaunch.js").AgentName | null = null
-      if (availableAgents.length === 0) {
-        setStatusMessage("No agents available")
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-        return
-      } else if (availableAgents.length === 1) {
-        chosenAgent = availableAgents[0]
-      } else {
-        const agents = await popupManager.launchAgentChoicePopup()
-        if (agents && agents.length > 0) {
-          chosenAgent = agents[0] // Single agent for attach (no A/B)
-        }
-      }
-      if (!chosenAgent) return
-
-      // Prompt input
-      const promptValue = await popupManager.launchNewPanePopup(
-        getPaneProjectRoot(selectedPane, projectRoot)
-      )
-      if (!promptValue) return
-
-      // Attach agent to worktree
-      try {
-        setIsCreatingPane(true)
-        setStatusMessage("Attaching agent...")
-
-        const { attachAgentToWorktree } = await import("../utils/attachAgent.js")
-        const result = await attachAgentToWorktree({
-          targetPane: selectedPane,
-          prompt: promptValue,
-          agent: chosenAgent,
-          existingPanes: panes,
-          sessionProjectRoot: projectRoot,
-          sessionConfigPath: panesFile,
-        })
-
-        const updatedPanes = [...panes, result.pane]
-        await savePanes(updatedPanes)
-        await loadPanes()
-
-        setStatusMessage(`Attached ${chosenAgent} to ${selectedPane.slug}`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      } catch (error: any) {
-        setStatusMessage(`Failed to attach agent: ${error.message}`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
-      } finally {
-        setIsCreatingPane(false)
-      }
+      await attachAgentsToPane(panes[selectedIndex])
+      return
+    } else if (input === "A" && selectedIndex < panes.length) {
+      await openTerminalInWorktree(panes[selectedIndex])
       return
     } else if (input === "m" && selectedIndex < panes.length) {
       // Open kebab menu popup for selected pane
@@ -466,13 +585,53 @@ export function useInputHandling(params: UseInputHandlingParams) {
         })
       })
       if (result) {
-        settingsManager.updateSetting(
-          result.key as keyof import("../types.js").DmuxSettings,
-          result.value,
-          result.scope
-        )
-        setStatusMessage(`Setting saved (${result.scope})`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        try {
+          const updates = Array.isArray((result as any).updates)
+            ? (result as any).updates
+            : [result]
+
+          let savedCount = 0
+          let layoutBoundsUpdated = false
+          let lastScope: "global" | "project" | null = null
+
+          for (const update of updates) {
+            if (
+              !update
+              || typeof update.key !== "string"
+              || (update.scope !== "global" && update.scope !== "project")
+            ) {
+              continue
+            }
+
+            settingsManager.updateSetting(
+              update.key as keyof import("../types.js").DmuxSettings,
+              update.value,
+              update.scope
+            )
+            savedCount += 1
+            lastScope = update.scope
+
+            if (update.key === "minPaneWidth" || update.key === "maxPaneWidth") {
+              layoutBoundsUpdated = true
+            }
+          }
+
+          if (layoutBoundsUpdated) {
+            queueLayoutRefresh()
+          }
+
+          if (savedCount > 0) {
+            const statusMessage =
+              savedCount === 1
+                ? `Setting saved (${lastScope})`
+                : `${savedCount} settings saved`
+            setStatusMessage(statusMessage)
+            setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+          }
+        } catch (error: any) {
+          setStatusMessage(`Failed to save setting: ${error?.message || String(error)}`)
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+        }
       }
     } else if (input === "l") {
       // Open logs popup
@@ -488,9 +647,14 @@ export function useInputHandling(params: UseInputHandlingParams) {
       }
     } else if (input === "L" && controlPaneId) {
       // Reset layout to sidebar configuration (Shift+L)
-      enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH)
-      setStatusMessage("Layout reset")
-      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      try {
+        await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, { forceLayout: true })
+        setStatusMessage("Layout reset")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } catch (error: any) {
+        setStatusMessage(`Failed to reset layout: ${error?.message || String(error)}`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
     } else if (input === "T") {
       // Demo toasts (Shift+T) - cycles through different types
       const stateManager = StateManager.getInstance()

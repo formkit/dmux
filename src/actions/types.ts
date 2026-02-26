@@ -108,6 +108,7 @@ export enum PaneAction {
   OPEN_IN_EDITOR = 'open_in_editor',
   TOGGLE_AUTOPILOT = 'toggle_autopilot',
   ATTACH_AGENT = 'attach_agent',
+  OPEN_TERMINAL_IN_WORKTREE = 'open_terminal_in_worktree',
 }
 
 /**
@@ -217,6 +218,14 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     label: 'Toggle Autopilot',
     description: 'Enable/disable automatic option acceptance',
     icon: '🤖',
+    requires: { worktree: true },
+  },
+  [PaneAction.OPEN_TERMINAL_IN_WORKTREE]: {
+    id: PaneAction.OPEN_TERMINAL_IN_WORKTREE,
+    label: 'Add Terminal to Worktree',
+    description: 'Open a new shell pane in this worktree',
+    icon: '⌨',
+    shortcut: 'A',
     requires: { worktree: true },
   },
   [PaneAction.ATTACH_AGENT]: {

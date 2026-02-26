@@ -408,7 +408,8 @@ export const calculateOptimalColumns = (
  */
 export const enforceControlPaneSize = async (
   controlPaneId: string,
-  width: number
+  width: number,
+  options?: { forceLayout?: boolean; suppressLayoutLogs?: boolean; disableSpacer?: boolean }
 ): Promise<void> => {
   const logService = LogService.getInstance();
   const tmuxService = TmuxService.getInstance();
@@ -457,16 +458,39 @@ export const enforceControlPaneSize = async (
       }
     }
 
-    // Use the new layout manager for regular content panes
-    // Read terminal dimensions (not window dimensions which may be stale in manual mode)
-    const dimensions = getTerminalDimensions();
+    // Use the new layout manager for regular content panes.
+    // IMPORTANT: target control pane client dimensions, not popup/client-of-caller dimensions.
+    let dimensions = getTerminalDimensions();
+    try {
+      const output = execSync(
+        `tmux display-message -t '${controlPaneId}' -p "#{client_width} #{client_height}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      const [targetWidth, targetHeight] = output.split(' ').map(n => parseInt(n, 10));
+      if (
+        Number.isFinite(targetWidth) &&
+        Number.isFinite(targetHeight) &&
+        targetWidth > 0 &&
+        targetHeight > 0
+      ) {
+        dimensions = { width: targetWidth, height: targetHeight };
+      }
+    } catch {
+      // Fall back to caller client dimensions.
+    }
     // logService.debug(`Terminal dimensions: ${dimensions.width}x${dimensions.height}`, 'Layout');
 
     await recalculateAndApplyLayout(
       controlPaneId,
       contentPanes,
       dimensions.width,
-      dimensions.height
+      dimensions.height,
+      undefined,
+      {
+        force: options?.forceLayout === true,
+        suppressLogs: options?.suppressLayoutLogs === true,
+        disableSpacer: options?.disableSpacer === true,
+      }
     );
 
     // Refresh to apply changes (but don't select the pane - don't steal focus!)

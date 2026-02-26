@@ -73,6 +73,24 @@ export function render() {
       </tbody>
     </table>
 
+    <h3><code>minPaneWidth</code></h3>
+    <table>
+      <tbody>
+        <tr><td><strong>Type</strong></td><td><code>number</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>50</code></td></tr>
+        <tr><td><strong>Description</strong></td><td>Minimum content-pane width in characters. Used during layout fitting to prevent panes from becoming too narrow. Range: 40–300. This is a global-only setting (project overrides are ignored).</td></tr>
+      </tbody>
+    </table>
+
+    <h3><code>maxPaneWidth</code></h3>
+    <table>
+      <tbody>
+        <tr><td><strong>Type</strong></td><td><code>number</code></td></tr>
+        <tr><td><strong>Default</strong></td><td><code>80</code></td></tr>
+        <tr><td><strong>Description</strong></td><td>Maximum content-pane width in characters. Controls when wrapping or spacer logic kicks in. Range: 40–300. This is a global-only setting (project overrides are ignored).</td></tr>
+      </tbody>
+    </table>
+
     <h2>Accessing Settings</h2>
 
     <h3>TUI</h3>
@@ -86,7 +104,9 @@ export function render() {
   "defaultAgent": "claude",
   "useTmuxHooks": false,
   "baseBranch": "develop",
-  "branchPrefix": "feat/"
+  "branchPrefix": "feat/",
+  "minPaneWidth": 50,
+  "maxPaneWidth": 80
 }</code></pre>
 
     <h2>Setting Precedence</h2>

@@ -17,7 +17,7 @@
 
 ---
 
-<img src="./dmux.gif" alt="dmux demo" width="100%" />
+<img src="./dmux.webp" alt="dmux demo" width="100%" />
 
 ## Install
 

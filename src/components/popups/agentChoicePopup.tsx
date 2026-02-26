@@ -5,10 +5,11 @@
  * Runs in a tmux popup modal and writes result to a file.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
+import { resolveAgentsToLaunchOnEnter } from './agentChoiceSelection.js';
 import {
   getAgentLabel,
   getAgentShortLabel,
@@ -40,7 +41,10 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
         availableAgents.filter((agent) => initialSelectedAgents.includes(agent))
       )
   );
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const selectedIndexRef = useRef(selectedIndex);
+  const selectedAgentsRef = useRef(selectedAgents);
+  selectedIndexRef.current = selectedIndex;
+  selectedAgentsRef.current = selectedAgents;
 
   const orderedSelections = useMemo(
     () => availableAgents.filter((agent) => selectedAgents.has(agent)),
@@ -48,20 +52,28 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
   );
   const selectedCount = orderedSelections.length;
 
+  const setSelectedIndexValue = (nextIndex: number) => {
+    selectedIndexRef.current = nextIndex;
+    setSelectedIndex(nextIndex);
+  };
+
+  const setSelectedAgentsValue = (nextSelectedAgents: Set<AgentName>) => {
+    selectedAgentsRef.current = nextSelectedAgents;
+    setSelectedAgents(nextSelectedAgents);
+  };
+
   const toggleSelectedAgent = () => {
-    const agent = availableAgents[selectedIndex];
+    const agent = availableAgents[selectedIndexRef.current];
     if (!agent) return;
 
-    setSelectedAgents((prev) => {
-      const next = new Set(prev);
-      if (next.has(agent)) {
-        next.delete(agent);
-      } else {
-        next.add(agent);
-      }
-      return next;
-    });
-    setValidationError(null);
+    const next = new Set(selectedAgentsRef.current);
+    if (next.has(agent)) {
+      next.delete(agent);
+    } else {
+      next.add(agent);
+    }
+
+    setSelectedAgentsValue(next);
   };
 
   useInput((input, key) => {
@@ -73,12 +85,14 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
     }
 
     if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
+      setSelectedIndexValue(Math.max(0, selectedIndexRef.current - 1));
       return;
     }
 
     if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(availableAgents.length - 1, prev + 1));
+      setSelectedIndexValue(
+        Math.min(availableAgents.length - 1, selectedIndexRef.current + 1)
+      );
       return;
     }
 
@@ -88,11 +102,12 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
     }
 
     if (key.return) {
-      if (orderedSelections.length === 0) {
-        setValidationError('Select at least one agent.');
-        return;
-      }
-      writeSuccessAndExit(resultFile, orderedSelections, exit);
+      const launchAgents = resolveAgentsToLaunchOnEnter(
+        availableAgents,
+        selectedAgentsRef.current,
+        selectedIndexRef.current
+      );
+      writeSuccessAndExit(resultFile, launchAgents, exit);
     }
   });
 
@@ -101,14 +116,11 @@ const AgentChoicePopupApp: React.FC<AgentChoicePopupProps> = ({
       <PopupContainer footer="↑↓ navigate • Space toggle • Enter launch • ESC cancel">
         <Box marginBottom={1}>
           <Text dimColor>
-            Select one or more agents, then press Enter to launch.
+            Space toggles selection. Enter launches selected agents, or the focused agent if none are selected.
           </Text>
           <Text color={POPUP_CONFIG.titleColor}>
             Selected: {selectedCount}/{availableAgents.length}
           </Text>
-          {validationError && (
-            <Text color="red">{validationError}</Text>
-          )}
         </Box>
 
         <Box flexDirection="column">

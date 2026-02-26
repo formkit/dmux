@@ -32,6 +32,20 @@ export async function executeAction(
         dismissable: true,
       };
 
+    case 'attach_agent':
+      return {
+        type: 'info',
+        message: 'Attach agent is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
+    case 'open_terminal_in_worktree':
+      return {
+        type: 'info',
+        message: 'Open terminal in worktree is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
     case 'close':
       return actions.closePane(pane, context);
 

@@ -11,6 +11,7 @@ interface UseServicesProps {
   isDevMode: boolean
   terminalWidth: number
   terminalHeight: number
+  controlPaneId?: string
   availableAgents: AgentName[]
   settingsManager: any
   projectSettings: ProjectSettings
@@ -30,6 +31,7 @@ export function useServices(props: UseServicesProps) {
       isDevMode: props.isDevMode,
       terminalWidth: props.terminalWidth,
       terminalHeight: props.terminalHeight,
+      controlPaneId: props.controlPaneId,
       availableAgents: props.availableAgents,
       settingsManager: props.settingsManager,
       projectSettings: props.projectSettings,
@@ -47,6 +49,7 @@ export function useServices(props: UseServicesProps) {
     props.isDevMode,
     props.terminalWidth,
     props.terminalHeight,
+    props.controlPaneId,
     props.availableAgents,
     props.settingsManager,
     props.projectSettings,

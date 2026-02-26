@@ -31,13 +31,28 @@ export interface AttachAgentOptions {
 /**
  * Generate a unique sibling slug like `fix-auth-a2`, `fix-auth-a3`, etc.
  */
-function generateSiblingSlug(baseSlug: string, existingPanes: DmuxPane[]): string {
-  const existingSlugs = new Set(existingPanes.map(p => p.slug));
-  let n = 2;
-  while (existingSlugs.has(`${baseSlug}-a${n}`)) {
-    n++;
+export function generateSiblingSlugForTargetPane(
+  targetPane: Pick<DmuxPane, 'slug' | 'worktreePath'>,
+  existingPanes: ReadonlyArray<Pick<DmuxPane, 'slug'>>,
+): string {
+  // Always anchor attached-agent slugs to the real worktree directory name.
+  // This avoids repeated suffixes when attaching from an already attached pane.
+  const worktreeSlug = targetPane.worktreePath
+    ? path.basename(targetPane.worktreePath)
+    : '';
+  const baseSlug = worktreeSlug || targetPane.slug;
+
+  const siblingPrefix = `${baseSlug}-a`;
+  let maxSibling = 1;
+
+  for (const pane of existingPanes) {
+    if (!pane.slug.startsWith(siblingPrefix)) continue;
+    const suffix = pane.slug.slice(siblingPrefix.length);
+    if (!/^\d+$/.test(suffix)) continue;
+    maxSibling = Math.max(maxSibling, Number.parseInt(suffix, 10));
   }
-  return `${baseSlug}-a${n}`;
+
+  return `${baseSlug}-a${maxSibling + 1}`;
 }
 
 export async function attachAgentToWorktree(
@@ -61,7 +76,7 @@ export async function attachAgentToWorktree(
   const settings = settingsManager.getSettings();
 
   // Generate a unique slug for this sibling
-  const slug = generateSiblingSlug(targetPane.slug, existingPanes);
+  const slug = generateSiblingSlugForTargetPane(targetPane, existingPanes);
 
   const tmuxService = TmuxService.getInstance();
   const originalPaneId = tmuxService.getCurrentPaneIdSync();

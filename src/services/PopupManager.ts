@@ -27,6 +27,7 @@ export interface PopupManagerConfig {
   isDevMode: boolean
   terminalWidth: number
   terminalHeight: number
+  controlPaneId?: string
   availableAgents: AgentName[]
   settingsManager: any
   projectSettings: ProjectSettings
@@ -469,7 +470,11 @@ export class PopupManager {
 
   async launchSettingsPopup(
     onLaunchHooks: () => Promise<void>
-  ): Promise<{ key: string; value: any; scope: "global" | "project" } | null> {
+  ): Promise<
+    | { key: string; value: any; scope: "global" | "project" }
+    | { updates: Array<{ key: string; value: any; scope: "global" | "project" }> }
+    | null
+  > {
     if (!this.checkPopupSupport()) return null
 
     try {
@@ -496,18 +501,49 @@ export class PopupManager {
           settings: this.config.settingsManager.getSettings(),
           globalSettings: this.config.settingsManager.getGlobalSettings(),
           projectSettings: this.config.settingsManager.getProjectSettings(),
+          projectRoot: this.config.projectRoot,
+          controlPaneId: this.config.controlPaneId,
         }
       )
 
       if (result.success) {
+        const data = result.data ?? {}
+        const pendingUpdates = Array.isArray(data.updates)
+          ? data.updates.filter(
+              (update: any) =>
+                typeof update?.key === "string"
+                && (update?.scope === "global" || update?.scope === "project")
+            )
+          : []
+
         // Check if this is an action result
-        if (result.data?.action === "hooks") {
+        if (data.action === "hooks") {
           await onLaunchHooks()
-          return null
-        } else if (result.data?.action === "enabledAgents") {
-          return await this.launchEnabledAgentsPopup()
-        } else if (result.data) {
-          return result.data
+          return pendingUpdates.length > 0 ? { updates: pendingUpdates } : null
+        }
+
+        if (data.action === "enabledAgents") {
+          const enabledAgentsUpdate = await this.launchEnabledAgentsPopup()
+          if (enabledAgentsUpdate) {
+            pendingUpdates.push(enabledAgentsUpdate)
+          }
+          return pendingUpdates.length > 0 ? { updates: pendingUpdates } : null
+        }
+
+        if (typeof data.key === "string" && (data.scope === "global" || data.scope === "project")) {
+          if (pendingUpdates.length > 0) {
+            return {
+              updates: [
+                ...pendingUpdates,
+                { key: data.key, value: data.value, scope: data.scope },
+              ],
+            }
+          }
+          return { key: data.key, value: data.value, scope: data.scope }
+        }
+
+        if (pendingUpdates.length > 0) {
+          return { updates: pendingUpdates }
         }
       }
       return null
@@ -629,12 +665,26 @@ export class PopupManager {
         return this.handleResult(result)
       }
 
+      const messageLines = message.split("\n").reduce((count, line) => {
+        return count + Math.max(1, Math.ceil(line.length / 65))
+      }, 0)
+      const optionLines = options.reduce((count, option, index) => {
+        const optionRowHeight = option.description ? 2 : 1
+        const optionSpacing = index < options.length - 1 ? 1 : 0
+        return count + optionRowHeight + optionSpacing
+      }, 0)
+      const maxHeight = Math.max(12, Math.min(35, this.config.terminalHeight - 4))
+      const calculatedHeight = Math.max(
+        12,
+        Math.min(maxHeight, messageLines + optionLines + 6)
+      )
+
       const result = await this.launchPopup<string>(
         "choicePopup.js",
         [],
         {
           width: 70,
-          height: Math.min(25, options.length * 3 + 8),
+          height: calculatedHeight,
           title: title || "Choose Option",
         },
         { title, message, options }

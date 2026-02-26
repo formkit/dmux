@@ -2,6 +2,16 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type { DmuxSettings, SettingsScope, SettingDefinition } from '../types.js';
+import {
+  DEFAULT_MIN_PANE_WIDTH,
+  DEFAULT_MAX_PANE_WIDTH,
+  MAX_MIN_PANE_WIDTH,
+  MAX_MAX_PANE_WIDTH,
+  MIN_MIN_PANE_WIDTH,
+  MIN_MAX_PANE_WIDTH,
+  SHIFT_MIN_PANE_WIDTH_STEP,
+  SHIFT_MAX_PANE_WIDTH_STEP,
+} from '../constants/layout.js';
 import { isValidBranchName } from './git.js';
 import {
   getAgentDefinitions,
@@ -15,10 +25,31 @@ const PERMISSION_MODES = ['', 'plan', 'acceptEdits', 'bypassPermissions'] as con
 function isPermissionMode(value: string): value is NonNullable<DmuxSettings['permissionMode']> {
   return (PERMISSION_MODES as readonly string[]).includes(value);
 }
+
+function isValidMaxPaneWidth(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= MIN_MAX_PANE_WIDTH &&
+    value <= MAX_MAX_PANE_WIDTH
+  );
+}
+
+function isValidMinPaneWidth(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= MIN_MIN_PANE_WIDTH &&
+    value <= MAX_MIN_PANE_WIDTH
+  );
+}
+
 const DEFAULT_SETTINGS: DmuxSettings = {
   // Most permissive defaults for new dmux setups.
   permissionMode: 'bypassPermissions',
   enableAutopilotByDefault: true,
+  minPaneWidth: DEFAULT_MIN_PANE_WIDTH,
+  maxPaneWidth: DEFAULT_MAX_PANE_WIDTH,
   enabledAgents: getDefaultEnabledAgents(),
 };
 
@@ -87,6 +118,26 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     ],
   },
   {
+    key: 'minPaneWidth',
+    label: 'Min Pane Width',
+    description: 'Global minimum content-pane width in characters used during layout fitting.',
+    type: 'number',
+    min: MIN_MIN_PANE_WIDTH,
+    max: MAX_MIN_PANE_WIDTH,
+    step: 1,
+    shiftStep: SHIFT_MIN_PANE_WIDTH_STEP,
+  },
+  {
+    key: 'maxPaneWidth',
+    label: 'Max Pane Width',
+    description: 'Global maximum content-pane width in characters before wrapping/spacer logic.',
+    type: 'number',
+    min: MIN_MAX_PANE_WIDTH,
+    max: MAX_MAX_PANE_WIDTH,
+    step: 1,
+    shiftStep: SHIFT_MAX_PANE_WIDTH_STEP,
+  },
+  {
     key: 'hooks' as any,
     label: 'Manage Hooks',
     description: 'View and edit dmux lifecycle hooks',
@@ -128,6 +179,42 @@ export class SettingsManager {
     }
   }
 
+  private getValidGlobalMinPaneWidth(): number {
+    return isValidMinPaneWidth(this.globalSettings.minPaneWidth)
+      ? this.globalSettings.minPaneWidth
+      : (DEFAULT_SETTINGS.minPaneWidth as number);
+  }
+
+  private getValidGlobalMaxPaneWidth(): number {
+    return isValidMaxPaneWidth(this.globalSettings.maxPaneWidth)
+      ? this.globalSettings.maxPaneWidth
+      : (DEFAULT_SETTINGS.maxPaneWidth as number);
+  }
+
+  private resolveGlobalPaneWidths(
+    overrides?: Partial<Pick<DmuxSettings, 'minPaneWidth' | 'maxPaneWidth'>>
+  ): { minPaneWidth: number; maxPaneWidth: number } {
+    const hasMinOverride = overrides?.minPaneWidth !== undefined;
+    const hasMaxOverride = overrides?.maxPaneWidth !== undefined;
+
+    let minPaneWidth = hasMinOverride
+      ? (overrides?.minPaneWidth as number)
+      : this.getValidGlobalMinPaneWidth();
+    let maxPaneWidth = hasMaxOverride
+      ? (overrides?.maxPaneWidth as number)
+      : this.getValidGlobalMaxPaneWidth();
+
+    if (minPaneWidth > maxPaneWidth) {
+      if (hasMinOverride && !hasMaxOverride) {
+        minPaneWidth = maxPaneWidth;
+      } else {
+        maxPaneWidth = minPaneWidth;
+      }
+    }
+
+    return { minPaneWidth, maxPaneWidth };
+  }
+
   /**
    * Get merged settings (project settings override global)
    */
@@ -137,6 +224,11 @@ export class SettingsManager {
       ...this.globalSettings,
       ...this.projectSettings,
     };
+
+    // Pane width bounds are global-only; ignore any project override values.
+    const paneWidths = this.resolveGlobalPaneWidths();
+    merged.minPaneWidth = paneWidths.minPaneWidth;
+    merged.maxPaneWidth = paneWidths.maxPaneWidth;
 
     if (Array.isArray(merged.enabledAgents)) {
       merged.enabledAgents = [...merged.enabledAgents];
@@ -193,6 +285,44 @@ export class SettingsManager {
         throw new Error(`Invalid enabledAgents: ${invalidAgents.join(', ')}`);
       }
     }
+    if (key === 'minPaneWidth' && !isValidMinPaneWidth(value)) {
+      throw new Error(
+        `Invalid minPaneWidth: expected an integer between ${MIN_MIN_PANE_WIDTH} and ${MAX_MIN_PANE_WIDTH}`
+      );
+    }
+    if (key === 'maxPaneWidth' && !isValidMaxPaneWidth(value)) {
+      throw new Error(
+        `Invalid maxPaneWidth: expected an integer between ${MIN_MAX_PANE_WIDTH} and ${MAX_MAX_PANE_WIDTH}`
+      );
+    }
+
+    // Pane width settings are always stored globally, regardless of requested scope.
+    if (key === 'minPaneWidth' || key === 'maxPaneWidth') {
+      const paneWidthOverrides: Partial<Pick<DmuxSettings, 'minPaneWidth' | 'maxPaneWidth'>> = {};
+      if (key === 'minPaneWidth') {
+        paneWidthOverrides.minPaneWidth = value as number;
+      } else {
+        paneWidthOverrides.maxPaneWidth = value as number;
+      }
+      const paneWidths = this.resolveGlobalPaneWidths(paneWidthOverrides);
+      this.globalSettings.minPaneWidth = paneWidths.minPaneWidth;
+      this.globalSettings.maxPaneWidth = paneWidths.maxPaneWidth;
+
+      let projectSettingsChanged = false;
+      if (this.projectSettings.minPaneWidth !== undefined) {
+        delete this.projectSettings.minPaneWidth;
+        projectSettingsChanged = true;
+      }
+      if (this.projectSettings.maxPaneWidth !== undefined) {
+        delete this.projectSettings.maxPaneWidth;
+        projectSettingsChanged = true;
+      }
+      if (projectSettingsChanged) {
+        this.saveProjectSettings();
+      }
+      this.saveGlobalSettings();
+      return;
+    }
 
     if (scope === 'global') {
       this.globalSettings[key] = value;
@@ -228,13 +358,71 @@ export class SettingsManager {
     if (typeof settings.branchPrefix === 'string' && settings.branchPrefix !== '' && !isValidBranchName(settings.branchPrefix)) {
       throw new Error('Invalid branchPrefix: contains characters not allowed in git branch names');
     }
+    if (settings.minPaneWidth !== undefined && !isValidMinPaneWidth(settings.minPaneWidth)) {
+      throw new Error(
+        `Invalid minPaneWidth: expected an integer between ${MIN_MIN_PANE_WIDTH} and ${MAX_MIN_PANE_WIDTH}`
+      );
+    }
+    if (settings.maxPaneWidth !== undefined && !isValidMaxPaneWidth(settings.maxPaneWidth)) {
+      throw new Error(
+        `Invalid maxPaneWidth: expected an integer between ${MIN_MAX_PANE_WIDTH} and ${MAX_MAX_PANE_WIDTH}`
+      );
+    }
+
+    const settingsToApply: Partial<DmuxSettings> = { ...settings };
+    let projectSettingsChanged = false;
+    let paneWidthsUpdated = false;
+
+    if (settingsToApply.minPaneWidth !== undefined || settingsToApply.maxPaneWidth !== undefined) {
+      const paneWidthOverrides: Partial<Pick<DmuxSettings, 'minPaneWidth' | 'maxPaneWidth'>> = {};
+      if (settingsToApply.minPaneWidth !== undefined) {
+        paneWidthOverrides.minPaneWidth = settingsToApply.minPaneWidth;
+      }
+      if (settingsToApply.maxPaneWidth !== undefined) {
+        paneWidthOverrides.maxPaneWidth = settingsToApply.maxPaneWidth;
+      }
+      const paneWidths = this.resolveGlobalPaneWidths(paneWidthOverrides);
+
+      this.globalSettings.minPaneWidth = paneWidths.minPaneWidth;
+      this.globalSettings.maxPaneWidth = paneWidths.maxPaneWidth;
+      paneWidthsUpdated = true;
+
+      delete settingsToApply.minPaneWidth;
+      delete settingsToApply.maxPaneWidth;
+
+      if (this.projectSettings.minPaneWidth !== undefined) {
+        delete this.projectSettings.minPaneWidth;
+        projectSettingsChanged = true;
+      }
+      if (this.projectSettings.maxPaneWidth !== undefined) {
+        delete this.projectSettings.maxPaneWidth;
+        projectSettingsChanged = true;
+      }
+    }
+
+    const hasRemainingSettings = Object.keys(settingsToApply).length > 0;
 
     if (scope === 'global') {
-      this.globalSettings = { ...this.globalSettings, ...settings };
-      this.saveGlobalSettings();
+      if (hasRemainingSettings) {
+        this.globalSettings = { ...this.globalSettings, ...settingsToApply };
+      }
+      if (hasRemainingSettings || paneWidthsUpdated) {
+        this.saveGlobalSettings();
+      }
+      if (projectSettingsChanged) {
+        this.saveProjectSettings();
+      }
     } else {
-      this.projectSettings = { ...this.projectSettings, ...settings };
-      this.saveProjectSettings();
+      if (hasRemainingSettings) {
+        this.projectSettings = { ...this.projectSettings, ...settingsToApply };
+        projectSettingsChanged = true;
+      }
+      if (projectSettingsChanged) {
+        this.saveProjectSettings();
+      }
+      if (paneWidthsUpdated) {
+        this.saveGlobalSettings();
+      }
     }
   }
 
@@ -281,6 +469,9 @@ export class SettingsManager {
    * Check if a setting is overridden at the project level
    */
   isProjectOverride(key: keyof DmuxSettings): boolean {
+    if (key === 'minPaneWidth' || key === 'maxPaneWidth') {
+      return false;
+    }
     return key in this.projectSettings;
   }
 
@@ -288,6 +479,12 @@ export class SettingsManager {
    * Get the effective scope for a setting (where it's currently defined)
    */
   getEffectiveScope(key: keyof DmuxSettings): SettingsScope | null {
+    if (key === 'minPaneWidth') {
+      return this.globalSettings.minPaneWidth !== undefined ? 'global' : null;
+    }
+    if (key === 'maxPaneWidth') {
+      return this.globalSettings.maxPaneWidth !== undefined ? 'global' : null;
+    }
     if (key in this.projectSettings) return 'project';
     if (key in this.globalSettings) return 'global';
     return null;

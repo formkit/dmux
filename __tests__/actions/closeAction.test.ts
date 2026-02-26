@@ -3,11 +3,11 @@
  *
  * This is a complex action with multiple code paths:
  * - Shell panes close immediately without options
- * - Worktree panes present 3 options (kill_only, kill_and_clean, kill_clean_branch)
+ * - Worktree panes present context-aware options based on sibling panes
  * - Hooks are triggered, config watcher is paused, tmux operations, layout recalculation
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { closePane } from '../../src/actions/implementations/closeAction.js';
 import { createMockPane, createShellPane, createWorktreePane } from '../fixtures/mockPanes.js';
 import { createMockContext } from '../fixtures/mockContext.js';
@@ -55,12 +55,13 @@ vi.mock('../../src/services/LogService.js', () => ({
   },
 }));
 
-vi.mock('fs', () => ({
-  default: {
-    readFileSync: vi.fn(),
-  },
-  readFileSync: vi.fn(),
-}));
+vi.mock('fs', () => {
+  const readFileSync = vi.fn();
+  return {
+    default: { readFileSync },
+    readFileSync,
+  };
+});
 
 import { execSync } from 'child_process';
 import { StateManager } from '../../src/shared/StateManager.js';
@@ -118,7 +119,7 @@ describe('closeAction', () => {
   });
 
   describe('worktree panes - option presentation', () => {
-    it('should present 3 cleanup options for worktree pane', async () => {
+    it('should present 3 cleanup options for worktree pane when no siblings share the worktree', async () => {
       const mockPane = createWorktreePane();
       const mockContext = createMockContext([mockPane]);
 
@@ -155,6 +156,21 @@ describe('closeAction', () => {
 
       const killOnly = result.options!.find(o => o.id === 'kill_only');
       expect(killOnly?.default).toBe(true);
+    });
+
+    it('should only present kill_only and explain cleanup is unavailable when sibling panes share the worktree', async () => {
+      const sharedWorktreePath = '/test/project/.dmux/worktrees/shared';
+      const pane1 = createWorktreePane({ id: 'dmux-1', slug: 'alpha', worktreePath: sharedWorktreePath });
+      const pane2 = createWorktreePane({ id: 'dmux-2', slug: 'bravo', worktreePath: sharedWorktreePath });
+      const mockContext = createMockContext([pane1, pane2]);
+
+      const result = await closePane(pane1, mockContext);
+
+      expectChoice(result, 1);
+      expect(result.message).toContain('still in use by 1 other pane');
+      expect(result.message).toContain('Other panes on this worktree:');
+      expect(result.message).toContain('  - bravo');
+      expect(result.options?.[0]?.id).toBe('kill_only');
     });
   });
 
@@ -368,6 +384,93 @@ describe('closeAction', () => {
 
       // No layout module should be imported when panes.length === 0
       // (This is tested by not mocking the layout module and ensuring no errors)
+    });
+  });
+
+  describe('dev source fallback', () => {
+    const originalDmuxDev = process.env.DMUX_DEV;
+
+    beforeEach(() => {
+      process.env.DMUX_DEV = 'true';
+    });
+
+    afterEach(() => {
+      if (originalDmuxDev === undefined) {
+        delete process.env.DMUX_DEV;
+      } else {
+        process.env.DMUX_DEV = originalDmuxDev;
+      }
+    });
+
+    it('should NOT reset source to root when sibling panes remain on the same worktree', async () => {
+      const sourceWorktreePath = '/test/project/.dmux/worktrees/shared-worktree';
+      const closingPane = createWorktreePane({
+        id: 'dmux-1',
+        paneId: '%11',
+        worktreePath: sourceWorktreePath,
+      });
+      const siblingPane = createWorktreePane({
+        id: 'dmux-2',
+        paneId: '%12',
+        worktreePath: sourceWorktreePath,
+      });
+      const otherPane = createWorktreePane({
+        id: 'dmux-3',
+        paneId: '%13',
+        worktreePath: '/test/project/.dmux/worktrees/other-worktree',
+      });
+      const mockContext = createMockContext([closingPane, siblingPane, otherPane]);
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(sourceWorktreePath);
+
+      try {
+        vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+        vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+          controlPaneId: '%0',
+        }));
+
+        const result = await closePane(closingPane, mockContext);
+        await result.onSelect!('kill_only');
+
+        const respawnCalls = vi.mocked(execSync).mock.calls.filter(([cmd]) =>
+          typeof cmd === 'string' && cmd.includes('tmux respawn-pane -k')
+        );
+        expect(respawnCalls).toHaveLength(0);
+      } finally {
+        cwdSpy.mockRestore();
+      }
+    });
+
+    it('should reset source to root when the last pane for source worktree is closed', async () => {
+      const sourceWorktreePath = '/test/project/.dmux/worktrees/shared-worktree';
+      const closingPane = createWorktreePane({
+        id: 'dmux-1',
+        paneId: '%11',
+        worktreePath: sourceWorktreePath,
+      });
+      const otherPane = createWorktreePane({
+        id: 'dmux-3',
+        paneId: '%13',
+        worktreePath: '/test/project/.dmux/worktrees/other-worktree',
+      });
+      const mockContext = createMockContext([closingPane, otherPane]);
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(sourceWorktreePath);
+
+      try {
+        vi.mocked(execSync).mockReturnValue(Buffer.from(''));
+        vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+          controlPaneId: '%0',
+        }));
+
+        const result = await closePane(closingPane, mockContext);
+        await result.onSelect!('kill_only');
+
+        const respawnCalls = vi.mocked(execSync).mock.calls.filter(([cmd]) =>
+          typeof cmd === 'string' && cmd.includes('tmux respawn-pane -k')
+        );
+        expect(respawnCalls).toHaveLength(1);
+      } finally {
+        cwdSpy.mockRestore();
+      }
     });
   });
 });

@@ -17,6 +17,8 @@ export function render() {
         <tr><td><kbd>j</kbd></td><td>Jump to the selected pane (switch tmux focus)</td></tr>
         <tr><td><kbd>m</kbd></td><td>Open the kebab menu for the selected pane</td></tr>
         <tr><td><kbd>x</kbd></td><td>Close the selected pane</td></tr>
+        <tr><td><kbd>a</kbd></td><td>Add another agent to the selected pane's worktree</td></tr>
+        <tr><td><kbd>A</kbd></td><td>Add a terminal (shell) to the selected pane's worktree</td></tr>
         <tr><td><kbd>r</kbd></td><td>Reopen a previously closed worktree</td></tr>
       </tbody>
     </table>
@@ -42,7 +44,7 @@ export function render() {
       <tbody>
         <tr><td><kbd>s</kbd></td><td>Open settings dialog</td></tr>
         <tr><td><kbd>l</kbd></td><td>View application logs</td></tr>
-        <tr><td><kbd>L</kbd></td><td>Toggle sidebar layout mode (when using grid layout)</td></tr>
+        <tr><td><kbd>L</kbd></td><td>Reset sidebar layout (re-enforce pane sizing)</td></tr>
         <tr><td><kbd>h</kbd></td><td>Create or modify hooks with AI</td></tr>
         <tr><td><kbd>?</kbd></td><td>Show keyboard shortcuts help</td></tr>
         <tr><td><kbd>q</kbd></td><td>Quit dmux</td></tr>
@@ -74,9 +76,11 @@ export function render() {
       <li><strong>Merge</strong> — merge the pane's work back to main</li>
       <li><strong>Close</strong> — close the pane and optionally remove the worktree</li>
       <li><strong>Rename</strong> — rename the pane slug</li>
-      <li><strong>Duplicate</strong> — create a new pane with the same prompt</li>
-      <li><strong>Run Test</strong> — execute the project's test hook</li>
-      <li><strong>Run Dev</strong> — execute the project's dev hook</li>
+      <li><strong>Add Agent to Worktree</strong> — launch another agent in the same worktree</li>
+      <li><strong>Add Terminal to Worktree</strong> — open a shell pane in the worktree</li>
+      <li><strong>Open in Editor</strong> — open the worktree in your external editor</li>
+      <li><strong>Copy Path</strong> — copy the worktree path to clipboard</li>
+      <li><strong>Toggle Autopilot</strong> — enable or disable automatic option acceptance</li>
     </ul>
   `;
 }
