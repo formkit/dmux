@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 
 /**
- * Standalone popup for creating a new dmux pane
- * Runs in a tmux popup modal and writes result to a file
+ * Standalone popup used by dmux when creating a new pane.
+ *
+ * Behavior:
+ * - Captures the initial agent prompt (with @file autocomplete support).
+ * - Optionally captures per-pane git overrides (base branch + branch/worktree name)
+ *   when enabled by settings/caller.
+ * - Writes a structured popup result payload to the provided result file.
  */
 
 import React, { useState, useEffect } from "react"
 import { render, Box, Text, useApp, useInput } from "ink"
+import TextInput from "ink-text-input"
 import {
   PopupContainer,
-  PopupInputBox,
   PopupWrapper,
   writeSuccessAndExit,
   FileList,
@@ -17,10 +22,18 @@ import {
 import { PopupFooters, POPUP_CONFIG } from "./config.js"
 import CleanTextInput from "../inputs/CleanTextInput.js"
 import { scanProjectFiles, fuzzyMatchFiles } from "../../utils/fileScanner.js"
+import {
+  clampSelectedIndex,
+  filterBranches,
+  getVisibleBranchWindow,
+  isValidBaseBranchOverride,
+  loadLocalBranchNames,
+} from "./newPaneGitOptions.js"
 import fs from "fs"
 import path from "path"
 
 const PROJECT_PATH_ARG = process.argv[3]
+const ENABLE_GIT_OPTIONS_ARG = process.argv[4] === '1'
 const FILE_SCAN_ROOT = PROJECT_PATH_ARG || process.cwd()
 const PROJECT_NAME = path.basename(FILE_SCAN_ROOT)
 
@@ -38,6 +51,14 @@ function debugLog(message: string, data?: any) {
 
 const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   const [prompt, setPrompt] = useState("")
+  const [mode, setMode] = useState<'prompt' | 'gitOptions'>('prompt')
+  const [baseBranch, setBaseBranch] = useState("")
+  const [branchName, setBranchName] = useState("")
+  const [activeGitField, setActiveGitField] = useState<'baseBranch' | 'branchName'>('baseBranch')
+  const [availableBranches, setAvailableBranches] = useState<string[]>([])
+  const [filteredBranches, setFilteredBranches] = useState<string[]>([])
+  const [selectedBranchIndex, setSelectedBranchIndex] = useState(0)
+  const [gitOptionsError, setGitOptionsError] = useState<string | null>(null)
   const { exit } = useApp()
 
   // File autocomplete state
@@ -47,6 +68,53 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   const [atPosition, setAtPosition] = useState(-1) // Position of @ in text
   const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined)
   const [currentCursor, setCurrentCursor] = useState(0) // Track cursor position from CleanTextInput
+
+  const writeSuccessResult = () => {
+    const trimmedBaseBranch = baseBranch.trim()
+    if (!isValidBaseBranchOverride(trimmedBaseBranch, availableBranches)) {
+      setGitOptionsError('Base branch must match an existing local branch (choose from the list).')
+      return
+    }
+
+    const payload: { prompt: string; baseBranch?: string; branchName?: string } = {
+      prompt,
+    }
+
+    const trimmedBranchName = branchName.trim()
+
+    if (trimmedBaseBranch) payload.baseBranch = trimmedBaseBranch
+    if (trimmedBranchName) payload.branchName = trimmedBranchName
+
+    writeSuccessAndExit(resultFile, payload, exit)
+  }
+
+  useEffect(() => {
+    if (!ENABLE_GIT_OPTIONS_ARG) {
+      return
+    }
+
+    const branches = loadLocalBranchNames(FILE_SCAN_ROOT)
+    setAvailableBranches(branches)
+  }, [])
+
+  useEffect(() => {
+    if (mode !== 'gitOptions' || activeGitField !== 'baseBranch') {
+      setFilteredBranches([])
+      setSelectedBranchIndex(0)
+      return
+    }
+
+    const matches = filterBranches(availableBranches, baseBranch)
+
+    setFilteredBranches(matches)
+    setSelectedBranchIndex((prev) => clampSelectedIndex(prev, matches.length))
+  }, [mode, activeGitField, baseBranch, availableBranches])
+
+  useEffect(() => {
+    if (gitOptionsError) {
+      setGitOptionsError(null)
+    }
+  }, [baseBranch, branchName])
 
 
   // Reset cursor position override after it's been applied
@@ -60,6 +128,13 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
 
   // Detect @ and scan files (cursor-aware)
   useEffect(() => {
+    if (mode !== 'prompt') {
+      setIsFileListActive(false)
+      setFilteredFiles([])
+      setAtPosition(-1)
+      return
+    }
+
     debugLog('[@Detection] Running with:', {
       prompt,
       currentCursor,
@@ -143,11 +218,93 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
       setFilteredFiles([])
       setAtPosition(-1)
     }
-  }, [prompt, currentCursor])
+  }, [prompt, currentCursor, mode])
 
   // Handle keyboard navigation - runs BEFORE other handlers
   // This is critical: we need to intercept ESC for progressive behavior
   useInput((input, key) => {
+    // Git-options mode has a different interaction model from the prompt editor:
+    // - We only have two fields, so arrows/tab just switch active field
+    // - Enter advances field -> submit (on second field)
+    // - ESC backs out progressively (clear field -> switch field -> return to prompt)
+    // This keeps behavior predictable and mirrors the "progressive ESC" style
+    // used below in prompt mode.
+    if (mode === 'gitOptions') {
+      // ESC in git-options mode is intentionally layered:
+      // 1) clear current field if it has text
+      // 2) otherwise jump to the other field if that one has text
+      // 3) otherwise return to prompt mode
+      if (key.escape) {
+        setGitOptionsError(null)
+        if (activeGitField === 'baseBranch') {
+          if (baseBranch.length > 0) {
+            setBaseBranch('')
+          } else if (branchName.length > 0) {
+            setActiveGitField('branchName')
+          } else {
+            setMode('prompt')
+          }
+        } else {
+          if (branchName.length > 0) {
+            setBranchName('')
+          } else if (baseBranch.length > 0) {
+            setActiveGitField('baseBranch')
+          } else {
+            setMode('prompt')
+          }
+        }
+        return
+      }
+
+      // Up navigates the branch list while base field is active.
+      // Otherwise it focuses the base-branch field.
+      if (key.upArrow) {
+        if (activeGitField === 'baseBranch' && filteredBranches.length > 0) {
+          setSelectedBranchIndex((prev) => Math.max(0, prev - 1))
+          return
+        }
+
+        setActiveGitField('baseBranch')
+        return
+      }
+
+      // Down navigates the branch list while base field is active.
+      // If no list is active, it moves focus to branch-name field.
+      if (key.downArrow) {
+        if (activeGitField === 'baseBranch' && filteredBranches.length > 0) {
+          setSelectedBranchIndex((prev) => Math.min(filteredBranches.length - 1, prev + 1))
+          return
+        }
+
+        setActiveGitField('branchName')
+        return
+      }
+
+      // Tab is the explicit "next field" shortcut.
+      if (key.tab) {
+        setActiveGitField('branchName')
+        return
+      }
+
+      // Enter is a two-step action:
+      // - on base field: accept highlighted branch (when present), then move to branch field
+      // - on branch field: submit both overrides + prompt payload
+      if (key.return) {
+        if (activeGitField === 'baseBranch') {
+          if (filteredBranches.length > 0 && selectedBranchIndex < filteredBranches.length) {
+            setBaseBranch(filteredBranches[selectedBranchIndex])
+          }
+
+          setActiveGitField('branchName')
+        } else {
+          writeSuccessResult()
+        }
+        return
+      }
+
+      return
+    }
+
     // Handle ESC with progressive behavior:
     // 1. If file list is active, dismiss it
     // 2. If text is present, clear it
@@ -223,10 +380,23 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
       return;
     }
 
-    writeSuccessAndExit(resultFile, value || prompt, exit)
+    const nextPrompt = value || prompt
+    setPrompt(nextPrompt)
+
+    if (ENABLE_GIT_OPTIONS_ARG) {
+      setMode('gitOptions')
+      setActiveGitField('baseBranch')
+      return
+    }
+
+    writeSuccessAndExit(resultFile, { prompt: nextPrompt }, exit)
   }
 
   const shouldAllowCancel = () => {
+    if (mode !== 'prompt') {
+      return false
+    }
+
     // Block cancel (ESC key) if:
     // 1. File list is currently active, OR
     // 2. There's text in the prompt
@@ -248,55 +418,173 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
     return true;
   }
 
+  const branchWindow = getVisibleBranchWindow(filteredBranches, selectedBranchIndex)
+  const hasHiddenAbove = branchWindow.startIndex > 0
+  const hiddenAboveCount = branchWindow.startIndex
+  const hiddenBelowCount = Math.max(0, filteredBranches.length - (branchWindow.startIndex + branchWindow.visibleBranches.length))
+
   return (
     <PopupWrapper
       resultFile={resultFile}
       allowEscapeToCancel={true}
       shouldAllowCancel={shouldAllowCancel}
     >
-      <PopupContainer footer={PopupFooters.input()}>
-        {/* Project context */}
-        <Box marginBottom={0}>
-          <Text dimColor>Project: </Text>
-          <Text bold color="cyan">{PROJECT_NAME}</Text>
-          <Text dimColor>  ({FILE_SCAN_ROOT})</Text>
-        </Box>
+      <PopupContainer
+        footer={mode === 'prompt'
+          ? PopupFooters.input()
+          : '↑↓/Tab navigation • Enter select/create • ESC progressive back'}
+      >
+        {mode === 'prompt' && (
+          <>
+            {/* Project context */}
+            <Box marginBottom={0}>
+              <Text dimColor>Project: </Text>
+              <Text bold color="cyan">{PROJECT_NAME}</Text>
+              <Text dimColor>  ({FILE_SCAN_ROOT})</Text>
+            </Box>
 
-        {/* Instructions */}
-        <Box marginBottom={1}>
-          <Text dimColor>Enter a prompt for your AI agent.</Text>
-        </Box>
+            {/* Instructions */}
+            <Box marginBottom={1}>
+              <Text dimColor>Enter a prompt for your AI agent.</Text>
+            </Box>
 
-        {/* Input area with themed border */}
-        <Box
-          width="100%"
-          borderStyle={POPUP_CONFIG.inputBorderStyle}
-          borderColor={POPUP_CONFIG.inputBorderColor}
-          paddingX={POPUP_CONFIG.inputPadding.x}
-          paddingY={POPUP_CONFIG.inputPadding.y}
-        >
-          <CleanTextInput
-            value={prompt}
-            onChange={setPrompt}
-            onSubmit={handleSubmit}
-            placeholder="e.g., Add user authentication with JWT"
-            maxWidth={76}
-            maxVisibleLines={10}
-            cursorPosition={cursorPosition}
-            disableUpDownArrows={isFileListActive}
-            disableEscape={isFileListActive}
-            onCursorChange={setCurrentCursor}
-            ignoreFocus={true}
-          />
-        </Box>
+            {/* Input area with themed border */}
+            <Box
+              width="100%"
+              borderStyle={POPUP_CONFIG.inputBorderStyle}
+              borderColor={POPUP_CONFIG.inputBorderColor}
+              paddingX={POPUP_CONFIG.inputPadding.x}
+              paddingY={POPUP_CONFIG.inputPadding.y}
+            >
+              <CleanTextInput
+                value={prompt}
+                onChange={setPrompt}
+                onSubmit={handleSubmit}
+                placeholder="e.g., Add user authentication with JWT"
+                maxWidth={76}
+                maxVisibleLines={10}
+                cursorPosition={cursorPosition}
+                disableUpDownArrows={isFileListActive}
+                disableEscape={isFileListActive}
+                onCursorChange={setCurrentCursor}
+                ignoreFocus={true}
+              />
+            </Box>
 
-        {/* File list (shown when @ is detected) */}
-        {isFileListActive && (
-          <FileList
-            files={filteredFiles}
-            selectedIndex={selectedFileIndex}
-            maxVisible={10}
-          />
+            {/* File list (shown when @ is detected) */}
+            {isFileListActive && (
+              <FileList
+                files={filteredFiles}
+                selectedIndex={selectedFileIndex}
+                maxVisible={10}
+              />
+            )}
+          </>
+        )}
+
+        {mode === 'gitOptions' && (
+          <>
+            <Box marginBottom={1}>
+              <Text dimColor>Optional Git overrides for this pane.</Text>
+            </Box>
+
+            {gitOptionsError && (
+              <Box marginBottom={1}>
+                <Text color="red">{gitOptionsError}</Text>
+              </Box>
+            )}
+
+            <Box marginBottom={1}>
+              <Text dimColor>Prompt: </Text>
+              <Text>{prompt.trim() || '(empty prompt)'}</Text>
+            </Box>
+
+            <Box marginBottom={1}>
+              <Text color={activeGitField === 'baseBranch' ? POPUP_CONFIG.titleColor : 'white'}>
+                {activeGitField === 'baseBranch' ? '▶ ' : '  '}Base branch override (optional)
+              </Text>
+            </Box>
+            <Box
+              width="100%"
+              borderStyle={POPUP_CONFIG.inputBorderStyle}
+              borderColor={activeGitField === 'baseBranch' ? POPUP_CONFIG.inputBorderColor : 'gray'}
+              paddingX={POPUP_CONFIG.inputPadding.x}
+              paddingY={POPUP_CONFIG.inputPadding.y}
+              marginBottom={1}
+            >
+              <TextInput
+                value={baseBranch}
+                onChange={setBaseBranch}
+                focus={activeGitField === 'baseBranch'}
+                placeholder="e.g., develop"
+              />
+            </Box>
+
+            {activeGitField === 'baseBranch' && filteredBranches.length > 0 && (
+              <Box
+                flexDirection="column"
+                marginBottom={1}
+                borderStyle={POPUP_CONFIG.inputBorderStyle}
+                borderColor="cyan"
+                paddingX={1}
+                width="100%"
+              >
+                <Box marginBottom={0}>
+                  <Text dimColor>
+                    Existing branches ({filteredBranches.length}) - Use ↑↓ to navigate, Enter to pick
+                  </Text>
+                </Box>
+
+                {hasHiddenAbove && (
+                  <Box justifyContent="center">
+                    <Text dimColor>↑ {hiddenAboveCount} more above</Text>
+                  </Box>
+                )}
+
+                {branchWindow.visibleBranches.map((branch, index) => {
+                  const actualIndex = branchWindow.startIndex + index
+                  const isSelected = actualIndex === selectedBranchIndex
+                  return (
+                    <Box key={branch}>
+                      <Text
+                        color={isSelected ? 'black' : undefined}
+                        backgroundColor={isSelected ? 'cyan' : undefined}
+                        bold={isSelected}
+                      >
+                        {isSelected ? '▶ ' : '  '}{branch}
+                      </Text>
+                    </Box>
+                  )
+                })}
+
+                {hiddenBelowCount > 0 && (
+                  <Box justifyContent="center">
+                    <Text dimColor>↓ {hiddenBelowCount} more below</Text>
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            <Box marginBottom={1}>
+              <Text color={activeGitField === 'branchName' ? POPUP_CONFIG.titleColor : 'white'}>
+                {activeGitField === 'branchName' ? '▶ ' : '  '}Branch/worktree name override (optional)
+              </Text>
+            </Box>
+            <Box
+              width="100%"
+              borderStyle={POPUP_CONFIG.inputBorderStyle}
+              borderColor={activeGitField === 'branchName' ? POPUP_CONFIG.inputBorderColor : 'gray'}
+              paddingX={POPUP_CONFIG.inputPadding.x}
+              paddingY={POPUP_CONFIG.inputPadding.y}
+            >
+              <TextInput
+                value={branchName}
+                onChange={setBranchName}
+                focus={activeGitField === 'branchName'}
+                placeholder="e.g., feat/LIN-123-fix-auth"
+              />
+            </Box>
+          </>
         )}
       </PopupContainer>
     </PopupWrapper>
