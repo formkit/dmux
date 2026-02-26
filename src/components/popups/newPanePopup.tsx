@@ -471,6 +471,9 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   const hasHiddenAbove = branchWindow.startIndex > 0
   const hiddenAboveCount = branchWindow.startIndex
   const hiddenBelowCount = Math.max(0, filteredBranches.length - (branchWindow.startIndex + branchWindow.visibleBranches.length))
+  const isBaseBranchInvalidLive =
+    baseBranch.trim().length > 0 && !isValidBaseBranchOverride(baseBranch.trim(), availableBranches)
+  const baseBranchBorderColor = isBaseBranchInvalidLive ? POPUP_CONFIG.errorColor : 'gray'
 
   return (
     <PopupWrapper
@@ -556,7 +559,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
             <Box
               width="100%"
               borderStyle={POPUP_CONFIG.inputBorderStyle}
-              borderColor={activeGitField === 'baseBranch' ? POPUP_CONFIG.inputBorderColor : 'gray'}
+              borderColor={baseBranchBorderColor}
               paddingX={POPUP_CONFIG.inputPadding.x}
               paddingY={POPUP_CONFIG.inputPadding.y}
               marginBottom={0}
