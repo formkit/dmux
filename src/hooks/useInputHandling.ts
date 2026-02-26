@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useInput } from "ink"
-import type { DmuxPane } from "../types.js"
+import type { DmuxPane, NewPaneInput } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
 import { TmuxService } from "../services/TmuxService.js"
 import {
@@ -71,7 +71,7 @@ interface UseInputHandlingParams {
   setStatusMessage: (message: string) => void
   copyNonGitFiles: (worktreePath: string, sourceProjectRoot?: string) => Promise<void>
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
-  handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
+  handlePaneCreationWithAgent: (paneInput: NewPaneInput, targetProjectRoot?: string) => Promise<void>
   handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
   setDevSourceFromPane: (pane: DmuxPane) => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
@@ -170,9 +170,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
   }
 
   const handleCreateAgentPane = async (targetProjectRoot: string) => {
-    const promptValue = await popupManager.launchNewPanePopup(targetProjectRoot)
-    if (promptValue) {
-      await handlePaneCreationWithAgent(promptValue, targetProjectRoot)
+    const paneInput = await popupManager.launchNewPanePopup(targetProjectRoot)
+    if (paneInput) {
+      await handlePaneCreationWithAgent(paneInput, targetProjectRoot)
     }
   }
 
@@ -266,12 +266,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
       const { resolveProjectRootFromPath } = await import("../utils/projectRoot.js")
       const resolved = resolveProjectRootFromPath(requestedProjectPath, projectRoot)
 
-      const promptValue = await popupManager.launchNewPanePopup(resolved.projectRoot)
-      if (!promptValue) {
+      const paneInput = await popupManager.launchNewPanePopup(resolved.projectRoot)
+      if (!paneInput) {
         return
       }
 
-      await handlePaneCreationWithAgent(promptValue, resolved.projectRoot)
+      await handlePaneCreationWithAgent(paneInput, resolved.projectRoot)
     } catch (error: any) {
       setStatusMessage(error?.message || "Invalid project path")
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
@@ -295,7 +295,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     const prompt =
       "I would like to create or edit my dmux hooks in .dmux-hooks. Please read AGENTS.md or CLAUDE.md first, then ask me what I want to create or modify."
-    await handlePaneCreationWithAgent(prompt, hooksProjectRoot)
+    await handlePaneCreationWithAgent({ prompt }, hooksProjectRoot)
   }
 
   const openPaneMenu = async (pane: DmuxPane) => {
@@ -363,10 +363,11 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
 
     // Prompt input
-    const promptValue = await popupManager.launchNewPanePopup(
-      getPaneProjectRoot(selectedPane, projectRoot)
+    const promptInput = await popupManager.launchNewPanePopup(
+      getPaneProjectRoot(selectedPane, projectRoot),
+      { allowGitOptions: false }
     )
-    if (!promptValue) return
+    if (!promptInput) return
 
     try {
       setIsCreatingPane(true)
@@ -382,12 +383,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
       for (const agent of selectedAgents) {
         try {
-          const result = await attachAgentToWorktree({
-            targetPane: selectedPane,
-            prompt: promptValue,
-            agent,
-            existingPanes: [...panes, ...createdPanes],
-            sessionProjectRoot: projectRoot,
+            const result = await attachAgentToWorktree({
+              targetPane: selectedPane,
+              prompt: promptInput.prompt,
+              agent,
+              existingPanes: [...panes, ...createdPanes],
+              sessionProjectRoot: projectRoot,
             sessionConfigPath: panesFile,
           })
           createdPanes.push(result.pane)
