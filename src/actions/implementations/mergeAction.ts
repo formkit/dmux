@@ -178,7 +178,7 @@ async function handleMergeIssues(
 
   // Find and handle specific issue types
   const nothingToMerge = issues.find((i: any) => i.type === 'nothing_to_merge');
-  if (nothingToMerge) {
+  if (nothingToMerge && issues.length === 1) {
     return handleNothingToMerge();
   }
 

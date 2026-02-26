@@ -225,6 +225,32 @@ describe('Merge Action Integration', () => {
       expect(result.options?.map(o => o.id)).toContain('commit_automatic');
       expect(result.options?.map(o => o.id)).toContain('stash_main');
     });
+
+    it('should prioritize main_dirty when nothing_to_merge is also present', async () => {
+      const { validateMerge } = await import('../../../src/utils/mergeValidation.js');
+
+      vi.mocked(validateMerge).mockReturnValue({
+        canMerge: false,
+        mainBranch: 'main',
+        issues: [
+          {
+            type: 'main_dirty',
+            message: 'Main has uncommitted changes',
+            files: ['file1.ts'],
+          },
+          {
+            type: 'nothing_to_merge',
+            message: 'No new commits',
+            files: [],
+          },
+        ],
+      });
+
+      const result = await mergePane(mockPane, mockContext);
+
+      expect(result.type).toBe('choice');
+      expect(result.title).toBe('Main Branch Has Uncommitted Changes');
+    });
   });
 
   describe('Issue handling - worktree uncommitted', () => {
