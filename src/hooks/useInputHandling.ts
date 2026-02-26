@@ -88,6 +88,12 @@ interface UseInputHandlingParams {
 
   // Navigation
   findCardInDirection: (currentIndex: number, direction: "up" | "down" | "left" | "right") => number | null
+
+  // Focused mode
+  focusedMode: boolean
+  setFocusedMode: (value: boolean) => void
+  focusedPaneIndex: number
+  setFocusedPaneIndex: (index: number) => void
 }
 
 /**
@@ -136,6 +142,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
     projectRoot,
     projectActionItems,
     findCardInDirection,
+    focusedMode,
+    setFocusedMode,
+    focusedPaneIndex,
+    setFocusedPaneIndex,
   } = params
 
   const layoutRefreshDebounceRef = useRef<NodeJS.Timeout | null>(null)
@@ -546,6 +556,61 @@ export function useInputHandling(params: UseInputHandlingParams) {
       return
     }
 
+    // Focused mode: 'f' toggles, Tab/Shift+Tab cycles focused pane
+    if (input === "f" && !key.ctrl && !key.meta) {
+      if (panes.length === 0) return
+      if (focusedMode) {
+        // Exit focused mode → back to grid
+        setFocusedMode(false)
+        setStatusMessage("Grid mode")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } else {
+        // Enter focused mode
+        const idx = selectedIndex < panes.length ? selectedIndex : 0
+        setFocusedMode(true)
+        setFocusedPaneIndex(idx)
+        setSelectedIndex(idx)
+        setStatusMessage("Focused mode")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      }
+      // Force layout refresh
+      if (controlPaneId) {
+        try {
+          await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, {
+            forceLayout: true,
+            focusedMode: !focusedMode,
+            focusedPaneId: panes[selectedIndex < panes.length ? selectedIndex : 0]?.paneId,
+          })
+        } catch {}
+      }
+      return
+    }
+
+    if (focusedMode && key.tab) {
+      if (panes.length === 0) return
+      let nextIndex: number
+      if (key.shift) {
+        // Shift+Tab: previous pane
+        nextIndex = focusedPaneIndex <= 0 ? panes.length - 1 : focusedPaneIndex - 1
+      } else {
+        // Tab: next pane
+        nextIndex = focusedPaneIndex >= panes.length - 1 ? 0 : focusedPaneIndex + 1
+      }
+      setFocusedPaneIndex(nextIndex)
+      setSelectedIndex(nextIndex)
+      // Apply layout with new focused pane
+      if (controlPaneId) {
+        try {
+          await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, {
+            forceLayout: true,
+            focusedMode: true,
+            focusedPaneId: panes[nextIndex]?.paneId,
+          })
+        } catch {}
+      }
+      return
+    }
+
     // Handle directional navigation with spatial awareness based on card grid layout
     if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
       let targetIndex: number | null = null
@@ -562,6 +627,17 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
       if (targetIndex !== null) {
         setSelectedIndex(targetIndex)
+        // Sync focused pane when navigating in focused mode
+        if (focusedMode && targetIndex < panes.length) {
+          setFocusedPaneIndex(targetIndex)
+          if (controlPaneId) {
+            enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, {
+              forceLayout: true,
+              focusedMode: true,
+              focusedPaneId: panes[targetIndex]?.paneId,
+            }).catch(() => {})
+          }
+        }
       }
       return
     }

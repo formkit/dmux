@@ -12,6 +12,7 @@ interface FooterHelpProps {
   currentToast?: Toast | null;
   toastQueueLength?: number;
   toastQueuePosition?: number | null;
+  focusedMode?: boolean;
 }
 
 const FooterHelp: React.FC<FooterHelpProps> = memo(({
@@ -22,7 +23,8 @@ const FooterHelp: React.FC<FooterHelpProps> = memo(({
   unreadWarningCount = 0,
   currentToast,
   toastQueueLength = 0,
-  toastQueuePosition
+  toastQueuePosition,
+  focusedMode = false
 }) => {
   if (!show) return null;
 
@@ -132,7 +134,10 @@ const FooterHelp: React.FC<FooterHelpProps> = memo(({
 
       {/* Keyboard shortcuts */}
       <Text dimColor>
-        Press <Text color="cyan">[?]</Text> for keyboard shortcuts
+        Press <Text color="cyan">[?]</Text> for shortcuts
+        <Text>  </Text>
+        <Text color="cyan">[f]</Text>{focusedMode ? ' grid' : ' focus'}
+        {focusedMode && <Text>  <Text color="cyan">[Tab]</Text> cycle</Text>}
       </Text>
 
       {/* Debug info */}

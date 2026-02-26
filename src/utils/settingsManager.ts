@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: DmuxSettings = {
   minPaneWidth: DEFAULT_MIN_PANE_WIDTH,
   maxPaneWidth: DEFAULT_MAX_PANE_WIDTH,
   enabledAgents: getDefaultEnabledAgents(),
+  focusedMode: false,
 };
 
 const AGENT_OPTIONS = getAgentDefinitions().map((agent) => ({

@@ -85,6 +85,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const { statusMessage, setStatusMessage } = useStatusMessages()
   const [isCreatingPane, setIsCreatingPane] = useState(false)
 
+  // Focused mode state
+  const [focusedMode, setFocusedMode] = useState(false)
+  const [focusedPaneIndex, setFocusedPaneIndex] = useState(0)
+
   // Settings state
   const [settingsManager] = useState(() => new SettingsManager(projectRoot))
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile)
@@ -659,6 +663,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         setSelectedIndex(Math.max(0, panes.length - 2))
       }
 
+      // Adjust focusedPaneIndex when focused pane is removed
+      if (focusedMode && removedIndex >= 0) {
+        const newPaneCount = panes.length - 1
+        if (newPaneCount <= 0) {
+          setFocusedMode(false)
+        } else if (focusedPaneIndex >= newPaneCount) {
+          setFocusedPaneIndex(Math.max(0, newPaneCount - 1))
+        } else if (removedIndex <= focusedPaneIndex && focusedPaneIndex > 0) {
+          setFocusedPaneIndex(focusedPaneIndex - 1)
+        }
+      }
+
       // Remove from panes list
       const updatedPanes = panes.filter((p) => p.paneId !== paneId)
       savePanes(updatedPanes)
@@ -690,6 +706,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Auto-show new pane dialog removed - users can press 'n' to create panes via popup
 
   // Periodic enforcement of control pane size and content pane rebalancing (left sidebar at 40 chars)
+  // Get focused pane ID for layout management
+  const focusedPaneId = focusedMode && focusedPaneIndex < panes.length
+    ? panes[focusedPaneIndex]?.paneId
+    : undefined
+
   useLayoutManagement({
     controlPaneId,
     hasActiveDialog:
@@ -702,6 +723,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       isCreatingPane ||
       runningCommand ||
       isUpdating,
+    focusedMode,
+    focusedPaneId,
   })
 
   // Monitor agent status across panes (returns a map of pane ID to status)
@@ -848,6 +871,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     projectRoot: sessionProjectRoot,
     projectActionItems: projectActionLayout.actionItems,
     findCardInDirection,
+    focusedMode,
+    setFocusedMode,
+    focusedPaneIndex,
+    setFocusedPaneIndex,
   })
 
   // Calculate available height for content (terminal height - footer lines - active status messages)
@@ -908,6 +935,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           activeDevSourcePath={activeDevSourcePath}
           fallbackProjectRoot={projectRoot || process.cwd()}
           fallbackProjectName={projectName}
+          focusedMode={focusedMode}
+          focusedPaneIndex={focusedPaneIndex}
         />
 
         {/* Loading dialog */}
@@ -959,6 +988,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       <FooterHelp
         show={!showCommandPrompt}
         quitConfirmMode={quitConfirmMode}
+        focusedMode={focusedMode}
         unreadErrorCount={unreadErrorCount}
         unreadWarningCount={unreadWarningCount}
         currentToast={currentToast}

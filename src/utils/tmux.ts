@@ -340,6 +340,88 @@ export const generateSidebarGridLayout = (
 };
 
 /**
+ * Generates a focused layout: one pane gets full height, others are minimized to 1 row each.
+ * Layout: [Sidebar(40) | FocusedPane(full height) | MinimizedStack(1 row each)]
+ *
+ * The focused pane occupies most of the content area height.
+ * Minimized panes are stacked vertically in a narrow strip, each only 1 row high.
+ */
+export const generateSidebarFocusedLayout = (
+  controlPaneId: string,
+  contentPanes: string[],
+  focusedPaneId: string,
+  sidebarWidth: number,
+  windowWidth: number,
+  windowHeight: number
+): string => {
+  if (contentPanes.length === 0) return '';
+
+  const sidebarId = controlPaneId.replace('%', '');
+  const contentWidth = windowWidth - sidebarWidth - 1; // -1 for sidebar border
+  const contentStartX = sidebarWidth + 1;
+
+  // Single pane: just use full content area
+  if (contentPanes.length === 1) {
+    const paneId = contentPanes[0].replace('%', '');
+    const layoutWithoutChecksum =
+      `${windowWidth}x${windowHeight},0,0{${sidebarWidth}x${windowHeight},0,0,${sidebarId},${contentWidth}x${windowHeight},${contentStartX},0,${paneId}}`;
+    const checksum = calculateLayoutChecksum(layoutWithoutChecksum);
+    return `${checksum},${layoutWithoutChecksum}`;
+  }
+
+  // Separate focused pane from minimized panes
+  const minimizedPanes = contentPanes.filter(id => id !== focusedPaneId);
+  const numMinimized = minimizedPanes.length;
+
+  // Each minimized pane gets 1 row + borders between them
+  const minimizedBorders = numMinimized > 0 ? numMinimized - 1 : 0;
+  const totalMinimizedHeight = numMinimized + minimizedBorders; // 1 row per pane + borders
+  const focusedHeight = windowHeight - totalMinimizedHeight - (numMinimized > 0 ? 1 : 0); // -1 for border between focused and minimized stack
+
+  // If focused pane would be too small, return empty (caller should fallback to grid)
+  if (focusedHeight < 5) return '';
+
+  const focusedId = focusedPaneId.replace('%', '');
+
+  // Build the content area as a vertical split: [focused_pane, minimized_stack]
+  let contentAreaChildren: string[] = [];
+  let currentY = 0;
+
+  // Focused pane (full width of content area, gets most of the height)
+  contentAreaChildren.push(`${contentWidth}x${focusedHeight},${contentStartX},${currentY},${focusedId}`);
+  currentY += focusedHeight + 1; // +1 for border
+
+  if (numMinimized > 0) {
+    // Build minimized panes
+    const minimizedEntries: string[] = [];
+    for (let i = 0; i < numMinimized; i++) {
+      const pId = minimizedPanes[i].replace('%', '');
+      const pHeight = 1;
+      minimizedEntries.push(`${contentWidth}x${pHeight},${contentStartX},${currentY},${pId}`);
+      currentY += pHeight + (i < numMinimized - 1 ? 1 : 0); // +1 for border except last
+    }
+
+    if (minimizedEntries.length === 1) {
+      contentAreaChildren.push(minimizedEntries[0]);
+    } else {
+      // Wrap multiple minimized panes in a vertical container
+      const minimizedStackHeight = totalMinimizedHeight;
+      const minimizedStartY = windowHeight - minimizedStackHeight;
+      contentAreaChildren.push(
+        `${contentWidth}x${minimizedStackHeight},${contentStartX},${minimizedStartY}[${minimizedEntries.join(',')}]`
+      );
+    }
+  }
+
+  // Build the full layout
+  const sidebar = `${sidebarWidth}x${windowHeight},0,0,${sidebarId}`;
+  const contentArea = `${contentWidth}x${windowHeight},${contentStartX},0[${contentAreaChildren.join(',')}]`;
+  const layoutWithoutChecksum = `${windowWidth}x${windowHeight},0,0{${sidebar},${contentArea}}`;
+  const checksum = calculateLayoutChecksum(layoutWithoutChecksum);
+  return `${checksum},${layoutWithoutChecksum}`;
+};
+
+/**
  * Calculates optimal number of columns for pane layout based on dimensions
  * @param numPanes Number of panes to arrange
  * @param contentWidth Available width for content panes
@@ -409,7 +491,7 @@ export const calculateOptimalColumns = (
 export const enforceControlPaneSize = async (
   controlPaneId: string,
   width: number,
-  options?: { forceLayout?: boolean; suppressLayoutLogs?: boolean; disableSpacer?: boolean }
+  options?: { forceLayout?: boolean; suppressLayoutLogs?: boolean; disableSpacer?: boolean; focusedMode?: boolean; focusedPaneId?: string }
 ): Promise<void> => {
   const logService = LogService.getInstance();
   const tmuxService = TmuxService.getInstance();
@@ -490,6 +572,8 @@ export const enforceControlPaneSize = async (
         force: options?.forceLayout === true,
         suppressLogs: options?.suppressLayoutLogs === true,
         disableSpacer: options?.disableSpacer === true,
+        focusedMode: options?.focusedMode,
+        focusedPaneId: options?.focusedPaneId,
       }
     );
 

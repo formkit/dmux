@@ -1,4 +1,4 @@
-import { getWindowDimensions } from './tmux.js';
+import { getWindowDimensions, generateSidebarFocusedLayout } from './tmux.js';
 import { TmuxService } from '../services/TmuxService.js';
 import { LogService } from '../services/LogService.js';
 import { TMUX_PANE_CREATION_DELAY, TMUX_SIDEBAR_SETTLE_DELAY } from '../constants/timing.js';
@@ -127,7 +127,7 @@ export async function recalculateAndApplyLayout(
   terminalWidth: number,
   terminalHeight: number,
   config?: LayoutConfig,
-  options?: { force?: boolean; suppressLogs?: boolean; disableSpacer?: boolean }
+  options?: { force?: boolean; suppressLogs?: boolean; disableSpacer?: boolean; focusedMode?: boolean; focusedPaneId?: string }
 ): Promise<void> {
   // Wrap entire function in try-catch to prevent crashes during resize
   try {
@@ -230,6 +230,39 @@ export async function recalculateAndApplyLayout(
       minPaneWidth: effectiveConfig.MIN_COMFORTABLE_WIDTH,
       maxPaneWidth: effectiveConfig.MAX_COMFORTABLE_WIDTH,
     };
+
+  // FOCUSED MODE: Skip spacer/grid logic and apply focused layout directly
+  if (options?.focusedMode && options?.focusedPaneId && realContentPanes.length > 0) {
+    // Destroy existing spacer if present (not needed in focused mode)
+    if (existingSpacerId) {
+      spacerManager.destroySpacerPane(existingSpacerId);
+    }
+
+    // Set window dimensions
+    const statusBarHeight = tmuxService.getStatusBarHeightSync();
+    const targetWindowHeight = terminalHeight - statusBarHeight;
+    layoutApplier.setWindowDimensions(terminalWidth, terminalHeight);
+
+    // Generate and apply focused layout
+    const focusedLayoutString = generateSidebarFocusedLayout(
+      controlPaneId,
+      realContentPanes,
+      options.focusedPaneId,
+      effectiveConfig.SIDEBAR_WIDTH,
+      terminalWidth,
+      targetWindowHeight
+    );
+
+    if (focusedLayoutString) {
+      const success = TmuxService.getInstance().selectLayoutSync(focusedLayoutString);
+      if (!success && !suppressLogs) {
+        LogService.getInstance().warn('Focused layout application failed', 'Layout');
+      }
+    }
+
+    await TmuxService.getInstance().refreshClient();
+    return;
+  }
 
   // Step 2: Calculate layout for real content panes only
   const layout = calculator.calculateOptimalLayout(

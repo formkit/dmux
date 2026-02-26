@@ -18,6 +18,8 @@ interface PanesGridProps {
   activeDevSourcePath?: string
   fallbackProjectRoot: string
   fallbackProjectName: string
+  focusedMode?: boolean
+  focusedPaneIndex?: number
 }
 
 const PanesGrid: React.FC<PanesGridProps> = memo(({
@@ -28,6 +30,8 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   activeDevSourcePath,
   fallbackProjectRoot,
   fallbackProjectName,
+  focusedMode,
+  focusedPaneIndex,
 }) => {
   const actionLayout = useMemo(
     () => buildProjectActionLayout(panes, fallbackProjectRoot, fallbackProjectName),
@@ -135,7 +139,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
                 pane={paneWithStatus}
                 isDevSource={isDevSource}
                 selected={isSelected}
-
+                isFocused={focusedMode && paneIndex === focusedPaneIndex}
               />
             )
           })}

@@ -93,6 +93,8 @@ export interface DmuxSettings {
   minPaneWidth?: number;
   // Preferred maximum content pane width in characters
   maxPaneWidth?: number;
+  // Focused mode: show one pane full-size, others minimized
+  focusedMode?: boolean;
 }
 
 export type SettingsScope = 'global' | 'project';

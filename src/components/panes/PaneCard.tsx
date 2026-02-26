@@ -8,6 +8,7 @@ interface PaneCardProps {
   pane: DmuxPane;
   isDevSource: boolean;
   selected: boolean;
+  isFocused?: boolean;
 }
 
 const ROW_WIDTH = 40;
@@ -33,7 +34,7 @@ const clipToWidth = (value: string, maxWidth: number): string => {
   return clipped;
 };
 
-const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected }) => {
+const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected, isFocused }) => {
   // Get status indicator
   const getStatusIcon = () => {
     if (pane.agentStatus === 'working') return { icon: '✻', color: COLORS.working };
@@ -56,7 +57,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   const apTag = pane.autopilot ? 'ap' : null;
 
   // Keep non-title segments fixed; only slug is allowed to clip.
-  const prefix = selected ? '▸' : ' ';
+  const prefix = isFocused ? '◆' : selected ? '▸' : ' ';
   const statusText = `${status.icon} `;
   const sourceText = isDevSource ? '★ ' : '';
   const agentText = hasAgent ? ` [${agentTag}]` : '     ';
@@ -101,7 +102,8 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
     prevProps.pane.shellType === nextProps.pane.shellType &&
     prevProps.pane.agent === nextProps.pane.agent &&
     prevProps.isDevSource === nextProps.isDevSource &&
-    prevProps.selected === nextProps.selected
+    prevProps.selected === nextProps.selected &&
+    prevProps.isFocused === nextProps.isFocused
   );
 });
 
