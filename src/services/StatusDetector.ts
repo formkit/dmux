@@ -4,9 +4,12 @@ import { WorkerMessageBus } from './WorkerMessageBus.js';
 import { PaneWorkerManager } from './PaneWorkerManager.js';
 import { PaneAnalyzer } from './PaneAnalyzer.js';
 import type { PaneAnalysis } from './PaneAnalyzer.js';
+import { analyzeWithPatterns } from './PatternAnalyzer.js';
+import type { PatternMatch } from './PatternAnalyzer.js';
 import type { OutboundMessage } from '../workers/WorkerMessages.js';
 import { StateManager } from '../shared/StateManager.js';
 import { LogService } from './LogService.js';
+import { capturePaneContent } from '../utils/paneCapture.js';
 
 export interface StatusUpdateEvent {
   paneId: string;
@@ -306,11 +309,20 @@ export class StatusDetector extends EventEmitter {
   }
 
   /**
-   * Handle autopilot: automatically accept options when enabled and no risk
+   * Handle autopilot using DETERMINISTIC pattern matching only.
+   *
+   * SECURITY: This method does NOT use LLM analysis results for deciding
+   * what keys to send. Terminal content is untrusted and can contain prompt
+   * injection payloads that trick LLMs into returning attacker-controlled
+   * options/keystrokes. Instead, we re-capture the terminal content and
+   * run it through PatternAnalyzer (regex-based, injection-immune).
+   *
+   * The LLM analysis is still used for UI display (showing detected options
+   * to the user in the dashboard) but never drives key-sending.
    */
   private async handleAutopilot(
     paneId: string,
-    analysis: PaneAnalysis,
+    _analysis: PaneAnalysis,
     finalStatus: AgentStatus
   ): Promise<void> {
     const logService = LogService.getInstance();
@@ -321,9 +333,9 @@ export class StatusDetector extends EventEmitter {
     const paneName = pane?.slug || paneId;
 
     // Log entry into autopilot handler
-    logService.debug(`Autopilot: Evaluating "${paneName}" (status: ${finalStatus}, state: ${analysis.state})`, 'autopilot', paneId);
+    logService.debug(`Autopilot: Evaluating "${paneName}" (status: ${finalStatus})`, 'autopilot', paneId);
 
-    // Only proceed if status is 'waiting' (option dialog detected)
+    // Only proceed if status is 'waiting' (option dialog detected by LLM)
     if (finalStatus !== 'waiting') {
       logService.debug(`Autopilot: Not applicable for "${paneName}" - agent is ${finalStatus}, no decision needed`, 'autopilot', paneId);
       return;
@@ -339,66 +351,63 @@ export class StatusDetector extends EventEmitter {
       return;
     }
 
-    logService.debug(`Autopilot: "${paneName}" has autopilot enabled - checking analysis results`, 'autopilot', paneId);
+    if (!pane.agent) {
+      logService.debug(`Autopilot: "${paneName}" has no known agent - cannot use deterministic patterns`, 'autopilot', paneId);
+      return;
+    }
 
-    // Check if there's a risk - don't auto-accept risky options
-    if (analysis.potentialHarm?.hasRisk) {
-      logService.info(
-        `Autopilot: Refusing to auto-accept for "${paneName}" - risk detected: ${analysis.potentialHarm.description || 'unknown risk'}`,
+    // Re-capture terminal content and run deterministic pattern analysis.
+    // We deliberately do NOT reuse the LLM analysis because it processes
+    // untrusted content through a model that can be prompt-injected.
+    const tmuxPaneId = this.paneIdMap.get(paneId);
+    if (!tmuxPaneId) {
+      logService.debug(`Autopilot: No tmux pane ID for "${paneName}"`, 'autopilot', paneId);
+      return;
+    }
+
+    const content = capturePaneContent(tmuxPaneId, 30);
+    if (!content) {
+      logService.debug(`Autopilot: No content captured for "${paneName}"`, 'autopilot', paneId);
+      return;
+    }
+
+    const patternResult = analyzeWithPatterns(content, pane.agent);
+
+    if (!patternResult) {
+      logService.debug(
+        `Autopilot: No deterministic pattern matched for "${paneName}" (agent: ${pane.agent}) - refusing to auto-act on LLM-only analysis`,
         'autopilot',
-        paneId
+        paneId,
       );
       return;
     }
 
-    logService.debug(`Autopilot: No risk detected for "${paneName}"`, 'autopilot', paneId);
-
-    // Check if we have options
-    if (!analysis.options || analysis.options.length === 0) {
-      logService.debug(`Autopilot: No options available for "${paneName}"`, 'autopilot', paneId);
+    if (patternResult.state !== 'option_dialog') {
+      logService.debug(`Autopilot: Deterministic state is "${patternResult.state}" for "${paneName}" - no action needed`, 'autopilot', paneId);
       return;
     }
 
-    logService.debug(`Autopilot: Found ${analysis.options.length} options for "${paneName}": ${JSON.stringify(analysis.options.map(o => o.action))}`, 'autopilot', paneId);
+    if (!patternResult.options || patternResult.options.length === 0) {
+      logService.debug(`Autopilot: Pattern matched option_dialog but extracted no options for "${paneName}"`, 'autopilot', paneId);
+      return;
+    }
 
-    // Get the first option (typically the "accept" or "continue" option)
-    const firstOption = analysis.options[0];
-    if (!firstOption.keys || firstOption.keys.length === 0) {
+    // Use the first option from the deterministic pattern match
+    const firstOption = patternResult.options[0];
+    const keyToSend = firstOption.keys[0];
+
+    if (!keyToSend) {
       logService.debug(`Autopilot: First option has no keys for "${paneName}"`, 'autopilot', paneId);
       return;
     }
 
-    // Send the first key of the first option, but only if it's a safe key.
-    // This prevents a malicious terminal output from tricking the LLM into
-    // sending arbitrary keystrokes (e.g. shell commands).
-    const keyToSend = firstOption.keys[0];
-    const SAFE_AUTOPILOT_KEYS = new Set([
-      'y', 'Y', 'n', 'N',
-      'Enter', 'Return',
-      'a', 'A',             // [A]ccept
-      'r', 'R',             // [R]eject
-      'e', 'E',             // [E]dit
-      '1', '2', '3', '4', '5', '6', '7', '8', '9',
-      'Escape', 'Tab',
-    ]);
-
-    if (!SAFE_AUTOPILOT_KEYS.has(keyToSend)) {
-      logService.info(
-        `Autopilot: Refusing to send non-whitelisted key '${keyToSend}' for "${paneName}"`,
-        'autopilot',
-        paneId
-      );
-      return;
-    }
-
     logService.info(
-      `Autopilot: Auto-accepting option for "${paneName}": "${firstOption.action}" (key: ${keyToSend})`,
+      `Autopilot: Deterministic match for "${paneName}" (agent: ${pane.agent}): "${patternResult.question}" -> "${firstOption.action}" (key: ${keyToSend})`,
       'autopilot',
-      paneId
+      paneId,
     );
 
     try {
-      // Send the key through the worker manager
       await this.sendKeysToPane(paneId, keyToSend);
       logService.debug(`Autopilot: Successfully sent key '${keyToSend}' to "${paneName}"`, 'autopilot', paneId);
     } catch (error) {
@@ -406,7 +415,7 @@ export class StatusDetector extends EventEmitter {
         `Autopilot: Failed to send keys for "${paneName}": ${error}`,
         'autopilot',
         paneId,
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
       );
     }
   }
