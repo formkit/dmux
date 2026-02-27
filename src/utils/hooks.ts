@@ -57,14 +57,17 @@ export interface HookEnvironment {
 
 /**
  * Find a hook script with priority resolution:
- * 1. .dmux-hooks/ (version controlled, team hooks)
- * 2. .dmux/hooks/ (gitignored, local overrides)
- * 3. ~/.dmux/hooks/ (global user hooks)
+ * 1. .dmux/hooks/ (gitignored, local overrides)
+ * 2. ~/.dmux/hooks/ (global user hooks)
+ *
+ * NOTE: .dmux-hooks/ (version-controlled) is intentionally excluded.
+ * Executing scripts from cloned repositories without user consent is a
+ * supply-chain attack vector - a malicious repo could include hooks that
+ * exfiltrate environment variables (API keys, tokens) on first run.
  */
 export function findHook(projectRoot: string, hookName: HookType): string | null {
   const searchPaths = [
-    path.join(projectRoot, '.dmux-hooks', hookName),        // Team hooks (VC)
-    path.join(projectRoot, '.dmux', 'hooks', hookName),     // Local override
+    path.join(projectRoot, '.dmux', 'hooks', hookName),     // Local override (gitignored)
     path.join(os.homedir(), '.dmux', 'hooks', hookName),    // Global hooks
   ];
 
@@ -87,16 +90,32 @@ export function findHook(projectRoot: string, hookName: HookType): string | null
 }
 
 /**
- * Build environment variables for a hook
+ * Sensitive environment variable patterns that should not be passed to hooks.
+ * Hooks only need DMUX_* context and basic shell environment (PATH, HOME, etc.).
+ */
+const SENSITIVE_ENV_PATTERNS = /^(.*_(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)s?|AWS_.*|ANTHROPIC_.*|OPENAI_.*|OPENROUTER_.*|GH_TOKEN|GITHUB_TOKEN|NPM_TOKEN|SSH_AUTH_SOCK|GPG_AGENT_INFO)$/i;
+
+/**
+ * Build environment variables for a hook.
+ * Sensitive variables (API keys, tokens, secrets) are filtered out to prevent
+ * accidental or malicious exfiltration.
  */
 export async function buildHookEnvironment(
   projectRoot: string,
   pane?: DmuxPane,
   extraData?: Record<string, string>
 ): Promise<HookEnvironment> {
+  // Filter sensitive variables from inherited environment
+  const filteredEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !SENSITIVE_ENV_PATTERNS.test(key)) {
+      filteredEnv[key] = value;
+    }
+  }
+
   const env: HookEnvironment = {
     DMUX_ROOT: projectRoot,
-    ...process.env, // Inherit parent environment
+    ...filteredEnv,
   };
 
   // Add server port if available
