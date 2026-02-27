@@ -368,8 +368,29 @@ export class StatusDetector extends EventEmitter {
       return;
     }
 
-    // Send the first key of the first option
+    // Send the first key of the first option, but only if it's a safe key.
+    // This prevents a malicious terminal output from tricking the LLM into
+    // sending arbitrary keystrokes (e.g. shell commands).
     const keyToSend = firstOption.keys[0];
+    const SAFE_AUTOPILOT_KEYS = new Set([
+      'y', 'Y', 'n', 'N',
+      'Enter', 'Return',
+      'a', 'A',             // [A]ccept
+      'r', 'R',             // [R]eject
+      'e', 'E',             // [E]dit
+      '1', '2', '3', '4', '5', '6', '7', '8', '9',
+      'Escape', 'Tab',
+    ]);
+
+    if (!SAFE_AUTOPILOT_KEYS.has(keyToSend)) {
+      logService.info(
+        `Autopilot: Refusing to send non-whitelisted key '${keyToSend}' for "${paneName}"`,
+        'autopilot',
+        paneId
+      );
+      return;
+    }
+
     logService.info(
       `Autopilot: Auto-accepting option for "${paneName}": "${firstOption.action}" (key: ${keyToSend})`,
       'autopilot',
