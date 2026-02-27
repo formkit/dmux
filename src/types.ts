@@ -77,6 +77,10 @@ export interface DmuxSettings {
   permissionMode?: '' | 'plan' | 'acceptEdits' | 'bypassPermissions';
   // Autopilot settings
   enableAutopilotByDefault?: boolean;
+  // Auto-approve workspace trust prompts (Claude, Gemini).
+  // Disabled by default - enabling this bypasses a security boundary that
+  // prevents AI agents from operating on untrusted code.
+  autoApproveTrust?: boolean;
   // Agent selection
   defaultAgent?: AgentName | '';
   // Which agents appear in new-pane selection

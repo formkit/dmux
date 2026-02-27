@@ -128,7 +128,7 @@ export async function createConflictResolutionPane(
 
   // Launch agent with the conflict resolution prompt
   {
-    if (agent === 'gemini') {
+    if (agent === 'gemini' && settings.autoApproveTrust) {
       ensureGeminiFolderTrusted(targetRepoPath);
     }
 
@@ -184,7 +184,7 @@ export async function createConflictResolutionPane(
       });
     }
 
-    if (agent === 'claude') {
+    if (agent === 'claude' && settings.autoApproveTrust) {
       // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
       autoApproveTrustPrompt(paneInfo).catch(() => {
         // Ignore errors in background monitoring

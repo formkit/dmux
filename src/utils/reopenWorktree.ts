@@ -163,7 +163,7 @@ export async function reopenWorktree(
 
   // Resume the agent session (or start interactive mode when no resume command is available).
   if (agent) {
-    if (agent === 'gemini') {
+    if (agent === 'gemini' && settings.autoApproveTrust) {
       ensureGeminiFolderTrusted(worktreePath);
     }
 

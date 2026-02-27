@@ -434,7 +434,7 @@ export async function createPane(
   const hasInitialPrompt = !!(prompt && prompt.trim());
 
   if (agent) {
-    if (agent === 'gemini') {
+    if (agent === 'gemini' && settings.autoApproveTrust) {
       const geminiWorkspacePath = fs.existsSync(worktreePath)
         ? worktreePath
         : projectRoot;
@@ -501,8 +501,10 @@ export async function createPane(
       });
     }
 
-    if (agent === 'claude') {
+    if (agent === 'claude' && settings.autoApproveTrust) {
       // Auto-approve trust prompts for Claude (workspace trust, not edit permissions)
+      // Gated behind autoApproveTrust setting (off by default) to prevent
+      // malicious repositories from silently gaining agent trust.
       autoApproveTrustPrompt(paneInfo, prompt).catch(() => {
         // Ignore errors in background monitoring
       });

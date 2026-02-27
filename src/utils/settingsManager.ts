@@ -78,6 +78,12 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     type: 'boolean',
   },
   {
+    key: 'autoApproveTrust',
+    label: 'Auto-Approve Trust Prompts',
+    description: 'WARNING: Automatically accepts workspace trust prompts from Claude and Gemini. This bypasses a security boundary - malicious repositories can exploit this to run code without consent. Only enable if you trust all repositories you open with dmux.',
+    type: 'boolean',
+  },
+  {
     key: 'defaultAgent',
     label: 'Default Agent',
     description: 'Skip agent selection and use this agent for all new panes',
