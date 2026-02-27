@@ -1,16 +1,17 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 export const callClaudeCode = async (prompt: string): Promise<string | null> => {
   try {
-    const result = execSync(
-      `echo "${prompt.replace(/"/g, '\\"')}" | claude --no-interactive --max-turns 1 2>/dev/null | head -n 5`,
-      {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-        timeout: 5000,
-      }
-    );
-    const lines = result.trim().split('\n');
+    // Pass prompt via stdin to avoid shell injection.
+    // execFileSync bypasses the shell entirely, and the prompt is written
+    // to stdin as raw bytes rather than interpolated into a command string.
+    const result = execFileSync('claude', ['--no-interactive', '--max-turns', '1'], {
+      encoding: 'utf-8',
+      input: prompt,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+    const lines = result.trim().split('\n').slice(0, 5);
     const response = lines.join(' ').trim();
     return response || null;
   } catch {

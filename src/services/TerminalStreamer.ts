@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { execSync, spawn, ChildProcess } from 'child_process';
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, unlinkSync, writeFileSync, chmodSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { Readable } from 'stream';
 import { StringDecoder } from 'string_decoder';
 import type { InitMessage, PatchMessage, ResizeMessage } from '../shared/StreamProtocol.js';
@@ -99,8 +100,8 @@ export class TerminalStreamer extends EventEmitter {
     // Capture current state
     const content = await this.capturePaneContent(tmuxPaneId);
 
-    // Create pipe path
-    const pipePath = `/tmp/dmux-pipe-${paneId}-${Date.now()}`;
+    // Create pipe path with random suffix to prevent symlink attacks
+    const pipePath = `/tmp/dmux-pipe-${paneId}-${randomBytes(8).toString('hex')}`;
 
     return {
       paneId,
@@ -174,8 +175,8 @@ export class TerminalStreamer extends EventEmitter {
         // No existing pipe, which is fine
       }
 
-      // Create empty pipe file (using touch to avoid any output)
-      execSync(`> ${stream.pipePath}`, { stdio: 'pipe' });
+      // Create empty pipe file with restrictive permissions (owner-only read/write)
+      writeFileSync(stream.pipePath, '', { mode: 0o600 });
 
       // Start tmux pipe-pane
       const pipeCmd = `tmux pipe-pane -t ${stream.tmuxPaneId} -o 'cat >> ${stream.pipePath}'`;
@@ -497,8 +498,8 @@ export class TerminalStreamer extends EventEmitter {
       }
     }
 
-    // Create new pipe path
-    stream.pipePath = `/tmp/dmux-pipe-${stream.paneId}-${Date.now()}`;
+    // Create new pipe path with random suffix
+    stream.pipePath = `/tmp/dmux-pipe-${stream.paneId}-${randomBytes(8).toString('hex')}`;
 
     // Restart piping
     setTimeout(() => {

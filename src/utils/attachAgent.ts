@@ -145,8 +145,8 @@ export async function attachAgentToWorktree(
     permissionMode: settings.permissionMode,
   });
 
-  // Auto-approve trust prompts for Claude
-  if (agent === 'claude') {
+  // Auto-approve trust prompts for Claude (only if opted in)
+  if (agent === 'claude' && settings.autoApproveTrust) {
     autoApproveTrustPrompt(paneInfo, prompt).catch(() => {
       // Ignore errors in background monitoring
     });

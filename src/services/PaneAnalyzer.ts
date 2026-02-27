@@ -315,7 +315,9 @@ Output: {
     {"action": "Reject", "keys": ["r", "R"]},
     {"action": "Edit manually", "keys": ["e", "E"]}
   ]
-}`;
+}
+
+`;
 
     try {
       logService.debug(`PaneAnalyzer: Requesting options extraction${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
