@@ -1,7 +1,0 @@
-{
-  "defaultAgent": "claude",
-  "enabledAgents": ["claude"],
-  "permissionMode": "bypassPermissions",
-  "baseBranch": "master",
-  "branchPrefix": ""
-}

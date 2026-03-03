@@ -138,3 +138,28 @@ pnpm run test
 - Treat `dev:watch` as internal machinery behind the default `dev` entrypoint.
 - Keep dev-only controls hidden outside DEV mode.
 - Update this file when dev workflow behavior changes.
+
+## Attentive-specific usage notes
+
+This fork is maintained for use with Attentive's development workflow. Key conventions:
+
+**Settings:** Do not commit `.dmux/settings.json` to individual repos. Instead, configure
+shared defaults once in `~/.dmux.global.json` on your machine:
+
+```json
+{
+  "defaultAgent": "claude",
+  "enabledAgents": ["claude"],
+  "permissionMode": "bypassPermissions"
+}
+```
+
+`baseBranch` does not need to be set — dmux detects it automatically via `origin/HEAD`.
+
+**Hooks:** Attentive-specific hook logic lives in `.dmux-hooks/lib/attentive.sh` and is
+sourced by the lifecycle hooks. Do not inline Attentive-specific logic directly into hook
+files — keep it in the lib file so it stays consolidated and easy to update.
+
+**Slug generation:** `src/utils/slug.ts` has been modified to extract JIRA keys from
+prompts (e.g. `"JNY-1234: fix the auth bug"` → branch `jny-1234-fix-auth-bug`) and to
+use `attn-` as the fallback prefix instead of `dmux-`.
