@@ -6,12 +6,18 @@ source "$DMUX_ROOT/.dmux-hooks/lib/attentive.sh"
 
 cd "$DMUX_WORKTREE_PATH"
 
-CHANGED_MODULES=$(get_changed_gradle_modules)
+REPO_TYPE=$(detect_repo_type)
 
-if [ -n "$CHANGED_MODULES" ]; then
-  echo "[Hook] Running Gradle checks for: $CHANGED_MODULES"
-  TASKS=$(echo "$CHANGED_MODULES" | awk '{for(i=1;i<=NF;i++) printf $i":checkstyleMain " $i":test "}')
-  ./gradlew $TASKS
-else
-  echo "[Hook] No Gradle modules changed, skipping checks"
+if [ "$REPO_TYPE" = "java" ]; then
+  CHANGED_MODULES=$(get_changed_gradle_modules)
+  if [ -n "$CHANGED_MODULES" ]; then
+    echo "[Hook] Running Gradle checks for: $CHANGED_MODULES"
+    TASKS=$(echo "$CHANGED_MODULES" | awk '{for(i=1;i<=NF;i++) printf $i":checkstyleMain " $i":test "}')
+    ./gradlew $TASKS
+  else
+    echo "[Hook] No Gradle modules changed, skipping checks"
+  fi
+elif [ "$REPO_TYPE" = "frontend" ]; then
+  yarn lint
+  yarn test:vitest:affected
 fi

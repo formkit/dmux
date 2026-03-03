@@ -11,5 +11,5 @@ TITLE="${JIRA_KEY:+[$JIRA_KEY] }$(echo "$DMUX_PROMPT" | head -c 60)"
 
 gh pr create \
   --title "$TITLE" \
-  --body "$(cat "$DMUX_ROOT/docs/pull_request_template")" \
+  --body "$(cat "$DMUX_ROOT/docs/pull_request_template" 2>/dev/null || echo "$DMUX_PROMPT")" \
   --label "🤖 opened-by-ai"

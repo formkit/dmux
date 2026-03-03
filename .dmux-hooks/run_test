@@ -8,13 +8,16 @@ curl -s -X PUT "$API_URL" -H "Content-Type: application/json" \
   -d '{"status": "running"}' > /dev/null
 
 OUTPUT_FILE="/tmp/attn-test-$DMUX_PANE_ID.txt"
+REPO_TYPE=$(detect_repo_type)
 
-CHANGED_MODULES=$(get_changed_gradle_modules)
-TASKS=$(echo "$CHANGED_MODULES" | awk '{for(i=1;i<=NF;i++) printf $i":test "}')
-
-if ./gradlew $TASKS > "$OUTPUT_FILE" 2>&1; then
-  STATUS="passed"
+if [ "$REPO_TYPE" = "java" ]; then
+  CHANGED_MODULES=$(get_changed_gradle_modules)
+  TASKS=$(echo "$CHANGED_MODULES" | awk '{for(i=1;i<=NF;i++) printf $i":test "}')
+  ./gradlew $TASKS > "$OUTPUT_FILE" 2>&1 && STATUS="passed" || STATUS="failed"
+elif [ "$REPO_TYPE" = "frontend" ]; then
+  yarn test:vitest:affected > "$OUTPUT_FILE" 2>&1 && STATUS="passed" || STATUS="failed"
 else
+  echo "Unknown repo type, skipping tests" > "$OUTPUT_FILE"
   STATUS="failed"
 fi
 

@@ -4,10 +4,17 @@ source "$DMUX_ROOT/.dmux-hooks/lib/attentive.sh"
 
 cd "$DMUX_WORKTREE_PATH"
 
-make githooks
+REPO_TYPE=$(detect_repo_type)
+
+if [ "$REPO_TYPE" = "java" ]; then
+  make githooks
+elif [ "$REPO_TYPE" = "frontend" ]; then
+  yarn install --frozen-lockfile &
+  yarn prepare
+fi
 
 for f in .env.local .env.development; do
   [ -f "$DMUX_ROOT/$f" ] && cp "$DMUX_ROOT/$f" "$DMUX_WORKTREE_PATH/$f"
 done
 
-echo "[Hook] Worktree ready: $DMUX_SLUG"
+echo "[Hook] Worktree ready: $DMUX_SLUG ($REPO_TYPE)"
