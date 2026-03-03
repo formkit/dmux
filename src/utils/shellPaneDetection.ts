@@ -98,13 +98,16 @@ export async function getUntrackedPanes(
   sessionName: string,
   trackedPaneIds: string[],
   controlPaneId?: string,
-  welcomePaneId?: string
+  welcomePaneId?: string,
+  extraExcludePaneIds?: string[],
 ): Promise<UntrackedPaneInfo[]> {
   try {
-    // Get all panes in the current session with ID, title, and current command
+    // Get panes in the current window only (not session-wide).
+    // Each sidebar process runs in its own window, so this scopes
+    // shell detection to avoid cross-window interference in multi-window mode.
     const { execSync } = await import('child_process');
     const output = execSync(
-      `tmux list-panes -s -F '#{pane_id}::#{pane_title}::#{pane_current_command}'`,
+      `tmux list-panes -F '#{pane_id}::#{pane_title}::#{pane_current_command}'`,
       { encoding: 'utf-8', stdio: 'pipe' }
     ).trim();
 
@@ -125,6 +128,9 @@ export async function getUntrackedPanes(
       if (title && title.startsWith('dmux v')) {
         continue;
       }
+      if (title === 'dmux') {
+        continue;
+      }
       if (title === 'Welcome') {
         continue;
       }
@@ -139,6 +145,11 @@ export async function getUntrackedPanes(
 
       // CRITICAL: Skip panes running dmux itself (node process running dmux)
       if (command && (command === 'node' || command.includes('dmux'))) {
+        continue;
+      }
+
+      // Skip extra excluded pane IDs (e.g. multi-window control panes)
+      if (extraExcludePaneIds && extraExcludePaneIds.includes(paneId)) {
         continue;
       }
 
@@ -210,6 +221,55 @@ export async function createShellPane(paneId: string, nextId: number, existingTi
     id: `dmux-${nextId}`,
     slug,
     prompt: '', // No prompt for manually created panes
+    paneId,
+    projectRoot: paneProjectInfo.projectRoot,
+    projectName: paneProjectInfo.projectName,
+    type: 'shell',
+    shellType,
+  };
+}
+
+/**
+ * Gets the next root shell number based on existing root panes.
+ */
+export function getNextRootShellNumber(existingPanes: DmuxPane[]): number {
+  const rootNumbers = existingPanes
+    .filter(p => p.slug.startsWith('root-'))
+    .map(p => {
+      const match = p.slug.match(/^root-(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter(n => n > 0);
+
+  if (rootNumbers.length === 0) return 1;
+  return Math.max(...rootNumbers) + 1;
+}
+
+/**
+ * Creates a DmuxPane object for a root shell pane (at the project root, no worktree).
+ */
+export async function createRootShellPane(
+  paneId: string,
+  nextDmuxId: number,
+  existingPanes: DmuxPane[],
+): Promise<DmuxPane> {
+  const tmuxService = TmuxService.getInstance();
+  const shellType = await detectShellType(paneId);
+  const paneProjectInfo = await detectPaneProjectInfo(paneId);
+
+  const rootNumber = getNextRootShellNumber(existingPanes);
+  const slug = `root-${rootNumber}`;
+
+  try {
+    await tmuxService.setPaneTitle(paneId, slug);
+  } catch (error) {
+    // Ignore title-setting errors
+  }
+
+  return {
+    id: `dmux-${nextDmuxId}`,
+    slug,
+    prompt: '',
     paneId,
     projectRoot: paneProjectInfo.projectRoot,
     projectName: paneProjectInfo.projectName,

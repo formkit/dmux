@@ -5,6 +5,7 @@
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../../types.js';
 import type { ActionResult, ActionContext } from '../types.js';
+import { WindowManager } from '../../services/WindowManager.js';
 
 /**
  * View/Jump to a pane
@@ -14,6 +15,11 @@ export async function viewPane(
   context: ActionContext
 ): Promise<ActionResult> {
   try {
+    // Switch to the correct window first if pane is in a different one
+    if (pane.windowId) {
+      await WindowManager.getInstance().switchToWindowForPane(pane);
+    }
+
     execSync(`tmux select-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
 
     return {

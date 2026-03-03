@@ -18,6 +18,7 @@ import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
 import { getPaneBranchName } from '../../utils/git.js';
 import { buildDevWatchRespawnCommand } from '../../utils/devWatchCommand.js';
 import { isActiveDevSourcePath } from '../../utils/devSource.js';
+import { WindowManager } from '../../services/WindowManager.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -304,6 +305,35 @@ async function executeCloseOption(
       } catch (error) {
         // Log but don't fail - layout recalc is non-critical
         LogService.getInstance().debug('Failed to recalculate layout after pane close', 'paneActions');
+      }
+
+      // Multi-window cleanup: if the closed pane's window has no more content panes, remove it
+      if (pane.windowId) {
+        try {
+          const closeConfig: DmuxConfig = JSON.parse(fs.readFileSync(panesFile, 'utf-8'));
+          if (closeConfig.windows && closeConfig.windows.length > 0) {
+            const windowInfo = closeConfig.windows.find(w => w.windowId === pane.windowId);
+            if (windowInfo && windowInfo.windowIndex > 0) {
+              const remainingInWindow = updatedPanes.filter(p => p.windowId === pane.windowId);
+              if (remainingInWindow.length === 0) {
+                const windowManager = WindowManager.getInstance();
+                closeConfig.windows = await windowManager.cleanupEmptyWindow(windowInfo, closeConfig.windows);
+                closeConfig.lastUpdated = new Date().toISOString();
+                const { atomicWriteJsonSync } = await import('../../utils/atomicWrite.js');
+                atomicWriteJsonSync(panesFile, closeConfig);
+              } else {
+                // Update window name after pane removal
+                const windowManager = WindowManager.getInstance();
+                await windowManager.updateWindowName(pane.windowId!, remainingInWindow);
+              }
+            }
+          }
+        } catch (windowCleanupError) {
+          LogService.getInstance().debug(
+            `Failed to clean up window after pane close: ${windowCleanupError}`,
+            'paneActions'
+          );
+        }
       }
 
       // Trigger pane_closed hook (after everything is cleaned up)

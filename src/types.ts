@@ -46,6 +46,8 @@ export interface DmuxPane {
   autopilot?: boolean;
   // Error message if pane analyzer encounters issues
   analyzerError?: string;
+  // Tmux window ID this pane belongs to (for multi-window support)
+  windowId?: string;
 }
 
 export interface PanePosition {
@@ -93,6 +95,8 @@ export interface DmuxSettings {
   minPaneWidth?: number;
   // Preferred maximum content pane width in characters
   maxPaneWidth?: number;
+  // Maximum content panes per tmux window before overflow to new window
+  maxPanesPerWindow?: number;
 }
 
 export type SettingsScope = 'global' | 'project';
@@ -117,6 +121,13 @@ export interface DmuxAppProps {
   settingsFile: string;
   autoUpdater?: any; // AutoUpdater instance
   controlPaneId?: string; // Pane ID running dmux TUI (left sidebar)
+  windowId?: string; // When set, this sidebar manages a specific window (multi-window mode)
+}
+
+export interface WindowInfo {
+  windowId: string;       // Tmux window ID (e.g., "@0")
+  controlPaneId: string;  // Sidebar pane ID for this window
+  windowIndex: number;    // 0-based window order
 }
 
 export interface DmuxConfig {
@@ -128,6 +139,7 @@ export interface DmuxConfig {
   controlPaneId?: string; // Pane ID running dmux TUI (left sidebar)
   controlPaneSize?: number; // Fixed sidebar width (40 chars)
   welcomePaneId?: string; // Pane ID for the welcome/placeholder pane
+  windows?: WindowInfo[]; // Multi-window state (undefined = single-window mode)
 }
 
 // Hook types - re-exported from hooks utility for convenience

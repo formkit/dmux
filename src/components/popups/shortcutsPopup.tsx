@@ -45,6 +45,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'A', description: 'Add terminal to worktree' },
     { key: 'n', description: 'New agent pane' },
     { key: 't', description: 'New terminal pane' },
+    { key: 'T', description: 'New root shell pane' },
     { key: 'p', description: 'New pane in another project' },
     { key: 'r', description: 'Reopen closed worktree' },
     ...(isDevMode

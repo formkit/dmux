@@ -55,13 +55,19 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
     : pane.agent === 'claude' ? 'cc' : pane.agent ? 'oc' : null;
   const apTag = pane.autopilot ? 'ap' : null;
 
+  // Window indicator (e.g., "W1" for @1) — only shown for panes with a windowId
+  const windowTag = pane.windowId
+    ? `W${pane.windowId.replace('@', '')}`
+    : null;
+
   // Keep non-title segments fixed; only slug is allowed to clip.
   const prefix = selected ? '▸' : ' ';
   const statusText = `${status.icon} `;
   const sourceText = isDevSource ? '★ ' : '';
   const agentText = hasAgent ? ` [${agentTag}]` : '     ';
   const autopilotText = apTag ? ` (${apTag})` : '     ';
-  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText);
+  const windowText = windowTag ? ` ${windowTag}` : '';
+  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText + windowText);
   const maxSlugWidth = Math.max(0, LEFT_COLUMN_WIDTH - fixedLeftWidth);
   const slugText = clipToWidth(pane.slug, maxSlugWidth);
 
@@ -76,6 +82,9 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
         <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
           {slugText}
         </Text>
+        {windowTag && (
+          <Text dimColor>{windowText}</Text>
+        )}
       </Box>
       <Box width={RIGHT_COLUMN_WIDTH} justifyContent="flex-end">
         {agentTag
@@ -100,6 +109,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
     prevProps.pane.type === nextProps.pane.type &&
     prevProps.pane.shellType === nextProps.pane.shellType &&
     prevProps.pane.agent === nextProps.pane.agent &&
+    prevProps.pane.windowId === nextProps.pane.windowId &&
     prevProps.isDevSource === nextProps.isDevSource &&
     prevProps.selected === nextProps.selected
   );

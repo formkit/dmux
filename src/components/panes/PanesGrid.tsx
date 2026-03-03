@@ -86,11 +86,16 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
         : <Text color={color} bold={isSelected}>terminal</Text>
     }
 
+    const rootShellLabel = isActiveGroup
+      ? <Text color={COLORS.border}><Text color="cyan">[T]</Text> root shell</Text>
+      : null
+
     return (
       <Box width={40} justifyContent="flex-end">
         {renderLabel("new-agent", newSelected)}
         <Text color={COLORS.border}>{"  "}</Text>
         {renderLabel("terminal", termSelected)}
+        {rootShellLabel && <><Text color={COLORS.border}>{"  "}</Text>{rootShellLabel}</>}
       </Box>
     )
   }
