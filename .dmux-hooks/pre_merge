@@ -1,20 +1,17 @@
 #!/bin/bash
-# Example: pre_merge hook
-#
-# Runs safety checks before merge. Non-zero exit aborts merge.
-
 set -euo pipefail
+source "$DMUX_ROOT/.dmux-hooks/lib/attentive.sh"
 
-echo "[Hook] Running pre-merge checks for $DMUX_SLUG"
+[ "${DMUX_SKIP_PRE_MERGE:-0}" = "1" ] && exit 0
 
 cd "$DMUX_WORKTREE_PATH"
 
-if [ "${DMUX_SKIP_PRE_MERGE:-0}" = "1" ]; then
-  echo "[Hook] DMUX_SKIP_PRE_MERGE=1, skipping checks"
-  exit 0
+CHANGED_MODULES=$(get_changed_gradle_modules)
+
+if [ -n "$CHANGED_MODULES" ]; then
+  echo "[Hook] Running Gradle checks for: $CHANGED_MODULES"
+  TASKS=$(echo "$CHANGED_MODULES" | awk '{for(i=1;i<=NF;i++) printf $i":checkstyleMain " $i":test "}')
+  ./gradlew $TASKS
+else
+  echo "[Hook] No Gradle modules changed, skipping checks"
 fi
-
-pnpm run typecheck
-pnpm run test
-
-echo "[Hook] Pre-merge checks passed"

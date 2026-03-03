@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+source "$DMUX_ROOT/.dmux-hooks/lib/attentive.sh"
+
+cd "$DMUX_ROOT"
+
+git push origin "$DMUX_SLUG"
+
+JIRA_KEY=$(extract_jira_key)
+TITLE="${JIRA_KEY:+[$JIRA_KEY] }$(echo "$DMUX_PROMPT" | head -c 60)"
+
+gh pr create \
+  --title "$TITLE" \
+  --body "$(cat "$DMUX_ROOT/docs/pull_request_template")" \
+  --label "🤖 opened-by-ai"

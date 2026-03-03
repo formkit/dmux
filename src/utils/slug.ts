@@ -19,7 +19,15 @@ export const callClaudeCode = async (prompt: string): Promise<string | null> => 
 };
 
 export const generateSlug = async (prompt: string): Promise<string> => {
-  if (!prompt) return `dmux-${Date.now()}`;
+  if (!prompt) return `attn-${Date.now()}`;
+
+  // Extract JIRA key if user included it in the prompt
+  // Matches: "JNY-1234", "[JNY-1234]", "jny-1234"
+  const jiraMatch = prompt.match(/\b([A-Za-z]+-\d+)\b/);
+  const jiraPrefix = jiraMatch ? jiraMatch[1].toLowerCase() + '-' : '';
+
+  // Strip the JIRA key from the prompt before sending to LLM
+  const cleanPrompt = prompt.replace(/\[?[A-Za-z]+-\d+\]?:?\s*/g, '').trim();
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (apiKey) {
@@ -39,7 +47,7 @@ export const generateSlug = async (prompt: string): Promise<string> => {
             messages: [
               {
                 role: 'user',
-                content: `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
+                content: `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${cleanPrompt}"`
               }
             ],
             max_tokens: 10,
@@ -50,7 +58,7 @@ export const generateSlug = async (prompt: string): Promise<string> => {
         if (response.ok) {
           const data = await response.json() as any;
           const slug = data.choices[0].message.content.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-          if (slug) return slug;
+          if (slug) return jiraPrefix + slug;
         }
       } catch {
         // Try next model
@@ -60,12 +68,12 @@ export const generateSlug = async (prompt: string): Promise<string> => {
   }
 
   const claudeResponse = await callClaudeCode(
-    `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${prompt}"`
+    `Generate a 1-2 word kebab-case slug for this prompt. Only respond with the slug, nothing else: "${cleanPrompt}"`
   );
   if (claudeResponse) {
     const slug = claudeResponse.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-    if (slug) return slug;
+    if (slug) return jiraPrefix + slug;
   }
 
-  return `dmux-${Date.now()}`;
+  return jiraPrefix + `attn-${Date.now()}`;
 };

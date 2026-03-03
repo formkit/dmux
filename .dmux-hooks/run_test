@@ -1,0 +1,26 @@
+#!/bin/bash
+source "$DMUX_ROOT/.dmux-hooks/lib/attentive.sh"
+
+cd "$DMUX_WORKTREE_PATH"
+API_URL="http://localhost:$DMUX_SERVER_PORT/api/panes/$DMUX_PANE_ID/test"
+
+curl -s -X PUT "$API_URL" -H "Content-Type: application/json" \
+  -d '{"status": "running"}' > /dev/null
+
+OUTPUT_FILE="/tmp/attn-test-$DMUX_PANE_ID.txt"
+
+CHANGED_MODULES=$(get_changed_gradle_modules)
+TASKS=$(echo "$CHANGED_MODULES" | awk '{for(i=1;i<=NF;i++) printf $i":test "}')
+
+if ./gradlew $TASKS > "$OUTPUT_FILE" 2>&1; then
+  STATUS="passed"
+else
+  STATUS="failed"
+fi
+
+OUTPUT=$(tail -c 5000 "$OUTPUT_FILE")
+curl -s -X PUT "$API_URL" -H "Content-Type: application/json" \
+  -d "$(jq -n --arg s "$STATUS" --arg o "$OUTPUT" '{status:$s,output:$o}')" > /dev/null
+
+rm -f "$OUTPUT_FILE"
+[ "$STATUS" = "passed" ]
