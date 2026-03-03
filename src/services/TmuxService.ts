@@ -781,6 +781,19 @@ export class TmuxService {
   }
 
   /**
+   * Rename a window
+   */
+  async renameWindow(windowId: string, name: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux rename-window -t '${windowId}' '${name}'`);
+      },
+      RetryStrategy.FAST,
+      'renameWindow'
+    );
+  }
+
+  /**
    * Join a pane from a window (pulls pane into current window)
    */
   async joinPane(sourceWindowId: string, horizontal: boolean = true): Promise<void> {
@@ -811,6 +824,61 @@ export class TmuxService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Select (switch to) a specific window
+   */
+  async selectWindow(windowId: string): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        this.execute(`tmux select-window -t '${windowId}'`);
+      },
+      RetryStrategy.FAST,
+      `selectWindow(${windowId})`
+    );
+  }
+
+  /**
+   * Get the current window ID
+   */
+  async getCurrentWindowId(): Promise<string> {
+    return this.executeWithRetry(
+      () => this.execute("tmux display-message -p '#{window_id}'"),
+      RetryStrategy.IDEMPOTENT,
+      'getCurrentWindowId'
+    );
+  }
+
+  /**
+   * Get the current window ID (sync version)
+   */
+  getCurrentWindowIdSync(): string {
+    return this.execute("tmux display-message -p '#{window_id}'");
+  }
+
+  /**
+   * List all window IDs in a session
+   */
+  async listWindowIds(sessionName: string): Promise<string[]> {
+    const output = await this.executeWithRetry(
+      () => this.execute(`tmux list-windows -t '${sessionName}' -F '#{window_id}'`),
+      RetryStrategy.IDEMPOTENT,
+      `listWindowIds(${sessionName})`
+    );
+    return output.split('\n').filter(id => id.trim());
+  }
+
+  /**
+   * Get all pane IDs in a specific window
+   */
+  async getAllPaneIdsInWindow(windowId: string): Promise<string[]> {
+    const output = await this.executeWithRetry(
+      () => this.execute(`tmux list-panes -t '${windowId}' -F '#{pane_id}'`),
+      RetryStrategy.IDEMPOTENT,
+      `getAllPaneIdsInWindow(${windowId})`
+    );
+    return output.split('\n').filter(id => id.trim());
   }
 
   // ===== SYNCHRONOUS FALLBACKS (for gradual migration) =====

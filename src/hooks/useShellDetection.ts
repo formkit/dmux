@@ -22,27 +22,29 @@ export async function detectAndAddShellPanes(
     let controlPaneId: string | undefined;
     let welcomePaneId: string | undefined;
 
+    // Collect all control pane IDs to exclude (main + multi-window sidebars)
+    let extraExcludePaneIds: string[] | undefined;
+
     try {
       const configContent = await fs.readFile(panesFile, 'utf-8');
       const config = JSON.parse(configContent);
       controlPaneId = config.controlPaneId;
       welcomePaneId = config.welcomePaneId;
+
+      // Exclude control panes from all windows
+      if (config.windows && Array.isArray(config.windows)) {
+        extraExcludePaneIds = config.windows
+          .map((w: any) => w.controlPaneId)
+          .filter((id: string) => id && id !== controlPaneId);
+      }
     } catch (error) {
       // Config not available (expected on first run), continue without filtering
-  //       LogService.getInstance().debug(
-  //         `Config file not available for shell detection: ${error instanceof Error ? error.message : String(error)}`,
-  //         'useShellDetection'
-  //       );
     }
 
     const trackedPaneIds = activePanes.map(p => p.paneId);
-  //     LogService.getInstance().debug(
-  //       `Checking for untracked panes. Tracked: [${trackedPaneIds.join(', ')}], Control: ${controlPaneId}, Welcome: ${welcomePaneId}`,
-  //       'shellDetection'
-  //     );
 
     const sessionName = ''; // Empty string will make tmux use current session
-    const untrackedPanes = await getUntrackedPanes(sessionName, trackedPaneIds, controlPaneId, welcomePaneId);
+    const untrackedPanes = await getUntrackedPanes(sessionName, trackedPaneIds, controlPaneId, welcomePaneId, extraExcludePaneIds);
 
     if (untrackedPanes.length === 0) {
       return { updatedPanes: activePanes, shellPanesAdded: false };

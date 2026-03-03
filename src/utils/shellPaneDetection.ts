@@ -98,13 +98,16 @@ export async function getUntrackedPanes(
   sessionName: string,
   trackedPaneIds: string[],
   controlPaneId?: string,
-  welcomePaneId?: string
+  welcomePaneId?: string,
+  extraExcludePaneIds?: string[],
 ): Promise<UntrackedPaneInfo[]> {
   try {
-    // Get all panes in the current session with ID, title, and current command
+    // Get panes in the current window only (not session-wide).
+    // Each sidebar process runs in its own window, so this scopes
+    // shell detection to avoid cross-window interference in multi-window mode.
     const { execSync } = await import('child_process');
     const output = execSync(
-      `tmux list-panes -s -F '#{pane_id}::#{pane_title}::#{pane_current_command}'`,
+      `tmux list-panes -F '#{pane_id}::#{pane_title}::#{pane_current_command}'`,
       { encoding: 'utf-8', stdio: 'pipe' }
     ).trim();
 
@@ -125,6 +128,9 @@ export async function getUntrackedPanes(
       if (title && title.startsWith('dmux v')) {
         continue;
       }
+      if (title === 'dmux') {
+        continue;
+      }
       if (title === 'Welcome') {
         continue;
       }
@@ -139,6 +145,11 @@ export async function getUntrackedPanes(
 
       // CRITICAL: Skip panes running dmux itself (node process running dmux)
       if (command && (command === 'node' || command.includes('dmux'))) {
+        continue;
+      }
+
+      // Skip extra excluded pane IDs (e.g. multi-window control panes)
+      if (extraExcludePaneIds && extraExcludePaneIds.includes(paneId)) {
         continue;
       }
 

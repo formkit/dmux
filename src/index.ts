@@ -108,14 +108,27 @@ class Dmux {
     const inTmux = process.env.TMUX !== undefined;
     const isDev = process.env.DMUX_DEV === 'true';
     const isDevWatch = process.env.DMUX_DEV_WATCH === 'true';
+
+    // Parse --window-id flag for secondary sidebar mode (multi-window)
+    const windowIdArgIndex = process.argv.indexOf('--window-id');
+    const windowIdArg = windowIdArgIndex !== -1 ? process.argv[windowIdArgIndex + 1] : undefined;
+
     const currentTmuxSessionName = inTmux
       ? this.getCurrentTmuxSessionName()
       : null;
     const sessionNameForCurrentTmux = currentTmuxSessionName || this.sessionName;
 
+    // Secondary sidebar mode: --window-id means we're a sidebar in an overflow window.
+    // Skip session creation/attach logic entirely — the session already exists.
+    // We need to skip directly to the TUI rendering phase.
+    if (windowIdArg && inTmux) {
+      // Skip all session management — jump straight to TUI setup
+      // (the code below this block handles the TUI launch)
+    }
+
     // Running dmux from another project while already inside a dmux session:
     // offer to attach this project to the current sidebar/session instead.
-    if (
+    else if (
       inTmux &&
       currentTmuxSessionName &&
       currentTmuxSessionName.startsWith('dmux-') &&
@@ -136,7 +149,8 @@ class Dmux {
 
     // If launched with `pnpm dev` from inside tmux, transparently upgrade this pane
     // to watch mode so source changes apply without manual relaunches.
-    if (inTmux && isDev && !isDevWatch) {
+    // Skip for secondary sidebar mode (--window-id).
+    if (inTmux && isDev && !isDevWatch && !windowIdArg) {
       try {
         const tmuxService = TmuxService.getInstance();
         const currentPaneId = await tmuxService.getCurrentPaneId();
@@ -536,6 +550,7 @@ class Dmux {
       projectRoot: this.projectRoot,
       autoUpdater: this.autoUpdater,
       controlPaneId,
+      windowId: windowIdArg,
     };
 
     const app = render(React.createElement(DmuxApp, appProps), {

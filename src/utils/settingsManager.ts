@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: DmuxSettings = {
   minPaneWidth: DEFAULT_MIN_PANE_WIDTH,
   maxPaneWidth: DEFAULT_MAX_PANE_WIDTH,
   enabledAgents: getDefaultEnabledAgents(),
+  maxPanesPerWindow: 2,
 };
 
 const AGENT_OPTIONS = getAgentDefinitions().map((agent) => ({
@@ -136,6 +137,16 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     max: MAX_MAX_PANE_WIDTH,
     step: 1,
     shiftStep: SHIFT_MAX_PANE_WIDTH_STEP,
+  },
+  {
+    key: 'maxPanesPerWindow',
+    label: 'Max Panes Per Window',
+    description: 'Maximum content panes per tmux window before overflow to a new window. Leave unset for unlimited.',
+    type: 'number',
+    min: 1,
+    max: 12,
+    step: 1,
+    shiftStep: 3,
   },
   {
     key: 'hooks' as any,
@@ -294,6 +305,11 @@ export class SettingsManager {
       throw new Error(
         `Invalid maxPaneWidth: expected an integer between ${MIN_MAX_PANE_WIDTH} and ${MAX_MAX_PANE_WIDTH}`
       );
+    }
+    if (key === 'maxPanesPerWindow' && value !== undefined) {
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 12) {
+        throw new Error('Invalid maxPanesPerWindow: expected an integer between 1 and 12');
+      }
     }
 
     // Pane width settings are always stored globally, regardless of requested scope.

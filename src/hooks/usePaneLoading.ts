@@ -32,26 +32,38 @@ interface PaneLoadResult {
 }
 
 /**
- * Fetches all tmux pane IDs and titles for the current session
- * Retries up to maxRetries times with delay between attempts
+ * Fetches all tmux pane IDs and titles for the current session (across ALL windows).
+ * Uses session-wide listing (-s) so that panes in other windows are recognized
+ * and not incorrectly marked as missing/dead during multi-window operation.
+ * Retries up to maxRetries times with delay between attempts.
  */
 export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: string[]; titleToId: Map<string, string> }> {
-  const tmuxService = TmuxService.getInstance();
   let retryCount = 0;
 
   while (retryCount <= maxRetries) {
     try {
-      const paneInfo = await tmuxService.getAllPaneInfo();
+      // CRITICAL: Use -s (session-wide) to see panes across ALL windows.
+      // Without -s, each sidebar only sees panes in its own window and treats
+      // panes in other windows as "missing", triggering incorrect recreation.
+      const { execSync } = await import('child_process');
+      const output = execSync(
+        `tmux list-panes -s -F '#{pane_id}|#{pane_title}'`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+
       const allPaneIds: string[] = [];
       const titleToId = new Map<string, string>();
 
-      for (const pane of paneInfo) {
-        if (!pane.paneId || !pane.paneId.startsWith('%') || pane.title === 'dmux-spacer') {
-          continue;
-        }
-        allPaneIds.push(pane.paneId);
-        if (pane.title) {
-          titleToId.set(pane.title.trim(), pane.paneId);
+      if (output) {
+        for (const line of output.split('\n')) {
+          const [paneId, title] = line.split('|');
+          if (!paneId || !paneId.startsWith('%') || title === 'dmux-spacer') {
+            continue;
+          }
+          allPaneIds.push(paneId);
+          if (title) {
+            titleToId.set(title.trim(), paneId);
+          }
         }
       }
 
@@ -59,11 +71,6 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
         return { allPaneIds, titleToId };
       }
     } catch (error) {
-      // Retry on tmux command failure (common during rapid pane creation/destruction)
-  //       LogService.getInstance().debug(
-  //         `Tmux fetch failed (attempt ${retryCount + 1}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`,
-  //         'usePaneLoading'
-  //       );
       if (retryCount < maxRetries) await new Promise(r => setTimeout(r, TMUX_RETRY_DELAY));
     }
     retryCount++;
