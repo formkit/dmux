@@ -739,6 +739,14 @@ export function useInputHandling(params: UseInputHandlingParams) {
       // Open pane menu for selected pane
       await openPaneMenu(panes[selectedIndex])
       return
+    } else if (/^[1-9]$/.test(input) && panes.length > 0) {
+      // Number keys 1-9: jump directly to pane N
+      const targetIndex = parseInt(input, 10) - 1
+      if (targetIndex < panes.length) {
+        setSelectedIndex(targetIndex)
+        actionSystem.executeAction(PaneAction.VIEW, panes[targetIndex])
+      }
+      return
     }
   })
 }
