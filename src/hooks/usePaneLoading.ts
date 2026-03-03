@@ -9,6 +9,10 @@ import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { getPaneTmuxTitle } from '../utils/paneTitle.js';
+import { resumeExitedAgents } from '../utils/agentResume.js';
+import { buildResumeCommand, buildAgentCommand } from '../utils/agentLaunch.js';
+import { SettingsManager } from '../utils/settingsManager.js';
+import { ensureGeminiFolderTrusted } from '../utils/geminiTrust.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
@@ -123,6 +127,24 @@ export async function recreateMissingPanes(
       const promptPreview = missingPane.prompt?.substring(0, 50) || '';
       await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       await tmuxService.sendKeys(newPaneId, `"cd ${missingPane.worktreePath || process.cwd()}" Enter`);
+
+      // Relaunch the agent if this pane had one
+      if (missingPane.agent && missingPane.worktreePath) {
+        const projectRoot = missingPane.projectRoot || process.cwd();
+        const settings = new SettingsManager(projectRoot).getSettings();
+
+        if (missingPane.agent === 'gemini') {
+          ensureGeminiFolderTrusted(missingPane.worktreePath);
+        }
+
+        const resumeCommand =
+          buildResumeCommand(missingPane.agent, settings.permissionMode)
+          || buildAgentCommand(missingPane.agent, settings.permissionMode);
+
+        await new Promise(r => setTimeout(r, 300));
+        await tmuxService.sendShellCommand(newPaneId, resumeCommand);
+        await tmuxService.sendTmuxKeys(newPaneId, 'Enter');
+      }
     } catch (error) {
       // If we can't create the pane, skip it
     }
@@ -203,6 +225,24 @@ export async function recreateKilledWorktreePanes(
         await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       }
       await tmuxService.sendKeys(newPaneId, `"cd ${pane.worktreePath}" Enter`);
+
+      // Relaunch the agent if this pane had one
+      if (pane.agent && pane.worktreePath) {
+        const projectRoot = pane.projectRoot || process.cwd();
+        const settings = new SettingsManager(projectRoot).getSettings();
+
+        if (pane.agent === 'gemini') {
+          ensureGeminiFolderTrusted(pane.worktreePath);
+        }
+
+        const resumeCommand =
+          buildResumeCommand(pane.agent, settings.permissionMode)
+          || buildAgentCommand(pane.agent, settings.permissionMode);
+
+        await new Promise(r => setTimeout(r, 300));
+        await tmuxService.sendShellCommand(newPaneId, resumeCommand);
+        await tmuxService.sendTmuxKeys(newPaneId, 'Enter');
+      }
 
   //       LogService.getInstance().debug(
   //         `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
@@ -321,6 +361,18 @@ export async function loadAndProcessPanes(
 
     // Re-rebind after recreation
     reboundPanes = reboundPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
+  }
+
+  // Resume agents that exited during SSH disconnection (only on initial load)
+  if (isInitialLoad) {
+    try {
+      await resumeExitedAgents(reboundPanes, allPaneIds);
+    } catch (error) {
+      LogService.getInstance().debug(
+        `Agent resume on startup failed: ${error instanceof Error ? error.message : String(error)}`,
+        'usePaneLoading'
+      );
+    }
   }
 
   return { panes: reboundPanes, allPaneIds, titleToId };
