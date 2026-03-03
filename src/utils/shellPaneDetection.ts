@@ -230,6 +230,55 @@ export async function createShellPane(paneId: string, nextId: number, existingTi
 }
 
 /**
+ * Gets the next root shell number based on existing root panes.
+ */
+export function getNextRootShellNumber(existingPanes: DmuxPane[]): number {
+  const rootNumbers = existingPanes
+    .filter(p => p.slug.startsWith('root-'))
+    .map(p => {
+      const match = p.slug.match(/^root-(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter(n => n > 0);
+
+  if (rootNumbers.length === 0) return 1;
+  return Math.max(...rootNumbers) + 1;
+}
+
+/**
+ * Creates a DmuxPane object for a root shell pane (at the project root, no worktree).
+ */
+export async function createRootShellPane(
+  paneId: string,
+  nextDmuxId: number,
+  existingPanes: DmuxPane[],
+): Promise<DmuxPane> {
+  const tmuxService = TmuxService.getInstance();
+  const shellType = await detectShellType(paneId);
+  const paneProjectInfo = await detectPaneProjectInfo(paneId);
+
+  const rootNumber = getNextRootShellNumber(existingPanes);
+  const slug = `root-${rootNumber}`;
+
+  try {
+    await tmuxService.setPaneTitle(paneId, slug);
+  } catch (error) {
+    // Ignore title-setting errors
+  }
+
+  return {
+    id: `dmux-${nextDmuxId}`,
+    slug,
+    prompt: '',
+    paneId,
+    projectRoot: paneProjectInfo.projectRoot,
+    projectName: paneProjectInfo.projectName,
+    type: 'shell',
+    shellType,
+  };
+}
+
+/**
  * Gets the next available dmux ID number
  * @param existingPanes Array of existing panes
  * @returns Next available ID number

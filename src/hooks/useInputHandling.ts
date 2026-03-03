@@ -19,7 +19,7 @@ import {
   getProjectActionByIndex,
   type ProjectActionItem,
 } from "../utils/projectActions.js"
-import { createShellPane, getNextDmuxId } from "../utils/shellPaneDetection.js"
+import { createShellPane, createRootShellPane, getNextDmuxId } from "../utils/shellPaneDetection.js"
 import type { AgentName } from "../utils/agentLaunch.js"
 
 // Type for the action system returned by useActionSystem hook
@@ -204,6 +204,36 @@ export function useInputHandling(params: UseInputHandlingParams) {
     } catch (error: any) {
       setIsCreatingPane(false)
       setStatusMessage(`Failed to create terminal pane: ${error.message}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    }
+  }
+
+  const handleCreateRootShellPane = async () => {
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage("Creating root shell pane...")
+
+      const tmuxService = TmuxService.getInstance()
+      const newPaneId = await tmuxService.splitPane({ cwd: projectRoot })
+
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
+
+      const rootShellPane = await createRootShellPane(
+        newPaneId,
+        getNextDmuxId(panes),
+        panes
+      )
+      rootShellPane.projectRoot = projectRoot
+      await savePanes([...panes, rootShellPane])
+
+      setIsCreatingPane(false)
+      setStatusMessage("Root shell pane created")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+
+      await loadPanes()
+    } catch (error: any) {
+      setIsCreatingPane(false)
+      setStatusMessage(`Failed to create root shell pane: ${error.message}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
     }
   }
@@ -655,17 +685,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
         setStatusMessage(`Failed to reset layout: ${error?.message || String(error)}`)
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
       }
-    } else if (input === "T") {
-      // Demo toasts (Shift+T) - cycles through different types
-      const stateManager = StateManager.getInstance()
-      const demos = [
-        { msg: "Pane created successfully", severity: "success" as const },
-        { msg: "Failed to merge: conflicts detected", severity: "error" as const },
-        { msg: "Warning: API key not configured", severity: "warning" as const },
-        { msg: "This is a longer informational message that will wrap to multiple lines if needed to demonstrate how toasts handle longer content", severity: "info" as const },
-      ]
-      // Queue all demo toasts
-      demos.forEach(demo => stateManager.showToast(demo.msg, demo.severity))
+    } else if (!isLoading && input === "T") {
+      await handleCreateRootShellPane()
+      return
     } else if (input === "q") {
       cleanExit()
     } else if (isDevMode && input === "S" && selectedIndex < panes.length) {
@@ -707,7 +729,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await handleCreateAgentPane(getActiveProjectRoot())
       return
     } else if (!isLoading && input === "t") {
-      await handleCreateTerminalPane(getActiveProjectRoot())
+      const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+      const cwd = selectedPane?.worktreePath || getActiveProjectRoot()
+      await handleCreateTerminalPane(cwd)
       return
     } else if (
       !isLoading &&
