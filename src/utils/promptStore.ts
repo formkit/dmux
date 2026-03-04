@@ -92,5 +92,12 @@ export async function cleanupPromptFilesForSlug(
 
 export function buildPromptReadAndDeleteSnippet(promptPath: string): string {
   const quotedPromptPath = shellQuote(promptPath);
+  if (isFishShell(process.env.SHELL)) {
+    return `set DMUX_PROMPT_FILE ${quotedPromptPath}; set DMUX_PROMPT_CONTENT "$(cat "$DMUX_PROMPT_FILE" 2>/dev/null || true)"; rm -f "$DMUX_PROMPT_FILE"`;
+  }
   return `DMUX_PROMPT_FILE=${quotedPromptPath}; DMUX_PROMPT_CONTENT="$(cat "$DMUX_PROMPT_FILE" 2>/dev/null || true)"; rm -f "$DMUX_PROMPT_FILE"`;
+}
+
+function isFishShell(shellPath?: string): boolean {
+  return path.basename(shellPath || '').toLowerCase() === 'fish';
 }
