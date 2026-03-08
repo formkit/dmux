@@ -201,7 +201,7 @@ export function rebindAndFilterPanes(
       // A pane is considered a shell pane when it has type 'shell', or when it
       // has no type AND no worktreePath/agent (legacy panes without explicit type).
       const isShellPane = pane.type === 'shell'
-        || (!pane.type && !pane.worktreePath && !pane.agent);
+        || (!pane.type && !pane.worktreePath);
       if (isShellPane) {
         LogService.getInstance().info(
           `Removing stale shell pane: ${pane.id} (${pane.slug}) - paneId ${pane.paneId} no longer exists`,
@@ -231,7 +231,7 @@ export function rebindAndFilterPanes(
 
   // Track if shell panes were removed (for saving to config)
   const isShell = (p: DmuxPane) =>
-    p.type === 'shell' || (!p.type && !p.worktreePath && !p.agent);
+    p.type === 'shell' || (!p.type && !p.worktreePath);
   const shellPanesRemoved = loadedPanes.some(p =>
     isShell(p) && allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)
   );

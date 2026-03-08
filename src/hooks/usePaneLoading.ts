@@ -87,11 +87,13 @@ export async function loadPanesFromFile(panesFile: string): Promise<DmuxPane[]> 
     }
 
     // Migrate legacy panes: set explicit type for panes created before the
-    // `type` field was always written.  Panes with a worktreePath or an agent
-    // are worktree panes; everything else is a shell pane.
+    // `type` field was always written.
+    // Only worktreePath is used to determine worktree type — panes with agent
+    // but no worktreePath (e.g. conflict-resolution panes) are shell panes
+    // that operate directly in the target repo.
     for (const pane of panes) {
       if (!pane.type) {
-        pane.type = (pane.worktreePath || pane.agent) ? 'worktree' : 'shell';
+        pane.type = pane.worktreePath ? 'worktree' : 'shell';
       }
     }
 
