@@ -198,7 +198,11 @@ export function rebindAndFilterPanes(
       // 2. Trying to get pane status/content
       // 3. Trying to apply layouts with stale pane IDs
       // This is especially important on session reopen where tmux pane IDs change.
-      if (pane.type === 'shell') {
+      // A pane is considered a shell pane when it has type 'shell', or when it
+      // has no type AND no worktreePath/agent (legacy panes without explicit type).
+      const isShellPane = pane.type === 'shell'
+        || (!pane.type && !pane.worktreePath && !pane.agent);
+      if (isShellPane) {
         LogService.getInstance().info(
           `Removing stale shell pane: ${pane.id} (${pane.slug}) - paneId ${pane.paneId} no longer exists`,
           'shellDetection'
@@ -226,13 +230,15 @@ export function rebindAndFilterPanes(
   });
 
   // Track if shell panes were removed (for saving to config)
+  const isShell = (p: DmuxPane) =>
+    p.type === 'shell' || (!p.type && !p.worktreePath && !p.agent);
   const shellPanesRemoved = loadedPanes.some(p =>
-    p.type === 'shell' && allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)
+    isShell(p) && allPaneIds.length > 0 && !allPaneIds.includes(p.paneId)
   );
 
   if (shellPanesRemoved) {
     LogService.getInstance().info(
-      `Removed ${loadedPanes.filter(p => p.type === 'shell' && !allPaneIds.includes(p.paneId)).length} stale shell pane(s) from config`,
+      `Removed ${loadedPanes.filter(p => isShell(p) && !allPaneIds.includes(p.paneId)).length} stale shell pane(s) from config`,
       'shellDetection'
     );
   }
