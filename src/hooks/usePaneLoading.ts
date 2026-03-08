@@ -9,6 +9,10 @@ import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { getPaneTmuxTitle } from '../utils/paneTitle.js';
+import { resumeExitedAgents } from '../utils/agentResume.js';
+import { buildResumeCommand, buildAgentCommand } from '../utils/agentLaunch.js';
+import { SettingsManager } from '../utils/settingsManager.js';
+import { ensureGeminiFolderTrusted } from '../utils/geminiTrust.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
@@ -28,26 +32,38 @@ interface PaneLoadResult {
 }
 
 /**
- * Fetches all tmux pane IDs and titles for the current session
- * Retries up to maxRetries times with delay between attempts
+ * Fetches all tmux pane IDs and titles for the current session (across ALL windows).
+ * Uses session-wide listing (-s) so that panes in other windows are recognized
+ * and not incorrectly marked as missing/dead during multi-window operation.
+ * Retries up to maxRetries times with delay between attempts.
  */
 export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: string[]; titleToId: Map<string, string> }> {
-  const tmuxService = TmuxService.getInstance();
   let retryCount = 0;
 
   while (retryCount <= maxRetries) {
     try {
-      const paneInfo = await tmuxService.getAllPaneInfo();
+      // CRITICAL: Use -s (session-wide) to see panes across ALL windows.
+      // Without -s, each sidebar only sees panes in its own window and treats
+      // panes in other windows as "missing", triggering incorrect recreation.
+      const { execSync } = await import('child_process');
+      const output = execSync(
+        `tmux list-panes -s -F '#{pane_id}|#{pane_title}'`,
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+
       const allPaneIds: string[] = [];
       const titleToId = new Map<string, string>();
 
-      for (const pane of paneInfo) {
-        if (!pane.paneId || !pane.paneId.startsWith('%') || pane.title === 'dmux-spacer') {
-          continue;
-        }
-        allPaneIds.push(pane.paneId);
-        if (pane.title) {
-          titleToId.set(pane.title.trim(), pane.paneId);
+      if (output) {
+        for (const line of output.split('\n')) {
+          const [paneId, title] = line.split('|');
+          if (!paneId || !paneId.startsWith('%') || title === 'dmux-spacer') {
+            continue;
+          }
+          allPaneIds.push(paneId);
+          if (title) {
+            titleToId.set(title.trim(), paneId);
+          }
         }
       }
 
@@ -55,11 +71,6 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
         return { allPaneIds, titleToId };
       }
     } catch (error) {
-      // Retry on tmux command failure (common during rapid pane creation/destruction)
-  //       LogService.getInstance().debug(
-  //         `Tmux fetch failed (attempt ${retryCount + 1}/${maxRetries}): ${error instanceof Error ? error.message : String(error)}`,
-  //         'usePaneLoading'
-  //       );
       if (retryCount < maxRetries) await new Promise(r => setTimeout(r, TMUX_RETRY_DELAY));
     }
     retryCount++;
@@ -123,6 +134,24 @@ export async function recreateMissingPanes(
       const promptPreview = missingPane.prompt?.substring(0, 50) || '';
       await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       await tmuxService.sendKeys(newPaneId, `"cd ${missingPane.worktreePath || process.cwd()}" Enter`);
+
+      // Relaunch the agent if this pane had one
+      if (missingPane.agent && missingPane.worktreePath) {
+        const projectRoot = missingPane.projectRoot || process.cwd();
+        const settings = new SettingsManager(projectRoot).getSettings();
+
+        if (missingPane.agent === 'gemini') {
+          ensureGeminiFolderTrusted(missingPane.worktreePath);
+        }
+
+        const resumeCommand =
+          buildResumeCommand(missingPane.agent, settings.permissionMode)
+          || buildAgentCommand(missingPane.agent, settings.permissionMode);
+
+        await new Promise(r => setTimeout(r, 300));
+        await tmuxService.sendShellCommand(newPaneId, resumeCommand);
+        await tmuxService.sendTmuxKeys(newPaneId, 'Enter');
+      }
     } catch (error) {
       // If we can't create the pane, skip it
     }
@@ -203,6 +232,24 @@ export async function recreateKilledWorktreePanes(
         await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       }
       await tmuxService.sendKeys(newPaneId, `"cd ${pane.worktreePath}" Enter`);
+
+      // Relaunch the agent if this pane had one
+      if (pane.agent && pane.worktreePath) {
+        const projectRoot = pane.projectRoot || process.cwd();
+        const settings = new SettingsManager(projectRoot).getSettings();
+
+        if (pane.agent === 'gemini') {
+          ensureGeminiFolderTrusted(pane.worktreePath);
+        }
+
+        const resumeCommand =
+          buildResumeCommand(pane.agent, settings.permissionMode)
+          || buildAgentCommand(pane.agent, settings.permissionMode);
+
+        await new Promise(r => setTimeout(r, 300));
+        await tmuxService.sendShellCommand(newPaneId, resumeCommand);
+        await tmuxService.sendTmuxKeys(newPaneId, 'Enter');
+      }
 
   //       LogService.getInstance().debug(
   //         `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
@@ -321,6 +368,18 @@ export async function loadAndProcessPanes(
 
     // Re-rebind after recreation
     reboundPanes = reboundPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
+  }
+
+  // Resume agents that exited during SSH disconnection (only on initial load)
+  if (isInitialLoad) {
+    try {
+      await resumeExitedAgents(reboundPanes, allPaneIds);
+    } catch (error) {
+      LogService.getInstance().debug(
+        `Agent resume on startup failed: ${error instanceof Error ? error.message : String(error)}`,
+        'usePaneLoading'
+      );
+    }
   }
 
   return { panes: reboundPanes, allPaneIds, titleToId };

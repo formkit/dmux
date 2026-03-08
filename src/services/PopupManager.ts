@@ -444,7 +444,7 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
-      const popupHeight = this.config.isDevMode ? 21 : 20
+      const popupHeight = this.config.isDevMode ? 22 : 21
       const result = await this.launchPopup<{ action?: "hooks" }>(
         "shortcutsPopup.js",
         [],

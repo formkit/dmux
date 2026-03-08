@@ -27,6 +27,7 @@ import {
   getSendKeysSubmit,
   type AgentName,
 } from './agentLaunch.js';
+import { WindowManager } from '../services/WindowManager.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
 import {
   buildPromptReadAndDeleteSnippet,
@@ -171,15 +172,20 @@ export async function createPane(
   const worktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
   const originalPaneId = tmuxService.getCurrentPaneIdSync();
 
-  // Load config to get control pane info
+  // Load config to get control pane info and multi-window state
   const configPath = optionsSessionConfigPath
     || path.join(sessionProjectRoot, '.dmux', 'dmux.config.json');
   let controlPaneId: string | undefined;
+  let configWindows: import('../types.js').WindowInfo[] | undefined;
+  let sessionName: string | undefined;
 
   try {
     const configContent = fs.readFileSync(configPath, 'utf-8');
     const config: DmuxConfig = JSON.parse(configContent);
     controlPaneId = config.controlPaneId;
+    configWindows = config.windows;
+    // Derive session name from config path (parent dir structure)
+    sessionName = config.projectName;
 
     // Verify the control pane ID from config still exists
     if (controlPaneId) {
@@ -220,9 +226,74 @@ export async function createPane(
     // Ignore if already set or fails
   }
 
-  // Determine if this is the first content pane
-  // Check existingPanes instead of contentPaneIds, because contentPaneIds includes the welcome pane
-  const isFirstContentPane = existingPanes.length === 0;
+  // Multi-window overflow: determine which window this pane goes into
+  const maxPanesPerWindow = settings.maxPanesPerWindow;
+  let targetWindowId: string | undefined;
+  let targetControlPaneId = controlPaneId;
+
+  if (maxPanesPerWindow && maxPanesPerWindow > 0) {
+    const windowManager = WindowManager.getInstance();
+    const mainWindowId = tmuxService.getCurrentWindowIdSync();
+
+    const target = windowManager.getTargetWindow(
+      existingPanes,
+      configWindows,
+      maxPanesPerWindow,
+      controlPaneId,
+      mainWindowId,
+    );
+
+    if (target.needsNewWindow) {
+      // All windows are full — create a new one
+      const nextIndex = (configWindows?.length ?? 1);
+      // Get session name for window creation
+      const tmuxSessionName = execSync(
+        "tmux display-message -p '#{session_name}'",
+        { encoding: 'utf-8', stdio: 'pipe' }
+      ).trim();
+      const newWindow = await windowManager.createNewWindow(
+        tmuxSessionName,
+        sessionProjectRoot,
+        nextIndex,
+      );
+
+      targetWindowId = newWindow.windowId;
+      targetControlPaneId = newWindow.controlPaneId;
+
+      // Save the new window to config
+      try {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config: DmuxConfig = JSON.parse(configContent);
+
+        // Initialize windows array if needed (include main window)
+        if (!config.windows || config.windows.length === 0) {
+          config.windows = [{
+            windowId: mainWindowId,
+            controlPaneId: controlPaneId,
+            windowIndex: 0,
+          }];
+        }
+        config.windows.push(newWindow);
+        config.lastUpdated = new Date().toISOString();
+        atomicWriteJsonSync(configPath, config);
+        configWindows = config.windows;
+      } catch (configError) {
+        LogService.getInstance().error(
+          `Failed to save new window to config: ${configError}`,
+          'paneCreation'
+        );
+      }
+    } else {
+      targetWindowId = target.windowId;
+      targetControlPaneId = target.controlPaneId;
+    }
+  }
+
+  // Determine if this is the first content pane in the TARGET window
+  const panesInTargetWindow = targetWindowId
+    ? existingPanes.filter(p => p.windowId === targetWindowId || (!p.windowId && !targetWindowId))
+    : existingPanes;
+  const isFirstContentPane = panesInTargetWindow.length === 0;
 
   let paneInfo: string;
 
@@ -231,11 +302,11 @@ export async function createPane(
     if (isFirstContentPane) {
       // First, create the tmux pane but DON'T destroy welcome pane yet
       // This way we can save the pane to config first, THEN destroy welcome pane
-      paneInfo = setupSidebarLayout(controlPaneId, projectRoot);
+      paneInfo = setupSidebarLayout(targetControlPaneId, projectRoot);
     } else {
       // Subsequent panes - always split horizontally, let layout manager organize
-      // Get actual dmux pane IDs (not welcome pane) from existingPanes
-      const dmuxPaneIds = existingPanes.map(p => p.paneId);
+      // Get actual dmux pane IDs (not welcome pane) from panes in the target window
+      const dmuxPaneIds = panesInTargetWindow.map(p => p.paneId);
       const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1]; // Split from the most recent dmux pane
 
       // Always split horizontally - the layout manager will organize panes optimally
@@ -250,7 +321,7 @@ export async function createPane(
       // Fix: Update controlPaneId to current pane and save to config
       const currentPaneId = originalPaneId; // We got this at the start of createPane
       LogService.getInstance().info(
-        `Updating controlPaneId from ${controlPaneId} to ${currentPaneId}`,
+        `Updating controlPaneId from ${targetControlPaneId} to ${currentPaneId}`,
         'paneCreation'
       );
 
@@ -260,7 +331,8 @@ export async function createPane(
         config.controlPaneId = currentPaneId;
         config.lastUpdated = new Date().toISOString();
         atomicWriteJsonSync(configPath, config);
-        controlPaneId = currentPaneId; // Update local variable
+        targetControlPaneId = currentPaneId; // Update local variable
+        controlPaneId = currentPaneId;
       } catch (configError) {
         LogService.getInstance().error(
           `Failed to update config after control pane recovery: ${configError}`,
@@ -271,9 +343,9 @@ export async function createPane(
 
       // Retry pane creation with corrected controlPaneId
       if (isFirstContentPane) {
-        paneInfo = setupSidebarLayout(controlPaneId, projectRoot);
+        paneInfo = setupSidebarLayout(targetControlPaneId, projectRoot);
       } else {
-        const dmuxPaneIds = existingPanes.map(p => p.paneId);
+        const dmuxPaneIds = panesInTargetWindow.map(p => p.paneId);
         const targetPane = dmuxPaneIds[dmuxPaneIds.length - 1];
         paneInfo = splitPane({ targetPane, cwd: projectRoot });
       }
@@ -295,13 +367,13 @@ export async function createPane(
     // Ignore if setting title fails
   }
 
-  // Apply optimal layout using the layout manager
-  if (controlPaneId) {
+  // Apply optimal layout using the layout manager (scoped to target window)
+  if (targetControlPaneId) {
     const dimensions = getTerminalDimensions();
-    const allContentPaneIds = [...existingPanes.map(p => p.paneId), paneInfo];
+    const allContentPaneIds = [...panesInTargetWindow.map(p => p.paneId), paneInfo];
 
     await recalculateAndApplyLayout(
-      controlPaneId,
+      targetControlPaneId,
       allContentPaneIds,
       dimensions.width,
       dimensions.height
@@ -525,6 +597,8 @@ export async function createPane(
     agent,
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
     autopilot: settings.enableAutopilotByDefault ?? false,
+    // Track which window this pane belongs to
+    windowId: targetWindowId,
   };
 
   // CRITICAL: Save the pane to config IMMEDIATELY before destroying welcome pane
@@ -549,6 +623,12 @@ export async function createPane(
 
   // Trigger worktree_created hook (after full pane setup)
   await triggerHook('worktree_created', projectRoot, newPane);
+
+  // Update window name to reflect its pane slugs
+  if (targetWindowId) {
+    const allPanesInWindow = [...panesInTargetWindow, newPane];
+    await WindowManager.getInstance().updateWindowName(targetWindowId, allPanesInWindow);
+  }
 
   // Switch back to the original pane
   await tmuxService.selectPane(originalPaneId);
