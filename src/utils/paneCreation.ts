@@ -1,7 +1,7 @@
 import path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
-import type { DmuxPane, DmuxConfig } from '../types.js';
+import type { DmuxPane, DmuxConfig, MergeTargetReference } from '../types.js';
 import { TmuxService } from '../services/TmuxService.js';
 import {
   setupSidebarLayout,
@@ -35,12 +35,15 @@ import {
 import { ensureGeminiFolderTrusted } from './geminiTrust.js';
 import { isValidBranchName } from './git.js';
 import { sendPromptViaTmux } from './agentPromptDispatch.js';
+import { writeWorktreeMetadata } from './worktreeMetadata.js';
 
 export interface CreatePaneOptions {
   prompt: string;
   agent?: AgentName;
   slugSuffix?: string;
   slugBase?: string;
+  startPointBranch?: string;
+  mergeTargetChain?: MergeTargetReference[];
   projectName: string;
   existingPanes: DmuxPane[];
   projectRoot?: string; // Target repository root for the new pane
@@ -82,6 +85,8 @@ export async function createPane(
     existingPanes,
     slugSuffix,
     slugBase,
+    startPointBranch,
+    mergeTargetChain,
     skipAgentSelection = false,
     sessionConfigPath: optionsSessionConfigPath,
     sessionProjectRoot: optionsSessionProjectRoot,
@@ -345,15 +350,25 @@ export async function createPane(
     if (baseBranch && !isValidBranchName(baseBranch)) {
       throw new Error(`Invalid base branch name: ${baseBranch}`);
     }
-    if (baseBranch) {
+    const resolvedStartPoint = startPointBranch || baseBranch;
+    if (resolvedStartPoint && !isValidBranchName(resolvedStartPoint)) {
+      throw new Error(`Invalid worktree start-point branch name: ${resolvedStartPoint}`);
+    }
+    if (resolvedStartPoint) {
       try {
-        execSync(`git rev-parse --verify "refs/heads/${baseBranch}"`, {
+        execSync(`git rev-parse --verify "refs/heads/${resolvedStartPoint}"`, {
           stdio: 'pipe',
           cwd: projectRoot,
         });
       } catch {
+        if (startPointBranch) {
+          throw new Error(
+            `Worktree start-point branch "${resolvedStartPoint}" does not exist anymore. Reopen the parent worktree or recreate it before branching again.`
+          );
+        }
+
         throw new Error(
-          `Base branch "${baseBranch}" does not exist. Update the baseBranch setting to a valid branch name.`
+          `Base branch "${resolvedStartPoint}" does not exist. Update the baseBranch setting to a valid branch name.`
         );
       }
     }
@@ -379,7 +394,7 @@ export async function createPane(
       // Build worktree command:
       // - If branch exists, use it (don't create with -b)
       // - If branch doesn't exist, create it with -b, optionally from a configured base branch
-      const startPoint = baseBranch ? ` "${baseBranch}"` : '';
+      const startPoint = resolvedStartPoint ? ` "${resolvedStartPoint}"` : '';
       const worktreeAddCmd = branchExists
         ? `git worktree add "${worktreePath}" "${branchName}"`
         : `git worktree add "${worktreePath}" -b "${branchName}"${startPoint}`;
@@ -407,6 +422,18 @@ export async function createPane(
 
     // Give a bit more time for git to finish setting up the worktree
     await new Promise((resolve) => setTimeout(resolve, 500));
+
+    try {
+      writeWorktreeMetadata(worktreePath, {
+        branchName: branchName !== slug ? branchName : undefined,
+        mergeTargetChain,
+      });
+    } catch (metadataError) {
+      LogService.getInstance().warn(
+        `Failed to persist worktree metadata for ${slug}: ${metadataError}`,
+        'paneCreation'
+      );
+    }
 
     // Initialize .dmux-hooks if this is a hooks editing session
     if (isHooksEditingSession) {
@@ -525,6 +552,7 @@ export async function createPane(
     agent,
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
     autopilot: settings.enableAutopilotByDefault ?? false,
+    mergeTargetChain,
   };
 
   // CRITICAL: Save the pane to config IMMEDIATELY before destroying welcome pane

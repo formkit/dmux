@@ -44,12 +44,16 @@ import {
 } from "./utils/agentLaunch.js"
 import { resolveNextDevSourcePath } from "./utils/devSource.js"
 import { buildDevWatchRespawnCommand } from "./utils/devWatchCommand.js"
+import { getPaneBranchName } from "./utils/git.js"
+import { getGitStatus } from "./utils/mergeValidation.js"
+import { createMergeTargetChain } from "./utils/mergeTargets.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 import type {
   DmuxPane,
   DmuxAppProps,
+  MergeTargetReference,
 } from "./types.js"
 import PanesGrid from "./components/panes/PanesGrid.js"
 import CommandPromptDialog from "./components/dialogs/CommandPromptDialog.js"
@@ -436,40 +440,187 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // applySmartLayout moved to utils/tmux
 
   // Helper function to handle agent choice and pane creation
-  const handlePaneCreationWithAgent = async (
-    prompt: string,
-    targetProjectRoot?: string
-  ) => {
-    const agents = availableAgents
-
-    const createPanesForAgents = async (selectedAgents: AgentName[]) => {
-      await createPanesForAgentsHook(prompt, selectedAgents, {
-        existingPanes: panes,
-        targetProjectRoot,
-      })
+  const selectAgentsForPaneCreation = async (): Promise<AgentName[] | null> => {
+    if (availableAgents.length === 0) {
+      return []
     }
 
-    if (agents.length === 0) {
-      await createNewPaneHook(prompt, undefined, {
-        targetProjectRoot,
-        skipAgentSelection: true,
-      })
-      return
-    }
-
-    // Always show the checklist when at least one enabled agent exists.
-    // This preserves the "select none for terminal" behavior consistently.
     const selectedAgents = await popupManager.launchAgentChoicePopup()
     if (selectedAgents === null) {
-      return
+      return null
     }
     if (selectedAgents.length === 0) {
       setStatusMessage("Select at least one agent")
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return null
+    }
+
+    return selectedAgents
+  }
+
+  const createPaneSelection = async (
+    prompt: string,
+    selectedAgents: AgentName[],
+    targetProjectRoot?: string,
+    createOptions?: {
+      startPointBranch?: string
+      mergeTargetChain?: MergeTargetReference[]
+    }
+  ): Promise<number> => {
+    if (selectedAgents.length === 0) {
+      const pane = await createNewPaneHook(prompt, undefined, {
+        targetProjectRoot,
+        skipAgentSelection: true,
+        startPointBranch: createOptions?.startPointBranch,
+        mergeTargetChain: createOptions?.mergeTargetChain,
+      })
+      return pane ? 1 : 0
+    }
+
+    const createdPanes = await createPanesForAgentsHook(prompt, selectedAgents, {
+      existingPanes: panes,
+      targetProjectRoot,
+      startPointBranch: createOptions?.startPointBranch,
+      mergeTargetChain: createOptions?.mergeTargetChain,
+    })
+    return createdPanes.length
+  }
+
+  const handlePaneCreationWithAgent = async (
+    prompt: string,
+    targetProjectRoot?: string,
+    createOptions?: {
+      startPointBranch?: string
+      mergeTargetChain?: MergeTargetReference[]
+    }
+  ) => {
+    const selectedAgents = await selectAgentsForPaneCreation()
+    if (selectedAgents === null) {
       return
     }
 
-    await createPanesForAgents(selectedAgents)
+    await createPaneSelection(
+      prompt,
+      selectedAgents,
+      targetProjectRoot,
+      createOptions
+    )
+  }
+
+  const handleCreateChildWorktree = async (parentPane: DmuxPane) => {
+    if (!parentPane.worktreePath) {
+      setStatusMessage("Selected pane has no worktree path")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const targetProjectRoot = getPaneProjectRoot(parentPane, sessionProjectRoot)
+    const promptValue = await popupManager.launchNewPanePopup(targetProjectRoot)
+    if (!promptValue) {
+      return
+    }
+
+    const selectedAgents = await selectAgentsForPaneCreation()
+    if (selectedAgents === null) {
+      return
+    }
+
+    const createSubWorktree = async (): Promise<ActionResult> => {
+      const createdCount = await createPaneSelection(
+        promptValue,
+        selectedAgents,
+        targetProjectRoot,
+        {
+          startPointBranch: getPaneBranchName(parentPane),
+          mergeTargetChain: createMergeTargetChain(parentPane, targetProjectRoot),
+        }
+      )
+
+      if (createdCount > 0) {
+        return {
+          type: "success",
+          message: `Created ${createdCount} sub-worktree${createdCount === 1 ? "" : "s"} from ${parentPane.slug}`,
+        }
+      }
+
+      return {
+        type: "error",
+        message: `Failed to create a sub-worktree from ${parentPane.slug}`,
+        dismissable: true,
+      }
+    }
+
+    const parentStatus = getGitStatus(parentPane.worktreePath)
+    if (!parentStatus.hasChanges) {
+      await actionSystem.executeCallback(createSubWorktree, { showProgress: false })
+      return
+    }
+
+    const branchFromDirtyResult: ActionResult = {
+      type: "choice",
+      title: "Parent Worktree Has Uncommitted Changes",
+      message: `"${parentPane.slug}" has uncommitted changes. Commit them before creating a sub-worktree.`,
+      options: [
+        {
+          id: "commit_automatic",
+          label: "AI commit (automatic)",
+          description: "Auto-generate and commit immediately",
+          default: true,
+        },
+        {
+          id: "commit_ai_editable",
+          label: "AI commit (editable)",
+          description: "Generate message, edit before commit",
+        },
+        {
+          id: "commit_manual",
+          label: "Manual commit message",
+          description: "Write your own commit message",
+        },
+        {
+          id: "cancel",
+          label: "Cancel",
+          description: "Keep working in the parent worktree",
+        },
+      ],
+      data: {
+        kind: "merge_uncommitted",
+        repoPath: parentPane.worktreePath,
+        targetBranch: getPaneBranchName(parentPane),
+        files: parentStatus.files,
+        diffMode: "working-tree",
+      },
+      onSelect: async (optionId: string) => {
+        if (optionId === "cancel") {
+          return {
+            type: "info",
+            message: "Sub-worktree creation cancelled",
+            dismissable: true,
+          }
+        }
+
+        if (
+          optionId !== "commit_automatic"
+          && optionId !== "commit_ai_editable"
+          && optionId !== "commit_manual"
+        ) {
+          return {
+            type: "error",
+            message: `Unknown option: ${optionId}`,
+            dismissable: true,
+          }
+        }
+
+        const { handleCommitWithOptions } = await import("./actions/merge/commitMessageHandler.js")
+        return handleCommitWithOptions(parentPane.worktreePath!, optionId, createSubWorktree)
+      },
+      dismissable: true,
+    }
+
+    await actionSystem.executeCallback(
+      async () => branchFromDirtyResult,
+      { showProgress: false }
+    )
   }
 
   // Helper function to reopen a closed worktree
@@ -838,6 +989,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     copyNonGitFiles,
     runCommandInternal,
     handlePaneCreationWithAgent,
+    handleCreateChildWorktree,
     handleReopenWorktree,
     setDevSourceFromPane: handleSetDevSourceFromPane,
     savePanes,

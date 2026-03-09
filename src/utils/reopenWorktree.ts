@@ -19,6 +19,8 @@ import {
 import { ensureGeminiFolderTrusted } from './geminiTrust.js';
 import { SettingsManager } from './settingsManager.js';
 import { filterEnabledAgents, getInstalledAgents } from './agentDetection.js';
+import { getCurrentBranch } from './git.js';
+import { readWorktreeMetadata } from './worktreeMetadata.js';
 
 export interface ReopenWorktreeOptions {
   slug: string;
@@ -178,9 +180,15 @@ export async function reopenWorktree(
   await tmuxService.selectPane(paneInfo);
 
   // Create the pane object
+  const metadata = readWorktreeMetadata(worktreePath);
+  const currentBranch = getCurrentBranch(worktreePath);
+
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    branchName: (metadata?.branchName || currentBranch) !== slug
+      ? (metadata?.branchName || currentBranch)
+      : undefined,
     prompt: '(Reopened session)',
     paneId: paneInfo,
     projectRoot,
@@ -188,6 +196,7 @@ export async function reopenWorktree(
     worktreePath,
     agent,
     autopilot: settings.enableAutopilotByDefault ?? false,
+    mergeTargetChain: metadata?.mergeTargetChain,
   };
 
   // Handle welcome pane destruction if first content pane

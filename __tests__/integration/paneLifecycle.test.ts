@@ -18,6 +18,13 @@ import {
 } from '../fixtures/integration/gitRepo.js';
 import { createMockExecSync, createMockOpenRouterAPI } from '../helpers/integration/mockCommands.js';
 
+const fsMock = vi.hoisted(() => ({
+  readFileSync: vi.fn(() => JSON.stringify({ controlPaneId: '%0' })),
+  writeFileSync: vi.fn(),
+  existsSync: vi.fn(),
+  mkdirSync: vi.fn(),
+}));
+
 // Mock child_process
 const mockExecSync = createMockExecSync({});
 vi.mock('child_process', () => ({
@@ -70,19 +77,14 @@ vi.mock('../../src/services/WorktreeCleanupService.js', () => ({
 
 // Mock fs for reading config
 vi.mock('fs', () => ({
-  default: {
-    readFileSync: vi.fn(() => JSON.stringify({ controlPaneId: '%0' })),
-    writeFileSync: vi.fn(),
-    existsSync: vi.fn(() => true),
-  },
-  readFileSync: vi.fn(() => JSON.stringify({ controlPaneId: '%0' })),
-  writeFileSync: vi.fn(),
-  existsSync: vi.fn(() => true),
+  default: fsMock,
+  ...fsMock,
 }));
 
 describe('Pane Lifecycle Integration Tests', () => {
   let tmuxSession: MockTmuxSession;
   let gitRepo: MockGitRepo;
+  let createdWorktreePaths: Set<string>;
 
   beforeEach(() => {
     // Reset all mocks
@@ -92,6 +94,15 @@ describe('Pane Lifecycle Integration Tests', () => {
     // Create fresh test environment
     tmuxSession = createMockTmuxSession('dmux-test', 1);
     gitRepo = createMockGitRepo('main');
+    createdWorktreePaths = new Set<string>();
+
+    fsMock.existsSync.mockImplementation((target) => {
+      const value = String(target);
+      if (value.includes('/.dmux/worktrees/')) {
+        return createdWorktreePaths.has(value);
+      }
+      return true;
+    });
 
     // Configure mock execSync with test data
     mockExecSync.mockImplementation((command: string, options?: any) => {
@@ -123,13 +134,24 @@ describe('Pane Lifecycle Integration Tests', () => {
 
       // Git worktree add
       if (cmd.includes('worktree add')) {
-        gitRepo = addWorktree(gitRepo, '/test/.dmux/worktrees/test-slug', 'test-slug');
+        const pathMatch = cmd.match(/git worktree add "([^"]+)"/);
+        const branchMatch = cmd.match(/-b "([^"]+)"/) || cmd.match(/git worktree add "[^"]+" "([^"]+)"/);
+        const worktreePath = pathMatch?.[1] || '/test/.dmux/worktrees/test-slug';
+        const branchName = branchMatch?.[1] || 'test-slug';
+        createdWorktreePaths.add(worktreePath);
+        createdWorktreePaths.add(`${worktreePath}/.git`);
+        gitRepo = addWorktree(gitRepo, worktreePath, branchName);
         return returnValue('');
       }
 
       // Git worktree list
       if (cmd.includes('worktree list')) {
-        return returnValue('/test/.dmux/worktrees/test-slug abc123 [test-slug]');
+        return returnValue(
+          Array.from(createdWorktreePaths)
+            .filter((worktreePath) => !worktreePath.endsWith('/.git'))
+            .map((worktreePath) => `${worktreePath} abc123 [${worktreePath.split('/').pop()}]`)
+            .join('\n')
+        );
       }
 
       // Git symbolic-ref (main branch)
@@ -138,6 +160,14 @@ describe('Pane Lifecycle Integration Tests', () => {
       }
 
       // Git rev-parse (current branch)
+      if (cmd.includes('rev-parse --git-common-dir')) {
+        return returnValue('.git');
+      }
+
+      if (cmd.includes('rev-parse --show-toplevel')) {
+        return returnValue('/test');
+      }
+
       if (cmd.includes('rev-parse')) {
         return returnValue('main');
       }

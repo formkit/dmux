@@ -1,6 +1,6 @@
 import path from 'path';
 import * as os from 'os';
-import type { DmuxPane } from '../types.js';
+import type { DmuxPane, MergeTargetReference } from '../types.js';
 import { createPane } from '../utils/paneCreation.js';
 import { LogService } from '../services/LogService.js';
 import { getAgentSlugSuffix, type AgentName } from '../utils/agentLaunch.js';
@@ -24,6 +24,8 @@ interface CreateNewPaneOptions {
   slugBase?: string;
   targetProjectRoot?: string;
   skipAgentSelection?: boolean;
+  startPointBranch?: string;
+  mergeTargetChain?: MergeTargetReference[];
 }
 
 const MAX_PARALLEL_PANE_CREATIONS = 4;
@@ -100,6 +102,8 @@ export default function usePaneCreation({
         slugBase: options.slugBase,
         projectRoot: options.targetProjectRoot,
         skipAgentSelection: options.skipAgentSelection,
+        startPointBranch: options.startPointBranch,
+        mergeTargetChain: options.mergeTargetChain,
         sessionProjectRoot,
         sessionConfigPath: panesFile,
       },
@@ -148,7 +152,10 @@ export default function usePaneCreation({
   const createPanesForAgents = async (
     prompt: string,
     selectedAgents: AgentName[],
-    options: Pick<CreateNewPaneOptions, 'existingPanes' | 'targetProjectRoot'> = {}
+    options: Pick<
+      CreateNewPaneOptions,
+      'existingPanes' | 'targetProjectRoot' | 'startPointBranch' | 'mergeTargetChain'
+    > = {}
   ): Promise<DmuxPane[]> => {
     const panesForCreation = options.existingPanes ?? panes;
     const dedupedAgents = selectedAgents.filter(
@@ -181,6 +188,8 @@ export default function usePaneCreation({
         slugSuffix: isMultiLaunch ? getAgentSlugSuffix(firstAgent) : undefined,
         slugBase,
         targetProjectRoot: options.targetProjectRoot,
+        startPointBranch: options.startPointBranch,
+        mergeTargetChain: options.mergeTargetChain,
       });
       createdByIndex[0] = firstPane;
 
@@ -205,6 +214,8 @@ export default function usePaneCreation({
               slugSuffix: getAgentSlugSuffix(selectedAgent),
               slugBase,
               targetProjectRoot: options.targetProjectRoot,
+              startPointBranch: options.startPointBranch,
+              mergeTargetChain: options.mergeTargetChain,
             });
             createdByIndex[agentResultIndex] = pane;
           } catch (error) {

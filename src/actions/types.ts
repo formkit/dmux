@@ -108,6 +108,7 @@ export enum PaneAction {
   OPEN_IN_EDITOR = 'open_in_editor',
   TOGGLE_AUTOPILOT = 'toggle_autopilot',
   ATTACH_AGENT = 'attach_agent',
+  CREATE_CHILD_WORKTREE = 'create_child_worktree',
   OPEN_TERMINAL_IN_WORKTREE = 'open_terminal_in_worktree',
 }
 
@@ -218,6 +219,14 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     label: 'Toggle Autopilot',
     description: 'Enable/disable automatic option acceptance',
     icon: '🤖',
+    requires: { worktree: true },
+  },
+  [PaneAction.CREATE_CHILD_WORKTREE]: {
+    id: PaneAction.CREATE_CHILD_WORKTREE,
+    label: 'Create Child Worktree',
+    description: 'Branch a new worktree from this worktree',
+    icon: '⑂',
+    shortcut: 'b',
     requires: { worktree: true },
   },
   [PaneAction.OPEN_TERMINAL_IN_WORKTREE]: {

@@ -14,6 +14,12 @@ export interface PotentialHarm {
   description?: string;
 }
 
+export interface MergeTargetReference {
+  slug?: string;
+  branchName: string;
+  worktreePath?: string;
+}
+
 export interface DmuxPane {
   id: string;
   slug: string;
@@ -46,6 +52,8 @@ export interface DmuxPane {
   autopilot?: boolean;
   // Error message if pane analyzer encounters issues
   analyzerError?: string;
+  // Merge ancestry for sub-worktrees; first entry is the immediate parent target.
+  mergeTargetChain?: MergeTargetReference[];
 }
 
 export interface PanePosition {

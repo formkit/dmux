@@ -72,6 +72,7 @@ interface UseInputHandlingParams {
   copyNonGitFiles: (worktreePath: string, sourceProjectRoot?: string) => Promise<void>
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
+  handleCreateChildWorktree: (pane: DmuxPane) => Promise<void>
   handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
   setDevSourceFromPane: (pane: DmuxPane) => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
@@ -126,6 +127,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     copyNonGitFiles,
     runCommandInternal,
     handlePaneCreationWithAgent,
+    handleCreateChildWorktree,
     handleReopenWorktree,
     setDevSourceFromPane,
     savePanes,
@@ -311,6 +313,11 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     if (actionId === PaneAction.ATTACH_AGENT) {
       await attachAgentsToPane(pane)
+      return
+    }
+
+    if (actionId === PaneAction.CREATE_CHILD_WORKTREE) {
+      await handleCreateChildWorktree(pane)
       return
     }
 
@@ -568,6 +575,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     if (input === "a" && selectedIndex < panes.length) {
       await attachAgentsToPane(panes[selectedIndex])
+      return
+    } else if (input === "b" && selectedIndex < panes.length) {
+      await handleCreateChildWorktree(panes[selectedIndex])
       return
     } else if (input === "A" && selectedIndex < panes.length) {
       await openTerminalInWorktree(panes[selectedIndex])
