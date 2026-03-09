@@ -10,7 +10,7 @@ import { LogService } from "./LogService.js"
 import { TmuxService } from "./TmuxService.js"
 import { SETTING_DEFINITIONS } from "../utils/settingsManager.js"
 import type { DmuxPane, ProjectSettings } from "../types.js"
-import { getAvailableActions, type PaneAction } from "../actions/index.js"
+import { getPaneMenuActions, type PaneMenuActionId } from "../actions/index.js"
 import { INPUT_IGNORE_DELAY } from "../constants/timing.js"
 import {
   getAgentDefinitions,
@@ -251,14 +251,19 @@ export class PopupManager {
     }
   }
 
-  async launchKebabMenuPopup(pane: DmuxPane): Promise<PaneAction | null> {
+  async launchKebabMenuPopup(
+    pane: DmuxPane,
+    panes: DmuxPane[]
+  ): Promise<PaneMenuActionId | null> {
     if (!this.checkPopupSupport()) return null
 
     try {
-      const actions = getAvailableActions(
+      const actions = getPaneMenuActions(
         pane,
+        panes,
         this.config.projectSettings,
-        this.config.isDevMode
+        this.config.isDevMode,
+        this.config.projectRoot
       )
       const result = await this.launchPopup<string>(
         "kebabMenuPopup.js",
@@ -281,7 +286,7 @@ export class PopupManager {
           this.showTempMessage(error)
         }
       )
-      return actionId as PaneAction | null
+      return actionId as PaneMenuActionId | null
     } catch (error: any) {
       this.showTempMessage(`Failed to launch popup: ${error.message}`)
       return null

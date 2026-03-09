@@ -8,7 +8,11 @@ import {
   STATUS_MESSAGE_DURATION_LONG,
   ANIMATION_DELAY,
 } from "../constants/timing.js"
-import { PaneAction } from "../actions/index.js"
+import {
+  isPaneAction,
+  PaneAction,
+  TOGGLE_PANE_VISIBILITY_ACTION,
+} from "../actions/index.js"
 import { getMainBranch, getOrphanedWorktrees } from "../utils/git.js"
 import { enforceControlPaneSize } from "../utils/tmux.js"
 import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
@@ -444,8 +448,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
-  const toggleProjectPanesVisibility = async () => {
-    const targetProjectRoot = getActiveProjectRoot()
+  const toggleProjectPanesVisibility = async (
+    targetProjectRoot: string = getActiveProjectRoot()
+  ) => {
     const action = getProjectVisibilityAction(panes, targetProjectRoot, projectRoot)
 
     if (!action) {
@@ -536,8 +541,23 @@ export function useInputHandling(params: UseInputHandlingParams) {
   }
 
   const openPaneMenu = async (pane: DmuxPane) => {
-    const actionId = await popupManager.launchKebabMenuPopup(pane)
+    const actionId = await popupManager.launchKebabMenuPopup(pane, panes)
     if (!actionId) {
+      return
+    }
+
+    if (actionId === TOGGLE_PANE_VISIBILITY_ACTION) {
+      await togglePaneVisibility(pane)
+      return
+    }
+
+    if (actionId === "hide-others" || actionId === "show-others") {
+      await toggleOtherPanesVisibility(pane)
+      return
+    }
+
+    if (actionId === "focus-project" || actionId === "show-all") {
+      await toggleProjectPanesVisibility(getPaneProjectRoot(pane, projectRoot))
       return
     }
 
@@ -558,6 +578,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     if (actionId === PaneAction.OPEN_TERMINAL_IN_WORKTREE) {
       await openTerminalInWorktree(pane)
+      return
+    }
+
+    if (!isPaneAction(actionId)) {
+      setStatusMessage(`Unknown menu action: ${actionId}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
       return
     }
 
