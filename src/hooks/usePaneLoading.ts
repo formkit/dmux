@@ -9,6 +9,7 @@ import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { getPaneTmuxTitle } from '../utils/paneTitle.js';
+import { syncHiddenStateFromCurrentWindow } from '../utils/paneVisibility.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
@@ -31,13 +32,18 @@ interface PaneLoadResult {
  * Fetches all tmux pane IDs and titles for the current session
  * Retries up to maxRetries times with delay between attempts
  */
-export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: string[]; titleToId: Map<string, string> }> {
+export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{
+  allPaneIds: string[];
+  titleToId: Map<string, string>;
+  currentWindowPaneIds: string[];
+}> {
   const tmuxService = TmuxService.getInstance();
   let retryCount = 0;
 
   while (retryCount <= maxRetries) {
     try {
-      const paneInfo = await tmuxService.getAllPaneInfo();
+      const paneInfo = await tmuxService.getAllPaneInfo('session');
+      const currentWindowPaneIds = await tmuxService.getAllPaneIds('window');
       const allPaneIds: string[] = [];
       const titleToId = new Map<string, string>();
 
@@ -52,7 +58,7 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
       }
 
       if (allPaneIds.length > 0 || retryCount === maxRetries) {
-        return { allPaneIds, titleToId };
+        return { allPaneIds, titleToId, currentWindowPaneIds };
       }
     } catch (error) {
       // Retry on tmux command failure (common during rapid pane creation/destruction)
@@ -65,7 +71,7 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{ allPaneIds: st
     retryCount++;
   }
 
-  return { allPaneIds: [], titleToId: new Map() };
+  return { allPaneIds: [], titleToId: new Map(), currentWindowPaneIds: [] };
 }
 
 /**
@@ -261,10 +267,13 @@ export async function loadAndProcessPanes(
   isInitialLoad: boolean
 ): Promise<PaneLoadResult> {
   const loadedPanes = await loadPanesFromFile(panesFile);
-  let { allPaneIds, titleToId } = await fetchTmuxPaneIds();
+  let { allPaneIds, titleToId, currentWindowPaneIds } = await fetchTmuxPaneIds();
 
   // Attempt to rebind panes whose IDs changed by matching on title (slug)
-  let reboundPanes = loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
+  let reboundPanes = syncHiddenStateFromCurrentWindow(
+    loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds)),
+    currentWindowPaneIds
+  );
 
   // CRITICAL FIX: On initial load, immediately filter out shell panes with stale IDs
   // Shell panes cannot be recreated (no worktreePath), so keeping them causes:
@@ -318,9 +327,13 @@ export async function loadAndProcessPanes(
     const freshData = await fetchTmuxPaneIds();
     allPaneIds = freshData.allPaneIds;
     titleToId = freshData.titleToId;
+    currentWindowPaneIds = freshData.currentWindowPaneIds;
 
     // Re-rebind after recreation
-    reboundPanes = reboundPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds));
+    reboundPanes = syncHiddenStateFromCurrentWindow(
+      reboundPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds)),
+      currentWindowPaneIds
+    );
   }
 
   return { panes: reboundPanes, allPaneIds, titleToId };

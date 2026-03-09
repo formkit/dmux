@@ -21,6 +21,7 @@ import {
 } from "../utils/projectActions.js"
 import { createShellPane, getNextDmuxId } from "../utils/shellPaneDetection.js"
 import type { AgentName } from "../utils/agentLaunch.js"
+import { getBulkVisibilityAction } from "../utils/paneVisibility.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -298,6 +299,145 @@ export function useInputHandling(params: UseInputHandlingParams) {
     const prompt =
       "I would like to create or edit my dmux hooks in .dmux-hooks. Please read AGENTS.md or CLAUDE.md first, then ask me what I want to create or modify."
     await handlePaneCreationWithAgent(prompt, hooksProjectRoot)
+  }
+
+  const refreshPaneLayout = async () => {
+    if (!controlPaneId) {
+      return
+    }
+
+    await enforceControlPaneSize(controlPaneId, SIDEBAR_WIDTH, {
+      forceLayout: true,
+      suppressLayoutLogs: true,
+    })
+  }
+
+  const getPaneShowTarget = async (excludedPaneId?: string): Promise<string | null> => {
+    const visiblePaneId = panes.find(
+      (pane) => !pane.hidden && pane.paneId !== excludedPaneId
+    )?.paneId
+    if (visiblePaneId) {
+      return visiblePaneId
+    }
+
+    if (controlPaneId) {
+      return controlPaneId
+    }
+
+    try {
+      return await TmuxService.getInstance().getCurrentPaneId()
+    } catch {
+      return null
+    }
+  }
+
+  const togglePaneVisibility = async (selectedPane: DmuxPane) => {
+    const tmuxService = TmuxService.getInstance()
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(selectedPane.hidden ? `Showing ${selectedPane.slug}...` : `Hiding ${selectedPane.slug}...`)
+
+      if (selectedPane.hidden) {
+        const targetPaneId = await getPaneShowTarget(selectedPane.paneId)
+        if (!targetPaneId) {
+          throw new Error("No target pane is available to show this pane")
+        }
+        await tmuxService.joinPaneToTarget(selectedPane.paneId, targetPaneId)
+      } else {
+        await tmuxService.breakPaneToWindow(
+          selectedPane.paneId,
+          `dmux-hidden-${selectedPane.id}`
+        )
+      }
+
+      await savePanes(
+        panes.map((pane) =>
+          pane.id === selectedPane.id
+            ? { ...pane, hidden: !selectedPane.hidden }
+            : pane
+        )
+      )
+      await refreshPaneLayout()
+      await loadPanes()
+
+      setStatusMessage(
+        selectedPane.hidden
+          ? `Showing ${selectedPane.slug}`
+          : `Hid ${selectedPane.slug}`
+      )
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+    } catch (error: any) {
+      setStatusMessage(`Failed to toggle pane visibility: ${error?.message || String(error)}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
+  }
+
+  const toggleOtherPanesVisibility = async (selectedPane: DmuxPane) => {
+    const action = getBulkVisibilityAction(panes, selectedPane)
+    if (!action) {
+      setStatusMessage("No other panes to toggle")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const targetPanes = panes.filter((pane) =>
+      pane.id !== selectedPane.id
+        && (action === "hide-others" ? !pane.hidden : pane.hidden)
+    )
+
+    if (targetPanes.length === 0) {
+      setStatusMessage("No other panes to toggle")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const tmuxService = TmuxService.getInstance()
+    const hidden = action === "hide-others"
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(hidden ? "Hiding other panes..." : "Showing other panes...")
+
+      for (const pane of targetPanes) {
+        if (hidden) {
+          await tmuxService.breakPaneToWindow(
+            pane.paneId,
+            `dmux-hidden-${pane.id}`
+          )
+          continue
+        }
+
+        const targetPaneId = await getPaneShowTarget(pane.paneId)
+        if (!targetPaneId) {
+          throw new Error("No target pane is available to show hidden panes")
+        }
+        await tmuxService.joinPaneToTarget(pane.paneId, targetPaneId)
+      }
+
+      const targetPaneIds = new Set(targetPanes.map((pane) => pane.id))
+      await savePanes(
+        panes.map((pane) =>
+          targetPaneIds.has(pane.id) ? { ...pane, hidden } : pane
+        )
+      )
+      await refreshPaneLayout()
+      await loadPanes()
+
+      setStatusMessage(
+        hidden
+          ? `Hid ${targetPanes.length} other pane${targetPanes.length === 1 ? "" : "s"}`
+          : `Showed ${targetPanes.length} other pane${targetPanes.length === 1 ? "" : "s"}`
+      )
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+    } catch (error: any) {
+      setStatusMessage(`Failed to toggle other panes: ${error?.message || String(error)}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
   }
 
   const openPaneMenu = async (pane: DmuxPane) => {
@@ -647,8 +787,19 @@ export function useInputHandling(params: UseInputHandlingParams) {
       // Open logs popup
       await popupManager.launchLogsPopup()
     } else if (input === "h") {
-      // Launch hooks authoring session directly
-      await launchHooksAuthoringSession()
+      if (selectedIndex < panes.length) {
+        await togglePaneVisibility(panes[selectedIndex])
+      } else {
+        setStatusMessage("Select a pane to toggle visibility")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      }
+    } else if (input === "H") {
+      if (selectedIndex < panes.length) {
+        await toggleOtherPanesVisibility(panes[selectedIndex])
+      } else {
+        setStatusMessage("Select a pane to toggle the others")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      }
     } else if (input === "?") {
       // Open keyboard shortcuts popup
       const shortcutsAction = await popupManager.launchShortcutsPopup(!!controlPaneId)
