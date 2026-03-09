@@ -24,7 +24,7 @@ export async function enforcePaneTitles(
   const titleByPaneId = new Map<string, string>();
 
   try {
-    const paneInfo = await tmuxService.getAllPaneInfo();
+    const paneInfo = await tmuxService.getAllPaneInfo('session');
     for (const pane of paneInfo) {
       titleByPaneId.set(pane.paneId, pane.title);
     }
@@ -89,7 +89,7 @@ export async function savePanesToFile(
     try {
       const tmuxService = TmuxService.getInstance();
       const titleToId = new Map<string, string>();
-      const paneInfo = await tmuxService.getAllPaneInfo();
+      const paneInfo = await tmuxService.getAllPaneInfo('session');
 
       for (const pane of paneInfo) {
         if (
