@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import stringWidth from 'string-width';
 import type { DmuxPane } from '../../types.js';
 import { COLORS } from '../../theme/colors.js';
+import { getAgentShortLabel } from '../../utils/agentLaunch.js';
 
 interface PaneCardProps {
   pane: DmuxPane;
@@ -52,7 +53,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   const hasAgent = pane.type === 'shell' || !!pane.agent;
   const agentTag = pane.type === 'shell'
     ? (pane.shellType || 'sh').substring(0, 2)
-    : pane.agent === 'claude' ? 'cc' : pane.agent ? 'oc' : null;
+    : pane.agent ? getAgentShortLabel(pane.agent) : null;
   const apTag = pane.autopilot ? 'ap' : null;
 
   // Keep non-title segments fixed; only slug is allowed to clip.
