@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import path from "path"
 import { useInput } from "ink"
 import type { DmuxPane } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
@@ -22,6 +23,7 @@ import {
 import { createShellPane, getNextDmuxId } from "../utils/shellPaneDetection.js"
 import type { AgentName } from "../utils/agentLaunch.js"
 import { getBulkVisibilityAction } from "../utils/paneVisibility.js"
+import { buildFilesOnlyCommand } from "../utils/dmuxCommand.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -250,6 +252,78 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
+  const openFileBrowserInWorktree = async (selectedPane: DmuxPane) => {
+    if (!selectedPane.worktreePath) {
+      setStatusMessage("Cannot open file browser: this pane has no worktree")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const existingBrowserPane = panes.find((pane) =>
+      pane.browserPath === selectedPane.worktreePath && !pane.hidden
+    )
+
+    if (existingBrowserPane) {
+      try {
+        await TmuxService.getInstance().selectPane(existingBrowserPane.paneId)
+        setStatusMessage(`File browser already open for ${selectedPane.slug}`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } catch (error: any) {
+        setStatusMessage(`Failed to focus file browser: ${error?.message || String(error)}`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
+      return
+    }
+
+    const targetProjectRoot = getPaneProjectRoot(selectedPane, projectRoot)
+    const targetProjectName = path.basename(targetProjectRoot)
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(`Opening file browser for ${selectedPane.slug}...`)
+
+      const tmuxService = TmuxService.getInstance()
+      const newPaneId = await tmuxService.splitPane({
+        cwd: selectedPane.worktreePath,
+        command: buildFilesOnlyCommand(),
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, ANIMATION_DELAY))
+
+      const slugBase = `files-${path.basename(selectedPane.worktreePath)}`
+      let slug = slugBase
+      let suffix = 2
+      while (panes.some((pane) => pane.slug === slug)) {
+        slug = `${slugBase}-${suffix}`
+        suffix += 1
+      }
+
+      const browserPane: DmuxPane = {
+        id: `dmux-${getNextDmuxId(panes)}`,
+        slug,
+        prompt: "",
+        paneId: newPaneId,
+        projectRoot: targetProjectRoot,
+        projectName: targetProjectName,
+        type: "shell",
+        shellType: "fb",
+        browserPath: selectedPane.worktreePath,
+      }
+
+      await tmuxService.setPaneTitle(newPaneId, slug)
+      await savePanes([...panes, browserPane])
+      await loadPanes()
+
+      setStatusMessage(`Opened file browser for ${selectedPane.slug}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+    } catch (error: any) {
+      setStatusMessage(`Failed to open file browser: ${error?.message || String(error)}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
+  }
+
   const handleCreatePaneInProject = async () => {
     const selectedAction = getProjectActionByIndex(projectActionItems, selectedIndex)
     const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
@@ -463,6 +537,11 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     if (actionId === PaneAction.OPEN_TERMINAL_IN_WORKTREE) {
       await openTerminalInWorktree(pane)
+      return
+    }
+
+    if (actionId === PaneAction.OPEN_FILE_BROWSER) {
+      await openFileBrowserInWorktree(pane)
       return
     }
 
@@ -718,6 +797,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
       return
     } else if (input === "b" && selectedIndex < panes.length) {
       await handleCreateChildWorktree(panes[selectedIndex])
+      return
+    } else if (input === "f" && selectedIndex < panes.length) {
+      await openFileBrowserInWorktree(panes[selectedIndex])
       return
     } else if (input === "A" && selectedIndex < panes.length) {
       await openTerminalInWorktree(panes[selectedIndex])

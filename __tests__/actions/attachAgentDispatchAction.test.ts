@@ -32,4 +32,11 @@ describe('attach_agent dispatcher', () => {
     expect(result.type).toBe('info');
     expect(result.message).toContain('Open terminal in worktree');
   });
+
+  it('does not return unknown action for open_file_browser', async () => {
+    const result = await executeAction(PaneAction.OPEN_FILE_BROWSER, pane, context);
+
+    expect(result.type).toBe('info');
+    expect(result.message).toContain('Open file browser');
+  });
 });

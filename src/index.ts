@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import { createInterface } from 'node:readline/promises';
 import DmuxApp from './DmuxApp.js';
+import FileBrowserApp from './FileBrowserApp.js';
 import { AutoUpdater } from './services/AutoUpdater.js';
 import { StateManager } from './shared/StateManager.js';
 import { LogService } from './services/LogService.js';
@@ -42,6 +43,10 @@ interface ExistingSessionContext {
   sessionProjectRoot: string;
   sessionProjectName: string;
   sessionConfigPath: string;
+}
+
+function isFilesOnlyMode(): boolean {
+  return process.argv.slice(2).includes('--files-only');
 }
 
 class Dmux {
@@ -1206,6 +1211,11 @@ class Dmux {
 
 // Validate system requirements before starting
 (async () => {
+  if (isFilesOnlyMode()) {
+    render(React.createElement(FileBrowserApp), { exitOnCtrlC: false });
+    return;
+  }
+
   const validationResult = await validateSystemRequirements();
   printValidationResults(validationResult);
 

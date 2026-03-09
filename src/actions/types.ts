@@ -110,6 +110,7 @@ export enum PaneAction {
   ATTACH_AGENT = 'attach_agent',
   CREATE_CHILD_WORKTREE = 'create_child_worktree',
   OPEN_TERMINAL_IN_WORKTREE = 'open_terminal_in_worktree',
+  OPEN_FILE_BROWSER = 'open_file_browser',
 }
 
 /**
@@ -227,6 +228,14 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     description: 'Branch a new worktree from this worktree',
     icon: '⑂',
     shortcut: 'b',
+    requires: { worktree: true },
+  },
+  [PaneAction.OPEN_FILE_BROWSER]: {
+    id: PaneAction.OPEN_FILE_BROWSER,
+    label: 'Browse Files',
+    description: 'Open a read-only project file browser in this worktree',
+    icon: 'F',
+    shortcut: 'f',
     requires: { worktree: true },
   },
   [PaneAction.OPEN_TERMINAL_IN_WORKTREE]: {

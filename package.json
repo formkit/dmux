@@ -72,6 +72,7 @@
   "dependencies": {
     "chalk": "^5.3.0",
     "chokidar": "^4.0.3",
+    "cli-highlight": "^2.1.11",
     "ink": "^5.0.1",
     "ink-text-input": "^6.0.0",
     "p-queue": "^9.0.0",

@@ -45,6 +45,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'H', description: 'Hide/show all other panes' },
     { key: 'a', description: 'Add agent to worktree' },
     { key: 'b', description: 'Create child worktree' },
+    { key: 'f', description: 'Open read-only file browser' },
     { key: 'A', description: 'Add terminal to worktree' },
     { key: 'n', description: 'New agent pane' },
     { key: 't', description: 'New terminal pane' },
