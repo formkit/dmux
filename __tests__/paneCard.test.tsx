@@ -33,4 +33,21 @@ describe('PaneCard', () => {
 
     expect(stripAnsi(lastFrame() ?? '')).toContain('[zs]');
   });
+
+  it('renders file browser panes using the fb tag', () => {
+    const pane = createWorktreePane({
+      type: 'shell',
+      shellType: 'fb',
+      agent: undefined,
+      browserPath: '/test/project/.dmux/worktrees/test-pane',
+      worktreePath: undefined,
+    });
+
+    const { lastFrame } = render(
+      <PaneCard pane={pane} isDevSource={false} selected={false} />
+    );
+
+    expect(stripAnsi(lastFrame() ?? '')).toContain('[fb]');
+    expect(stripAnsi(lastFrame() ?? '')).toContain('');
+  });
 });

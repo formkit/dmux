@@ -53,6 +53,13 @@ export async function executeAction(
         dismissable: true,
       };
 
+    case 'open_file_browser':
+      return {
+        type: 'info',
+        message: 'Open file browser is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
     case 'close':
       return actions.closePane(pane, context);
 

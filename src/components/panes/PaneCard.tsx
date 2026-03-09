@@ -48,6 +48,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   };
 
   const status = getStatusIcon();
+  const isFileBrowserPane = pane.type === 'shell' && pane.shellType === 'fb';
 
   // Right-aligned columns: [cc] = 4 chars, (ap) = 4 chars, space between = 1
   const hasAgent = pane.type === 'shell' || !!pane.agent;
@@ -63,9 +64,16 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   const hiddenText = pane.hidden ? ' (hidden)' : '';
   const agentText = hasAgent ? ` [${agentTag}]` : '     ';
   const autopilotText = apTag ? ` (${apTag})` : '     ';
-  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText + hiddenText);
+  const shellPrefixText = isFileBrowserPane ? ' ' : '';
+  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText + shellPrefixText + hiddenText);
   const maxSlugWidth = Math.max(0, LEFT_COLUMN_WIDTH - fixedLeftWidth);
   const slugText = clipToWidth(pane.slug, maxSlugWidth);
+  const slugColor = isFileBrowserPane
+    ? 'cyan'
+    : selected
+      ? COLORS.selected
+      : COLORS.unselected;
+  const shellTagColor = isFileBrowserPane ? 'yellow' : pane.type === 'shell' ? 'cyan' : 'gray';
 
   return (
     <Box width={ROW_WIDTH}>
@@ -75,7 +83,10 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
         {isDevSource && (
           <Text color="yellow">{sourceText}</Text>
         )}
-        <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
+        {isFileBrowserPane && (
+          <Text color="cyan">{shellPrefixText}</Text>
+        )}
+        <Text color={slugColor} bold={selected || isFileBrowserPane}>
           {slugText}
         </Text>
         {pane.hidden && (
@@ -86,7 +97,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
       </Box>
       <Box width={RIGHT_COLUMN_WIDTH} justifyContent="flex-end">
         {agentTag
-          ? <Text color={pane.type === 'shell' ? 'cyan' : 'gray'}>{agentText}</Text>
+          ? <Text color={shellTagColor}>{agentText}</Text>
           : <Text>{agentText}</Text>
         }
         {apTag
