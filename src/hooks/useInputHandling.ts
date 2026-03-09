@@ -14,14 +14,18 @@ import { enforceControlPaneSize } from "../utils/tmux.js"
 import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
 import { suggestCommand } from "../utils/commands.js"
 import type { PopupManager } from "../services/PopupManager.js"
-import { getPaneProjectRoot } from "../utils/paneProject.js"
+import { getPaneProjectName, getPaneProjectRoot } from "../utils/paneProject.js"
 import {
   getProjectActionByIndex,
   type ProjectActionItem,
 } from "../utils/projectActions.js"
 import { createShellPane, getNextDmuxId } from "../utils/shellPaneDetection.js"
 import type { AgentName } from "../utils/agentLaunch.js"
-import { getBulkVisibilityAction } from "../utils/paneVisibility.js"
+import {
+  getBulkVisibilityAction,
+  getProjectVisibilityAction,
+  partitionPanesByProject,
+} from "../utils/paneVisibility.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -440,6 +444,97 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
+  const toggleProjectPanesVisibility = async () => {
+    const targetProjectRoot = getActiveProjectRoot()
+    const action = getProjectVisibilityAction(panes, targetProjectRoot, projectRoot)
+
+    if (!action) {
+      setStatusMessage("No project panes to toggle")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const { projectPanes, otherPanes } = partitionPanesByProject(
+      panes,
+      targetProjectRoot,
+      projectRoot
+    )
+
+    if (projectPanes.length === 0) {
+      setStatusMessage("No project panes to toggle")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const projectName = getPaneProjectName(
+      projectPanes[0],
+      projectRoot
+    )
+    const panesToShow = action === "focus-project"
+      ? projectPanes.filter((pane) => pane.hidden)
+      : panes.filter((pane) => pane.hidden)
+    const panesToHide = action === "focus-project"
+      ? otherPanes.filter((pane) => !pane.hidden)
+      : []
+
+    try {
+      setIsCreatingPane(true)
+      setStatusMessage(
+        action === "focus-project"
+          ? `Showing ${projectName} panes...`
+          : "Showing all panes..."
+      )
+
+      // Show target project panes before hiding others so we always have
+      // an attached pane available for tmux join targets.
+      for (const pane of panesToShow) {
+        const targetPaneId = await getPaneShowTarget(pane.paneId)
+        if (!targetPaneId) {
+          throw new Error("No target pane is available to show hidden panes")
+        }
+        await TmuxService.getInstance().joinPaneToTarget(pane.paneId, targetPaneId)
+      }
+
+      for (const pane of panesToHide) {
+        await TmuxService.getInstance().breakPaneToWindow(
+          pane.paneId,
+          `dmux-hidden-${pane.id}`
+        )
+      }
+
+      const shownPaneIds = new Set(panesToShow.map((pane) => pane.id))
+      const hiddenPaneIds = new Set(panesToHide.map((pane) => pane.id))
+
+      await savePanes(
+        panes.map((pane) => {
+          if (shownPaneIds.has(pane.id)) {
+            return { ...pane, hidden: false }
+          }
+          if (hiddenPaneIds.has(pane.id)) {
+            return { ...pane, hidden: true }
+          }
+          return pane
+        })
+      )
+      await refreshPaneLayout()
+      await loadPanes()
+
+      setStatusMessage(
+        action === "focus-project"
+          ? panesToHide.length > 0
+            ? `Showing only ${projectName} panes`
+            : `Showed ${projectName} panes`
+          : "Showed all panes"
+      )
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+    } catch (error: any) {
+      setStatusMessage(`Failed to toggle project panes: ${error?.message || String(error)}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    } finally {
+      setIsCreatingPane(false)
+    }
+  }
+
   const openPaneMenu = async (pane: DmuxPane) => {
     const actionId = await popupManager.launchKebabMenuPopup(pane)
     if (!actionId) {
@@ -800,6 +895,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
         setStatusMessage("Select a pane to toggle the others")
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       }
+    } else if (input === "P") {
+      await toggleProjectPanesVisibility()
     } else if (input === "?") {
       // Open keyboard shortcuts popup
       const shortcutsAction = await popupManager.launchShortcutsPopup(!!controlPaneId)

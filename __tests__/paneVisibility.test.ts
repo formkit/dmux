@@ -2,17 +2,20 @@ import { describe, expect, it } from 'vitest';
 import type { DmuxPane } from '../src/types.js';
 import {
   getBulkVisibilityAction,
+  getProjectVisibilityAction,
   getVisiblePanes,
+  partitionPanesByProject,
   syncHiddenStateFromCurrentWindow,
 } from '../src/utils/paneVisibility.js';
 
-function pane(id: string, hidden = false): DmuxPane {
+function pane(id: string, hidden = false, projectRoot = '/repo-a'): DmuxPane {
   return {
     id,
     slug: `pane-${id}`,
     prompt: `prompt-${id}`,
     paneId: `%${id.replace('dmux-', '')}`,
     hidden,
+    projectRoot,
   };
 }
 
@@ -71,5 +74,52 @@ describe('paneVisibility', () => {
       'dmux-1',
       'dmux-3',
     ]);
+  });
+
+  it('partitions panes by project root', () => {
+    const panes = [
+      pane('dmux-1', false, '/repo-a'),
+      pane('dmux-2', true, '/repo-a'),
+      pane('dmux-3', false, '/repo-b'),
+    ];
+
+    const { projectPanes, otherPanes } = partitionPanesByProject(
+      panes,
+      '/repo-a',
+      '/fallback'
+    );
+
+    expect(projectPanes.map((entry) => entry.id)).toEqual(['dmux-1', 'dmux-2']);
+    expect(otherPanes.map((entry) => entry.id)).toEqual(['dmux-3']);
+  });
+
+  it('chooses focus-project when other projects are still visible', () => {
+    const panes = [
+      pane('dmux-1', false, '/repo-a'),
+      pane('dmux-2', false, '/repo-a'),
+      pane('dmux-3', false, '/repo-b'),
+    ];
+
+    expect(getProjectVisibilityAction(panes, '/repo-a', '/fallback')).toBe('focus-project');
+  });
+
+  it('chooses focus-project when selected project has hidden panes', () => {
+    const panes = [
+      pane('dmux-1', false, '/repo-a'),
+      pane('dmux-2', true, '/repo-a'),
+      pane('dmux-3', true, '/repo-b'),
+    ];
+
+    expect(getProjectVisibilityAction(panes, '/repo-a', '/fallback')).toBe('focus-project');
+  });
+
+  it('chooses show-all when the selected project is already focused', () => {
+    const panes = [
+      pane('dmux-1', false, '/repo-a'),
+      pane('dmux-2', false, '/repo-a'),
+      pane('dmux-3', true, '/repo-b'),
+    ];
+
+    expect(getProjectVisibilityAction(panes, '/repo-a', '/fallback')).toBe('show-all');
   });
 });
