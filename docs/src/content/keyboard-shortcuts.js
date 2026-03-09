@@ -19,6 +19,7 @@ export function render() {
         <tr><td><kbd>x</kbd></td><td>Close the selected pane</td></tr>
         <tr><td><kbd>h</kbd></td><td>Hide or show the selected pane without stopping it</td></tr>
         <tr><td><kbd>H</kbd></td><td>Hide all other panes, or show them again if they are already hidden</td></tr>
+        <tr><td><kbd>P</kbd></td><td>Show only the selected project's panes, then show all panes on the next press</td></tr>
         <tr><td><kbd>a</kbd></td><td>Add another agent to the selected pane's worktree</td></tr>
         <tr><td><kbd>A</kbd></td><td>Add a terminal (shell) to the selected pane's worktree</td></tr>
         <tr><td><kbd>r</kbd></td><td>Reopen a previously closed worktree</td></tr>

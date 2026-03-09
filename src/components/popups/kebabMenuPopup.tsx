@@ -7,14 +7,14 @@
 
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
-import type { ActionMetadata } from '../../actions/types.js';
+import type { PaneMenuAction } from '../../actions/types.js';
 import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { PopupFooters, POPUP_CONFIG } from './config.js';
 
 interface KebabMenuPopupProps {
   resultFile: string;
   paneName: string;
-  actions: ActionMetadata[];
+  actions: PaneMenuAction[];
 }
 
 const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName, actions }) => {
@@ -38,11 +38,16 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
       <PopupContainer footer={PopupFooters.choice()}>
         {/* Action list */}
         {actions.map((action, index) => (
-          <Box key={action.id}>
-            <Text color={selectedIndex === index ? POPUP_CONFIG.titleColor : 'white'} bold={selectedIndex === index}>
-              {selectedIndex === index ? '▶ ' : '  '}
-              {action.label}
-            </Text>
+          <Box key={action.id} width="100%">
+            <Box flexGrow={1}>
+              <Text color={selectedIndex === index ? POPUP_CONFIG.titleColor : 'white'} bold={selectedIndex === index}>
+                {selectedIndex === index ? '▶ ' : '  '}
+                {action.label}
+              </Text>
+            </Box>
+            {action.shortcut ? (
+              <Text color="yellow">[{action.shortcut}]</Text>
+            ) : null}
           </Box>
         ))}
       </PopupContainer>
@@ -61,7 +66,7 @@ function main() {
     process.exit(1);
   }
 
-  let actions: ActionMetadata[];
+  let actions: PaneMenuAction[];
   try {
     actions = JSON.parse(actionsJson);
   } catch (error) {

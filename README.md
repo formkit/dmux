@@ -56,6 +56,7 @@ dmux creates a tmux pane for each task. Every pane gets its own git worktree and
 | `m` | Merge pane to main |
 | `x` | Close pane |
 | `p` | New pane in another project |
+| `P` | Show only the selected project, then show all |
 | `s` | Settings |
 | `q` | Quit |
 

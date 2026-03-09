@@ -43,6 +43,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'x', description: 'Close selected pane' },
     { key: 'h', description: 'Hide/show selected pane' },
     { key: 'H', description: 'Hide/show all other panes' },
+    { key: 'P', description: 'Show only the selected project, then show all' },
     { key: 'a', description: 'Add agent to worktree' },
     { key: 'b', description: 'Create child worktree' },
     { key: 'f', description: 'Open read-only file browser' },
