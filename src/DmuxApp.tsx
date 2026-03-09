@@ -17,6 +17,7 @@ import { useLayoutManagement } from "./hooks/useLayoutManagement.js"
 import { useInputHandling } from "./hooks/useInputHandling.js"
 import { useDialogState } from "./hooks/useDialogState.js"
 import { useDebugInfo } from "./hooks/useDebugInfo.js"
+import { useProjectActivity } from "./hooks/useProjectActivity.js"
 
 // Utils
 import { SIDEBAR_WIDTH } from "./utils/layoutManager.js"
@@ -58,9 +59,6 @@ import type {
 import PanesGrid from "./components/panes/PanesGrid.js"
 import CommandPromptDialog from "./components/dialogs/CommandPromptDialog.js"
 import FileCopyPrompt from "./components/ui/FileCopyPrompt.js"
-import LoadingIndicator from "./components/indicators/LoadingIndicator.js"
-import RunningIndicator from "./components/indicators/RunningIndicator.js"
-import UpdatingIndicator from "./components/indicators/UpdatingIndicator.js"
 import FooterHelp from "./components/ui/FooterHelp.js"
 import TmuxHooksPromptDialog from "./components/dialogs/TmuxHooksPromptDialog.js"
 import { PaneEventService } from "./services/PaneEventService.js"
@@ -68,6 +66,7 @@ import {
   buildProjectActionLayout,
   buildVisualNavigationRows,
   buildGroupStartRows,
+  getProjectActionByIndex,
 } from "./utils/projectActions.js"
 import { getPaneProjectRoot } from "./utils/paneProject.js"
 
@@ -83,11 +82,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const { stdout } = useStdout()
   const terminalHeight = stdout?.rows || 40
   const isDevMode = process.env.DMUX_DEV === "true"
+  const sessionProjectRoot = projectRoot || process.cwd()
 
   /* panes state moved to usePanes */
   const [selectedIndex, setSelectedIndex] = useState(0)
   const { statusMessage, setStatusMessage } = useStatusMessages()
   const [isCreatingPane, setIsCreatingPane] = useState(false)
+  const {
+    trackProjectActivity,
+    isProjectBusy: isTrackedProjectBusy,
+  } = useProjectActivity(sessionProjectRoot)
 
   // Settings state
   const [settingsManager] = useState(() => new SettingsManager(projectRoot))
@@ -275,6 +279,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     // Callbacks
     setStatusMessage,
     setIgnoreInput,
+    trackProjectActivity,
   })
 
   // Listen for status updates with analysis data and merge into panes
@@ -411,12 +416,22 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // getPanePositions moved to utils/tmux
 
-  const sessionProjectRoot = projectRoot || process.cwd()
   const activeDevSourcePath = isDevMode ? process.cwd() : undefined
   const projectActionLayout = useMemo(
     () => buildProjectActionLayout(panes, sessionProjectRoot, projectName),
     [panes, sessionProjectRoot, projectName]
   )
+  const selectedProjectRoot = useMemo(() => {
+    const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
+    if (selectedPane) {
+      return getPaneProjectRoot(selectedPane, sessionProjectRoot)
+    }
+
+    return (
+      getProjectActionByIndex(projectActionLayout.actionItems, selectedIndex)?.projectRoot
+      || sessionProjectRoot
+    )
+  }, [selectedIndex, panes, projectActionLayout.actionItems, sessionProjectRoot])
   const navigationRows = useMemo(
     () => isLoading
       ? projectActionLayout.groups.flatMap((group) =>
@@ -440,12 +455,16 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // applySmartLayout moved to utils/tmux
 
   // Helper function to handle agent choice and pane creation
-  const selectAgentsForPaneCreation = async (): Promise<AgentName[] | null> => {
+  const selectAgentsForPaneCreation = async (
+    targetProjectRoot?: string
+  ): Promise<AgentName[] | null> => {
     if (availableAgents.length === 0) {
       return []
     }
 
-    const selectedAgents = await popupManager.launchAgentChoicePopup()
+    const selectedAgents = await popupManager.launchAgentChoicePopup(
+      targetProjectRoot || selectedProjectRoot
+    )
     if (selectedAgents === null) {
       return null
     }
@@ -494,7 +513,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       mergeTargetChain?: MergeTargetReference[]
     }
   ) => {
-    const selectedAgents = await selectAgentsForPaneCreation()
+    const selectedAgents = await selectAgentsForPaneCreation(targetProjectRoot)
     if (selectedAgents === null) {
       return
     }
@@ -520,7 +539,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       return
     }
 
-    const selectedAgents = await selectAgentsForPaneCreation()
+    const selectedAgents = await selectAgentsForPaneCreation(targetProjectRoot)
     if (selectedAgents === null) {
       return
     }
@@ -552,7 +571,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
     const parentStatus = getGitStatus(parentPane.worktreePath)
     if (!parentStatus.hasChanges) {
-      await actionSystem.executeCallback(createSubWorktree, { showProgress: false })
+      await actionSystem.executeCallback(createSubWorktree, {
+        showProgress: false,
+        projectRoot: targetProjectRoot,
+      })
       return
     }
 
@@ -619,7 +641,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
     await actionSystem.executeCallback(
       async () => branchFromDirtyResult,
-      { showProgress: false }
+      { showProgress: false, projectRoot: targetProjectRoot }
     )
   }
 
@@ -698,12 +720,18 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
     if (nextSource.toggledToRoot) {
       setStatusMessage("Switching source to project root...")
-      await restartDevSessionAtSource(nextSource.nextSourcePath)
+      await trackProjectActivity(
+        () => restartDevSessionAtSource(nextSource.nextSourcePath),
+        sessionProjectRoot
+      )
       return
     }
 
     setStatusMessage(`Switching source to "${pane.slug}"...`)
-    await restartDevSessionAtSource(nextSource.nextSourcePath)
+    await trackProjectActivity(
+      () => restartDevSessionAtSource(nextSource.nextSourcePath),
+      paneProjectRoot
+    )
   }
 
   // Helper function to handle action results recursively
@@ -718,16 +746,23 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         result.title || "Confirm",
         result.message,
         result.confirmLabel,
-        result.cancelLabel
+        result.cancelLabel,
+        selectedProjectRoot
       )
       if (confirmed && result.onConfirm) {
-        const nextResult = await result.onConfirm()
+        const nextResult = await trackProjectActivity(
+          () => result.onConfirm!(),
+          selectedProjectRoot
+        )
         // Recursively handle nested results
         if (nextResult) {
           await handleActionResult(nextResult)
         }
       } else if (!confirmed && result.onCancel) {
-        const nextResult = await result.onCancel()
+        const nextResult = await trackProjectActivity(
+          () => result.onCancel!(),
+          selectedProjectRoot
+        )
         if (nextResult) {
           await handleActionResult(nextResult)
         }
@@ -738,10 +773,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         result.title || "Choose Option",
         result.message,
         result.options,
-        result.data
+        result.data,
+        selectedProjectRoot
       )
       if (selectedId) {
-        const nextResult = await result.onSelect(selectedId)
+        const nextResult = await trackProjectActivity(
+          () => result.onSelect!(selectedId),
+          selectedProjectRoot
+        )
         // Recursively handle nested results
         if (nextResult) {
           await handleActionResult(nextResult)
@@ -753,10 +792,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         result.title || "Input",
         result.message,
         result.placeholder,
-        result.defaultValue
+        result.defaultValue,
+        selectedProjectRoot
       )
       if (inputValue !== null) {
-        const nextResult = await result.onSubmit(inputValue)
+        const nextResult = await trackProjectActivity(
+          () => result.onSubmit!(inputValue),
+          selectedProjectRoot
+        )
         // Recursively handle nested results
         if (nextResult) {
           await handleActionResult(nextResult)
@@ -777,7 +820,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         await popupManager.launchProgressPopup(
           result.message,
           "info",
-          3000
+          3000,
+          selectedProjectRoot
         )
       }
     } else if (
@@ -800,6 +844,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     savePanes,
     sessionName,
     projectName,
+    defaultProjectRoot: sessionProjectRoot,
     onPaneRemove: async (paneId) => {
       // Mark pane as closing to prevent race condition with worker
       await lifecycleManager.beginClose(paneId, 'user requested')
@@ -827,6 +872,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       }
     },
     onActionResult: handleActionResult,
+    trackProjectActivity,
     popupLaunchers: popupsSupported
       ? {
           launchConfirmPopup: popupManager.launchConfirmPopup.bind(popupManager),
@@ -837,6 +883,29 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         }
       : undefined,
   })
+
+  const isProjectHeaderBusy = useMemo(() => {
+    const isSelectedProjectBusy = isCreatingPane || runningCommand
+
+    return (projectRoot: string) => {
+      if (isLoading || isUpdating) {
+        return true
+      }
+
+      if (isTrackedProjectBusy(projectRoot)) {
+        return true
+      }
+
+      return isSelectedProjectBusy && resolvePath(projectRoot) === resolvePath(selectedProjectRoot)
+    }
+  }, [
+    isCreatingPane,
+    isLoading,
+    isTrackedProjectBusy,
+    isUpdating,
+    runningCommand,
+    selectedProjectRoot,
+  ])
 
   // Auto-show new pane dialog removed - users can press 'n' to create panes via popup
 
@@ -1060,10 +1129,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           activeDevSourcePath={activeDevSourcePath}
           fallbackProjectRoot={projectRoot || process.cwd()}
           fallbackProjectName={projectName}
+          isProjectBusy={isProjectHeaderBusy}
         />
-
-        {/* Loading dialog */}
-        {isLoading && <LoadingIndicator />}
 
         {showCommandPrompt && (
           <CommandPromptDialog
@@ -1074,10 +1141,6 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
         )}
 
         {showFileCopyPrompt && <FileCopyPrompt />}
-
-        {runningCommand && <RunningIndicator />}
-
-        {isUpdating && <UpdatingIndicator />}
 
         {/* Tmux hooks prompt - shown on first startup */}
         {showHooksPrompt && (

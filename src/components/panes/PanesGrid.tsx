@@ -1,9 +1,11 @@
 import React, { memo, useMemo } from "react"
 import { Box, Text } from "ink"
+import stringWidth from "string-width"
 import type { DmuxPane } from "../../types.js"
 import type { AgentStatusMap } from "../../hooks/useAgentStatus.js"
 import PaneCard from "./PaneCard.js"
 import { COLORS } from "../../theme/colors.js"
+import Spinner from "../indicators/Spinner.js"
 import {
   buildProjectActionLayout,
   type ProjectActionItem,
@@ -18,7 +20,11 @@ interface PanesGridProps {
   activeDevSourcePath?: string
   fallbackProjectRoot: string
   fallbackProjectName: string
+  isProjectBusy?: (projectRoot: string) => boolean
 }
+
+const PROJECT_BUSY_FRAMES = ['◴', '◷', '◶', '◵']
+const HEADER_WIDTH = 40
 
 const PanesGrid: React.FC<PanesGridProps> = memo(({
   panes,
@@ -28,6 +34,7 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   activeDevSourcePath,
   fallbackProjectRoot,
   fallbackProjectName,
+  isProjectBusy,
 }) => {
   const actionLayout = useMemo(
     () => buildProjectActionLayout(panes, fallbackProjectRoot, fallbackProjectName),
@@ -102,14 +109,28 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
           {(() => {
             const isActive = activeProjectRoot === group.projectRoot
             const color = isActive ? COLORS.selected : COLORS.border
-            const headerWidth = 40
+            const busy = isProjectBusy?.(group.projectRoot) ?? false
+            const spinnerWidth = busy ? 2 : 0
             const nameSection = `⣿⣿ ${group.projectName} `
-            const remaining = Math.max(0, headerWidth - nameSection.length)
+            const remaining = Math.max(
+              0,
+              HEADER_WIDTH - stringWidth(nameSection) - spinnerWidth
+            )
             const fill = "⣿".repeat(remaining)
             return (
               <Text color={color}>
                 <Text dimColor>⣿⣿</Text>
                 <Text> {group.projectName} </Text>
+                {busy && (
+                  <>
+                    <Spinner
+                      color={isActive ? COLORS.selected : COLORS.accent}
+                      frames={PROJECT_BUSY_FRAMES}
+                      interval={70}
+                    />
+                    <Text> </Text>
+                  </>
+                )}
                 <Text dimColor>{fill}</Text>
               </Text>
             )

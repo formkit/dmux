@@ -266,6 +266,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       : (selectedAction?.projectRoot || projectRoot)
 
     const requestedProjectPath = await popupManager.launchProjectSelectPopup(
+      defaultProjectPath,
       defaultProjectPath
     )
 
@@ -599,13 +600,16 @@ export function useInputHandling(params: UseInputHandlingParams) {
       return
     }
 
+    const targetProjectRoot = getPaneProjectRoot(selectedPane, projectRoot)
+
     // Warn if agent is actively working
     if (selectedPane.agentStatus === "working") {
       const confirmed = await popupManager.launchConfirmPopup(
         "Agent Active",
         `Agent in "${selectedPane.slug}" is currently working. Attach another agent anyway?`,
         "Attach",
-        "Cancel"
+        "Cancel",
+        targetProjectRoot
       )
       if (!confirmed) return
     }
@@ -618,7 +622,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     } else if (availableAgents.length === 1) {
       selectedAgents = [availableAgents[0]]
     } else {
-      const agents = await popupManager.launchAgentChoicePopup()
+      const agents = await popupManager.launchAgentChoicePopup(targetProjectRoot)
       if (agents === null) {
         return
       }
@@ -631,9 +635,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
 
     // Prompt input
-    const promptValue = await popupManager.launchNewPanePopup(
-      getPaneProjectRoot(selectedPane, projectRoot)
-    )
+    const promptValue = await popupManager.launchNewPanePopup(targetProjectRoot)
     if (!promptValue) return
 
     try {
@@ -853,8 +855,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
         // Launch hooks popup
         await popupManager.launchHooksPopup(async () => {
           await launchHooksAuthoringSession()
-        })
-      })
+        }, getActiveProjectRoot())
+      }, getActiveProjectRoot())
       if (result) {
         try {
           const updates = Array.isArray((result as any).updates)
@@ -906,7 +908,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       }
     } else if (input === "l") {
       // Open logs popup
-      await popupManager.launchLogsPopup()
+      await popupManager.launchLogsPopup(getActiveProjectRoot())
     } else if (input === "h") {
       if (selectedIndex < panes.length) {
         await togglePaneVisibility(panes[selectedIndex])
@@ -925,7 +927,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await toggleProjectPanesVisibility()
     } else if (input === "?") {
       // Open keyboard shortcuts popup
-      const shortcutsAction = await popupManager.launchShortcutsPopup(!!controlPaneId)
+      const shortcutsAction = await popupManager.launchShortcutsPopup(
+        !!controlPaneId,
+        getActiveProjectRoot()
+      )
       if (shortcutsAction === "hooks") {
         await launchHooksAuthoringSession()
       }
@@ -972,7 +977,10 @@ export function useInputHandling(params: UseInputHandlingParams) {
         return
       }
 
-      const result = await popupManager.launchReopenWorktreePopup(orphanedWorktrees)
+      const result = await popupManager.launchReopenWorktreePopup(
+        orphanedWorktrees,
+        targetProjectRoot
+      )
       if (result) {
         await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
       }
