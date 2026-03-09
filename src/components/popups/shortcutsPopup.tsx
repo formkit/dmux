@@ -27,7 +27,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   const { exit } = useApp();
 
   useInput((input, key) => {
-    if (input === 'h') {
+    if (input === 'e') {
       writeSuccessAndExit<ShortcutActionResult>(resultFile, { action: 'hooks' }, exit);
       return;
     }
@@ -41,6 +41,8 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'j', description: 'Jump to selected pane' },
     { key: 'm', description: 'Open pane menu' },
     { key: 'x', description: 'Close selected pane' },
+    { key: 'h', description: 'Hide/show selected pane' },
+    { key: 'H', description: 'Hide/show all other panes' },
     { key: 'a', description: 'Add agent to worktree' },
     { key: 'b', description: 'Create child worktree' },
     { key: 'A', description: 'Add terminal to worktree' },
@@ -53,7 +55,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
       : []),
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
-    { key: 'h', description: 'Manage hooks with AI' },
+    { key: 'e', description: 'Manage hooks with AI (from this popup)' },
     ...(hasSidebarLayout ? [{ key: 'L', description: 'Reset sidebar layout' }] : []),
     { key: 'q', description: 'Quit dmux' },
     { key: '↑↓←→', description: 'Navigate panes' },
@@ -79,7 +81,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
         ))}
 
         <Box marginTop={1}>
-          <Text dimColor>Press h for hooks, or Esc/? to close</Text>
+          <Text dimColor>Press e for hooks, or Esc/? to close</Text>
         </Box>
       </Box>
     </PopupWrapper>

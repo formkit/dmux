@@ -17,6 +17,8 @@ export function render() {
         <tr><td><kbd>j</kbd></td><td>Jump to the selected pane (switch tmux focus)</td></tr>
         <tr><td><kbd>m</kbd></td><td>Open the kebab menu for the selected pane</td></tr>
         <tr><td><kbd>x</kbd></td><td>Close the selected pane</td></tr>
+        <tr><td><kbd>h</kbd></td><td>Hide or show the selected pane without stopping it</td></tr>
+        <tr><td><kbd>H</kbd></td><td>Hide all other panes, or show them again if they are already hidden</td></tr>
         <tr><td><kbd>a</kbd></td><td>Add another agent to the selected pane's worktree</td></tr>
         <tr><td><kbd>A</kbd></td><td>Add a terminal (shell) to the selected pane's worktree</td></tr>
         <tr><td><kbd>r</kbd></td><td>Reopen a previously closed worktree</td></tr>
@@ -45,7 +47,6 @@ export function render() {
         <tr><td><kbd>s</kbd></td><td>Open settings dialog</td></tr>
         <tr><td><kbd>l</kbd></td><td>View application logs</td></tr>
         <tr><td><kbd>L</kbd></td><td>Reset sidebar layout (re-enforce pane sizing)</td></tr>
-        <tr><td><kbd>h</kbd></td><td>Create or modify hooks with AI</td></tr>
         <tr><td><kbd>?</kbd></td><td>Show keyboard shortcuts help</td></tr>
         <tr><td><kbd>q</kbd></td><td>Quit dmux</td></tr>
       </tbody>

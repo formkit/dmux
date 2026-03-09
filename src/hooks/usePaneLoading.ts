@@ -9,7 +9,10 @@ import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { getPaneTmuxTitle } from '../utils/paneTitle.js';
-import { syncHiddenStateFromCurrentWindow } from '../utils/paneVisibility.js';
+import {
+  getVisiblePanes,
+  syncHiddenStateFromCurrentWindow,
+} from '../utils/paneVisibility.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
@@ -231,7 +234,7 @@ export async function recreateKilledWorktreePanes(
       const { getTerminalDimensions } = await import('../utils/tmux.js');
       const dimensions = getTerminalDimensions();
 
-      const contentPaneIds = updatedPanes.map(p => p.paneId);
+      const contentPaneIds = getVisiblePanes(updatedPanes).map(p => p.paneId);
       recalculateAndApplyLayout(
         config.controlPaneId,
         contentPaneIds,

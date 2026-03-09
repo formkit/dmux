@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 import { LogService } from './LogService.js';
-import { execAsync, execAsyncAll } from '../utils/execAsync.js';
+import { execAsync } from '../utils/execAsync.js';
 import type { PanePosition, WindowDimensions } from '../types.js';
 
 export type PaneListScope = 'window' | 'session';

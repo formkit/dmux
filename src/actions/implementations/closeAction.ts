@@ -150,7 +150,7 @@ async function executeCloseOption(
       // This prevents crashes/hangs when operating on stale pane IDs
       let paneExists = false;
       try {
-        const paneList = execSync('tmux list-panes -F "#{pane_id}"', {
+        const paneList = execSync('tmux list-panes -a -F "#{pane_id}"', {
           encoding: 'utf-8',
           stdio: 'pipe',
           timeout: 5000 // 5 second timeout to prevent hangs
@@ -185,7 +185,7 @@ async function executeCloseOption(
           await new Promise(resolve => setTimeout(resolve, 100));
           try {
             // Check if pane still exists
-            const updatedPaneList = execSync('tmux list-panes -F "#{pane_id}"', {
+            const updatedPaneList = execSync('tmux list-panes -a -F "#{pane_id}"', {
               encoding: 'utf-8',
               stdio: 'pipe',
               timeout: 5000

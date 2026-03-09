@@ -64,6 +64,18 @@ describe('viewAction', () => {
     expect(result.dismissable).toBe(true);
   });
 
+  it('should report that hidden panes must be shown first', async () => {
+    const mockPane = createMockPane({ hidden: true, slug: 'hidden-pane' });
+    const mockContext = createMockContext([mockPane]);
+
+    const result = await viewPane(mockPane, mockContext);
+
+    expect(result.type).toBe('info');
+    expect(result.message).toContain('hidden');
+    expect(result.message).toContain('Press h');
+    expect(execSync).not.toHaveBeenCalled();
+  });
+
   it('should handle special characters in pane ID', async () => {
     const mockPane = createMockPane({ paneId: '%$special' });
     const mockContext = createMockContext([mockPane]);

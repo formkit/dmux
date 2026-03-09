@@ -60,9 +60,10 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   const prefix = selected ? '▸' : ' ';
   const statusText = `${status.icon} `;
   const sourceText = isDevSource ? '★ ' : '';
+  const hiddenText = pane.hidden ? ' (hidden)' : '';
   const agentText = hasAgent ? ` [${agentTag}]` : '     ';
   const autopilotText = apTag ? ` (${apTag})` : '     ';
-  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText);
+  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText + hiddenText);
   const maxSlugWidth = Math.max(0, LEFT_COLUMN_WIDTH - fixedLeftWidth);
   const slugText = clipToWidth(pane.slug, maxSlugWidth);
 
@@ -77,6 +78,11 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
         <Text color={selected ? COLORS.selected : COLORS.unselected} bold={selected}>
           {slugText}
         </Text>
+        {pane.hidden && (
+          <Text color="yellow" dimColor>
+            {hiddenText}
+          </Text>
+        )}
       </Box>
       <Box width={RIGHT_COLUMN_WIDTH} justifyContent="flex-end">
         {agentTag
@@ -98,6 +104,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
     prevProps.pane.testStatus === nextProps.pane.testStatus &&
     prevProps.pane.devStatus === nextProps.pane.devStatus &&
     prevProps.pane.autopilot === nextProps.pane.autopilot &&
+    prevProps.pane.hidden === nextProps.pane.hidden &&
     prevProps.pane.type === nextProps.pane.type &&
     prevProps.pane.shellType === nextProps.pane.shellType &&
     prevProps.pane.agent === nextProps.pane.agent &&

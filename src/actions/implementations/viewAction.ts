@@ -13,6 +13,14 @@ export async function viewPane(
   pane: DmuxPane,
   context: ActionContext
 ): Promise<ActionResult> {
+  if (pane.hidden) {
+    return {
+      type: 'info',
+      message: `Pane "${pane.slug}" is hidden. Press h to show it.`,
+      dismissable: true,
+    };
+  }
+
   try {
     execSync(`tmux select-pane -t '${pane.paneId}'`, { stdio: 'pipe' });
 
