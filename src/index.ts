@@ -29,6 +29,7 @@ import { atomicWriteJson } from './utils/atomicWrite.js';
 import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
 import { buildPaneExitedHookCommandForSession } from './utils/tmuxHookCommands.js';
 import { ensureTmuxRuntimeCompatibility } from './utils/tmuxRuntimeCompatibility.js';
+import { claimProcessShutdown } from './utils/processShutdown.js';
 import {
   resolveEnabledAgentsSelection,
   type AgentName,
@@ -1159,7 +1160,11 @@ class Dmux {
   }
 
   private setupGlobalSignalHandlers() {
-    const cleanTerminalExit = async () => {
+    const cleanTerminalExit = () => {
+      if (!claimProcessShutdown('signal-handler')) {
+        return;
+      }
+
       // Clean up hooks
       if (process.env.TMUX) {
         this.cleanupResizeHook();
@@ -1176,7 +1181,6 @@ class Dmux {
         try {
           const tmuxService = TmuxService.getInstance();
           tmuxService.clearHistorySync();
-          await tmuxService.sendKeys('', 'C-l');
         } catch {
           // Intentionally silent - cleanup is best-effort
         }
@@ -1191,8 +1195,8 @@ class Dmux {
     };
 
     // Handle Ctrl+C and SIGTERM
-    process.on('SIGINT', cleanTerminalExit);
-    process.on('SIGTERM', cleanTerminalExit);
+    process.once('SIGINT', cleanTerminalExit);
+    process.once('SIGTERM', cleanTerminalExit);
 
     // Handle SIGUSR2 for pane split detection
     // This signal is sent by tmux hook when a new pane is created

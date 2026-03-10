@@ -37,6 +37,7 @@ import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { DmuxFocusService } from "./services/DmuxFocusService.js"
+import { DmuxAttentionService } from "./services/DmuxAttentionService.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname, resolve as resolvePath } from "path"
@@ -49,6 +50,7 @@ import { buildDevWatchRespawnCommand } from "./utils/devWatchCommand.js"
 import { getPaneBranchName } from "./utils/git.js"
 import { getGitStatus } from "./utils/mergeValidation.js"
 import { createMergeTargetChain } from "./utils/mergeTargets.js"
+import { claimProcessShutdown } from "./utils/processShutdown.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -155,6 +157,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // undefined = not yet determined, true = use hooks, false = use polling
   const [useHooks, setUseHooks] = useState<boolean | undefined>(undefined)
   const [focusService] = useState(() => new DmuxFocusService({ projectName }))
+  const [attentionService] = useState(
+    () => new DmuxAttentionService({ focusService })
+  )
 
   // Subscribe to StateManager for unread error/warning count and toast updates
   useEffect(() => {
@@ -223,11 +228,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   useEffect(() => {
     void focusService.start()
+    attentionService.start()
 
     return () => {
+      attentionService.stop()
       focusService.stop()
     }
-  }, [focusService])
+  }, [attentionService, focusService])
 
   // Pane lifecycle manager - handles locking to prevent race conditions
   // Replaces the old timeout-based intentionallyClosedPanes Set
@@ -396,21 +403,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
-    // SIGTERM should quit immediately (for process management)
-    const handleTermination = () => {
-      cleanExit()
-    }
-    process.on("SIGTERM", handleTermination)
-
     // Check if tmux supports popups (3.2+) and enable mouse mode for click-outside-to-close
     const popupSupport = supportsPopups()
     setPopupsSupported(popupSupport)
     if (popupSupport) {
       // Enable mouse mode only for this dmux session (not global)
-    }
-
-    return () => {
-      process.removeListener("SIGTERM", handleTermination)
     }
   }, [])
 
@@ -975,6 +972,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Cleanup function for exit
   const cleanExit = () => {
+    if (!claimProcessShutdown("app-clean-exit")) {
+      return
+    }
+
     // Clear screen before exiting Ink
     process.stdout.write("\x1b[2J\x1b[3J\x1b[H")
 
@@ -982,18 +983,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     exit()
 
     // Give Ink a moment to clean up its rendering, then do final cleanup
-    setTimeout(async () => {
+    setTimeout(() => {
       // Multiple aggressive clearing strategies
       process.stdout.write("\x1b[2J\x1b[H") // Clear screen and move cursor to home
       process.stdout.write("\x1b[3J") // Clear scrollback buffer
       process.stdout.write("\x1b[0m") // Reset all attributes
 
-      // Clear tmux history and pane
-      try {
-        const tmuxService = TmuxService.getInstance()
-        tmuxService.clearHistorySync()
-        await tmuxService.sendKeys("", "C-l")
-      } catch {}
+      // Never inject control keys into the pane during shutdown.
+      // An orphaned dmux dev process can outlive the UI and replay them forever.
+      if (process.env.TMUX) {
+        try {
+          const tmuxService = TmuxService.getInstance()
+          tmuxService.clearHistorySync()
+        } catch {}
+      }
 
       // One more final clear
       process.stdout.write("\x1b[2J\x1b[H")

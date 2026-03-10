@@ -1,7 +1,8 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { spawn, spawnSync } from 'child_process';
 import { createConnection } from 'node:net';
 import type { Socket } from 'node:net';
+import { EventEmitter } from 'events';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import os from 'os';
@@ -13,7 +14,10 @@ import {
   buildFocusWindowTitle,
   buildTerminalTitleSequence,
   mapTerminalProgramToBundleId,
+  parseTmuxSocketPath,
+  supportsNativeDmuxHelper,
   type DmuxHelperFocusStateMessage,
+  type DmuxHelperNotifyMessage,
   type DmuxHelperSubscribeMessage,
 } from '../utils/focusDetection.js';
 import { resolvePackagePath } from '../utils/runtimePaths.js';
@@ -21,16 +25,21 @@ import { resolvePackagePath } from '../utils/runtimePaths.js';
 const HELPER_RECONNECT_DELAY_MS = 1000;
 const HELPER_SOCKET_WAIT_TIMEOUT_MS = 5000;
 const FOCUS_SYNC_INTERVAL_MS = 350;
-const FOCUSED_PANE_WINDOW_STYLE = 'fg=default,bg=colour22';
-const FOCUSED_PANE_WINDOW_ACTIVE_STYLE = 'fg=default,bg=colour28';
 
 interface DmuxFocusServiceOptions {
   projectName: string;
 }
 
-interface StoredPaneStyle {
-  windowStyle: string | null;
-  windowActiveStyle: string | null;
+export interface DmuxFocusChangedEvent {
+  fullyFocusedPaneId: string | null;
+  helperFocused: boolean;
+}
+
+export interface DmuxAttentionNotificationRequest {
+  title: string;
+  subtitle?: string;
+  body: string;
+  tmuxPaneId: string;
 }
 
 function isTestEnvironment(): boolean {
@@ -41,13 +50,32 @@ function isTestEnvironment(): boolean {
 
 function getHelperRuntimePaths(): {
   sourcePath: string;
-  binaryPath: string;
+  infoPlistSourcePath: string;
+  iconSourcePath: string;
+  appPath: string;
+  executablePath: string;
+  resourcesPath: string;
+  infoPlistPath: string;
+  bundleIconPngPath: string;
+  bundleIconIcnsPath: string;
+  versionPath: string;
   socketPath: string;
 } {
   const helperBaseDir = path.join(os.homedir(), '.dmux', 'native-helper');
+  const appPath = path.join(helperBaseDir, 'dmux-helper.app');
+  const contentsPath = path.join(appPath, 'Contents');
+  const resourcesPath = path.join(contentsPath, 'Resources');
   return {
     sourcePath: resolvePackagePath('native', 'macos', 'dmux-helper.swift'),
-    binaryPath: path.join(helperBaseDir, 'bin', 'dmux-helper-macos'),
+    infoPlistSourcePath: resolvePackagePath('native', 'macos', 'dmux-helper-Info.plist'),
+    iconSourcePath: resolvePackagePath('native', 'macos', 'dmux-helper-icon.png'),
+    appPath,
+    executablePath: path.join(contentsPath, 'MacOS', 'dmux-helper'),
+    resourcesPath,
+    infoPlistPath: path.join(contentsPath, 'Info.plist'),
+    bundleIconPngPath: path.join(resourcesPath, 'dmux-helper.png'),
+    bundleIconIcnsPath: path.join(resourcesPath, 'dmux-helper.icns'),
+    versionPath: path.join(helperBaseDir, 'version.txt'),
     socketPath: path.join(helperBaseDir, 'run', 'dmux-helper.sock'),
   };
 }
@@ -56,6 +84,8 @@ interface HelperBinaryStatus {
   ready: boolean;
   rebuilt: boolean;
 }
+
+const HELPER_BUNDLE_BUILD_VERSION = '1';
 
 function readTmuxGlobalEnvironment(name: string): string | undefined {
   if (!process.env.TMUX) {
@@ -93,27 +123,171 @@ function resolveTerminalProgram(): string | undefined {
   return readTmuxGlobalEnvironment('TERM_PROGRAM') ?? terminalProgram;
 }
 
-async function ensureHelperBinary(sourcePath: string, binaryPath: string): Promise<HelperBinaryStatus> {
-  if (!existsSync(sourcePath)) {
-    return { ready: false, rebuilt: false };
+function resolveTmuxSocketPath(): string | undefined {
+  const parsedFromEnv = parseTmuxSocketPath(process.env.TMUX);
+  if (parsedFromEnv) {
+    return parsedFromEnv;
   }
 
-  const needsBuild = !existsSync(binaryPath)
-    || (await fs.stat(sourcePath)).mtimeMs > (await fs.stat(binaryPath).catch(() => ({ mtimeMs: 0 } as const))).mtimeMs;
-
-  if (!needsBuild) {
-    return { ready: true, rebuilt: false };
+  if (!process.env.TMUX) {
+    return undefined;
   }
 
-  await fs.mkdir(path.dirname(binaryPath), { recursive: true });
-  const result = spawnSync('swiftc', ['-O', sourcePath, '-o', binaryPath], {
+  const result = spawnSync('tmux', ['display-message', '-p', '#{socket_path}'], {
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+
+  if (result.status !== 0) {
+    return undefined;
+  }
+
+  const socketPath = result.stdout.trim();
+  return socketPath || undefined;
+}
+
+function buildHelperVersionHash(parts: string[]): string {
+  const hash = createHash('sha1');
+  hash.update(HELPER_BUNDLE_BUILD_VERSION);
+  for (const part of parts) {
+    hash.update(part);
+  }
+  return hash.digest('hex');
+}
+
+function runBuildTool(executable: string, args: string[]): { ok: boolean; output: string } {
+  const result = spawnSync(executable, args, {
     stdio: 'pipe',
     encoding: 'utf-8',
   });
 
   return {
-    ready: result.status === 0,
-    rebuilt: result.status === 0,
+    ok: result.status === 0,
+    output: (result.stderr || result.stdout || '').trim(),
+  };
+}
+
+async function buildHelperBundleIcon(iconSourcePath: string, iconIcnsPath: string): Promise<void> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmux-helper-icon-'));
+  const iconsetDir = path.join(tempDir, 'dmux-helper.iconset');
+
+  try {
+    await fs.mkdir(iconsetDir, { recursive: true });
+    const sizes = [16, 32, 128, 256, 512];
+
+    for (const size of sizes) {
+      const oneX = path.join(iconsetDir, `icon_${size}x${size}.png`);
+      const twoX = path.join(iconsetDir, `icon_${size}x${size}@2x.png`);
+
+      let result = runBuildTool('/usr/bin/sips', [
+        '-z',
+        String(size),
+        String(size),
+        iconSourcePath,
+        '--out',
+        oneX,
+      ]);
+      if (!result.ok) {
+        throw new Error(result.output || 'sips failed building helper icon');
+      }
+
+      result = runBuildTool('/usr/bin/sips', [
+        '-z',
+        String(size * 2),
+        String(size * 2),
+        iconSourcePath,
+        '--out',
+        twoX,
+      ]);
+      if (!result.ok) {
+        throw new Error(result.output || 'sips failed building helper icon');
+      }
+    }
+
+    const iconutilResult = runBuildTool('/usr/bin/iconutil', [
+      '-c',
+      'icns',
+      iconsetDir,
+      '-o',
+      iconIcnsPath,
+    ]);
+    if (!iconutilResult.ok) {
+      throw new Error(iconutilResult.output || 'iconutil failed building helper icon');
+    }
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function ensureHelperBundle(
+  paths: ReturnType<typeof getHelperRuntimePaths>
+): Promise<HelperBinaryStatus> {
+  if (!existsSync(paths.sourcePath) || !existsSync(paths.infoPlistSourcePath)) {
+    return { ready: false, rebuilt: false };
+  }
+
+  const [sourceTemplate, infoPlistTemplate, iconBuffer, currentVersion] = await Promise.all([
+    fs.readFile(paths.sourcePath, 'utf-8'),
+    fs.readFile(paths.infoPlistSourcePath, 'utf-8'),
+    existsSync(paths.iconSourcePath)
+      ? fs.readFile(paths.iconSourcePath)
+      : Promise.resolve<Buffer | null>(null),
+    existsSync(paths.versionPath)
+      ? fs.readFile(paths.versionPath, 'utf-8').catch(() => '')
+      : Promise.resolve(''),
+  ]);
+
+  const expectedVersion = buildHelperVersionHash([
+    sourceTemplate,
+    infoPlistTemplate,
+    iconBuffer?.toString('base64') || 'no-icon',
+  ]);
+
+  const needsBuild = !existsSync(paths.executablePath)
+    || !existsSync(paths.infoPlistPath)
+    || (iconBuffer !== null && !existsSync(paths.bundleIconPngPath))
+    || currentVersion.trim() !== expectedVersion;
+
+  if (!needsBuild) {
+    return { ready: true, rebuilt: false };
+  }
+
+  await fs.rm(paths.appPath, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(paths.executablePath), { recursive: true });
+  await fs.mkdir(paths.resourcesPath, { recursive: true });
+  await fs.writeFile(paths.infoPlistPath, infoPlistTemplate, 'utf-8');
+
+  if (iconBuffer !== null) {
+    await fs.writeFile(paths.bundleIconPngPath, iconBuffer);
+    try {
+      await buildHelperBundleIcon(paths.bundleIconPngPath, paths.bundleIconIcnsPath);
+    } catch {
+      // The helper can still set the bundled PNG as its runtime icon.
+    }
+  }
+
+  const result = spawnSync('swiftc', [
+    '-O',
+    paths.sourcePath,
+    '-o',
+    paths.executablePath,
+    '-framework',
+    'AppKit',
+    '-framework',
+    'ApplicationServices',
+  ], {
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+
+  if (result.status !== 0) {
+    return { ready: false, rebuilt: false };
+  }
+
+  await fs.writeFile(paths.versionPath, expectedVersion, 'utf-8');
+  return {
+    ready: true,
+    rebuilt: true,
   };
 }
 
@@ -194,11 +368,12 @@ async function waitForHelperSocket(socketPath: string, timeoutMs: number): Promi
 async function ensureHelperRunning(
   logger: LogService
 ): Promise<string | null> {
-  const { sourcePath, binaryPath, socketPath } = getHelperRuntimePaths();
-  const binaryStatus = await ensureHelperBinary(sourcePath, binaryPath);
+  const helperPaths = getHelperRuntimePaths();
+  const { executablePath, socketPath } = helperPaths;
+  const binaryStatus = await ensureHelperBundle(helperPaths);
 
   if (!binaryStatus.ready) {
-    logger.warn('dmux helper binary is unavailable on this system', 'focus-helper');
+    logger.warn('dmux helper app bundle is unavailable on this system', 'focus-helper');
     return null;
   }
 
@@ -216,7 +391,7 @@ async function ensureHelperRunning(
   }
 
   await fs.mkdir(path.dirname(socketPath), { recursive: true });
-  const child = spawn(binaryPath, ['--socket', socketPath, '--poll-ms', '250'], {
+  const child = spawn(executablePath, ['--socket', socketPath, '--poll-ms', '250'], {
     detached: true,
     stdio: 'ignore',
   });
@@ -231,13 +406,18 @@ async function ensureHelperRunning(
   return socketPath;
 }
 
-export class DmuxFocusService {
+export class DmuxFocusService extends EventEmitter {
   private readonly logger = LogService.getInstance();
   private readonly tmuxService = TmuxService.getInstance();
   private readonly instanceId = randomUUID();
   private readonly token = buildFocusToken(this.instanceId);
-  private readonly terminalProgram = resolveTerminalProgram();
+  private readonly terminalProgram = supportsNativeDmuxHelper()
+    ? resolveTerminalProgram()
+    : undefined;
   private readonly bundleId = mapTerminalProgramToBundleId(this.terminalProgram);
+  private readonly tmuxSocketPath = supportsNativeDmuxHelper()
+    ? resolveTmuxSocketPath()
+    : undefined;
   private readonly terminalTitle: string;
   private readonly baseTitle: string;
   private helperSocketPath: string | null = null;
@@ -248,16 +428,16 @@ export class DmuxFocusService {
   private lineBuffer = '';
   private active = false;
   private titleApplied = false;
-  private styledPaneId: string | null = null;
-  private storedPaneStyles = new Map<string, StoredPaneStyle>();
+  private fullyFocusedPaneId: string | null = null;
 
   constructor(private readonly options: DmuxFocusServiceOptions) {
+    super();
     this.baseTitle = `dmux ${options.projectName}`;
     this.terminalTitle = buildFocusWindowTitle(options.projectName, this.token);
   }
 
   async start(): Promise<void> {
-    if (process.platform !== 'darwin' || !process.env.TMUX || isTestEnvironment()) {
+    if (!supportsNativeDmuxHelper() || !process.env.TMUX || isTestEnvironment()) {
       return;
     }
 
@@ -272,7 +452,7 @@ export class DmuxFocusService {
     this.titleApplied = true;
 
     this.syncInterval = setInterval(() => {
-      void this.syncFocusedPaneTheme();
+      void this.syncFocusedPaneState();
     }, FOCUS_SYNC_INTERVAL_MS);
 
     this.connectToHelper();
@@ -297,7 +477,7 @@ export class DmuxFocusService {
     }
 
     this.helperFocused = false;
-    this.restoreFocusedPaneTheme();
+    this.setFullyFocusedPaneId(null);
 
     if (this.titleApplied) {
       this.writeTerminalTitle(this.baseTitle);
@@ -310,6 +490,7 @@ export class DmuxFocusService {
       return;
     }
 
+    this.lineBuffer = '';
     const socket = createConnection(this.helperSocketPath);
     this.helperSocket = socket;
 
@@ -355,7 +536,7 @@ export class DmuxFocusService {
       }
 
       this.helperFocused = message.fullyFocused;
-      void this.syncFocusedPaneTheme();
+      void this.syncFocusedPaneState();
     } catch {
       // Ignore malformed helper output and keep current state.
     }
@@ -368,7 +549,7 @@ export class DmuxFocusService {
     }
 
     this.helperFocused = false;
-    void this.syncFocusedPaneTheme();
+    this.setFullyFocusedPaneId(null);
 
     if (!this.active || this.reconnectTimer) {
       return;
@@ -380,64 +561,108 @@ export class DmuxFocusService {
     }, HELPER_RECONNECT_DELAY_MS);
   }
 
-  private async syncFocusedPaneTheme(): Promise<void> {
+  getFullyFocusedPaneId(): string | null {
+    return this.fullyFocusedPaneId;
+  }
+
+  isPaneFullyFocused(paneId: string): boolean {
+    return this.fullyFocusedPaneId === paneId;
+  }
+
+  async sendAttentionNotification(
+    request: DmuxAttentionNotificationRequest
+  ): Promise<boolean> {
+    if (!supportsNativeDmuxHelper() || isTestEnvironment()) {
+      return false;
+    }
+
+    const socketPath = await this.ensureHelperSocketPath();
+    if (!socketPath) {
+      return false;
+    }
+
+    const payload: DmuxHelperNotifyMessage = {
+      type: 'notify',
+      title: request.title,
+      subtitle: request.subtitle,
+      body: request.body,
+      titleToken: this.token,
+      bundleId: this.bundleId,
+      tmuxPaneId: request.tmuxPaneId,
+      tmuxSocketPath: this.tmuxSocketPath,
+    };
+
+    return new Promise<boolean>((resolve) => {
+      const socket = createConnection(socketPath);
+      let settled = false;
+
+      const finish = (value: boolean) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        socket.destroy();
+        resolve(value);
+      };
+
+      socket.once('connect', () => {
+        socket.write(`${JSON.stringify(payload)}\n`, (error) => {
+          finish(!error);
+        });
+      });
+
+      socket.once('error', () => {
+        finish(false);
+      });
+    });
+  }
+
+  private async ensureHelperSocketPath(): Promise<string | null> {
+    if (this.helperSocketPath) {
+      const helperReady = await waitForHelperSocket(this.helperSocketPath, 100);
+      if (helperReady) {
+        return this.helperSocketPath;
+      }
+    }
+
+    const helperSocketPath = await ensureHelperRunning(this.logger);
+    if (!helperSocketPath) {
+      return null;
+    }
+
+    this.helperSocketPath = helperSocketPath;
+    return helperSocketPath;
+  }
+
+  private async syncFocusedPaneState(): Promise<void> {
     if (!this.active || !this.helperFocused) {
-      this.restoreFocusedPaneTheme();
+      this.setFullyFocusedPaneId(null);
       return;
     }
 
     try {
       const currentPaneId = await this.tmuxService.getCurrentPaneId();
       if (!currentPaneId) {
-        this.restoreFocusedPaneTheme();
+        this.setFullyFocusedPaneId(null);
         return;
       }
 
-      if (this.styledPaneId === currentPaneId) {
-        return;
-      }
-
-      this.restoreFocusedPaneTheme();
-      this.captureOriginalPaneStyle(currentPaneId);
-      this.tmuxService.setPaneOptionSync(currentPaneId, 'window-style', FOCUSED_PANE_WINDOW_STYLE);
-      this.tmuxService.setPaneOptionSync(currentPaneId, 'window-active-style', FOCUSED_PANE_WINDOW_ACTIVE_STYLE);
-      this.styledPaneId = currentPaneId;
+      this.setFullyFocusedPaneId(currentPaneId);
     } catch {
-      this.restoreFocusedPaneTheme();
+      this.setFullyFocusedPaneId(null);
     }
   }
 
-  private captureOriginalPaneStyle(paneId: string): void {
-    if (this.storedPaneStyles.has(paneId)) {
+  private setFullyFocusedPaneId(paneId: string | null): void {
+    if (this.fullyFocusedPaneId === paneId) {
       return;
     }
 
-    const windowStyle = this.tmuxService.getPaneOptionSync(paneId, 'window-style') || null;
-    const windowActiveStyle = this.tmuxService.getPaneOptionSync(paneId, 'window-active-style') || null;
-    this.storedPaneStyles.set(paneId, { windowStyle, windowActiveStyle });
-  }
-
-  private restoreFocusedPaneTheme(): void {
-    if (!this.styledPaneId) {
-      return;
-    }
-
-    const paneId = this.styledPaneId;
-    const storedStyle = this.storedPaneStyles.get(paneId);
-
-    if (storedStyle?.windowStyle) {
-      this.tmuxService.setPaneOptionSync(paneId, 'window-style', storedStyle.windowStyle);
-    } else {
-      this.tmuxService.unsetPaneOptionSync(paneId, 'window-style');
-    }
-
-    if (storedStyle?.windowActiveStyle) {
-      this.tmuxService.setPaneOptionSync(paneId, 'window-active-style', storedStyle.windowActiveStyle);
-    } else {
-      this.tmuxService.unsetPaneOptionSync(paneId, 'window-active-style');
-    }
-
-    this.styledPaneId = null;
+    this.fullyFocusedPaneId = paneId;
+    this.emit('focus-changed', {
+      fullyFocusedPaneId: paneId,
+      helperFocused: this.helperFocused,
+    } satisfies DmuxFocusChangedEvent);
   }
 
   private writeTerminalTitle(title: string): void {

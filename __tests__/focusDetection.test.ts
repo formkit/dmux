@@ -4,6 +4,8 @@ import {
   buildFocusWindowTitle,
   buildTerminalTitleSequence,
   mapTerminalProgramToBundleId,
+  parseTmuxSocketPath,
+  supportsNativeDmuxHelper,
 } from '../src/utils/focusDetection.js';
 
 describe('focusDetection utils', () => {
@@ -26,5 +28,17 @@ describe('focusDetection utils', () => {
     expect(mapTerminalProgramToBundleId('Ghostty')).toBe('com.mitchellh.ghostty');
     expect(mapTerminalProgramToBundleId('ghostty')).toBe('com.mitchellh.ghostty');
     expect(mapTerminalProgramToBundleId('unknown')).toBeUndefined();
+  });
+
+  it('parses the tmux socket path from the TMUX environment variable', () => {
+    expect(parseTmuxSocketPath('/tmp/tmux-501/default,1234,0')).toBe('/tmp/tmux-501/default');
+    expect(parseTmuxSocketPath('')).toBeUndefined();
+    expect(parseTmuxSocketPath(undefined)).toBeUndefined();
+  });
+
+  it('only enables the native dmux helper on macOS', () => {
+    expect(supportsNativeDmuxHelper('darwin')).toBe(true);
+    expect(supportsNativeDmuxHelper('linux')).toBe(false);
+    expect(supportsNativeDmuxHelper('win32')).toBe(false);
   });
 });

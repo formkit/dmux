@@ -6,6 +6,17 @@ export interface DmuxHelperSubscribeMessage {
   terminalProgram?: string;
 }
 
+export interface DmuxHelperNotifyMessage {
+  type: 'notify';
+  title: string;
+  subtitle?: string;
+  body: string;
+  titleToken?: string;
+  bundleId?: string;
+  tmuxPaneId?: string;
+  tmuxSocketPath?: string;
+}
+
 export interface DmuxHelperFocusStateMessage {
   type: 'focus-state';
   instanceId: string;
@@ -66,4 +77,17 @@ export function mapTerminalProgramToBundleId(termProgram?: string): string | und
     default:
       return undefined;
   }
+}
+
+export function parseTmuxSocketPath(tmuxEnv?: string): string | undefined {
+  if (!tmuxEnv) {
+    return undefined;
+  }
+
+  const socketPath = tmuxEnv.split(',')[0]?.trim();
+  return socketPath || undefined;
+}
+
+export function supportsNativeDmuxHelper(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'darwin';
 }

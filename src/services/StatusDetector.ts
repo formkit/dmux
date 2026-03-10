@@ -19,6 +19,16 @@ export interface StatusUpdateEvent {
   analyzerError?: string;
 }
 
+export interface AttentionNeededEvent {
+  paneId: string;
+  tmuxPaneId: string;
+  status: Extract<AgentStatus, 'idle' | 'waiting'>;
+  title: string;
+  body: string;
+  subtitle?: string;
+  fingerprint: string;
+}
+
 /**
  * High-level service coordinating status detection via workers and LLM
  */
@@ -201,7 +211,7 @@ export class StatusDetector extends EventEmitter {
         });
 
         // Emit event for UI with analysis data
-        this.emit('status-updated', {
+        const statusEvent: StatusUpdateEvent = {
           paneId,
           status: finalStatus,
           previousStatus: 'analyzing',
@@ -209,7 +219,13 @@ export class StatusDetector extends EventEmitter {
           options: analysis.options,
           potentialHarm: analysis.potentialHarm,
           summary: analysis.summary
-        } as StatusUpdateEvent);
+        };
+        this.emit('status-updated', statusEvent);
+
+        const attentionEvent = this.buildAttentionEvent(paneId, tmuxPaneId, finalStatus, analysis);
+        if (attentionEvent) {
+          this.emit('attention-needed', attentionEvent);
+        }
       } catch (error: any) {
         // Clear the timeout on error
         clearTimeout(timeoutId);
@@ -388,6 +404,46 @@ export class StatusDetector extends EventEmitter {
         error instanceof Error ? error : undefined
       );
     }
+  }
+
+  private buildAttentionEvent(
+    paneId: string,
+    tmuxPaneId: string,
+    status: AgentStatus,
+    analysis: PaneAnalysis
+  ): AttentionNeededEvent | null {
+    if (status !== 'idle' && status !== 'waiting') {
+      return null;
+    }
+
+    const pane = StateManager.getInstance().getPaneById(paneId);
+    const subtitle = pane?.slug;
+
+    const title = analysis.attentionTitle
+      || (status === 'waiting'
+        ? 'Decision needed'
+        : 'Ready for the next prompt');
+
+    const body = analysis.attentionBody
+      || (status === 'waiting'
+        ? `${analysis.question || 'The agent is waiting for your input.'} Open the pane and choose how to continue.`
+        : `${analysis.summary || 'The agent finished its current step.'} Open the pane and continue the work.`);
+
+    const normalizedTitle = title.trim();
+    const normalizedBody = body.trim();
+    if (!normalizedTitle || !normalizedBody) {
+      return null;
+    }
+
+    return {
+      paneId,
+      tmuxPaneId,
+      status,
+      title: normalizedTitle,
+      body: normalizedBody,
+      subtitle,
+      fingerprint: `${status}:${normalizedTitle}:${normalizedBody}`,
+    };
   }
 
   /**
