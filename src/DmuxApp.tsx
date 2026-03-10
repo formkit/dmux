@@ -36,6 +36,7 @@ import {
 import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
+import { DmuxFocusService } from "./services/DmuxFocusService.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname, resolve as resolvePath } from "path"
@@ -153,6 +154,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const [hooksPromptIndex, setHooksPromptIndex] = useState(0)
   // undefined = not yet determined, true = use hooks, false = use polling
   const [useHooks, setUseHooks] = useState<boolean | undefined>(undefined)
+  const [focusService] = useState(() => new DmuxFocusService({ projectName }))
 
   // Subscribe to StateManager for unread error/warning count and toast updates
   useEffect(() => {
@@ -218,6 +220,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
     checkHooksPreference()
   }, [sessionName, controlPaneId, settingsManager])
+
+  useEffect(() => {
+    void focusService.start()
+
+    return () => {
+      focusService.stop()
+    }
+  }, [focusService])
 
   // Pane lifecycle manager - handles locking to prevent race conditions
   // Replaces the old timeout-based intentionallyClosedPanes Set

@@ -1189,6 +1189,40 @@ export class TmuxService {
   }
 
   /**
+   * Get a pane option value (sync version for compatibility)
+   */
+  getPaneOptionSync(paneId: string, option: string): string {
+    try {
+      return this.execute(`tmux show-options -p -v -t '${paneId}' ${option}`, { silent: true }).trim();
+    } catch (error) {
+      this.logger.warn(`Failed to get pane option ${option} for ${paneId}`, 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
+   * Set a pane option (sync version for compatibility)
+   */
+  setPaneOptionSync(paneId: string, option: string, value: string): void {
+    try {
+      this.execute(`tmux set-option -p -t '${paneId}' ${option} ${value}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to set pane option ${option} for ${paneId}`, 'TmuxService');
+    }
+  }
+
+  /**
+   * Unset a pane option (sync version for compatibility)
+   */
+  unsetPaneOptionSync(paneId: string, option: string): void {
+    try {
+      this.execute(`tmux set-option -u -p -t '${paneId}' ${option}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to unset pane option ${option} for ${paneId}`, 'TmuxService');
+    }
+  }
+
+  /**
    * Select layout by name (sync version for compatibility)
    * Note: Does NOT throw on error - logs warning and returns false instead
    * This prevents crashes during rapid resize events

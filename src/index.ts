@@ -28,6 +28,7 @@ import { SettingsManager } from './utils/settingsManager.js';
 import { atomicWriteJson } from './utils/atomicWrite.js';
 import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
 import { buildPaneExitedHookCommandForSession } from './utils/tmuxHookCommands.js';
+import { ensureTmuxRuntimeCompatibility } from './utils/tmuxRuntimeCompatibility.js';
 import {
   resolveEnabledAgentsSelection,
   type AgentName,
@@ -118,6 +119,10 @@ class Dmux {
       : null;
     const sessionNameForCurrentTmux = currentTmuxSessionName || this.sessionName;
 
+    if (inTmux) {
+      ensureTmuxRuntimeCompatibility(sessionNameForCurrentTmux);
+    }
+
     // Running dmux from another project while already inside a dmux session:
     // offer to attach this project to the current sidebar/session instead.
     if (
@@ -187,6 +192,7 @@ class Dmux {
       }
 
       if (sessionExists) {
+        ensureTmuxRuntimeCompatibility(this.sessionName);
         // Existing session:
         // In dev mode, always ensure watcher loop is running from the intended source.
         if (isDev) {
@@ -208,6 +214,7 @@ class Dmux {
         // Expected - session doesn't exist, create new one
         // Create new session first
         execSync(`tmux new-session -d -s ${this.sessionName}`, { stdio: 'inherit' });
+        ensureTmuxRuntimeCompatibility(this.sessionName);
         // Batch all session configuration commands into a single tmux call for faster startup
         // This reduces 5 process spawns to 1, significantly improving startup time
         const sessionOptions = [

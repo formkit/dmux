@@ -90,11 +90,12 @@ set -g allow-passthrough all
 bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
 bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
 
-# Terminal overrides for image/cursor passthrough
+# Terminal overrides for clipboard/cursor compatibility
 set -ga terminal-overrides ',xterm-256color:Ms=\\E]52;c;%p2%s\\007'
 set -ga terminal-overrides ',*:Ss=\\E[%p1%d q:Se=\\E[2 q'
 set -ga update-environment "TERM_PROGRAM"</code></pre>
     <p>After editing, reload with <code>tmux source-file ~/.tmux.conf</code> or restart tmux.</p>
+    <p>dmux also applies its clipboard and passthrough compatibility settings to dmux-managed sessions at runtime. These settings improve terminal clipboard behavior, but tmux may still block rich image-paste flows that rely on terminal-specific clipboard protocols.</p>
 
     <div class="callout callout-info">
       <div class="callout-title">Note</div>

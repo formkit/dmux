@@ -36,6 +36,7 @@
   },
   "files": [
     "dist/**/*",
+    "native/**/*",
     "dmux",
     "README.md",
     "LICENSE"
