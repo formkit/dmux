@@ -318,6 +318,32 @@ export class TmuxService {
   }
 
   /**
+   * Get current window ID
+   */
+  async getCurrentWindowId(): Promise<string> {
+    return this.executeWithRetry(
+      () => {
+        return this.execute('tmux display-message -p "#{window_id}"');
+      },
+      RetryStrategy.IDEMPOTENT,
+      'getCurrentWindowId'
+    );
+  }
+
+  /**
+   * Get the window ID for a specific pane
+   */
+  async getPaneWindowId(paneId: string): Promise<string> {
+    return this.executeWithRetry(
+      () => {
+        return this.execute(`tmux display-message -t '${paneId}' -p '#{window_id}'`);
+      },
+      RetryStrategy.IDEMPOTENT,
+      `getPaneWindowId(${paneId})`
+    );
+  }
+
+  /**
    * Get current window dimensions
    */
   async getWindowDimensions(): Promise<WindowDimensions> {
@@ -1150,6 +1176,18 @@ export class TmuxService {
       return this.execute(`tmux show -t ${sessionName} ${option}`);
     } catch (error) {
       this.logger.warn(`Failed to get session option ${option} for ${sessionName}`, 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
+   * Get a global option value
+   */
+  getGlobalOptionSync(option: string): string {
+    try {
+      return this.execute(`tmux show-options -gv ${option}`, { silent: true }).trim();
+    } catch (error) {
+      this.logger.warn(`Failed to get global option ${option}`, 'TmuxService');
       return '';
     }
   }

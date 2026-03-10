@@ -2,6 +2,7 @@ import type { AgentStatus } from '../types.js';
 import {
   getStatusDetector,
   type AttentionNeededEvent,
+  type PaneUserInteractionEvent,
   type StatusUpdateEvent,
 } from './StatusDetector.js';
 import {
@@ -30,6 +31,8 @@ export class DmuxAttentionService {
   private readonly statusDetector = getStatusDetector();
   private readonly candidates = new Map<string, AttentionCandidate>();
   private readonly notifiedFingerprints = new Map<string, string>();
+  private readonly baselineFingerprints = new Map<string, string>();
+  private readonly armedPanes = new Set<string>();
   private active = false;
 
   constructor(private readonly options: DmuxAttentionServiceOptions) {}
@@ -42,6 +45,7 @@ export class DmuxAttentionService {
     this.active = true;
     this.statusDetector.on('status-updated', this.handleStatusUpdate);
     this.statusDetector.on('attention-needed', this.handleAttentionNeeded);
+    this.statusDetector.on('pane-user-interaction', this.handleUserInteraction);
     this.options.focusService.on('focus-changed', this.handleFocusChanged);
   }
 
@@ -53,16 +57,29 @@ export class DmuxAttentionService {
     this.active = false;
     this.statusDetector.off('status-updated', this.handleStatusUpdate);
     this.statusDetector.off('attention-needed', this.handleAttentionNeeded);
+    this.statusDetector.off('pane-user-interaction', this.handleUserInteraction);
     this.options.focusService.off('focus-changed', this.handleFocusChanged);
     this.candidates.clear();
     this.notifiedFingerprints.clear();
+    this.baselineFingerprints.clear();
+    this.armedPanes.clear();
   }
 
   private readonly handleStatusUpdate = (event: StatusUpdateEvent): void => {
-    if (event.status === 'working' || event.status === 'analyzing') {
-      this.candidates.delete(event.paneId);
-      this.notifiedFingerprints.delete(event.paneId);
+    if (event.status === 'working') {
+      this.resetPaneAttention(event.paneId);
+      this.armedPanes.add(event.paneId);
+      return;
     }
+
+    if (event.status === 'analyzing') {
+      this.candidates.delete(event.paneId);
+      return;
+    }
+  };
+
+  private readonly handleUserInteraction = (event: PaneUserInteractionEvent): void => {
+    this.resetPaneAttention(event.paneId);
   };
 
   private readonly handleAttentionNeeded = (event: AttentionNeededEvent): void => {
@@ -95,11 +112,39 @@ export class DmuxAttentionService {
       return;
     }
 
-    if (this.options.focusService.isPaneFullyFocused(paneId)) {
+    if (!this.armedPanes.has(paneId)) {
+      const baselineFingerprint = this.baselineFingerprints.get(paneId);
+      if (!baselineFingerprint) {
+        this.baselineFingerprints.set(paneId, candidate.fingerprint);
+        this.logger.debug(
+          `Suppressing startup attention notification for ${paneId} until activity is observed`,
+          'attentionService',
+          paneId
+        );
+        return;
+      }
+
+      if (baselineFingerprint === candidate.fingerprint) {
+        return;
+      }
+
+      this.baselineFingerprints.delete(paneId);
+      this.armedPanes.add(paneId);
+    }
+
+    const attentionSurface = await this.options.focusService.getPaneAttentionSurface(candidate.tmuxPaneId);
+    if (attentionSurface === 'fully-focused') {
       return;
     }
 
     if (this.notifiedFingerprints.get(paneId) === candidate.fingerprint) {
+      return;
+    }
+
+    if (attentionSurface === 'same-window') {
+      await this.options.focusService.flashPaneAttention(candidate.tmuxPaneId);
+      this.baselineFingerprints.delete(paneId);
+      this.notifiedFingerprints.set(paneId, candidate.fingerprint);
       return;
     }
 
@@ -119,6 +164,14 @@ export class DmuxAttentionService {
       return;
     }
 
+    this.baselineFingerprints.delete(paneId);
     this.notifiedFingerprints.set(paneId, candidate.fingerprint);
+  }
+
+  private resetPaneAttention(paneId: string): void {
+    this.candidates.delete(paneId);
+    this.notifiedFingerprints.delete(paneId);
+    this.baselineFingerprints.delete(paneId);
+    this.armedPanes.delete(paneId);
   }
 }

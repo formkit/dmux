@@ -13,7 +13,8 @@ import type {
   OutboundMessage,
   StatusChangePayload,
   AnalysisNeededPayload,
-  ErrorPayload
+  ErrorPayload,
+  UserInteractionPayload,
 } from './WorkerMessages.js';
 
 class PaneWorker {
@@ -33,6 +34,8 @@ class PaneWorker {
   private settledStateConfirmed: boolean = false; // Block repeated LLM requests until activity resumes
   private lastUserInteractionAt: number = 0;
   private lastAgentActivityAt: number = 0;
+  private awaitingAgentAfterUserInteraction: boolean = false;
+  private statusBeforeAnalyzing: 'idle' | 'waiting' | 'working' = 'idle';
   private tmux = TmuxService.getInstance();
 
   constructor(config: WorkerConfig) {
@@ -130,7 +133,7 @@ class PaneWorker {
       if (hasActivity) {
         const previousCapture = this.captureHistory[this.captureHistory.length - 2] || '';
         if (isLikelyUserTyping(previousCapture, output)) {
-          this.lastUserInteractionAt = now;
+          this.handleUserInteraction(output, now);
           return;
         }
 
@@ -143,6 +146,10 @@ class PaneWorker {
         }
 
         if (now - this.lastAgentActivityAt < PaneWorker.AGENT_ACTIVITY_SETTLE_MS) {
+          return;
+        }
+
+        if (this.awaitingAgentAfterUserInteraction) {
           return;
         }
 
@@ -163,8 +170,7 @@ class PaneWorker {
 
           // Request LLM analysis for new static content
           if (this.currentStatus !== 'analyzing') {
-            this.updateStatus('analyzing');
-            this.requestAnalysis(staticContent, 'new-static-content');
+            this.transitionToAnalyzing(staticContent, 'new-static-content');
           }
         }
         // If same static content, keep current status
@@ -182,6 +188,7 @@ class PaneWorker {
   }
 
   private markAgentActive(output: string, at: number): void {
+    this.awaitingAgentAfterUserInteraction = false;
     this.settledStateConfirmed = false;
     this.lastAgentActivityAt = at;
     this.lastStaticContent = '';
@@ -191,6 +198,20 @@ class PaneWorker {
     }
 
     this.captureHistory = [output];
+  }
+
+  private handleUserInteraction(output: string, at: number): void {
+    this.lastUserInteractionAt = at;
+    this.awaitingAgentAfterUserInteraction = true;
+    this.settledStateConfirmed = false;
+    this.lastStaticContent = output;
+    this.captureHistory = [output];
+
+    if (this.currentStatus === 'analyzing') {
+      this.updateStatus(this.statusBeforeAnalyzing);
+    }
+
+    this.emitUserInteraction(output);
   }
 
   private updateStatus(newStatus: 'idle' | 'analyzing' | 'waiting' | 'working'): void {
@@ -215,6 +236,17 @@ class PaneWorker {
     };
 
     this.emit('analysis-needed', payload);
+  }
+
+  private transitionToAnalyzing(
+    content: string,
+    reason: 'new-static-content' | 'revalidation'
+  ): void {
+    this.statusBeforeAnalyzing = this.currentStatus === 'analyzing'
+      ? this.statusBeforeAnalyzing
+      : this.currentStatus;
+    this.updateStatus('analyzing');
+    this.requestAnalysis(content, reason);
   }
 
   private handleAnalysisComplete(payload: any): void {
@@ -253,8 +285,7 @@ class PaneWorker {
 
     // Clear history after sending keys as state will change
     this.captureHistory = [];
-    this.lastUserInteractionAt = Date.now();
-    this.settledStateConfirmed = false;
+    this.handleUserInteraction('', Date.now());
   }
 
   private async resizePane(width?: number, height?: number): Promise<void> {
@@ -302,6 +333,14 @@ class PaneWorker {
       paneId: this.paneId,
       payload
     });
+  }
+
+  private emitUserInteraction(captureSnapshot?: string): void {
+    const payload: UserInteractionPayload = {};
+    if (captureSnapshot) {
+      payload.captureSnapshot = captureSnapshot;
+    }
+    this.emit('user-interaction', payload);
   }
 
   private emitMessage(message: OutboundMessage): void {

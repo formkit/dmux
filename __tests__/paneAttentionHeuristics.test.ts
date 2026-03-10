@@ -17,6 +17,7 @@ describe('paneAttentionHeuristics', () => {
   it('detects small prompt edits as user typing', () => {
     expect(isLikelyUserTyping('> fix auth bug', '> fix auth bug please')).toBe(true);
     expect(isLikelyUserTyping('│ > add tests', '│ > add tests now')).toBe(true);
+    expect(isLikelyUserTyping('', '> start here')).toBe(true);
   });
 
   it('does not treat large multi-line changes as user typing', () => {

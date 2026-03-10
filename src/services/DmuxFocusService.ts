@@ -25,6 +25,9 @@ import { resolvePackagePath } from '../utils/runtimePaths.js';
 const HELPER_RECONNECT_DELAY_MS = 1000;
 const HELPER_SOCKET_WAIT_TIMEOUT_MS = 5000;
 const FOCUS_SYNC_INTERVAL_MS = 350;
+const ATTENTION_FLASH_STEP_MS = 170;
+const ATTENTION_FLASH_SEQUENCE_LENGTH = 6;
+const ATTENTION_FLASH_FALLBACK_BG = 'colour237';
 
 interface DmuxFocusServiceOptions {
   projectName: string;
@@ -41,6 +44,8 @@ export interface DmuxAttentionNotificationRequest {
   body: string;
   tmuxPaneId: string;
 }
+
+export type PaneAttentionSurface = 'fully-focused' | 'same-window' | 'background';
 
 function isTestEnvironment(): boolean {
   return process.env.NODE_ENV === 'test'
@@ -153,6 +158,49 @@ function buildHelperVersionHash(parts: string[]): string {
     hash.update(part);
   }
   return hash.digest('hex');
+}
+
+function shiftHexColor(hex: string, delta: number): string | null {
+  const match = hex.trim().match(/^#([0-9a-fA-F]{6})$/);
+  if (!match) {
+    return null;
+  }
+
+  const value = match[1];
+  const channels = [0, 2, 4].map((offset) =>
+    Math.max(0, Math.min(255, Number.parseInt(value.slice(offset, offset + 2), 16) + delta))
+  );
+
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function buildAttentionFlashWindowStyle(baseStyle: string): string {
+  const normalized = baseStyle.trim();
+  const bgPattern = /(^|,)\s*bg=([^,\s]+)/;
+  const match = normalized.match(bgPattern);
+
+  let nextBackground = ATTENTION_FLASH_FALLBACK_BG;
+  if (match?.[2]) {
+    const currentBackground = match[2].trim();
+    const colourMatch = currentBackground.match(/^colour(\d{1,3})$/i);
+    if (colourMatch) {
+      const currentValue = Number.parseInt(colourMatch[1], 10);
+      const nextValue = currentValue >= 248
+        ? Math.max(0, currentValue - 1)
+        : Math.min(255, currentValue + 1);
+      nextBackground = `colour${nextValue}`;
+    } else if (currentBackground === 'default') {
+      nextBackground = ATTENTION_FLASH_FALLBACK_BG;
+    } else {
+      nextBackground = shiftHexColor(currentBackground, 14) ?? ATTENTION_FLASH_FALLBACK_BG;
+    }
+  }
+
+  if (!match) {
+    return normalized ? `${normalized},bg=${nextBackground}` : `bg=${nextBackground}`;
+  }
+
+  return normalized.replace(bgPattern, (_full, prefix) => `${prefix}bg=${nextBackground}`);
 }
 
 function runBuildTool(executable: string, args: string[]): { ok: boolean; output: string } {
@@ -428,7 +476,8 @@ export class DmuxFocusService extends EventEmitter {
   private lineBuffer = '';
   private active = false;
   private titleApplied = false;
-  private fullyFocusedPaneId: string | null = null;
+  private fullyFocusedPaneId: string | null = null; // tmux pane id
+  private readonly flashingTmuxPaneIds = new Set<string>();
 
   constructor(private readonly options: DmuxFocusServiceOptions) {
     super();
@@ -565,8 +614,75 @@ export class DmuxFocusService extends EventEmitter {
     return this.fullyFocusedPaneId;
   }
 
-  isPaneFullyFocused(paneId: string): boolean {
-    return this.fullyFocusedPaneId === paneId;
+  isPaneFullyFocused(tmuxPaneId: string): boolean {
+    return this.fullyFocusedPaneId === tmuxPaneId;
+  }
+
+  async getPaneAttentionSurface(tmuxPaneId: string): Promise<PaneAttentionSurface> {
+    if (!this.active || !this.helperFocused) {
+      return 'background';
+    }
+
+    try {
+      const [currentPaneId, currentWindowId, paneWindowId] = await Promise.all([
+        this.tmuxService.getCurrentPaneId(),
+        this.tmuxService.getCurrentWindowId(),
+        this.tmuxService.getPaneWindowId(tmuxPaneId),
+      ]);
+
+      if (currentPaneId === tmuxPaneId) {
+        return 'fully-focused';
+      }
+
+      if (currentWindowId && paneWindowId && currentWindowId === paneWindowId) {
+        return 'same-window';
+      }
+    } catch {
+      return 'background';
+    }
+
+    return 'background';
+  }
+
+  async flashPaneAttention(tmuxPaneId: string): Promise<void> {
+    if (this.flashingTmuxPaneIds.has(tmuxPaneId)) {
+      return;
+    }
+
+    this.flashingTmuxPaneIds.add(tmuxPaneId);
+
+    const existingPaneStyle = this.tmuxService.getPaneOptionSync(tmuxPaneId, 'window-style');
+    const baseStyle = existingPaneStyle || this.tmuxService.getGlobalOptionSync('window-style');
+    const flashStyle = buildAttentionFlashWindowStyle(baseStyle);
+
+    const restorePaneStyle = () => {
+      if (existingPaneStyle) {
+        this.tmuxService.setPaneOptionSync(tmuxPaneId, 'window-style', existingPaneStyle);
+      } else {
+        this.tmuxService.unsetPaneOptionSync(tmuxPaneId, 'window-style');
+      }
+    };
+
+    for (let step = 0; step < ATTENTION_FLASH_SEQUENCE_LENGTH; step += 1) {
+      setTimeout(() => {
+        if (!this.active) {
+          restorePaneStyle();
+          this.flashingTmuxPaneIds.delete(tmuxPaneId);
+          return;
+        }
+
+        if (step % 2 === 0) {
+          this.tmuxService.setPaneOptionSync(tmuxPaneId, 'window-style', flashStyle);
+        } else {
+          restorePaneStyle();
+        }
+
+        if (step === ATTENTION_FLASH_SEQUENCE_LENGTH - 1) {
+          restorePaneStyle();
+          this.flashingTmuxPaneIds.delete(tmuxPaneId);
+        }
+      }, step * ATTENTION_FLASH_STEP_MS);
+    }
   }
 
   async sendAttentionNotification(

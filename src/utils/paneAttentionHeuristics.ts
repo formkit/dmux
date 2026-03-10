@@ -116,7 +116,7 @@ export function hasAgentWorkingIndicators(content: string, agent?: AgentName): b
 }
 
 export function isLikelyUserTyping(previousContent: string, currentContent: string): boolean {
-  if (!previousContent || !currentContent || previousContent === currentContent) {
+  if (!currentContent || previousContent === currentContent) {
     return false;
   }
 
