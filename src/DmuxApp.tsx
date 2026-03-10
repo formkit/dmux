@@ -386,21 +386,11 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Load panes and settings on mount and refresh periodically
   useEffect(() => {
-    // SIGTERM should quit immediately (for process management)
-    const handleTermination = () => {
-      cleanExit()
-    }
-    process.on("SIGTERM", handleTermination)
-
     // Check if tmux supports popups (3.2+) and enable mouse mode for click-outside-to-close
     const popupSupport = supportsPopups()
     setPopupsSupported(popupSupport)
     if (popupSupport) {
       // Enable mouse mode only for this dmux session (not global)
-    }
-
-    return () => {
-      process.removeListener("SIGTERM", handleTermination)
     }
   }, [])
 
