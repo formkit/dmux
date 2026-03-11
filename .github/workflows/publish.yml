@@ -26,6 +26,8 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
+      - run: npm install -g npm@11
+      - run: node --version && npm --version
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm run build:macos-helper
