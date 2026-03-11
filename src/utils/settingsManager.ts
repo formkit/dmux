@@ -44,6 +44,20 @@ function isValidMinPaneWidth(value: unknown): value is number {
   );
 }
 
+function validateAgentArgs(value: unknown): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Invalid agentArgs: expected an object mapping agent IDs to argument strings');
+  }
+  for (const [key, val] of Object.entries(value)) {
+    if (!isAgentName(key)) {
+      throw new Error(`Invalid agentArgs: unknown agent "${key}"`);
+    }
+    if (typeof val !== 'string') {
+      throw new Error(`Invalid agentArgs: value for "${key}" must be a string`);
+    }
+  }
+}
+
 const DEFAULT_SETTINGS: DmuxSettings = {
   // Most permissive defaults for new dmux setups.
   permissionMode: 'bypassPermissions',
@@ -285,6 +299,9 @@ export class SettingsManager {
         throw new Error(`Invalid enabledAgents: ${invalidAgents.join(', ')}`);
       }
     }
+    if (key === 'agentArgs') {
+      validateAgentArgs(value);
+    }
     if (key === 'minPaneWidth' && !isValidMinPaneWidth(value)) {
       throw new Error(
         `Invalid minPaneWidth: expected an integer between ${MIN_MIN_PANE_WIDTH} and ${MAX_MIN_PANE_WIDTH}`
@@ -357,6 +374,9 @@ export class SettingsManager {
     }
     if (typeof settings.branchPrefix === 'string' && settings.branchPrefix !== '' && !isValidBranchName(settings.branchPrefix)) {
       throw new Error('Invalid branchPrefix: contains characters not allowed in git branch names');
+    }
+    if (settings.agentArgs !== undefined) {
+      validateAgentArgs(settings.agentArgs);
     }
     if (settings.minPaneWidth !== undefined && !isValidMinPaneWidth(settings.minPaneWidth)) {
       throw new Error(

@@ -143,6 +143,7 @@ export async function attachAgentToWorktree(
     slug,
     projectRoot,
     permissionMode: settings.permissionMode,
+    customArgs: settings.agentArgs?.[agent] || undefined,
   });
 
   // Auto-approve trust prompts for Claude

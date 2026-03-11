@@ -167,9 +167,10 @@ export async function reopenWorktree(
       ensureGeminiFolderTrusted(worktreePath);
     }
 
+    const agentCustomArgs = settings.agentArgs?.[agent] || undefined;
     const resumeCommand =
-      buildResumeCommand(agent, settings.permissionMode)
-      || buildAgentCommand(agent, settings.permissionMode);
+      buildResumeCommand(agent, settings.permissionMode, agentCustomArgs)
+      || buildAgentCommand(agent, settings.permissionMode, agentCustomArgs);
     await tmuxService.sendShellCommand(paneInfo, resumeCommand);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }

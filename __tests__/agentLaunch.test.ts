@@ -182,4 +182,60 @@ describe('command builders', () => {
       'gemini --resume latest --approval-mode yolo'
     );
   });
+
+  describe('custom args (agentArgs)', () => {
+    it('appends custom args to buildAgentCommand', () => {
+      expect(buildAgentCommand('claude', 'acceptEdits', '--model sonnet')).toBe(
+        'claude --permission-mode acceptEdits --model sonnet'
+      );
+    });
+
+    it('appends custom args to buildAgentCommand without permission flags', () => {
+      expect(buildAgentCommand('claude', '', '--verbose')).toBe(
+        'claude --verbose'
+      );
+    });
+
+    it('appends custom args to buildInitialPromptCommand (positional)', () => {
+      expect(buildInitialPromptCommand('claude', '"fix it"', 'bypassPermissions', '--model sonnet')).toBe(
+        'claude --dangerously-skip-permissions --model sonnet "fix it"'
+      );
+    });
+
+    it('appends custom args to buildInitialPromptCommand (option)', () => {
+      expect(buildInitialPromptCommand('gemini', '"fix it"', 'bypassPermissions', '--sandbox none')).toBe(
+        'gemini --approval-mode yolo --sandbox none --prompt-interactive "fix it"'
+      );
+    });
+
+    it('appends custom args to buildInitialPromptCommand (stdin)', () => {
+      expect(buildInitialPromptCommand('amp', '"fix it"', 'bypassPermissions', '--verbose')).toBe(
+        "printf '%s\\n' \"fix it\" | amp --dangerously-allow-all --verbose"
+      );
+    });
+
+    it('appends custom args to buildInitialPromptCommand (send-keys)', () => {
+      expect(buildInitialPromptCommand('crush', '"fix it"', 'bypassPermissions', '--extra')).toBe(
+        'crush --yolo --extra'
+      );
+    });
+
+    it('appends custom args to buildResumeCommand', () => {
+      expect(buildResumeCommand('claude', 'bypassPermissions', '--model sonnet')).toBe(
+        'claude --continue --dangerously-skip-permissions --model sonnet'
+      );
+    });
+
+    it('does not append when customArgs is undefined', () => {
+      expect(buildAgentCommand('claude', 'acceptEdits', undefined)).toBe(
+        'claude --permission-mode acceptEdits'
+      );
+    });
+
+    it('does not append when customArgs is empty string', () => {
+      expect(buildAgentCommand('claude', 'acceptEdits', '')).toBe(
+        'claude --permission-mode acceptEdits'
+      );
+    });
+  });
 });

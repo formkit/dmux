@@ -141,13 +141,15 @@ export async function createConflictResolutionPane(
       }
     }
 
+    const customArgs = settings.agentArgs?.[agent] || undefined;
     let launchCommand: string;
     if (promptFilePath && !shouldSendPromptViaTmux) {
       const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
       launchCommand = `${promptBootstrap}; ${buildInitialPromptCommand(
         agent,
         '"$DMUX_PROMPT_CONTENT"',
-        settings.permissionMode
+        settings.permissionMode,
+        customArgs
       )}`;
       promptFilePath = null;
     } else {
@@ -159,12 +161,13 @@ export async function createConflictResolutionPane(
       launchCommand = buildInitialPromptCommand(
         agent,
         `"${escapedPrompt}"`,
-        settings.permissionMode
+        settings.permissionMode,
+        customArgs
       );
     }
 
     if (!launchCommand) {
-      launchCommand = buildAgentCommand(agent, settings.permissionMode);
+      launchCommand = buildAgentCommand(agent, settings.permissionMode, customArgs);
     }
 
     await tmuxService.sendShellCommand(paneInfo, launchCommand);

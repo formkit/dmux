@@ -470,27 +470,32 @@ export function getPermissionFlags(
 
 export function buildAgentCommand(
   agent: AgentName,
-  permissionMode: PermissionMode | undefined
+  permissionMode: PermissionMode | undefined,
+  customArgs?: string
 ): string {
   const definition = AGENT_REGISTRY[agent];
   const baseCommand = definition.noPromptCommand || definition.promptCommand;
-  return appendFlags(baseCommand, getPermissionFlags(agent, permissionMode));
+  let cmd = appendFlags(baseCommand, getPermissionFlags(agent, permissionMode));
+  if (customArgs) cmd = appendFlags(cmd, customArgs);
+  return cmd;
 }
 
 export function buildInitialPromptCommand(
   agent: AgentName,
   promptToken: string,
-  permissionMode: PermissionMode | undefined
+  permissionMode: PermissionMode | undefined,
+  customArgs?: string
 ): string {
   const definition = AGENT_REGISTRY[agent];
   if (definition.promptTransport === 'send-keys') {
-    return buildAgentCommand(agent, permissionMode);
+    return buildAgentCommand(agent, permissionMode, customArgs);
   }
 
-  const baseCommand = appendFlags(
+  let baseCommand = appendFlags(
     definition.promptCommand,
     getPermissionFlags(agent, permissionMode)
   );
+  if (customArgs) baseCommand = appendFlags(baseCommand, customArgs);
 
   if (definition.promptTransport === 'stdin') {
     return `printf '%s\\n' ${promptToken} | ${baseCommand}`;
@@ -505,7 +510,8 @@ export function buildInitialPromptCommand(
 
 export function buildResumeCommand(
   agent: AgentName,
-  permissionMode: PermissionMode | undefined
+  permissionMode: PermissionMode | undefined,
+  customArgs?: string
 ): string | undefined {
   const template = AGENT_REGISTRY[agent].resumeCommandTemplate;
   if (!template) return undefined;
@@ -513,11 +519,15 @@ export function buildResumeCommand(
   const permissionFlags = getPermissionFlags(agent, permissionMode);
   const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
 
+  let cmd: string;
   if (template.includes('{permissions}')) {
-    return template.replace('{permissions}', permissionSuffix);
+    cmd = template.replace('{permissions}', permissionSuffix);
+  } else {
+    cmd = appendFlags(template, permissionFlags);
   }
 
-  return appendFlags(template, permissionFlags);
+  if (customArgs) cmd = appendFlags(cmd, customArgs);
+  return cmd;
 }
 
 /**
@@ -533,14 +543,16 @@ export async function launchAgentInPane(opts: {
   slug: string;
   projectRoot: string;
   permissionMode?: '' | 'plan' | 'acceptEdits' | 'bypassPermissions';
+  customArgs?: string;
 }): Promise<void> {
-  const { paneId, agent, prompt, slug, projectRoot, permissionMode } = opts;
+  const { paneId, agent, prompt, slug, projectRoot, permissionMode, customArgs } = opts;
   const tmuxService = TmuxService.getInstance();
   const hasInitialPrompt = !!(prompt && prompt.trim());
 
   if (agent === 'claude') {
     const permissionFlags = getPermissionFlags('claude', permissionMode);
     const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+    const customSuffix = customArgs ? ` ${customArgs}` : '';
     let claudeCmd: string;
     if (hasInitialPrompt) {
       let promptFilePath: string | null = null;
@@ -552,23 +564,24 @@ export async function launchAgentInPane(opts: {
 
       if (promptFilePath) {
         const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-        claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+        claudeCmd = `${promptBootstrap}; claude "$DMUX_PROMPT_CONTENT"${permissionSuffix}${customSuffix}`;
       } else {
         const escapedPrompt = prompt
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"')
           .replace(/`/g, '\\`')
           .replace(/\$/g, '\\$');
-        claudeCmd = `claude "${escapedPrompt}"${permissionSuffix}`;
+        claudeCmd = `claude "${escapedPrompt}"${permissionSuffix}${customSuffix}`;
       }
     } else {
-      claudeCmd = `claude${permissionSuffix}`;
+      claudeCmd = `claude${permissionSuffix}${customSuffix}`;
     }
     await tmuxService.sendShellCommand(paneId, claudeCmd);
     await tmuxService.sendTmuxKeys(paneId, 'Enter');
   } else if (agent === 'codex') {
     const permissionFlags = getPermissionFlags('codex', permissionMode);
     const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
+    const customSuffix = customArgs ? ` ${customArgs}` : '';
     let codexCmd: string;
     if (hasInitialPrompt) {
       let promptFilePath: string | null = null;
@@ -580,21 +593,22 @@ export async function launchAgentInPane(opts: {
 
       if (promptFilePath) {
         const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-        codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"${permissionSuffix}`;
+        codexCmd = `${promptBootstrap}; codex "$DMUX_PROMPT_CONTENT"${permissionSuffix}${customSuffix}`;
       } else {
         const escapedPrompt = prompt
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"')
           .replace(/`/g, '\\`')
           .replace(/\$/g, '\\$');
-        codexCmd = `codex "${escapedPrompt}"${permissionSuffix}`;
+        codexCmd = `codex "${escapedPrompt}"${permissionSuffix}${customSuffix}`;
       }
     } else {
-      codexCmd = `codex${permissionSuffix}`;
+      codexCmd = `codex${permissionSuffix}${customSuffix}`;
     }
     await tmuxService.sendShellCommand(paneId, codexCmd);
     await tmuxService.sendTmuxKeys(paneId, 'Enter');
   } else if (agent === 'opencode') {
+    const customSuffix = customArgs ? ` ${customArgs}` : '';
     let opencodeCmd: string;
     if (hasInitialPrompt) {
       let promptFilePath: string | null = null;
@@ -606,17 +620,17 @@ export async function launchAgentInPane(opts: {
 
       if (promptFilePath) {
         const promptBootstrap = buildPromptReadAndDeleteSnippet(promptFilePath);
-        opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"`;
+        opencodeCmd = `${promptBootstrap}; opencode --prompt "$DMUX_PROMPT_CONTENT"${customSuffix}`;
       } else {
         const escapedPrompt = prompt
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"')
           .replace(/`/g, '\\`')
           .replace(/\$/g, '\\$');
-        opencodeCmd = `opencode --prompt "${escapedPrompt}"`;
+        opencodeCmd = `opencode --prompt "${escapedPrompt}"${customSuffix}`;
       }
     } else {
-      opencodeCmd = 'opencode';
+      opencodeCmd = `opencode${customSuffix}`;
     }
     await tmuxService.sendShellCommand(paneId, opencodeCmd);
     await tmuxService.sendTmuxKeys(paneId, 'Enter');

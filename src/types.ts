@@ -93,6 +93,8 @@ export interface DmuxSettings {
   minPaneWidth?: number;
   // Preferred maximum content pane width in characters
   maxPaneWidth?: number;
+  // Custom CLI arguments per agent (e.g. {"claude": "--model sonnet", "codex": "--model gpt-4"})
+  agentArgs?: Partial<Record<AgentName, string>>;
 }
 
 export type SettingsScope = 'global' | 'project';

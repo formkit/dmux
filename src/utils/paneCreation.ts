@@ -452,6 +452,7 @@ export async function createPane(
       }
     }
 
+    const customArgs = settings.agentArgs?.[agent] || undefined;
     let launchCommand: string;
     if (hasInitialPrompt && !shouldSendPromptViaTmux) {
       let promptFilePath: string | null = null;
@@ -466,7 +467,8 @@ export async function createPane(
         launchCommand = `${promptBootstrap}; ${buildInitialPromptCommand(
           agent,
           '"$DMUX_PROMPT_CONTENT"',
-          settings.permissionMode
+          settings.permissionMode,
+          customArgs
         )}`;
       } else {
         const escapedPrompt = prompt
@@ -477,11 +479,12 @@ export async function createPane(
         launchCommand = buildInitialPromptCommand(
           agent,
           `"${escapedPrompt}"`,
-          settings.permissionMode
+          settings.permissionMode,
+          customArgs
         );
       }
     } else {
-      launchCommand = buildAgentCommand(agent, settings.permissionMode);
+      launchCommand = buildAgentCommand(agent, settings.permissionMode, customArgs);
     }
 
     await tmuxService.sendShellCommand(paneInfo, launchCommand);
