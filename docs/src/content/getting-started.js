@@ -22,7 +22,7 @@ export function render() {
       <li>
         <p><strong>Launch dmux:</strong></p>
         <pre><code data-lang="bash">dmux</code></pre>
-        <p>dmux will create a tmux session named <code>dmux-{project-name}</code> and show the TUI.</p>
+        <p>dmux will create or attach to a project-scoped tmux session named like <code>dmux-your-project-a1b2c3d4</code> and show the TUI.</p>
       </li>
       <li>
         <p><strong>Create your first pane:</strong> Press <kbd>n</kbd> to create a new pane. You'll be prompted for:</p>
@@ -33,11 +33,30 @@ export function render() {
       </li>
       <li>
         <p><strong>Watch the agent work:</strong> Press <kbd>j</kbd> to jump to the pane and see the agent running.</p>
+        <p>dmux keeps tracking that pane even when it is in the background. On macOS, background panes can send native notifications when they settle into a waiting or attention-needed state.</p>
       </li>
       <li>
         <p><strong>Merge when done:</strong> Navigate back to the dmux sidebar, select the pane, and press <kbd>m</kbd> to open the pane menu where you can merge the work back to your main branch.</p>
       </li>
     </ol>
+
+    <h2>Useful First-Day Shortcuts</h2>
+    <table class="shortcut-table">
+      <thead>
+        <tr><th>Key</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><kbd>f</kbd></td><td>Open a read-only file browser for the selected pane's worktree</td></tr>
+        <tr><td><kbd>h</kbd></td><td>Hide or show the selected pane without stopping it</td></tr>
+        <tr><td><kbd>H</kbd></td><td>Hide all other panes, or show them again</td></tr>
+        <tr><td><kbd>P</kbd></td><td>Show only the selected project's panes, then restore all panes on the next press</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-info">
+      <div class="callout-title">macOS notifications</div>
+      On macOS, dmux can launch its native helper automatically and deliver background attention notifications. Open <kbd>s</kbd> settings and adjust <strong>Attention Notification Sounds</strong> if you want a different sound set.
+    </div>
 
     <h2>What Gets Created</h2>
     <p>When you first run dmux in a project, it creates a <code>.dmux/</code> directory:</p>

@@ -3,7 +3,8 @@ export const meta = { title: 'Introduction' };
 export function render() {
   return `
     <h1>What is dmux?</h1>
-    <p class="lead">dmux is a tool for running multiple coding agents (Claude Code, Codex, or OpenCode) in parallel using tmux and git worktrees. It provides hooks to automate every portion of the worktree lifecycle, supports multiple projects in the same session, as well as multiple worktrees under the root directory. If you provide an OpenRouter key, it will write your commit messages for you, name your window panes, and auto-advance annoying babysitting tasks.</p>
+    <p class="lead">dmux runs multiple coding agents and shell panes in parallel using tmux and git worktrees. It automates the worktree lifecycle, supports multiple projects in one session, includes a built-in read-only file browser for each worktree, and can raise native macOS notifications when background panes need attention. If you provide an OpenRouter key, it will also generate branch names, commit messages, and other quality-of-life automation for you.</p>
+    <p>Use <kbd>f</kbd> to browse files inside a pane's worktree, <kbd>h</kbd> and <kbd>H</kbd> to hide panes without stopping them, and <kbd>P</kbd> to focus a single project's panes inside a shared session.</p>
 
     <div class="agent-cloud">
       <a href="#/agents" class="agent-cloud-item">

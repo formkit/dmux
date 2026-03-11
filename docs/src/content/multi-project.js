@@ -3,7 +3,7 @@ export const meta = { title: 'Multi-Project' };
 export function render() {
   return `
     <h1>Multi-Project</h1>
-    <p class="lead">dmux supports attaching multiple git repositories to a single tmux session, letting you manage panes across different projects side by side.</p>
+    <p class="lead">dmux supports attaching multiple git repositories to a single tmux session, letting you manage panes, file browsers, and visibility controls across different projects side by side.</p>
 
     <h2>Attaching a Project</h2>
     <p>Press <kbd>p</kbd> in the dmux TUI to create a pane in a different project. dmux will prompt you to select a project directory. The new project is attached to the current session and appears as a separate group in the sidebar.</p>
@@ -18,6 +18,7 @@ export function render() {
     <ul>
       <li>Use <kbd>←</kbd> <kbd>→</kbd> to switch between project groups in the sidebar</li>
       <li>Use <kbd>↑</kbd> <kbd>↓</kbd> to navigate panes within a project</li>
+      <li>Use <kbd>P</kbd> to temporarily show only the active project's panes, then press it again to restore all panes</li>
       <li>Each project's panes are visually grouped and labeled</li>
     </ul>
 
@@ -43,6 +44,14 @@ export function render() {
 
     <p>dmux tracks these relationships so it can merge in the correct order.</p>
 
+    <h2>Per-Project File Browser</h2>
+    <p>Press <kbd>f</kbd> on any worktree pane to open a read-only file browser rooted at that pane's worktree. In a shared session, the browser stays attached to the same project group as the pane it came from.</p>
+    <ul>
+      <li>Use this to inspect frontend and backend repos independently without leaving the shared session</li>
+      <li>Browser panes respect project visibility controls such as <kbd>P</kbd> and hidden-pane toggles</li>
+      <li>If a browser for that worktree is already open, dmux focuses it instead of opening a duplicate</li>
+    </ul>
+
     <h2>Multi-Merge Orchestration</h2>
     <p>When merging across multiple projects with nested worktrees, dmux merges <strong>deepest first</strong>. This ensures that:</p>
     <ol>
@@ -63,7 +72,7 @@ export function render() {
     </table>
 
     <h2>Session Layout</h2>
-    <p>All projects share the same tmux session. When using sidebar layout mode (<kbd>L</kbd>), panes from all projects are arranged in the grid. The sidebar clearly labels which project each pane belongs to.</p>
+    <p>All projects share the same tmux session. When using sidebar layout mode (<kbd>L</kbd>), panes from all projects are arranged in the grid. The sidebar clearly labels which project each pane belongs to, and you can hide or restore panes without interrupting the work running inside them.</p>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>

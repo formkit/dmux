@@ -6,7 +6,7 @@ export function render() {
     <p class="lead">dmux is built around three core concepts: projects, panes, and worktrees. Understanding how they interact will help you get the most out of parallel development.</p>
 
     <h2>Projects</h2>
-    <p>A <strong>project</strong> in dmux corresponds to a git repository. When you run <code>dmux</code> inside a repo, it creates a tmux session named <code>dmux-{project-name}</code> where the project name is derived from the directory name.</p>
+    <p>A <strong>project</strong> in dmux corresponds to a git repository. When you run <code>dmux</code> inside a repo, it creates a stable, project-scoped tmux session named like <code>dmux-your-project-a1b2c3d4</code>.</p>
     <ul>
       <li>Each project gets its own isolated tmux session</li>
       <li>Session state is stored in <code>.dmux/dmux.config.json</code></li>
@@ -14,19 +14,20 @@ export function render() {
     </ul>
 
     <h2>Panes</h2>
-    <p>A <strong>pane</strong> is a tmux pane running an AI agent in an isolated environment. Each pane has:</p>
+    <p>A <strong>pane</strong> is a tmux pane running an AI agent or shell surface in an isolated environment. Each pane has:</p>
     <ul>
       <li>A unique ID (e.g. <code>dmux-1</code>, <code>dmux-2</code>)</li>
       <li>A slug derived from your prompt (e.g. <code>fix-auth</code>)</li>
       <li>Its own git worktree and branch</li>
-      <li>An agent (Claude Code, opencode, or Codex) running with your prompt</li>
+      <li>An agent, terminal, or file browser running against that worktree</li>
     </ul>
 
     <h3>Pane Lifecycle</h3>
     <ol>
       <li><strong>Create</strong> — press <kbd>n</kbd>, enter a prompt, select an agent</li>
       <li><strong>Work</strong> — the agent runs in its isolated worktree</li>
-      <li><strong>Monitor</strong> — dmux tracks agent status (working, waiting for input, idle)</li>
+      <li><strong>Inspect</strong> — optionally open a file browser, attach another agent, or add a terminal to the same worktree</li>
+      <li><strong>Monitor</strong> — dmux tracks agent status (working, analyzing, waiting, idle)</li>
       <li><strong>Merge</strong> — bring changes back to main with auto-commit</li>
       <li><strong>Cleanup</strong> — worktree and branch are removed after merge</li>
     </ol>
@@ -38,11 +39,38 @@ export function render() {
         <tr><th>Status</th><th>Meaning</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>in_progress</code></td><td>Agent is actively working</td></tr>
-        <tr><td><code>open_prompt</code></td><td>Agent is waiting for user input</td></tr>
-        <tr><td><code>option_dialog</code></td><td>Agent is showing a dialog/options</td></tr>
+        <tr><td><code>working</code></td><td>Agent is actively working</td></tr>
+        <tr><td><code>analyzing</code></td><td>dmux is analyzing recent terminal output</td></tr>
+        <tr><td><code>waiting</code></td><td>Agent is blocked on a question or option dialog</td></tr>
+        <tr><td><code>idle</code></td><td>No active work is currently detected</td></tr>
       </tbody>
     </table>
+
+    <h3>Attention and Notifications</h3>
+    <p>When a pane settles into a state that needs you, dmux marks it with an attention indicator in the sidebar and pane border. On macOS, dmux can also send a native notification for panes that are not currently focused.</p>
+    <ul>
+      <li>The selected pane will not notify you while it is fully focused</li>
+      <li>Attention sounds are configurable from <a href="#/configuration">settings</a></li>
+      <li>On non-macOS platforms, dmux still works normally without the native helper</li>
+    </ul>
+
+    <h3>Pane Visibility</h3>
+    <p>dmux lets you temporarily remove panes from the active window without stopping them.</p>
+    <ul>
+      <li><kbd>h</kbd> hides or restores the selected pane</li>
+      <li><kbd>H</kbd> hides every other pane, then shows them again on the next toggle</li>
+      <li><kbd>P</kbd> shows only the active project's panes in a multi-project session, then restores all panes</li>
+      <li>Hidden panes keep running and are marked <code>(hidden)</code> in the sidebar</li>
+    </ul>
+
+    <h3>Built-In File Browser</h3>
+    <p>Press <kbd>f</kbd> or use <strong>Browse Files</strong> from a pane menu to open a read-only browser rooted at that pane's worktree.</p>
+    <ul>
+      <li>Search files and directories inline</li>
+      <li>Sort by name, modified time, or git status</li>
+      <li>Preview either file contents or git diff output without leaving dmux</li>
+      <li>Browser panes stay associated with the same project group as their source worktree</li>
+    </ul>
 
     <h2>Git Worktrees</h2>
     <p>Each pane operates in a <a href="https://git-scm.com/docs/git-worktree" target="_blank" rel="noopener">git worktree</a> — a separate working copy of your repository with its own branch. This means:</p>
@@ -82,7 +110,8 @@ export function render() {
     <p>The dmux TUI shows a sidebar with all active panes. Each pane displays:</p>
     <ul>
       <li>The pane slug (branch name)</li>
-      <li>A status indicator (working, idle, waiting)</li>
+      <li>A status and attention indicator</li>
+      <li>A hidden marker when a pane has been detached from the active window</li>
       <li>The original prompt</li>
     </ul>
     <p>You can optionally use a sidebar layout mode (press <kbd>L</kbd>) where the dmux sidebar occupies a fixed 40-column pane on the left, with agent panes arranged in a grid to the right.</p>
