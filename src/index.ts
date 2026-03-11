@@ -195,6 +195,7 @@ class Dmux {
 
       if (sessionExists) {
         ensureTmuxRuntimeCompatibility(this.sessionName);
+        this.applySessionPaneBorderOptions(this.sessionName, 'pipe');
         // Existing session:
         // In dev mode, always ensure watcher loop is running from the intended source.
         if (isDev) {
@@ -219,14 +220,8 @@ class Dmux {
         ensureTmuxRuntimeCompatibility(this.sessionName);
         // Batch all session configuration commands into a single tmux call for faster startup
         // This reduces 5 process spawns to 1, significantly improving startup time
-        const sessionOptions = [
-          `set-option -t ${this.sessionName} pane-border-status top`,
-          `set-option -t ${this.sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
-          `set-option -t ${this.sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
-          `set-option -t ${this.sessionName} pane-border-format " #{pane_title} "`,
-          `select-pane -t ${this.sessionName} -T "dmux"`,
-        ].join(' \\; ');
-        execSync(`tmux ${sessionOptions}`, { stdio: 'inherit' });
+        this.applySessionPaneBorderOptions(this.sessionName, 'inherit');
+        execSync(`tmux select-pane -t ${this.sessionName} -T "dmux"`, { stdio: 'inherit' });
         // Send dmux command to the new session (use dev command if in dev mode)
         // Determine the dmux command to use
         let dmuxCommand: string;
@@ -264,6 +259,13 @@ class Dmux {
     // Setting the title can cause visual artifacts in some tmux configurations
     // Original code: execSync(`tmux select-pane -T "dmux v${version} - ${project}"`)
     // See: Title updates are currently handled by enforcePaneTitles() in usePaneSync.ts
+
+    try {
+      const activeSessionName = this.getCurrentTmuxSessionName() || this.sessionName;
+      this.applySessionPaneBorderOptions(activeSessionName, 'pipe');
+    } catch {
+      // Best effort - dmux still works without reapplying border format here.
+    }
 
     // Get current pane ID (control pane for left sidebar)
     let controlPaneId: string | undefined;
@@ -1105,6 +1107,17 @@ class Dmux {
 
   getAutoUpdater() {
     return this.autoUpdater;
+  }
+
+  private applySessionPaneBorderOptions(sessionName: string, stdio: 'pipe' | 'inherit' = 'pipe') {
+    const sessionOptions = [
+      `set-option -t ${sessionName} pane-border-status top`,
+      `set-option -t ${sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
+      `set-option -t ${sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
+      `set-option -t ${sessionName} pane-border-format " #{?@dmux_attention,#[bold]![ready] #[default],}#{pane_title} "`,
+    ].join(' \\; ');
+
+    execSync(`tmux ${sessionOptions}`, { stdio });
   }
 
   private setupResizeHook(sessionName: string = this.sessionName) {

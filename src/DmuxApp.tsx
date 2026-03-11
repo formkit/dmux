@@ -37,7 +37,10 @@ import { SettingsManager } from "./utils/settingsManager.js"
 import { useServices } from "./hooks/useServices.js"
 import { PaneLifecycleManager } from "./services/PaneLifecycleManager.js"
 import { DmuxFocusService } from "./services/DmuxFocusService.js"
-import { DmuxAttentionService } from "./services/DmuxAttentionService.js"
+import {
+  DmuxAttentionService,
+  type PaneAttentionChangedEvent,
+} from "./services/DmuxAttentionService.js"
 import { reopenWorktree } from "./utils/reopenWorktree.js"
 import { fileURLToPath } from "url"
 import { dirname, resolve as resolvePath } from "path"
@@ -235,6 +238,34 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       focusService.stop()
     }
   }, [attentionService, focusService])
+
+  useEffect(() => {
+    const handleAttentionChanged = (event: PaneAttentionChangedEvent) => {
+      setPanes((prevPanes) => {
+        const paneIndex = prevPanes.findIndex((pane) => pane.id === event.paneId)
+        if (paneIndex === -1) return prevPanes
+
+        const pane = prevPanes[paneIndex]
+        if (pane.needsAttention === event.needsAttention) {
+          return prevPanes
+        }
+
+        const updatedPane: DmuxPane = {
+          ...pane,
+          needsAttention: event.needsAttention,
+        }
+
+        const nextPanes = [...prevPanes]
+        nextPanes[paneIndex] = updatedPane
+        return nextPanes
+      })
+    }
+
+    attentionService.on('attention-changed', handleAttentionChanged)
+    return () => {
+      attentionService.off('attention-changed', handleAttentionChanged)
+    }
+  }, [attentionService, setPanes])
 
   // Pane lifecycle manager - handles locking to prevent race conditions
   // Replaces the old timeout-based intentionallyClosedPanes Set

@@ -25,8 +25,8 @@ import { resolvePackagePath } from '../utils/runtimePaths.js';
 const HELPER_RECONNECT_DELAY_MS = 1000;
 const HELPER_SOCKET_WAIT_TIMEOUT_MS = 5000;
 const FOCUS_SYNC_INTERVAL_MS = 350;
-const ATTENTION_FLASH_STEP_MS = 170;
-const ATTENTION_FLASH_SEQUENCE_LENGTH = 6;
+const ATTENTION_FLASH_STEP_MS = 250;
+const ATTENTION_FLASH_SEQUENCE_LENGTH = 12;
 const ATTENTION_FLASH_FALLBACK_BG = 'colour237';
 
 interface DmuxFocusServiceOptions {
@@ -616,6 +616,15 @@ export class DmuxFocusService extends EventEmitter {
 
   isPaneFullyFocused(tmuxPaneId: string): boolean {
     return this.fullyFocusedPaneId === tmuxPaneId;
+  }
+
+  setPaneAttentionIndicator(tmuxPaneId: string, enabled: boolean): void {
+    if (enabled) {
+      this.tmuxService.setPaneOptionSync(tmuxPaneId, '@dmux_attention', '1');
+      return;
+    }
+
+    this.tmuxService.unsetPaneOptionSync(tmuxPaneId, '@dmux_attention');
   }
 
   async getPaneAttentionSurface(tmuxPaneId: string): Promise<PaneAttentionSurface> {

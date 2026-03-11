@@ -16,6 +16,7 @@ class MockFocusService extends EventEmitter {
   isPaneFullyFocused = vi.fn(() => false);
   getPaneAttentionSurface = vi.fn(async () => 'background');
   flashPaneAttention = vi.fn(async () => undefined);
+  setPaneAttentionIndicator = vi.fn(() => undefined);
   sendAttentionNotification = vi.fn(async () => true);
 }
 
@@ -45,6 +46,7 @@ function emitPaneUserInteraction(event: { paneId: string }): void {
 async function flushAsyncWork(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 describe('DmuxAttentionService', () => {
@@ -153,6 +155,7 @@ describe('DmuxAttentionService', () => {
 
     expect(focusService.flashPaneAttention).toHaveBeenCalledTimes(1);
     expect(focusService.flashPaneAttention).toHaveBeenCalledWith('%9');
+    expect(focusService.setPaneAttentionIndicator).toHaveBeenCalledWith('%9', true);
     expect(focusService.sendAttentionNotification).not.toHaveBeenCalled();
 
     service.stop();
@@ -187,6 +190,41 @@ describe('DmuxAttentionService', () => {
     service.stop();
   });
 
+  it('still sends a native notification when the pane is selected but the terminal window is in the background', async () => {
+    const focusService = new MockFocusService();
+    focusService.getPaneAttentionSurface.mockResolvedValue('background');
+    const service = new DmuxAttentionService({ focusService: focusService as any });
+
+    service.start();
+
+    emitStatusUpdated({
+      paneId: 'pane-foreground-in-tmux',
+      status: 'working',
+    });
+
+    emitAttentionNeeded({
+      paneId: 'pane-foreground-in-tmux',
+      tmuxPaneId: '%21',
+      status: 'idle',
+      title: 'Background terminal',
+      body: 'The pane finished work while the terminal window was not active.',
+      fingerprint: 'idle:background-terminal',
+    });
+    await flushAsyncWork();
+
+    expect(focusService.getPaneAttentionSurface).toHaveBeenCalledWith('%21');
+    expect(focusService.flashPaneAttention).not.toHaveBeenCalled();
+    expect(focusService.sendAttentionNotification).toHaveBeenCalledTimes(1);
+    expect(focusService.sendAttentionNotification).toHaveBeenCalledWith({
+      title: 'Background terminal',
+      subtitle: undefined,
+      body: 'The pane finished work while the terminal window was not active.',
+      tmuxPaneId: '%21',
+    });
+
+    service.stop();
+  });
+
   it('clears pending attention when the user interacts with the pane', async () => {
     const focusService = new MockFocusService();
     const service = new DmuxAttentionService({ focusService: focusService as any });
@@ -209,6 +247,7 @@ describe('DmuxAttentionService', () => {
     await flushAsyncWork();
 
     expect(focusService.sendAttentionNotification).toHaveBeenCalledTimes(1);
+    expect(focusService.setPaneAttentionIndicator).toHaveBeenCalledWith('%5', true);
 
     emitPaneUserInteraction({ paneId: 'pane-3' });
     focusService.sendAttentionNotification.mockClear();
@@ -220,6 +259,7 @@ describe('DmuxAttentionService', () => {
     await flushAsyncWork();
 
     expect(focusService.sendAttentionNotification).not.toHaveBeenCalled();
+    expect(focusService.setPaneAttentionIndicator).toHaveBeenCalledWith('%5', false);
 
     service.stop();
   });

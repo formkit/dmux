@@ -60,12 +60,13 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   // Keep non-title segments fixed; only slug is allowed to clip.
   const prefix = selected ? '▸' : ' ';
   const statusText = `${status.icon} `;
+  const attentionText = pane.needsAttention ? '! ' : '';
   const sourceText = isDevSource ? '★ ' : '';
   const hiddenText = pane.hidden ? ' (hidden)' : '';
   const agentText = hasAgent ? ` [${agentTag}]` : '     ';
   const autopilotText = apTag ? ` (${apTag})` : '     ';
   const shellPrefixText = isFileBrowserPane ? ' ' : '';
-  const fixedLeftWidth = stringWidth(prefix + statusText + sourceText + shellPrefixText + hiddenText);
+  const fixedLeftWidth = stringWidth(prefix + statusText + attentionText + sourceText + shellPrefixText + hiddenText);
   const maxSlugWidth = Math.max(0, LEFT_COLUMN_WIDTH - fixedLeftWidth);
   const slugText = clipToWidth(pane.slug, maxSlugWidth);
   const slugColor = isFileBrowserPane
@@ -80,6 +81,9 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
       <Box width={LEFT_COLUMN_WIDTH}>
         <Text color={selected ? COLORS.selected : COLORS.border}>{prefix}</Text>
         <Text color={status.color}>{statusText}</Text>
+        {pane.needsAttention && (
+          <Text color={COLORS.warning}>{attentionText}</Text>
+        )}
         {isDevSource && (
           <Text color="yellow">{sourceText}</Text>
         )}
@@ -112,6 +116,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
     prevProps.pane.id === nextProps.pane.id &&
     prevProps.pane.slug === nextProps.pane.slug &&
     prevProps.pane.agentStatus === nextProps.pane.agentStatus &&
+    prevProps.pane.needsAttention === nextProps.pane.needsAttention &&
     prevProps.pane.testStatus === nextProps.pane.testStatus &&
     prevProps.pane.devStatus === nextProps.pane.devStatus &&
     prevProps.pane.autopilot === nextProps.pane.autopilot &&

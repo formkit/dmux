@@ -41,6 +41,7 @@ export interface DmuxPane {
   devUrl?: string;        // Detected dev server URL
   agent?: AgentName;
   agentStatus?: AgentStatus;  // Agent working/attention status
+  needsAttention?: boolean; // Pane has settled and is waiting on the user
   lastAgentCheck?: number;  // Timestamp of last status check
   lastDeterministicStatus?: 'ambiguous' | 'working';  // For LLM detection coordination
   llmRequestId?: string;  // Track active LLM request
