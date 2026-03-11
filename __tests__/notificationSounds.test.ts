@@ -6,16 +6,13 @@ import {
 } from '../src/utils/notificationSounds.js';
 
 describe('notification sounds', () => {
-  it('uses the full default sound pack when settings are unset', () => {
-    expect(resolveNotificationSoundsSelection(undefined)).toEqual(
-      getDefaultNotificationSoundSelection()
-    );
+  it('defaults to the system sound only', () => {
+    expect(getDefaultNotificationSoundSelection()).toEqual(['default-system-sound']);
+    expect(resolveNotificationSoundsSelection(undefined)).toEqual(['default-system-sound']);
   });
 
-  it('falls back to the default sound pack when the configured selection is empty', () => {
-    expect(resolveNotificationSoundsSelection([])).toEqual(
-      getDefaultNotificationSoundSelection()
-    );
+  it('falls back to the system sound when the configured selection is empty', () => {
+    expect(resolveNotificationSoundsSelection([])).toEqual(['default-system-sound']);
   });
 
   it('filters invalid sound ids and preserves definition order', () => {

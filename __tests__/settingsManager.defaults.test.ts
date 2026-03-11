@@ -25,7 +25,7 @@ describe('SettingsManager defaults', () => {
       enableAutopilotByDefault: true,
       minPaneWidth: 50,
       maxPaneWidth: 80,
-      enabledNotificationSounds: expect.arrayContaining(['default-system-sound', 'harp', 'war-horn']),
+      enabledNotificationSounds: ['default-system-sound'],
     });
   });
 

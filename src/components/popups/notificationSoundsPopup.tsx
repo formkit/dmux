@@ -5,9 +5,10 @@
  * Allows multi-selection with space and scope selection before saving.
  */
 
-import React, { useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { render, Box, Text, useApp, useInput } from "ink"
 import { readFileSync } from "fs"
+import { pathToFileURL } from "url"
 import {
   PopupContainer,
   PopupWrapper,
@@ -16,6 +17,10 @@ import {
 } from "./shared/index.js"
 import { POPUP_CONFIG } from "./config.js"
 import type { NotificationSoundId } from "../../utils/notificationSounds.js"
+import {
+  createNotificationSoundPreviewPlayer,
+  type NotificationSoundPreviewPlayer,
+} from "../../utils/notificationSoundPreview.js"
 
 interface SoundItem {
   id: NotificationSoundId
@@ -31,17 +36,22 @@ interface PopupData {
 interface NotificationSoundsPopupProps {
   resultFile: string
   data: PopupData
+  previewPlayer?: NotificationSoundPreviewPlayer
 }
 
-const NotificationSoundsPopupApp: React.FC<NotificationSoundsPopupProps> = ({
+export const NotificationSoundsPopupApp: React.FC<NotificationSoundsPopupProps> = ({
   resultFile,
   data,
+  previewPlayer,
 }) => {
   const [mode, setMode] = useState<"list" | "scope">("list")
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [scopeIndex, setScopeIndex] = useState(0)
   const [enabled, setEnabled] = useState<Set<NotificationSoundId>>(
     () => new Set(data.enabledNotificationSounds)
+  )
+  const previewPlayerRef = useRef<NotificationSoundPreviewPlayer>(
+    previewPlayer ?? createNotificationSoundPreviewPlayer()
   )
   const { exit } = useApp()
 
@@ -55,6 +65,7 @@ const NotificationSoundsPopupApp: React.FC<NotificationSoundsPopupProps> = ({
     const selected = data.sounds[selectedIndex]
     if (!selected) return
 
+    const shouldPreview = !enabled.has(selected.id)
     setEnabled((prev) => {
       const next = new Set(prev)
       if (next.has(selected.id)) {
@@ -64,7 +75,17 @@ const NotificationSoundsPopupApp: React.FC<NotificationSoundsPopupProps> = ({
       }
       return next
     })
+
+    if (shouldPreview) {
+      previewPlayerRef.current.play(selected.id)
+    }
   }
+
+  useEffect(() => {
+    return () => {
+      previewPlayerRef.current.stop()
+    }
+  }, [])
 
   useInput((input, key) => {
     if (key.escape) {
@@ -230,4 +251,7 @@ function main() {
   render(<NotificationSoundsPopupApp resultFile={resultFile} data={data} />)
 }
 
-main()
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : ""
+if (import.meta.url === entryPointHref) {
+  main()
+}
