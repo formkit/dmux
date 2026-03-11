@@ -55,6 +55,11 @@ struct FrontmostWindowInfo {
     let title: String?
 }
 
+private struct PreparedNotificationSound {
+    let notificationSoundName: String?
+    let helperSound: NSSound?
+}
+
 final class ClientConnection {
     let fd: Int32
     private let queue: DispatchQueue
@@ -176,7 +181,7 @@ final class ClientConnection {
     }
 }
 
-final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
+final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate, NSSoundDelegate {
     private let socketPath: String
     private let pollInterval: TimeInterval
     private let queue = DispatchQueue(label: "dmux.helper.focus", qos: .userInitiated)
@@ -186,6 +191,7 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
     private var clients: [Int32: ClientConnection] = [:]
     private var lastSnapshot: FocusSnapshot?
     private var didRequestAccessibilityPrompt = false
+    private var activeNotificationSounds: [ObjectIdentifier: NSSound] = [:]
 
     init(socketPath: String, pollInterval: TimeInterval) {
         self.socketPath = socketPath
@@ -436,12 +442,15 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
         let center = NSUserNotificationCenter.default
         center.delegate = self
 
+        // Bundled notification sounds are played by the helper because Notification Center
+        // does not reliably honor custom NSUserNotification sounds on current macOS builds.
+        let preparedSound = prepareNotificationSound(from: message.soundName)
         let notification = NSUserNotification()
         notification.identifier = UUID().uuidString
         notification.title = title
         notification.subtitle = subtitle
         notification.informativeText = body
-        notification.soundName = resolveNotificationSoundName(from: message.soundName)
+        notification.soundName = preparedSound.notificationSoundName
         notification.deliveryDate = Date()
 
         let focusUserInfo = buildNotificationUserInfo(from: message)
@@ -465,27 +474,54 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
         }
 
         center.deliver(notification)
+        playPreparedNotificationSound(preparedSound.helperSound)
     }
 
-    private func resolveNotificationSoundName(from requestedSoundName: String?) -> String {
+    private func prepareNotificationSound(from requestedSoundName: String?) -> PreparedNotificationSound {
         guard let requestedSoundName else {
-            return NSUserNotificationDefaultSoundName
+            return PreparedNotificationSound(
+                notificationSoundName: NSUserNotificationDefaultSoundName,
+                helperSound: nil
+            )
         }
 
         let trimmedSoundName = requestedSoundName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSoundName.isEmpty else {
-            return NSUserNotificationDefaultSoundName
+            return PreparedNotificationSound(
+                notificationSoundName: NSUserNotificationDefaultSoundName,
+                helperSound: nil
+            )
         }
 
         let nsSoundName = trimmedSoundName as NSString
         let resourceName = nsSoundName.deletingPathExtension
         let resourceExtension = nsSoundName.pathExtension.isEmpty ? nil : nsSoundName.pathExtension
 
-        if Bundle.main.path(forResource: resourceName, ofType: resourceExtension) != nil {
-            return trimmedSoundName
+        guard let bundledSoundPath = Bundle.main.path(forResource: resourceName, ofType: resourceExtension),
+              let helperSound = NSSound(contentsOfFile: bundledSoundPath, byReference: true) else {
+            return PreparedNotificationSound(
+                notificationSoundName: NSUserNotificationDefaultSoundName,
+                helperSound: nil
+            )
         }
 
-        return NSUserNotificationDefaultSoundName
+        helperSound.delegate = self
+        return PreparedNotificationSound(
+            notificationSoundName: nil,
+            helperSound: helperSound
+        )
+    }
+
+    private func playPreparedNotificationSound(_ helperSound: NSSound?) {
+        guard let helperSound else {
+            return
+        }
+
+        let soundId = ObjectIdentifier(helperSound)
+        activeNotificationSounds[soundId] = helperSound
+        if !helperSound.play() {
+            activeNotificationSounds.removeValue(forKey: soundId)
+        }
     }
 
     private func buildNotificationUserInfo(from message: NotifyMessage) -> [String: Any] {
@@ -543,6 +579,10 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
         default:
             break
         }
+    }
+
+    func sound(_ sound: NSSound, didFinishPlaying aBool: Bool) {
+        activeNotificationSounds.removeValue(forKey: ObjectIdentifier(sound))
     }
 
     private func activateNotificationTarget(_ notification: NSUserNotification) {
