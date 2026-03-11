@@ -40,13 +40,16 @@ dmux ships a macOS helper daemon implemented in `native/macos/dmux-helper.swift`
 
 What it does:
 
-- Auto-builds an app bundle on demand into `~/.dmux/native-helper/dmux-helper.app`
+- Release packages ship a prebuilt `dmux-helper.app` bundle under `native/macos/prebuilt/`
+- On macOS, dmux syncs that packaged app bundle into `~/.dmux/native-helper/dmux-helper.app`
+- If the packaged bundle is unavailable (for example in a source checkout without a prepack step), dmux can still build the helper app bundle on demand from `native/macos/dmux-helper.swift`
 - Auto-starts behind a Unix socket at `~/.dmux/native-helper/run/dmux-helper.sock`
 - Tracks the actual frontmost macOS app/window via CoreGraphics + Accessibility
 - Correlates the active terminal window/tab back to a specific dmux instance using a short token injected into the terminal title
 - Delivers macOS notifications for panes that need attention
 - The square helper icon source lives at `native/macos/dmux-helper-icon.png`; it is derived from `docs/public/favicon.svg` so the docs/favicon mark and native helper branding stay aligned
 - Bundles custom notification sounds from `native/macos/sounds/` and randomly chooses from the configured enabled set for each background alert
+- Startup also removes the legacy `~/.dmux/macos-notifier` helper if it still exists from older dmux releases
 - This is progressive enhancement only: on non-macOS platforms the helper path must stay inert and dmux should continue working without native focus/notification integration
 
 Focus model:

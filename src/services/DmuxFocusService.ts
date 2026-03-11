@@ -64,6 +64,8 @@ function getHelperRuntimePaths(): {
   infoPlistSourcePath: string;
   iconSourcePath: string;
   soundSourceDir: string;
+  packagedAppPath: string;
+  packagedExecutablePath: string;
   appPath: string;
   executablePath: string;
   resourcesPath: string;
@@ -74,6 +76,8 @@ function getHelperRuntimePaths(): {
   socketPath: string;
 } {
   const helperBaseDir = path.join(os.homedir(), '.dmux', 'native-helper');
+  const packagedAppPath = resolvePackagePath('native', 'macos', 'prebuilt', 'dmux-helper.app');
+  const packagedContentsPath = path.join(packagedAppPath, 'Contents');
   const appPath = path.join(helperBaseDir, 'dmux-helper.app');
   const contentsPath = path.join(appPath, 'Contents');
   const resourcesPath = path.join(contentsPath, 'Resources');
@@ -82,6 +86,8 @@ function getHelperRuntimePaths(): {
     infoPlistSourcePath: resolvePackagePath('native', 'macos', 'dmux-helper-Info.plist'),
     iconSourcePath: resolvePackagePath('native', 'macos', 'dmux-helper-icon.png'),
     soundSourceDir: resolvePackagePath('native', 'macos', 'sounds'),
+    packagedAppPath,
+    packagedExecutablePath: path.join(packagedContentsPath, 'MacOS', 'dmux-helper'),
     appPath,
     executablePath: path.join(contentsPath, 'MacOS', 'dmux-helper'),
     resourcesPath,
@@ -98,7 +104,15 @@ interface HelperBinaryStatus {
   rebuilt: boolean;
 }
 
+interface HelperBundleSnapshot {
+  filePaths: string[];
+  versionParts: Array<string | Buffer>;
+}
+
 const HELPER_BUNDLE_BUILD_VERSION = '1';
+const LSREGISTER_PATH = '/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister';
+const LEGACY_NOTIFIER_BASE_DIR = path.join(os.homedir(), '.dmux', 'macos-notifier');
+const LEGACY_NOTIFIER_APP_PATH = path.join(LEGACY_NOTIFIER_BASE_DIR, 'dmux-notifier.app');
 
 function readTmuxGlobalEnvironment(name: string): string | undefined {
   if (!process.env.TMUX) {
@@ -166,6 +180,63 @@ function buildHelperVersionHash(parts: Array<string | Buffer>): string {
     hash.update(part);
   }
   return hash.digest('hex');
+}
+
+async function snapshotHelperBundle(bundlePath: string): Promise<HelperBundleSnapshot> {
+  const filePaths: string[] = [];
+
+  const walk = async (currentPath: string, relativePrefix = ''): Promise<void> => {
+    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+
+    for (const entry of entries) {
+      const relativePath = relativePrefix ? path.join(relativePrefix, entry.name) : entry.name;
+      const fullPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath, relativePath);
+        continue;
+      }
+
+      if (entry.isFile()) {
+        filePaths.push(relativePath);
+      }
+    }
+  };
+
+  await walk(bundlePath);
+  const versionParts: Array<string | Buffer> = [];
+  for (const filePath of filePaths) {
+    versionParts.push(filePath);
+    versionParts.push(await fs.readFile(path.join(bundlePath, filePath)));
+  }
+
+  return { filePaths, versionParts };
+}
+
+function helperBundleNeedsSync(
+  runtimeBundlePath: string,
+  snapshot: HelperBundleSnapshot,
+  currentVersion: string
+): boolean {
+  if (currentVersion.trim() !== buildHelperVersionHash(snapshot.versionParts)) {
+    return true;
+  }
+
+  return snapshot.filePaths.some((relativePath) => !existsSync(path.join(runtimeBundlePath, relativePath)));
+}
+
+async function removeLegacyMacosNotifierArtifacts(): Promise<void> {
+  if (!supportsNativeDmuxHelper() || !existsSync(LEGACY_NOTIFIER_BASE_DIR)) {
+    return;
+  }
+
+  if (existsSync(LEGACY_NOTIFIER_APP_PATH) && existsSync(LSREGISTER_PATH)) {
+    spawnSync(LSREGISTER_PATH, ['-u', LEGACY_NOTIFIER_APP_PATH], {
+      stdio: 'ignore',
+    });
+  }
+
+  await fs.rm(LEGACY_NOTIFIER_BASE_DIR, { recursive: true, force: true });
 }
 
 function shiftHexColor(hex: string, delta: number): string | null {
@@ -278,6 +349,35 @@ async function buildHelperBundleIcon(iconSourcePath: string, iconIcnsPath: strin
 async function ensureHelperBundle(
   paths: ReturnType<typeof getHelperRuntimePaths>
 ): Promise<HelperBinaryStatus> {
+  if (existsSync(paths.packagedAppPath) && existsSync(paths.packagedExecutablePath)) {
+    const [packagedSnapshot, currentVersion] = await Promise.all([
+      snapshotHelperBundle(paths.packagedAppPath),
+      existsSync(paths.versionPath)
+        ? fs.readFile(paths.versionPath, 'utf-8').catch(() => '')
+        : Promise.resolve(''),
+    ]);
+
+    const expectedVersion = buildHelperVersionHash(packagedSnapshot.versionParts);
+    const needsSync = !existsSync(paths.executablePath)
+      || !existsSync(paths.infoPlistPath)
+      || helperBundleNeedsSync(paths.appPath, packagedSnapshot, currentVersion);
+
+    if (!needsSync) {
+      return { ready: true, rebuilt: false };
+    }
+
+    await fs.rm(paths.appPath, { recursive: true, force: true });
+    await fs.mkdir(path.dirname(paths.appPath), { recursive: true });
+    await fs.cp(paths.packagedAppPath, paths.appPath, { recursive: true });
+    await fs.chmod(paths.executablePath, 0o755).catch(() => undefined);
+    await fs.writeFile(paths.versionPath, expectedVersion, 'utf-8');
+
+    return {
+      ready: true,
+      rebuilt: true,
+    };
+  }
+
   if (!existsSync(paths.sourcePath) || !existsSync(paths.infoPlistSourcePath)) {
     return { ready: false, rebuilt: false };
   }
@@ -465,6 +565,7 @@ async function waitForHelperSocket(socketPath: string, timeoutMs: number): Promi
 async function ensureHelperRunning(
   logger: LogService
 ): Promise<string | null> {
+  await removeLegacyMacosNotifierArtifacts().catch(() => undefined);
   const helperPaths = getHelperRuntimePaths();
   const { executablePath, socketPath } = helperPaths;
   const binaryStatus = await ensureHelperBundle(helperPaths);
