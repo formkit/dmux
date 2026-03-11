@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS: DmuxSettings = {
   enableAutopilotByDefault: true,
   minPaneWidth: DEFAULT_MIN_PANE_WIDTH,
   maxPaneWidth: DEFAULT_MAX_PANE_WIDTH,
+  showWelcomePane: true,
   enabledAgents: getDefaultEnabledAgents(),
   enabledNotificationSounds: getDefaultNotificationSoundSelection(),
 };

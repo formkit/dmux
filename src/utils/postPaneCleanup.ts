@@ -8,6 +8,7 @@ import path from 'path';
 import type { DmuxConfig } from '../types.js';
 import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
+import { SettingsManager } from './settingsManager.js';
 
 /**
  * Recreate welcome pane and recalculate layout after the last pane is removed
@@ -35,9 +36,14 @@ export async function handleLastPaneRemoved(projectRoot: string): Promise<void> 
       return;
     }
 
-    // Recreate welcome pane
-    const { createWelcomePaneCoordinated } = await import('./welcomePaneManager.js');
-    await createWelcomePaneCoordinated(projectRoot, controlPaneId);
+    const showWelcomePane = new SettingsManager(projectRoot)
+      .getGlobalSettings()
+      .showWelcomePane ?? true;
+
+    if (showWelcomePane) {
+      const { createWelcomePaneCoordinated } = await import('./welcomePaneManager.js');
+      await createWelcomePaneCoordinated(projectRoot, controlPaneId);
+    }
 
     // Recalculate layout to fix sidebar size
     const { recalculateAndApplyLayout } = await import('./layoutManager.js');

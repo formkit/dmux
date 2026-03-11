@@ -331,7 +331,10 @@ class Dmux {
         await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
       }
 
-      // Create welcome pane if there are no dmux panes and no existing welcome pane
+      const showWelcomePane = new SettingsManager(this.projectRoot)
+        .getGlobalSettings()
+        .showWelcomePane ?? true;
+
       // Check if welcome pane actually exists, not just if it's in config (handles tmux restarts)
       const { welcomePaneExists } = await import('./utils/welcomePane.js');
       const normalizePathForComparison = (candidatePath?: string): string | null => {
@@ -397,10 +400,18 @@ class Dmux {
             'Setup'
           );
         } else {
-          LogService.getInstance().debug(
-            `Welcome pane ${config.welcomePaneId} exists`,
-            'Setup'
-          );
+          if (!showWelcomePane) {
+            await destroyWelcomePane(config.welcomePaneId);
+            config.welcomePaneId = undefined;
+            config.lastUpdated = new Date().toISOString();
+            await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+            hasValidWelcomePane = false;
+          } else {
+            LogService.getInstance().debug(
+              `Welcome pane ${config.welcomePaneId} exists`,
+              'Setup'
+            );
+          }
         }
       }
 
@@ -449,7 +460,18 @@ class Dmux {
         // Ignore detection failures - normal startup logic below remains safe.
       }
 
-      if (!hasValidWelcomePane && welcomePaneIdsInSession.length > 0) {
+      if (!showWelcomePane && welcomePaneIdsInSession.length > 0) {
+        LogService.getInstance().info(
+          `Cleaning up ${welcomePaneIdsInSession.length} stale welcome pane(s)`,
+          'Setup'
+        );
+        for (const stalePaneId of welcomePaneIdsInSession) {
+          await destroyWelcomePane(stalePaneId);
+        }
+        config.welcomePaneId = undefined;
+        config.lastUpdated = new Date().toISOString();
+        await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+      } else if (!hasValidWelcomePane && welcomePaneIdsInSession.length > 0) {
         const recoveredWelcomePaneId = welcomePaneIdsInSession[0];
         config.welcomePaneId = recoveredWelcomePaneId;
         config.lastUpdated = new Date().toISOString();
@@ -461,7 +483,7 @@ class Dmux {
         );
       }
 
-      if (hasValidWelcomePane && config.welcomePaneId) {
+      if (showWelcomePane && hasValidWelcomePane && config.welcomePaneId) {
         const duplicateWelcomePaneIds = welcomePaneIdsInSession
           .filter((paneId) => paneId !== config.welcomePaneId);
 
@@ -489,28 +511,24 @@ class Dmux {
       const hasAnyPanes = (config.panes?.length ?? 0) > 0 || untrackedPanes.length > 0;
 
       if (controlPaneId && !hasAnyPanes) {
-        if (!hasValidWelcomePane) {
-          // Create new welcome pane
-          const welcomePaneId = await createWelcomePane(controlPaneId, this.projectRoot);
-          if (welcomePaneId) {
-            config.welcomePaneId = welcomePaneId;
-            config.lastUpdated = new Date().toISOString();
-            await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
-            LogService.getInstance().info(`Created welcome pane: ${welcomePaneId}`, 'Setup');
+        if (showWelcomePane) {
+          if (!hasValidWelcomePane) {
+            const welcomePaneId = await createWelcomePane(controlPaneId, this.projectRoot);
+            if (welcomePaneId) {
+              config.welcomePaneId = welcomePaneId;
+              config.lastUpdated = new Date().toISOString();
+              await fs.writeFile(this.panesFile, JSON.stringify(config, null, 2));
+              LogService.getInstance().info(`Created welcome pane: ${welcomePaneId}`, 'Setup');
+            }
+          } else {
+            execSync(`tmux set-window-option window-size latest \\; set-window-option main-pane-width ${SIDEBAR_WIDTH} \\; select-layout main-vertical`, { stdio: 'pipe' });
+            await tmuxService.refreshClient();
           }
         } else {
-          // Welcome pane exists from previous session - fix the layout
-          LogService.getInstance().debug('Welcome pane exists, applying correct layout', 'Setup');
-
-          // Apply correct layout: sidebar (40) | welcome pane (rest)
-          // Use "latest" mode so window auto-follows terminal size
-          // Batch layout commands into single tmux call for better performance
-          execSync(`tmux set-window-option window-size latest \\; set-window-option main-pane-width ${SIDEBAR_WIDTH} \\; select-layout main-vertical`, { stdio: 'pipe' });
+          await tmuxService.resizePane(controlPaneId, { width: SIDEBAR_WIDTH });
           await tmuxService.refreshClient();
         }
-      } else if (hasValidWelcomePane && hasAnyPanes) {
-        // If welcome pane exists but there are other panes, destroy it
-        LogService.getInstance().info('Destroying welcome pane because other panes exist', 'Setup');
+      } else if (hasValidWelcomePane && config.welcomePaneId && hasAnyPanes) {
         await destroyWelcomePane(config.welcomePaneId);
         config.welcomePaneId = undefined;
         config.lastUpdated = new Date().toISOString();
