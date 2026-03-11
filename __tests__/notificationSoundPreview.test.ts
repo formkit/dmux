@@ -1,25 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { resolvePackagePath } from '../src/utils/runtimePaths.js';
-import { buildNotificationSoundPreviewCommand } from '../src/utils/notificationSoundPreview.js';
+import {
+  buildNotificationSoundPreviewMessage,
+  getDmuxHelperSocketPath,
+} from '../src/utils/notificationSoundPreview.js';
 
 describe('notification sound preview commands', () => {
-  it('uses AppleScript beep for the system sound preview', () => {
+  it('routes the system sound preview through the helper without a bundled resource', () => {
     expect(
-      buildNotificationSoundPreviewCommand('default-system-sound', 'darwin')
+      buildNotificationSoundPreviewMessage('default-system-sound', 'darwin')
     ).toEqual({
-      command: 'osascript',
-      args: ['-e', 'beep'],
+      type: 'preview-sound',
+      soundName: undefined,
     });
   });
 
-  it('uses afplay for bundled sound previews', () => {
-    expect(buildNotificationSoundPreviewCommand('harp', 'darwin')).toEqual({
-      command: 'afplay',
-      args: [resolvePackagePath('native', 'macos', 'sounds', 'dmux-harp.caf')],
+  it('routes bundled sound previews through the helper resource name', () => {
+    expect(buildNotificationSoundPreviewMessage('harp', 'darwin')).toEqual({
+      type: 'preview-sound',
+      soundName: 'dmux-harp.caf',
     });
   });
 
-  it('disables preview commands outside macOS', () => {
-    expect(buildNotificationSoundPreviewCommand('harp', 'linux')).toBeNull();
+  it('disables preview messages outside macOS', () => {
+    expect(buildNotificationSoundPreviewMessage('harp', 'linux')).toBeNull();
+  });
+
+  it('uses the default helper socket path', () => {
+    expect(getDmuxHelperSocketPath('/tmp/home')).toBe(
+      '/tmp/home/.dmux/native-helper/run/dmux-helper.sock'
+    );
   });
 });

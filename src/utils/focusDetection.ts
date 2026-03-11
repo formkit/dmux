@@ -18,6 +18,11 @@ export interface DmuxHelperNotifyMessage {
   tmuxSocketPath?: string;
 }
 
+export interface DmuxHelperPreviewSoundMessage {
+  type: 'preview-sound';
+  soundName?: string;
+}
+
 export interface DmuxHelperFocusStateMessage {
   type: 'focus-state';
   instanceId: string;

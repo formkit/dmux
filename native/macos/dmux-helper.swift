@@ -33,6 +33,11 @@ struct NotifyMessage: Decodable {
     let tmuxSocketPath: String?
 }
 
+struct PreviewSoundMessage: Decodable {
+    let type: String
+    let soundName: String?
+}
+
 struct FocusStateMessage: Encodable {
     let type = "focus-state"
     let instanceId: String
@@ -68,6 +73,7 @@ final class ClientConnection {
     private var subscribeMessage: SubscribeMessage?
     private let onReady: (ClientConnection, SubscribeMessage) -> Void
     private let onNotify: (NotifyMessage) -> Void
+    private let onPreviewSound: (PreviewSoundMessage) -> Void
     private let onClose: (ClientConnection) -> Void
 
     init(
@@ -75,12 +81,14 @@ final class ClientConnection {
         queue: DispatchQueue,
         onReady: @escaping (ClientConnection, SubscribeMessage) -> Void,
         onNotify: @escaping (NotifyMessage) -> Void,
+        onPreviewSound: @escaping (PreviewSoundMessage) -> Void,
         onClose: @escaping (ClientConnection) -> Void
     ) {
         self.fd = fd
         self.queue = queue
         self.onReady = onReady
         self.onNotify = onNotify
+        self.onPreviewSound = onPreviewSound
         self.onClose = onClose
     }
 
@@ -172,6 +180,10 @@ final class ClientConnection {
                 let message = try JSONDecoder().decode(NotifyMessage.self, from: lineData)
                 onNotify(message)
                 close()
+            case "preview-sound":
+                let message = try JSONDecoder().decode(PreviewSoundMessage.self, from: lineData)
+                onPreviewSound(message)
+                close()
             default:
                 close()
             }
@@ -192,6 +204,8 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate, NSSoundDel
     private var lastSnapshot: FocusSnapshot?
     private var didRequestAccessibilityPrompt = false
     private var activeNotificationSounds: [ObjectIdentifier: NSSound] = [:]
+    private var activePreviewSounds: [ObjectIdentifier: NSSound] = [:]
+    private var activePreviewNotification: NSUserNotification?
 
     init(socketPath: String, pollInterval: TimeInterval) {
         self.socketPath = socketPath
@@ -294,6 +308,11 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate, NSSoundDel
                 onNotify: { [weak self] message in
                     DispatchQueue.main.async {
                         self?.deliverNotification(message)
+                    }
+                },
+                onPreviewSound: { [weak self] message in
+                    DispatchQueue.main.async {
+                        self?.playPreviewSound(message)
                     }
                 },
                 onClose: { [weak self] connection in
@@ -524,6 +543,67 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate, NSSoundDel
         }
     }
 
+    private func playPreviewSound(_ message: PreviewSoundMessage) {
+        stopPreviewPlayback()
+
+        let preparedSound = prepareNotificationSound(from: message.soundName)
+        if let helperSound = preparedSound.helperSound {
+            playPreparedPreviewSound(helperSound)
+            return
+        }
+
+        guard preparedSound.notificationSoundName == NSUserNotificationDefaultSoundName else {
+            return
+        }
+
+        let center = NSUserNotificationCenter.default
+        center.delegate = self
+
+        let notification = NSUserNotification()
+        notification.identifier = UUID().uuidString
+        notification.title = " "
+        notification.informativeText = " "
+        notification.soundName = NSUserNotificationDefaultSoundName
+        notification.deliveryDate = Date()
+
+        activePreviewNotification = notification
+        center.deliver(notification)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak notification] in
+            guard let self, let notification else {
+                return
+            }
+
+            if self.activePreviewNotification === notification {
+                center.removeDeliveredNotification(notification)
+                self.activePreviewNotification = nil
+            }
+        }
+    }
+
+    private func playPreparedPreviewSound(_ helperSound: NSSound) {
+        let soundId = ObjectIdentifier(helperSound)
+        activePreviewSounds[soundId] = helperSound
+        helperSound.delegate = self
+        if !helperSound.play() {
+            activePreviewSounds.removeValue(forKey: soundId)
+        }
+    }
+
+    private func stopPreviewPlayback() {
+        for previewSound in activePreviewSounds.values {
+            previewSound.stop()
+        }
+        activePreviewSounds.removeAll()
+
+        guard let previewNotification = activePreviewNotification else {
+            return
+        }
+
+        NSUserNotificationCenter.default.removeDeliveredNotification(previewNotification)
+        activePreviewNotification = nil
+    }
+
     private func buildNotificationUserInfo(from message: NotifyMessage) -> [String: Any] {
         var userInfo: [String: Any] = [:]
 
@@ -583,6 +663,7 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate, NSSoundDel
 
     func sound(_ sound: NSSound, didFinishPlaying aBool: Bool) {
         activeNotificationSounds.removeValue(forKey: ObjectIdentifier(sound))
+        activePreviewSounds.removeValue(forKey: ObjectIdentifier(sound))
     }
 
     private func activateNotificationTarget(_ notification: NSUserNotification) {

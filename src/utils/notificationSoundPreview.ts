@@ -1,48 +1,46 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { createConnection, type Socket } from 'node:net';
+import os from 'os';
+import path from 'path';
+import {
+  supportsNativeDmuxHelper,
+  type DmuxHelperPreviewSoundMessage,
+} from './focusDetection.js';
 import type { NotificationSoundId } from './notificationSounds.js';
 import { getNotificationSoundDefinition } from './notificationSounds.js';
-import { resolvePackagePath } from './runtimePaths.js';
-
-export interface NotificationSoundPreviewCommand {
-  command: string;
-  args: string[];
-}
 
 export interface NotificationSoundPreviewPlayer {
   play(soundId: NotificationSoundId): void;
   stop(): void;
 }
 
-export function buildNotificationSoundPreviewCommand(
+export function buildNotificationSoundPreviewMessage(
   soundId: NotificationSoundId,
   platform: NodeJS.Platform = process.platform
-): NotificationSoundPreviewCommand | null {
-  if (platform !== 'darwin') {
+): DmuxHelperPreviewSoundMessage | null {
+  if (!supportsNativeDmuxHelper(platform)) {
     return null;
   }
 
   const definition = getNotificationSoundDefinition(soundId);
-  if (!definition.resourceFileName) {
-    return {
-      command: 'osascript',
-      args: ['-e', 'beep'],
-    };
-  }
-
   return {
-    command: 'afplay',
-    args: [resolvePackagePath('native', 'macos', 'sounds', definition.resourceFileName)],
+    type: 'preview-sound',
+    soundName: definition.resourceFileName,
   };
 }
 
-export function createNotificationSoundPreviewPlayer(
-  platform: NodeJS.Platform = process.platform
-): NotificationSoundPreviewPlayer {
-  let activeProcess: ChildProcess | null = null;
+export function getDmuxHelperSocketPath(homeDirectory: string = os.homedir()): string {
+  return path.join(homeDirectory, '.dmux', 'native-helper', 'run', 'dmux-helper.sock');
+}
 
-  const clearActiveProcess = (processToClear: ChildProcess) => {
-    if (activeProcess === processToClear) {
-      activeProcess = null;
+export function createNotificationSoundPreviewPlayer(
+  platform: NodeJS.Platform = process.platform,
+  socketPath: string = getDmuxHelperSocketPath()
+): NotificationSoundPreviewPlayer {
+  let activeSocket: Socket | null = null;
+
+  const clearActiveSocket = (socketToClear: Socket) => {
+    if (activeSocket === socketToClear) {
+      activeSocket = null;
     }
   };
 
@@ -50,31 +48,32 @@ export function createNotificationSoundPreviewPlayer(
     play(soundId: NotificationSoundId) {
       this.stop();
 
-      const previewCommand = buildNotificationSoundPreviewCommand(soundId, platform);
-      if (!previewCommand) {
+      const message = buildNotificationSoundPreviewMessage(soundId, platform);
+      if (!message) {
         return;
       }
 
-      const child = spawn(previewCommand.command, previewCommand.args, {
-        stdio: 'ignore',
-      });
+      const socket = createConnection(socketPath);
+      activeSocket = socket;
 
-      activeProcess = child;
-      child.once('error', () => {
-        clearActiveProcess(child);
+      socket.once('connect', () => {
+        socket.end(`${JSON.stringify(message)}\n`);
       });
-      child.once('exit', () => {
-        clearActiveProcess(child);
+      socket.once('error', () => {
+        clearActiveSocket(socket);
+      });
+      socket.once('close', () => {
+        clearActiveSocket(socket);
       });
     },
 
     stop() {
-      if (!activeProcess) {
+      if (!activeSocket) {
         return;
       }
 
-      activeProcess.kill();
-      activeProcess = null;
+      activeSocket.destroy();
+      activeSocket = null;
     },
   };
 }
