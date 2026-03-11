@@ -34,6 +34,39 @@ interface PaneContext {
   agentLabel?: string;
 }
 
+const ANALYZER_CONTEXT_LINE_LIMIT = 50;
+
+function trimSurroundingEmptyLines(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+
+  while (start < end && lines[start]?.trim() === '') {
+    start += 1;
+  }
+
+  while (end > start && lines[end - 1]?.trim() === '') {
+    end -= 1;
+  }
+
+  return lines.slice(start, end);
+}
+
+export function normalizePaneContentForAnalysis(
+  content: string,
+  maxLines: number = ANALYZER_CONTEXT_LINE_LIMIT
+): string {
+  if (!content) {
+    return '';
+  }
+
+  const trimmedLines = trimSurroundingEmptyLines(content.split('\n'));
+  if (trimmedLines.length === 0) {
+    return '';
+  }
+
+  return trimSurroundingEmptyLines(trimmedLines.slice(-maxLines)).join('\n');
+}
+
 export class PaneAnalyzer {
   private apiKey: string;
   private modelStack: string[] = [
@@ -528,8 +561,12 @@ ${content}`,
 
     logService.debug(`PaneAnalyzer: Starting analysis for "${paneName}"`, 'paneAnalyzer', dmuxPaneId);
 
-    // Capture the pane content (50 lines for state detection)
-    const content = capturePaneContent(tmuxPaneId, 50);
+    // Normalize the analyzer input to the last 50 trimmed lines so every LLM stage
+    // sees the same bounded pane snapshot.
+    const content = normalizePaneContentForAnalysis(
+      capturePaneContent(tmuxPaneId, ANALYZER_CONTEXT_LINE_LIMIT),
+      ANALYZER_CONTEXT_LINE_LIMIT
+    );
 
     if (!content) {
       logService.debug(`PaneAnalyzer: No content captured for "${paneName}", defaulting to in_progress`, 'paneAnalyzer', dmuxPaneId);
