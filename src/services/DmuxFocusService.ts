@@ -368,8 +368,29 @@ async function ensureHelperBundle(
   };
 }
 
-function findHelperProcessIds(socketPath: string): number[] {
-  const result = spawnSync('lsof', ['-t', '-U', socketPath], {
+export function parseHelperSocketOwnerProcessIds(
+  lsofOutput: string,
+  socketPath: string,
+  currentProcessId: number = process.pid,
+): number[] {
+  return lsofOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.endsWith(socketPath))
+    .map((line) => {
+      const match = line.match(/^\S+\s+(\d+)\s+/);
+      return match ? Number.parseInt(match[1], 10) : Number.NaN;
+    })
+    .filter((value, index, values) => (
+      Number.isFinite(value)
+      && value > 0
+      && value !== currentProcessId
+      && values.indexOf(value) === index
+    ));
+}
+
+function findHelperSocketOwnerProcessIds(socketPath: string): number[] {
+  const result = spawnSync('lsof', ['-nP', '-U', socketPath], {
     stdio: 'pipe',
     encoding: 'utf-8',
   });
@@ -378,14 +399,13 @@ function findHelperProcessIds(socketPath: string): number[] {
     return [];
   }
 
-  return result.stdout
-    .split('\n')
-    .map((value) => Number.parseInt(value.trim(), 10))
-    .filter((value, index, values) => Number.isFinite(value) && value > 0 && value !== process.pid && values.indexOf(value) === index);
+  // Only kill the helper process that owns the socket path itself.
+  // Connected clients show up as peer links (`->...`) and must be left alone.
+  return parseHelperSocketOwnerProcessIds(result.stdout, socketPath);
 }
 
 async function stopRunningHelper(socketPath: string): Promise<boolean> {
-  const pids = findHelperProcessIds(socketPath);
+  const pids = findHelperSocketOwnerProcessIds(socketPath);
   if (pids.length === 0) {
     return true;
   }
@@ -400,7 +420,7 @@ async function stopRunningHelper(socketPath: string): Promise<boolean> {
 
   const deadline = Date.now() + 2000;
   while (Date.now() < deadline) {
-    const activePids = findHelperProcessIds(socketPath);
+    const activePids = findHelperSocketOwnerProcessIds(socketPath);
     if (activePids.length === 0) {
       break;
     }
@@ -408,7 +428,7 @@ async function stopRunningHelper(socketPath: string): Promise<boolean> {
   }
 
   await fs.rm(socketPath, { force: true }).catch(() => undefined);
-  return findHelperProcessIds(socketPath).length === 0;
+  return findHelperSocketOwnerProcessIds(socketPath).length === 0;
 }
 
 async function waitForHelperSocket(socketPath: string, timeoutMs: number): Promise<boolean> {
