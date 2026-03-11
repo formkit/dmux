@@ -11,6 +11,7 @@ export interface DmuxHelperNotifyMessage {
   title: string;
   subtitle?: string;
   body: string;
+  soundName?: string;
   titleToken?: string;
   bundleId?: string;
   tmuxPaneId?: string;

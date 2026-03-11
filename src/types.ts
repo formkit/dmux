@@ -1,4 +1,5 @@
 import type { AgentName } from './utils/agentLaunch.js';
+import type { NotificationSoundId } from './utils/notificationSounds.js';
 
 // Agent status with new analyzing state
 export type AgentStatus = 'idle' | 'analyzing' | 'waiting' | 'working';
@@ -92,6 +93,8 @@ export interface DmuxSettings {
   defaultAgent?: AgentName | '';
   // Which agents appear in new-pane selection
   enabledAgents?: AgentName[];
+  // Which macOS helper notification sounds are eligible for random selection
+  enabledNotificationSounds?: NotificationSoundId[];
   // Tmux hooks for event-driven updates (low CPU)
   // true = use hooks, false = use polling, undefined = not yet asked
   useTmuxHooks?: boolean;

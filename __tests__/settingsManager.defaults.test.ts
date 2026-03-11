@@ -25,7 +25,47 @@ describe('SettingsManager defaults', () => {
       enableAutopilotByDefault: true,
       minPaneWidth: 50,
       maxPaneWidth: 80,
+      enabledNotificationSounds: expect.arrayContaining(['default-system-sound', 'harp', 'war-horn']),
     });
+  });
+
+  it('allows overriding enabledNotificationSounds with valid sound ids', async () => {
+    vi.mock('fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('fs')>();
+      return {
+        ...actual,
+        existsSync: vi.fn(() => false),
+        readFileSync: vi.fn(),
+        writeFileSync: vi.fn(),
+        mkdirSync: vi.fn(),
+      };
+    });
+
+    const { SettingsManager } = await import('../src/utils/settingsManager.js');
+    const manager = new SettingsManager('/tmp/test-project');
+
+    manager.updateSetting('enabledNotificationSounds', ['default-system-sound', 'harp'], 'project');
+    expect(manager.getSettings().enabledNotificationSounds).toEqual(['default-system-sound', 'harp']);
+  });
+
+  it('rejects invalid enabledNotificationSounds values', async () => {
+    vi.mock('fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('fs')>();
+      return {
+        ...actual,
+        existsSync: vi.fn(() => false),
+        readFileSync: vi.fn(),
+        writeFileSync: vi.fn(),
+        mkdirSync: vi.fn(),
+      };
+    });
+
+    const { SettingsManager } = await import('../src/utils/settingsManager.js');
+    const manager = new SettingsManager('/tmp/test-project');
+
+    expect(() =>
+      manager.updateSetting('enabledNotificationSounds', ['invalid-sound'] as any, 'global')
+    ).toThrow('Invalid enabledNotificationSounds');
   });
 
   it('allows overriding permissionMode with a valid value', async () => {

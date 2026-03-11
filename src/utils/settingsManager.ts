@@ -19,6 +19,11 @@ import {
   isAgentName,
   type AgentName,
 } from './agentLaunch.js';
+import {
+  getDefaultNotificationSoundSelection,
+  isNotificationSoundId,
+  type NotificationSoundId,
+} from './notificationSounds.js';
 
 const GLOBAL_SETTINGS_PATH = join(homedir(), '.dmux.global.json');
 const PERMISSION_MODES = ['', 'plan', 'acceptEdits', 'bypassPermissions'] as const;
@@ -44,6 +49,20 @@ function isValidMinPaneWidth(value: unknown): value is number {
   );
 }
 
+function cloneSettingsArrays(settings: DmuxSettings): DmuxSettings {
+  const cloned: DmuxSettings = { ...settings };
+
+  if (Array.isArray(cloned.enabledAgents)) {
+    cloned.enabledAgents = [...cloned.enabledAgents];
+  }
+
+  if (Array.isArray(cloned.enabledNotificationSounds)) {
+    cloned.enabledNotificationSounds = [...cloned.enabledNotificationSounds];
+  }
+
+  return cloned;
+}
+
 const DEFAULT_SETTINGS: DmuxSettings = {
   // Most permissive defaults for new dmux setups.
   permissionMode: 'bypassPermissions',
@@ -51,6 +70,7 @@ const DEFAULT_SETTINGS: DmuxSettings = {
   minPaneWidth: DEFAULT_MIN_PANE_WIDTH,
   maxPaneWidth: DEFAULT_MAX_PANE_WIDTH,
   enabledAgents: getDefaultEnabledAgents(),
+  enabledNotificationSounds: getDefaultNotificationSoundSelection(),
 };
 
 const AGENT_OPTIONS = getAgentDefinitions().map((agent) => ({
@@ -91,6 +111,12 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     key: 'enabledAgents' as any,
     label: 'Enabled Agents',
     description: 'Select which agents appear in the new pane selection list',
+    type: 'action' as any,
+  },
+  {
+    key: 'enabledNotificationSounds' as any,
+    label: 'Attention Notification Sounds',
+    description: 'Select the macOS helper sounds that dmux randomizes between for background alerts',
     type: 'action' as any,
   },
   {
@@ -219,20 +245,16 @@ export class SettingsManager {
    * Get merged settings (project settings override global)
    */
   getSettings(): DmuxSettings {
-    const merged: DmuxSettings = {
+    const merged = cloneSettingsArrays({
       ...DEFAULT_SETTINGS,
       ...this.globalSettings,
       ...this.projectSettings,
-    };
+    });
 
     // Pane width bounds are global-only; ignore any project override values.
     const paneWidths = this.resolveGlobalPaneWidths();
     merged.minPaneWidth = paneWidths.minPaneWidth;
     merged.maxPaneWidth = paneWidths.maxPaneWidth;
-
-    if (Array.isArray(merged.enabledAgents)) {
-      merged.enabledAgents = [...merged.enabledAgents];
-    }
 
     return merged;
   }
@@ -249,14 +271,14 @@ export class SettingsManager {
    * Get global settings only
    */
   getGlobalSettings(): DmuxSettings {
-    return { ...this.globalSettings };
+    return cloneSettingsArrays(this.globalSettings);
   }
 
   /**
    * Get project settings only
    */
   getProjectSettings(): DmuxSettings {
-    return { ...this.projectSettings };
+    return cloneSettingsArrays(this.projectSettings);
   }
 
   /**
@@ -283,6 +305,15 @@ export class SettingsManager {
       const invalidAgents = value.filter((agent) => !isAgentName(agent));
       if (invalidAgents.length > 0) {
         throw new Error(`Invalid enabledAgents: ${invalidAgents.join(', ')}`);
+      }
+    }
+    if (key === 'enabledNotificationSounds') {
+      if (!Array.isArray(value)) {
+        throw new Error('Invalid enabledNotificationSounds: expected an array of sound IDs');
+      }
+      const invalidSoundIds = value.filter((soundId) => !isNotificationSoundId(soundId));
+      if (invalidSoundIds.length > 0) {
+        throw new Error(`Invalid enabledNotificationSounds: ${invalidSoundIds.join(', ')}`);
       }
     }
     if (key === 'minPaneWidth' && !isValidMinPaneWidth(value)) {
@@ -351,6 +382,18 @@ export class SettingsManager {
         throw new Error(`Invalid enabledAgents: ${invalidAgents.join(', ')}`);
       }
       settings.enabledAgents = settings.enabledAgents as AgentName[];
+    }
+    if (settings.enabledNotificationSounds !== undefined) {
+      if (!Array.isArray(settings.enabledNotificationSounds)) {
+        throw new Error('Invalid enabledNotificationSounds: expected an array of sound IDs');
+      }
+      const invalidSoundIds = settings.enabledNotificationSounds.filter(
+        (soundId) => !isNotificationSoundId(soundId)
+      );
+      if (invalidSoundIds.length > 0) {
+        throw new Error(`Invalid enabledNotificationSounds: ${invalidSoundIds.join(', ')}`);
+      }
+      settings.enabledNotificationSounds = settings.enabledNotificationSounds as NotificationSoundId[];
     }
     if (typeof settings.baseBranch === 'string' && settings.baseBranch !== '' && !isValidBranchName(settings.baseBranch)) {
       throw new Error('Invalid baseBranch: contains characters not allowed in git branch names');

@@ -46,6 +46,7 @@ What it does:
 - Correlates the active terminal window/tab back to a specific dmux instance using a short token injected into the terminal title
 - Delivers macOS notifications for panes that need attention
 - The square helper icon source lives at `native/macos/dmux-helper-icon.png`; it is derived from `docs/public/favicon.svg` so the docs/favicon mark and native helper branding stay aligned
+- Bundles custom notification sounds from `native/macos/sounds/` and randomly chooses from the configured enabled set for each background alert
 - This is progressive enhancement only: on non-macOS platforms the helper path must stay inert and dmux should continue working without native focus/notification integration
 
 Focus model:

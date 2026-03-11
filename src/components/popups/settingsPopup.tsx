@@ -13,6 +13,8 @@ import type { SettingDefinition, DmuxSettings } from '../../types.js';
 import { SettingsManager } from '../../utils/settingsManager.js';
 import { enforceControlPaneSize } from '../../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../../utils/layoutManager.js';
+import { resolveEnabledAgentsSelection } from '../../utils/agentLaunch.js';
+import { resolveNotificationSoundsSelection } from '../../utils/notificationSounds.js';
 import { POPUP_CONFIG } from './config.js';
 import {
   PopupWrapper,
@@ -319,6 +321,18 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
     writeSuccessAndExit(resultFile, data, exit);
   };
 
+  const getActionSummary = (key: string): string | null => {
+    if (key === 'enabledAgents') {
+      return `${resolveEnabledAgentsSelection(currentSettings.enabledAgents).length} selected`;
+    }
+
+    if (key === 'enabledNotificationSounds') {
+      return `${resolveNotificationSoundsSelection(currentSettings.enabledNotificationSounds).length} selected`;
+    }
+
+    return null;
+  };
+
   useInput((input, key) => {
     // When editing a text field, only handle escape — let TextInput handle everything else
     if (isTextEditing && !key.escape) return;
@@ -497,6 +511,7 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
 
             // Handle action type differently - no value display
             if (def.type === 'action') {
+              const actionSummary = getActionSummary(def.key);
               return (
                 <Box key={def.key}>
                   <Text color={isSelected ? 'cyan' : 'white'} bold={isSelected}>
@@ -504,7 +519,7 @@ const SettingsPopupApp: React.FC<SettingsPopupProps> = ({
                     {def.label}
                   </Text>
                   <Text color={isSelected ? 'cyan' : 'gray'} dimColor={!isSelected}>
-                    {' '}(press Enter)
+                    {' '}({actionSummary ? `${actionSummary} • ` : ''}press Enter)
                   </Text>
                 </Box>
               );

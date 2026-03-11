@@ -9,6 +9,7 @@ import os from 'os';
 import path from 'path';
 import { LogService } from './LogService.js';
 import { TmuxService } from './TmuxService.js';
+import { SettingsManager } from '../utils/settingsManager.js';
 import {
   buildFocusToken,
   buildFocusWindowTitle,
@@ -20,6 +21,10 @@ import {
   type DmuxHelperNotifyMessage,
   type DmuxHelperSubscribeMessage,
 } from '../utils/focusDetection.js';
+import {
+  getBundledNotificationSoundDefinitions,
+  pickNotificationSound,
+} from '../utils/notificationSounds.js';
 import { resolvePackagePath } from '../utils/runtimePaths.js';
 
 const HELPER_RECONNECT_DELAY_MS = 1000;
@@ -31,6 +36,7 @@ const ATTENTION_FLASH_FALLBACK_BG = 'colour237';
 
 interface DmuxFocusServiceOptions {
   projectName: string;
+  projectRoot?: string;
 }
 
 export interface DmuxFocusChangedEvent {
@@ -57,6 +63,7 @@ function getHelperRuntimePaths(): {
   sourcePath: string;
   infoPlistSourcePath: string;
   iconSourcePath: string;
+  soundSourceDir: string;
   appPath: string;
   executablePath: string;
   resourcesPath: string;
@@ -74,6 +81,7 @@ function getHelperRuntimePaths(): {
     sourcePath: resolvePackagePath('native', 'macos', 'dmux-helper.swift'),
     infoPlistSourcePath: resolvePackagePath('native', 'macos', 'dmux-helper-Info.plist'),
     iconSourcePath: resolvePackagePath('native', 'macos', 'dmux-helper-icon.png'),
+    soundSourceDir: resolvePackagePath('native', 'macos', 'sounds'),
     appPath,
     executablePath: path.join(contentsPath, 'MacOS', 'dmux-helper'),
     resourcesPath,
@@ -151,7 +159,7 @@ function resolveTmuxSocketPath(): string | undefined {
   return socketPath || undefined;
 }
 
-function buildHelperVersionHash(parts: string[]): string {
+function buildHelperVersionHash(parts: Array<string | Buffer>): string {
   const hash = createHash('sha1');
   hash.update(HELPER_BUNDLE_BUILD_VERSION);
   for (const part of parts) {
@@ -274,12 +282,25 @@ async function ensureHelperBundle(
     return { ready: false, rebuilt: false };
   }
 
-  const [sourceTemplate, infoPlistTemplate, iconBuffer, currentVersion] = await Promise.all([
+  const bundledSoundAssets = getBundledNotificationSoundDefinitions().map((definition) => ({
+    resourceFileName: definition.resourceFileName as string,
+    sourcePath: path.join(paths.soundSourceDir, definition.resourceFileName as string),
+  }));
+
+  const [sourceTemplate, infoPlistTemplate, iconBuffer, soundAssets, currentVersion] = await Promise.all([
     fs.readFile(paths.sourcePath, 'utf-8'),
     fs.readFile(paths.infoPlistSourcePath, 'utf-8'),
     existsSync(paths.iconSourcePath)
       ? fs.readFile(paths.iconSourcePath)
       : Promise.resolve<Buffer | null>(null),
+    Promise.all(
+      bundledSoundAssets
+        .filter((asset) => existsSync(asset.sourcePath))
+        .map(async (asset) => ({
+          ...asset,
+          buffer: await fs.readFile(asset.sourcePath),
+        }))
+    ),
     existsSync(paths.versionPath)
       ? fs.readFile(paths.versionPath, 'utf-8').catch(() => '')
       : Promise.resolve(''),
@@ -288,12 +309,14 @@ async function ensureHelperBundle(
   const expectedVersion = buildHelperVersionHash([
     sourceTemplate,
     infoPlistTemplate,
-    iconBuffer?.toString('base64') || 'no-icon',
+    iconBuffer ?? 'no-icon',
+    ...soundAssets.flatMap((asset) => [asset.resourceFileName, asset.buffer]),
   ]);
 
   const needsBuild = !existsSync(paths.executablePath)
     || !existsSync(paths.infoPlistPath)
     || (iconBuffer !== null && !existsSync(paths.bundleIconPngPath))
+    || soundAssets.some((asset) => !existsSync(path.join(paths.resourcesPath, asset.resourceFileName)))
     || currentVersion.trim() !== expectedVersion;
 
   if (!needsBuild) {
@@ -313,6 +336,12 @@ async function ensureHelperBundle(
       // The helper can still set the bundled PNG as its runtime icon.
     }
   }
+
+  await Promise.all(
+    soundAssets.map(async (asset) => {
+      await fs.writeFile(path.join(paths.resourcesPath, asset.resourceFileName), asset.buffer);
+    })
+  );
 
   const result = spawnSync('swiftc', [
     '-O',
@@ -483,6 +512,14 @@ export class DmuxFocusService extends EventEmitter {
     super();
     this.baseTitle = `dmux ${options.projectName}`;
     this.terminalTitle = buildFocusWindowTitle(options.projectName, this.token);
+  }
+
+  private resolveAttentionNotificationSoundName(): string | undefined {
+    const settingsManager = new SettingsManager(this.options.projectRoot ?? process.cwd());
+    const selectedSound = pickNotificationSound(
+      settingsManager.getSettings().enabledNotificationSounds
+    );
+    return selectedSound.resourceFileName;
   }
 
   async start(): Promise<void> {
@@ -711,6 +748,7 @@ export class DmuxFocusService extends EventEmitter {
       title: request.title,
       subtitle: request.subtitle,
       body: request.body,
+      soundName: this.resolveAttentionNotificationSoundName(),
       titleToken: this.token,
       bundleId: this.bundleId,
       tmuxPaneId: request.tmuxPaneId,

@@ -26,6 +26,7 @@ struct NotifyMessage: Decodable {
     let title: String
     let subtitle: String?
     let body: String
+    let soundName: String?
     let titleToken: String?
     let bundleId: String?
     let tmuxPaneId: String?
@@ -440,7 +441,7 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
         notification.title = title
         notification.subtitle = subtitle
         notification.informativeText = body
-        notification.soundName = NSUserNotificationDefaultSoundName
+        notification.soundName = resolveNotificationSoundName(from: message.soundName)
         notification.deliveryDate = Date()
 
         let focusUserInfo = buildNotificationUserInfo(from: message)
@@ -464,6 +465,27 @@ final class FocusMonitor: NSObject, NSUserNotificationCenterDelegate {
         }
 
         center.deliver(notification)
+    }
+
+    private func resolveNotificationSoundName(from requestedSoundName: String?) -> String {
+        guard let requestedSoundName else {
+            return NSUserNotificationDefaultSoundName
+        }
+
+        let trimmedSoundName = requestedSoundName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSoundName.isEmpty else {
+            return NSUserNotificationDefaultSoundName
+        }
+
+        let nsSoundName = trimmedSoundName as NSString
+        let resourceName = nsSoundName.deletingPathExtension
+        let resourceExtension = nsSoundName.pathExtension.isEmpty ? nil : nsSoundName.pathExtension
+
+        if Bundle.main.path(forResource: resourceName, ofType: resourceExtension) != nil {
+            return trimmedSoundName
+        }
+
+        return NSUserNotificationDefaultSoundName
     }
 
     private func buildNotificationUserInfo(from message: NotifyMessage) -> [String: Any] {

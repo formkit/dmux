@@ -159,7 +159,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const [hooksPromptIndex, setHooksPromptIndex] = useState(0)
   // undefined = not yet determined, true = use hooks, false = use polling
   const [useHooks, setUseHooks] = useState<boolean | undefined>(undefined)
-  const [focusService] = useState(() => new DmuxFocusService({ projectName }))
+  const [focusService] = useState(() => new DmuxFocusService({ projectName, projectRoot }))
   const [attentionService] = useState(
     () => new DmuxAttentionService({ focusService })
   )

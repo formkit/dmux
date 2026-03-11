@@ -18,6 +18,11 @@ import {
   resolveEnabledAgentsSelection,
   type AgentName,
 } from "../utils/agentLaunch.js"
+import {
+  getNotificationSoundDefinitions,
+  resolveNotificationSoundsSelection,
+  type NotificationSoundId,
+} from "../utils/notificationSounds.js"
 import { resolveDistPath } from "../utils/runtimePaths.js"
 import { getPaneProjectRoot } from "../utils/paneProject.js"
 import type { TrackProjectActivity } from "../types/activity.js"
@@ -563,6 +568,14 @@ export class PopupManager {
           return pendingUpdates.length > 0 ? { updates: pendingUpdates } : null
         }
 
+        if (data.action === "enabledNotificationSounds") {
+          const notificationSoundsUpdate = await this.launchNotificationSoundsPopup(projectRoot)
+          if (notificationSoundsUpdate) {
+            pendingUpdates.push(notificationSoundsUpdate)
+          }
+          return pendingUpdates.length > 0 ? { updates: pendingUpdates } : null
+        }
+
         if (typeof data.key === "string" && (data.scope === "global" || data.scope === "project")) {
           if (pendingUpdates.length > 0) {
             return {
@@ -628,6 +641,56 @@ export class PopupManager {
       return {
         key: "enabledAgents",
         value: data.enabledAgents,
+        scope: data.scope,
+      }
+    } catch (error: any) {
+      this.showTempMessage(`Failed to launch popup: ${error.message}`)
+      return null
+    }
+  }
+
+  async launchNotificationSoundsPopup(
+    projectRoot?: string
+  ): Promise<{
+    key: "enabledNotificationSounds";
+    value: NotificationSoundId[];
+    scope: "global" | "project";
+  } | null> {
+    if (!this.checkPopupSupport()) return null
+
+    try {
+      const settings = this.config.settingsManager.getSettings()
+      const configuredEnabled = resolveNotificationSoundsSelection(settings.enabledNotificationSounds)
+      const definitions = getNotificationSoundDefinitions().map((definition) => ({
+        id: definition.id,
+        label: definition.label,
+        defaultEnabled: definition.defaultEnabled,
+      }))
+
+      const result = await this.launchPopup<{
+        enabledNotificationSounds: NotificationSoundId[];
+        scope: "global" | "project";
+      }>(
+        "notificationSoundsPopup.js",
+        [],
+        {
+          width: 76,
+          height: Math.min(30, definitions.length + 12),
+          title: "Notification Sounds",
+        },
+        {
+          sounds: definitions,
+          enabledNotificationSounds: configuredEnabled,
+        },
+        projectRoot
+      )
+
+      const data = this.handleResult(result)
+      if (!data) return null
+
+      return {
+        key: "enabledNotificationSounds",
+        value: data.enabledNotificationSounds,
         scope: data.scope,
       }
     } catch (error: any) {
