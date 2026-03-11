@@ -30,7 +30,7 @@ jobs:
       - run: pnpm build
       - run: pnpm run build:macos-helper
       - run: pnpm run smoke:pack
-      - run: pnpm publish --no-git-checks --provenance --access public
+      - run: npm publish --provenance --access public
 
       - name: Detect previous tag
         id: tags
