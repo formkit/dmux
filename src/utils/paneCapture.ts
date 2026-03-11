@@ -46,7 +46,8 @@ export async function capturePaneContentAsync(
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const content = await execAsync(
-        `tmux capture-pane -t '${paneId}' -p -S -${currentLines}`,
+        // Join wrapped lines so width-only pane resizes do not look like new content.
+        `tmux capture-pane -t '${paneId}' -p -J -S -${currentLines}`,
         { silent: true, timeout: 5000 }
       );
 
@@ -76,7 +77,7 @@ export async function capturePaneContentAsync(
 
     // After max attempts, return whatever we have
     const finalContent = await execAsync(
-      `tmux capture-pane -t '${paneId}' -p -S -${currentLines}`,
+      `tmux capture-pane -t '${paneId}' -p -J -S -${currentLines}`,
       { silent: true, timeout: 5000 }
     );
 
@@ -111,9 +112,11 @@ export function capturePaneContent(
       attempt++;
 
       // Capture pane content with line history
-      // -p prints to stdout, -S -<lines> starts from <lines> lines back
+      // -p prints to stdout, -J joins wrapped lines, -S -<lines> starts from
+      // <lines> lines back. Joining wraps keeps width-only pane resizes from
+      // looking like real activity to the status detector.
       const content = execSync(
-        `tmux capture-pane -t '${paneId}' -p -S -${currentLines}`,
+        `tmux capture-pane -t '${paneId}' -p -J -S -${currentLines}`,
         { encoding: 'utf8', stdio: 'pipe' }
       );
 
@@ -161,7 +164,7 @@ export function capturePaneContent(
 
     // After max attempts, return whatever we have (trimmed)
     const finalContent = execSync(
-      `tmux capture-pane -t '${paneId}' -p -S -${currentLines}`,
+      `tmux capture-pane -t '${paneId}' -p -J -S -${currentLines}`,
       { encoding: 'utf8', stdio: 'pipe' }
     );
 

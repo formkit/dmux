@@ -263,4 +263,41 @@ describe('DmuxAttentionService', () => {
 
     service.stop();
   });
+
+  it('does not notify again while an existing attention alert is still active', async () => {
+    const focusService = new MockFocusService();
+    const service = new DmuxAttentionService({ focusService: focusService as any });
+
+    service.start();
+
+    emitStatusUpdated({
+      paneId: 'pane-4',
+      status: 'working',
+    });
+
+    emitAttentionNeeded({
+      paneId: 'pane-4',
+      tmuxPaneId: '%6',
+      status: 'idle',
+      title: 'Review pass one',
+      body: 'The agent stopped after the first pass.',
+      fingerprint: 'idle:review-pass-one',
+    });
+    await flushAsyncWork();
+
+    emitAttentionNeeded({
+      paneId: 'pane-4',
+      tmuxPaneId: '%6',
+      status: 'idle',
+      title: 'Review pass two',
+      body: 'The agent is still waiting for you.',
+      fingerprint: 'idle:review-pass-two',
+    });
+    await flushAsyncWork();
+
+    expect(focusService.sendAttentionNotification).toHaveBeenCalledTimes(1);
+    expect(focusService.setPaneAttentionIndicator).toHaveBeenCalledWith('%6', true);
+
+    service.stop();
+  });
 });

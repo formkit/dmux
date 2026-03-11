@@ -156,6 +156,17 @@ export class DmuxAttentionService extends EventEmitter {
       return;
     }
 
+    const activeAttentionPaneId = this.activeAttentionPanes.get(paneId);
+    if (activeAttentionPaneId) {
+      if (activeAttentionPaneId !== candidate.tmuxPaneId) {
+        this.setPaneAttention(paneId, candidate.tmuxPaneId, true);
+      }
+
+      this.baselineFingerprints.delete(paneId);
+      this.notifiedFingerprints.set(paneId, candidate.fingerprint);
+      return;
+    }
+
     if (this.notifiedFingerprints.get(paneId) === candidate.fingerprint) {
       return;
     }
