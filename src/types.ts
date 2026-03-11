@@ -93,6 +93,8 @@ export interface DmuxSettings {
   minPaneWidth?: number;
   // Preferred maximum content pane width in characters
   maxPaneWidth?: number;
+  // Whether to show the empty-state welcome pane when no work panes exist
+  showWelcomePane?: boolean;
 }
 
 export type SettingsScope = 'global' | 'project';
