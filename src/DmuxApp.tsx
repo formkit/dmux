@@ -50,6 +50,7 @@ const __dirname = dirname(__filename)
 import type {
   DmuxPane,
   DmuxAppProps,
+  NewPaneInput,
 } from "./types.js"
 import PanesGrid from "./components/panes/PanesGrid.js"
 import CommandPromptDialog from "./components/dialogs/CommandPromptDialog.js"
@@ -437,20 +438,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   // Helper function to handle agent choice and pane creation
   const handlePaneCreationWithAgent = async (
-    prompt: string,
+    paneInput: NewPaneInput,
     targetProjectRoot?: string
   ) => {
     const agents = availableAgents
 
     const createPanesForAgents = async (selectedAgents: AgentName[]) => {
-      await createPanesForAgentsHook(prompt, selectedAgents, {
+      await createPanesForAgentsHook(paneInput, selectedAgents, {
         existingPanes: panes,
         targetProjectRoot,
       })
     }
 
     if (agents.length === 0) {
-      await createNewPaneHook(prompt, undefined, {
+      await createNewPaneHook(paneInput, undefined, {
         targetProjectRoot,
         skipAgentSelection: true,
       })
