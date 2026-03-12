@@ -221,9 +221,13 @@ export class PopupManager {
           popupOptions.height = positioning.height ?? options.height
         }
 
-        return launchNodePopupNonBlocking<T>(popupScriptPath, args, {
-          ...popupOptions,
-        })
+        const popupHandle = launchNodePopupNonBlocking<T>(
+          popupScriptPath,
+          args,
+          popupOptions
+        )
+        await popupHandle.readyPromise
+        return popupHandle
       }, this.resolveActivityProjectRoot(projectRoot))
 
       // Wait for result
