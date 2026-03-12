@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { POPUP_CONFIG } from '../components/popups/config.js';
 import { TmuxService } from '../services/TmuxService.js';
+import type { PanePosition } from '../types.js';
 
 export interface PopupOptions {
   width?: number;
@@ -45,6 +46,29 @@ export interface PopupHandle<T> {
   };
   resultPromise: Promise<PopupResult<T>>;
   kill: () => void;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function getPaneAnchoredPopupOptions(
+  pane: PanePosition,
+  popupSize: { width: number; height: number },
+  clientSize: { width: number; height: number }
+): Pick<PopupOptions, 'centered' | 'x' | 'y' | 'width' | 'height'> {
+  const width = Math.min(popupSize.width, clientSize.width);
+  const height = Math.min(popupSize.height, clientSize.height);
+  const maxX = Math.max(0, clientSize.width - width);
+  const maxY = Math.max(0, clientSize.height - height);
+
+  return {
+    centered: false,
+    width,
+    height,
+    x: clamp(pane.left + Math.floor((pane.width - width) / 2), 0, maxX),
+    y: clamp(pane.top, 0, maxY),
+  };
 }
 
 /**
@@ -629,5 +653,17 @@ export const POPUP_POSITIONING = {
       width: Math.min(terminalWidth - sidebarWidth - 2, 100),
       height: Math.floor(terminalHeight * 0.9),
     };
+  },
+
+  /**
+   * Anchor a popup to the top of a specific pane.
+   * Use for focused-pane actions launched from inside the pane.
+   */
+  overPane(
+    pane: PanePosition,
+    popupSize: { width: number; height: number },
+    clientSize: { width: number; height: number }
+  ): Partial<PopupOptions> {
+    return getPaneAnchoredPopupOptions(pane, popupSize, clientSize);
   },
 };

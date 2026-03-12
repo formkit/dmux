@@ -3,6 +3,7 @@ import path from "path"
 import {
   launchNodePopupNonBlocking,
   POPUP_POSITIONING,
+  type PopupOptions as TmuxPopupOptions,
   type PopupResult,
 } from "../utils/popup.js"
 import { StateManager } from "../shared/StateManager.js"
@@ -45,7 +46,8 @@ interface PopupOptions {
   width?: number
   height?: number
   title: string
-  positioning?: "standard" | "centered" | "large"
+  positioning?: "standard" | "centered" | "large" | "pane"
+  targetPaneId?: string
 }
 
 interface MergeUncommittedChoiceData {
@@ -163,7 +165,7 @@ export class PopupManager {
           args = [tempFile, ...args]
         }
 
-        let positioning
+        let positioning: Partial<TmuxPopupOptions>
         if (options.positioning === "large") {
           const tmuxService = TmuxService.getInstance()
           const dims = await tmuxService.getAllDimensions()
@@ -176,15 +178,51 @@ export class PopupManager {
           positioning = POPUP_POSITIONING.centeredWithSidebar(
             this.config.sidebarWidth
           )
+        } else if (
+          options.positioning === "pane"
+          && options.targetPaneId
+        ) {
+          const tmuxService = TmuxService.getInstance()
+          const [dims, panePositions] = await Promise.all([
+            tmuxService.getAllDimensions(),
+            tmuxService.getPanePositions(),
+          ])
+          const targetPane = panePositions.find(
+            (pane) => pane.paneId === options.targetPaneId
+          )
+
+          positioning = targetPane
+            ? POPUP_POSITIONING.overPane(
+                targetPane,
+                {
+                  width: options.width ?? 80,
+                  height: options.height ?? 20,
+                },
+                {
+                  width: dims.clientWidth,
+                  height: dims.clientHeight,
+                }
+              )
+            : POPUP_POSITIONING.standard(this.config.sidebarWidth)
         } else {
           positioning = POPUP_POSITIONING.standard(this.config.sidebarWidth)
         }
 
-        return launchNodePopupNonBlocking<T>(popupScriptPath, args, {
+        const popupOptions: TmuxPopupOptions = {
           ...positioning,
-          ...(options.width !== undefined && { width: options.width }),
-          ...(options.height !== undefined && { height: options.height }),
           title: options.title,
+        }
+
+        if (positioning.width !== undefined || options.width !== undefined) {
+          popupOptions.width = positioning.width ?? options.width
+        }
+
+        if (positioning.height !== undefined || options.height !== undefined) {
+          popupOptions.height = positioning.height ?? options.height
+        }
+
+        return launchNodePopupNonBlocking<T>(popupScriptPath, args, {
+          ...popupOptions,
         })
       }, this.resolveActivityProjectRoot(projectRoot))
 
@@ -269,7 +307,8 @@ export class PopupManager {
 
   async launchKebabMenuPopup(
     pane: DmuxPane,
-    panes: DmuxPane[]
+    panes: DmuxPane[],
+    options: { anchorToPane?: boolean } = {}
   ): Promise<PaneMenuActionId | null> {
     if (!this.checkPopupSupport()) return null
 
@@ -288,6 +327,8 @@ export class PopupManager {
           width: 60,
           height: Math.min(20, actions.length + 5),
           title: `Menu: ${pane.slug}`,
+          positioning: options.anchorToPane ? "pane" : "standard",
+          targetPaneId: options.anchorToPane ? pane.paneId : undefined,
         },
         undefined,
         getPaneProjectRoot(pane, this.config.projectRoot)

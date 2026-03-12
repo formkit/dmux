@@ -760,6 +760,13 @@ class Dmux {
     sessionName: string = this.sessionName
   ) {
     try {
+      try {
+        const cleanupCommands = buildRemotePaneActionCleanupCommands().join(' \\; ');
+        execSync(`tmux ${cleanupCommands}`, { stdio: 'pipe' });
+      } catch {
+        // Ignore stale binding cleanup errors during setup.
+      }
+
       const commands = buildRemotePaneActionBindingCommands().join(' \\; ');
       execSync(`tmux ${commands}`, { stdio: 'pipe' });
     } catch {
@@ -1251,7 +1258,7 @@ class Dmux {
       `set-option -t ${sessionName} pane-border-status top`,
       `set-option -t ${sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
       `set-option -t ${sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
-      `set-option -t ${sessionName} pane-border-format " #{?${DMUX_REMOTE_PANE_MODE_OPTION},#[fg=colour16,bg=colour214,bold]#{${DMUX_REMOTE_PANE_MODE_OPTION}}#[default],#{?@dmux_attention,#[bold]![ready] #[default],}#{pane_title}} "`,
+      `set-option -t ${sessionName} pane-border-format " #{?@dmux_attention,#[bold]![ready] #[default],}#{pane_title} "`,
     ].join(' \\; ');
 
     execSync(`tmux ${sessionOptions}`, { stdio });

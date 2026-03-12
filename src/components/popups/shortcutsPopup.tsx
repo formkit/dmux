@@ -6,6 +6,7 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import { PopupWrapper, writeCancelAndExit, writeSuccessAndExit } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
 
@@ -19,7 +20,7 @@ interface ShortcutActionResult {
   action?: 'hooks';
 }
 
-const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
+export const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   resultFile,
   hasSidebarLayout,
   isDevMode,
@@ -38,7 +39,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   });
 
   const shortcuts = [
-    { key: 'M-D', description: 'Remote pane mode for the focused pane' },
+    { key: 'M-M', description: 'Open the pane menu for the focused tmux pane' },
     { key: 'j', description: 'Jump to selected pane' },
     { key: 'm', description: 'Open pane menu' },
     { key: 'x', description: 'Close selected pane' },
@@ -85,7 +86,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
         ))}
 
         <Box marginTop={1}>
-          <Text dimColor>Press M-D in any focused pane to light its border title with the hotkey prompt, then hit a pane shortcut. Press e for hooks, or Esc/? to close</Text>
+          <Text dimColor>Press M-M in any focused pane to open that pane&apos;s menu without returning to the sidebar. Press e for hooks, or Esc/? to close</Text>
         </Box>
       </Box>
     </PopupWrapper>
@@ -119,4 +120,7 @@ const main = async () => {
   }
 };
 
-main();
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (import.meta.url === entryPointHref) {
+  void main();
+}

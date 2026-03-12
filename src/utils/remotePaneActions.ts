@@ -8,10 +8,6 @@ export const DMUX_CONTROLLER_PID_OPTION = '@dmux_controller_pid';
 export const DMUX_CONTROL_PANE_OPTION = '@dmux_control_pane';
 export const DMUX_REMOTE_PANE_ACTION_TABLE = 'dmux-pane-action';
 export const DMUX_REMOTE_PANE_MODE_OPTION = '@dmux_remote_pane_mode';
-export const DMUX_REMOTE_PANE_MODE_PROMPT =
-  'hit hotkey: j m x a b f A h H P r S';
-export const DMUX_REMOTE_PANE_ACTION_TRIGGER_MESSAGE =
-  'dmux pane mode active';
 
 export const REMOTE_PANE_ACTION_SHORTCUTS = [
   'j',
@@ -37,7 +33,11 @@ export interface RemotePaneActionRequest {
   createdAt: string;
 }
 
-const REMOTE_TRIGGER_BINDINGS = [
+const REMOTE_MENU_TRIGGER_BINDINGS = [
+  { key: 'M-M', noPrefix: true },
+] as const;
+
+const LEGACY_REMOTE_TRIGGER_BINDINGS = [
   { key: 'M-D', noPrefix: true },
 ] as const;
 
@@ -53,14 +53,17 @@ function buildQueueDrainPath(queuePath: string): string {
   return `${queuePath}.${process.pid}.${Date.now()}.drain`;
 }
 
-function buildSetRemoteModeCommand(): string {
-  return `set-option -p -t "#{pane_id}" ${DMUX_REMOTE_PANE_MODE_OPTION} "${escapeForDoubleQuotes(
-    DMUX_REMOTE_PANE_MODE_PROMPT
-  )}"`;
+function buildRunRemotePaneActionCommand(
+  shortcut: RemotePaneActionShortcut
+): string {
+  const remoteActionCommand = `${buildRemotePaneActionCommand(shortcut)} >/dev/null 2>&1`;
+  return `run-shell "${escapeForDoubleQuotes(remoteActionCommand)}"`;
 }
 
-function buildClearRemoteModeCommand(): string {
-  return `set-option -u -p -t "#{pane_id}" ${DMUX_REMOTE_PANE_MODE_OPTION}`;
+function buildSafeTmuxCommand(command: string): string {
+  return `run-shell "${escapeForDoubleQuotes(
+    `tmux ${command} >/dev/null 2>&1 || true`
+  )}"`;
 }
 
 export function isRemotePaneActionShortcut(
@@ -231,50 +234,41 @@ export async function drainRemotePaneActions(
 }
 
 export function buildRemotePaneActionBindingCommands(): string[] {
-  const enterModeCommand = `display-message "${escapeForDoubleQuotes(
-    DMUX_REMOTE_PANE_ACTION_TRIGGER_MESSAGE
-  )}" \\; ${buildSetRemoteModeCommand()} \\; switch-client -T ${DMUX_REMOTE_PANE_ACTION_TABLE}`;
-
-  const commands = REMOTE_TRIGGER_BINDINGS.map(({ key, noPrefix }) =>
+  return REMOTE_MENU_TRIGGER_BINDINGS.map(({ key, noPrefix }) =>
     noPrefix
-      ? `bind-key -n ${key} ${enterModeCommand}`
-      : `bind-key ${key} ${enterModeCommand}`
+      ? `bind-key -n ${key} ${buildRunRemotePaneActionCommand('m')}`
+      : `bind-key ${key} ${buildRunRemotePaneActionCommand('m')}`
   );
-
-  commands.push(
-    `bind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} Escape ${buildClearRemoteModeCommand()} \\; switch-client -T root`,
-    `bind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} C-c ${buildClearRemoteModeCommand()} \\; switch-client -T root`
-  );
-
-  for (const shortcut of REMOTE_PANE_ACTION_SHORTCUTS) {
-    const remoteActionCommand = `${buildRemotePaneActionCommand(shortcut)} >/dev/null 2>&1`;
-    commands.push(
-      `bind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} ${shortcut} ${buildClearRemoteModeCommand()} \\; run-shell "${escapeForDoubleQuotes(
-        remoteActionCommand
-      )}" \\; switch-client -T root`
-    );
-  }
-
-  commands.push(
-    `bind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} Any ${buildClearRemoteModeCommand()} \\; switch-client -T root`
-  );
-
-  return commands;
 }
 
 export function buildRemotePaneActionCleanupCommands(): string[] {
-  const commands = REMOTE_TRIGGER_BINDINGS.map(({ key, noPrefix }) =>
-    noPrefix ? `unbind-key -n ${key}` : `unbind-key ${key}`
+  const commands = [
+    ...REMOTE_MENU_TRIGGER_BINDINGS,
+    ...LEGACY_REMOTE_TRIGGER_BINDINGS,
+  ].map(({ key, noPrefix }) =>
+    buildSafeTmuxCommand(
+      noPrefix ? `unbind-key -n ${key}` : `unbind-key ${key}`
+    )
   );
 
   commands.push(
-    `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} Escape`,
-    `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} C-c`,
-    `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} Any`
+    buildSafeTmuxCommand(
+      `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} Escape`
+    ),
+    buildSafeTmuxCommand(
+      `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} C-c`
+    ),
+    buildSafeTmuxCommand(
+      `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} Any`
+    )
   );
 
   for (const shortcut of REMOTE_PANE_ACTION_SHORTCUTS) {
-    commands.push(`unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} ${shortcut}`);
+    commands.push(
+      buildSafeTmuxCommand(
+        `unbind-key -T ${DMUX_REMOTE_PANE_ACTION_TABLE} ${shortcut}`
+      )
+    );
   }
 
   return commands;

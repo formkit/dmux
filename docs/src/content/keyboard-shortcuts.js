@@ -6,7 +6,7 @@ export function render() {
     <p class="lead">dmux is designed for keyboard-first navigation. All major actions are available through single-key shortcuts.</p>
 
     <h2>Pane Management</h2>
-    <p><kbd>Alt+Shift+D</kbd> enters remote pane mode for the currently focused tmux pane. The focused pane's top border switches to a highlighted <code>hit hotkey: ...</code> prompt until your next keypress. After that, press any pane-management shortcut below and dmux applies it to the focused pane without making you move back to the sidebar first. Pressing <kbd>m</kbd> from remote pane mode opens the full pane menu for that pane.</p>
+    <p><kbd>Alt+Shift+M</kbd> opens the pane menu for the currently focused tmux pane. dmux renders the same pane menu used in the sidebar, but positions it over the active pane so you can act on that pane without moving focus back to the control sidebar first.</p>
     <table class="shortcut-table">
       <thead>
         <tr><th>Key</th><th>Action</th></tr>
@@ -15,6 +15,7 @@ export function render() {
         <tr><td><kbd>n</kbd></td><td>Create a new pane in the main project</td></tr>
         <tr><td><kbd>t</kbd></td><td>Create a terminal pane (no agent, just a shell in a worktree)</td></tr>
         <tr><td><kbd>p</kbd></td><td>Create a pane in another attached project</td></tr>
+        <tr><td><kbd>Alt+Shift+M</kbd></td><td>Open the pane menu for the focused tmux pane</td></tr>
         <tr><td><kbd>j</kbd></td><td>Jump to the selected pane (switch tmux focus)</td></tr>
         <tr><td><kbd>m</kbd></td><td>Open the kebab menu for the selected pane</td></tr>
         <tr><td><kbd>x</kbd></td><td>Close the selected pane</td></tr>

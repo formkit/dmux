@@ -82,17 +82,15 @@ describe('remotePaneActions', () => {
     expect(await drainRemotePaneActions('dmux-test', homeDir)).toEqual([]);
   });
 
-  it('builds trigger and cleanup commands for remote pane mode', () => {
+  it('builds trigger and cleanup commands for the focused-pane menu shortcut', () => {
     const setupCommands = buildRemotePaneActionBindingCommands();
     const cleanupCommands = buildRemotePaneActionCleanupCommands();
 
-    expect(setupCommands[0]).toContain('bind-key -n M-D');
-    expect(setupCommands[0]).toContain('@dmux_remote_pane_mode');
-    expect(setupCommands[0]).toContain('hit hotkey: j m x a b f A h H P r S');
-    expect(setupCommands.some((command) => command.includes('bind-key -T dmux-pane-action x set-option -u -p'))).toBe(true);
-    expect(setupCommands.some((command) => command.includes('set-option -u -p -t "#{pane_id}" @dmux_remote_pane_mode'))).toBe(true);
-    expect(setupCommands.some((command) => command.includes('--remote-pane-action x'))).toBe(true);
-    expect(cleanupCommands).toContain('unbind-key -n M-D');
-    expect(cleanupCommands).toContain('unbind-key -T dmux-pane-action x');
+    expect(setupCommands).toHaveLength(1);
+    expect(setupCommands[0]).toContain('bind-key -n M-M');
+    expect(setupCommands[0]).toContain('--remote-pane-action m');
+    expect(cleanupCommands.some((command) => command.includes('unbind-key -n M-M'))).toBe(true);
+    expect(cleanupCommands.some((command) => command.includes('unbind-key -n M-D'))).toBe(true);
+    expect(cleanupCommands.some((command) => command.includes('unbind-key -T dmux-pane-action x'))).toBe(true);
   });
 });

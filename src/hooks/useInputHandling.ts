@@ -689,8 +689,15 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
-  const openPaneMenu = async (pane: DmuxPane) => {
-    const actionId = await popupManager.launchKebabMenuPopup(pane, panes)
+  const openPaneMenu = async (
+    pane: DmuxPane,
+    options: { anchorToPane?: boolean } = {}
+  ) => {
+    const actionId = await popupManager.launchKebabMenuPopup(
+      pane,
+      panes,
+      options
+    )
     if (!actionId) {
       return
     }
@@ -881,7 +888,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
   const executePaneShortcut = async (
     shortcut: RemotePaneActionShortcut,
-    selectedPane: DmuxPane
+    selectedPane: DmuxPane,
+    options: { anchorMenuToPane?: boolean } = {}
   ) => {
     switch (shortcut) {
       case "a":
@@ -897,7 +905,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
         await openTerminalInWorktree(selectedPane)
         return
       case "m":
-        await openPaneMenu(selectedPane)
+        await openPaneMenu(selectedPane, {
+          anchorToPane: options.anchorMenuToPane,
+        })
         return
       case "h":
         await togglePaneVisibility(selectedPane)
@@ -965,7 +975,9 @@ export function useInputHandling(params: UseInputHandlingParams) {
         }
 
         setSelectedIndex(paneIndex)
-        await executePaneShortcut(action.shortcut, panes[paneIndex])
+        await executePaneShortcut(action.shortcut, panes[paneIndex], {
+          anchorMenuToPane: true,
+        })
       }
     }
 
