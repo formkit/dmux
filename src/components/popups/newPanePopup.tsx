@@ -5,11 +5,10 @@
  * Runs in a tmux popup modal and writes result to a file
  */
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { render, Box, Text, useApp, useInput } from "ink"
 import {
   PopupContainer,
-  PopupInputBox,
   PopupWrapper,
   writeSuccessAndExit,
   FileList,
@@ -19,10 +18,12 @@ import CleanTextInput from "../inputs/CleanTextInput.js"
 import { scanProjectFiles, fuzzyMatchFiles } from "../../utils/fileScanner.js"
 import fs from "fs"
 import path from "path"
+import { pathToFileURL } from "url"
 
 const PROJECT_PATH_ARG = process.argv[3]
 const FILE_SCAN_ROOT = PROJECT_PATH_ARG || process.cwd()
 const PROJECT_NAME = path.basename(FILE_SCAN_ROOT)
+const ESC_CLEAR_CONFIRMATION_MS = 500
 
 // Debug logging to file
 const DEBUG_LOG = path.join(FILE_SCAN_ROOT, '.dmux', 'file-picker-debug.log')
@@ -36,9 +37,11 @@ function debugLog(message: string, data?: any) {
   }
 }
 
-const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
+export const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   const [prompt, setPrompt] = useState("")
+  const [pendingClearEsc, setPendingClearEsc] = useState(false)
   const { exit } = useApp()
+  const clearEscTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // File autocomplete state
   const [isFileListActive, setIsFileListActive] = useState(false)
@@ -48,6 +51,32 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   const [cursorPosition, setCursorPosition] = useState<number | undefined>(undefined)
   const [currentCursor, setCurrentCursor] = useState(0) // Track cursor position from CleanTextInput
 
+  const resetPendingClearEsc = () => {
+    if (clearEscTimeoutRef.current) {
+      clearTimeout(clearEscTimeoutRef.current)
+      clearEscTimeoutRef.current = null
+    }
+    setPendingClearEsc(false)
+  }
+
+  const armPendingClearEsc = () => {
+    if (clearEscTimeoutRef.current) {
+      clearTimeout(clearEscTimeoutRef.current)
+    }
+
+    setPendingClearEsc(true)
+    clearEscTimeoutRef.current = setTimeout(() => {
+      clearEscTimeoutRef.current = null
+      setPendingClearEsc(false)
+    }, ESC_CLEAR_CONFIRMATION_MS)
+  }
+
+  const updatePrompt = (nextPrompt: string) => {
+    if (pendingClearEsc) {
+      resetPendingClearEsc()
+    }
+    setPrompt(nextPrompt)
+  }
 
   // Reset cursor position override after it's been applied
   useEffect(() => {
@@ -57,6 +86,14 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
       return () => clearTimeout(timer);
     }
   }, [cursorPosition]);
+
+  useEffect(() => {
+    return () => {
+      if (clearEscTimeoutRef.current) {
+        clearTimeout(clearEscTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Detect @ and scan files (cursor-aware)
   useEffect(() => {
@@ -150,7 +187,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
   useInput((input, key) => {
     // Handle ESC with progressive behavior:
     // 1. If file list is active, dismiss it
-    // 2. If text is present, clear it
+    // 2. If text is present, arm a clear, then clear on a second ESC
     // 3. If no text, allow PopupWrapper to close the popup
     if (key.escape) {
       if (isFileListActive) {
@@ -159,11 +196,17 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
         setIsFileListActive(false);
         setFilteredFiles([]);
         setAtPosition(-1);
+        resetPendingClearEsc();
         return; // Prevent further handling
       } else if (prompt.length > 0) {
-        // Clear the text input
-        debugLog('[ESC] Clearing text input');
-        setPrompt('');
+        if (pendingClearEsc) {
+          debugLog('[ESC] Clearing text input after confirmation');
+          updatePrompt('');
+          return; // Prevent further handling (don't close popup)
+        }
+
+        debugLog('[ESC] Waiting for second ESC before clearing text input');
+        armPendingClearEsc();
         return; // Prevent further handling (don't close popup)
       }
       // If no file list and no text, let PopupWrapper close the popup
@@ -202,7 +245,7 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
         // Insert @filepath (with space after if there isn't one)
         const fileReference = '@' + selectedFile;
         const newPrompt = beforeAt + fileReference + (afterQuery.startsWith(' ') ? '' : ' ') + afterQuery;
-        setPrompt(newPrompt);
+        updatePrompt(newPrompt);
 
         // Set cursor position to end of the inserted file reference
         const newCursorPos = beforeAt.length + fileReference.length;
@@ -267,6 +310,12 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
           <Text dimColor>Enter a prompt for your AI agent.</Text>
         </Box>
 
+        {pendingClearEsc && (
+          <Box marginBottom={1}>
+            <Text color={POPUP_CONFIG.titleColor}>Press Esc again to clear the prompt.</Text>
+          </Box>
+        )}
+
         {/* Input area with themed border */}
         <Box
           width="100%"
@@ -277,14 +326,14 @@ const NewPanePopupApp: React.FC<{ resultFile: string }> = ({ resultFile }) => {
         >
           <CleanTextInput
             value={prompt}
-            onChange={setPrompt}
+            onChange={updatePrompt}
             onSubmit={handleSubmit}
             placeholder="e.g., Add user authentication with JWT"
             maxWidth={76}
             maxVisibleLines={10}
             cursorPosition={cursorPosition}
             disableUpDownArrows={isFileListActive}
-            disableEscape={isFileListActive}
+            disableEscape={true}
             onCursorChange={setCurrentCursor}
             ignoreFocus={true}
           />
@@ -315,4 +364,7 @@ function main() {
   render(<NewPanePopupApp resultFile={resultFile} />)
 }
 
-main()
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : ""
+if (import.meta.url === entryPointHref) {
+  main()
+}
