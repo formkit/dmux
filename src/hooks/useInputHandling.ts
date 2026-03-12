@@ -867,7 +867,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
   const reopenClosedWorktreesInProject = async (targetProjectRoot: string) => {
     const activeSlugs = panes
-      .filter((pane) => getPaneProjectRoot(pane, projectRoot) === targetProjectRoot)
+      .filter((pane) => sameSidebarProjectRoot(getPaneProjectRoot(pane, projectRoot), targetProjectRoot))
       .map((pane) => pane.slug)
     const orphanedWorktrees = getOrphanedWorktrees(targetProjectRoot, activeSlugs)
 
@@ -1284,11 +1284,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await executePaneShortcut("S", panes[selectedIndex])
       return
     } else if (input === "r") {
-      const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
-      const targetProjectRoot = selectedPane
-        ? getPaneProjectRoot(selectedPane, projectRoot)
-        : projectRoot
-      await reopenClosedWorktreesInProject(targetProjectRoot)
+      await reopenClosedWorktreesInProject(getActiveProjectRoot())
       return
     } else if (
       !isLoading &&

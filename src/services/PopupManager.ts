@@ -951,6 +951,10 @@ export class PopupManager {
     if (!this.checkPopupSupport()) return null
 
     try {
+      const popupProjectRoot = projectRoot || this.config.projectRoot
+      const popupProjectName = path.basename(popupProjectRoot) || popupProjectRoot
+      const maxVisibleRows = 8
+
       // Convert Date objects to ISO strings for JSON serialization
       const worktreesData = worktrees.map((wt) => ({
         ...wt,
@@ -961,11 +965,14 @@ export class PopupManager {
         "reopenWorktreePopup.js",
         [],
         {
-          width: 70,
-          height: Math.min(25, worktrees.length * 3 + 8),
-          title: "📂 Reopen Closed Worktree",
+          width: 78,
+          height: Math.max(13, Math.min(18, Math.min(worktrees.length, maxVisibleRows) + 8)),
+          title: `Reopen Closed Worktree: ${popupProjectName}`,
         },
-        { worktrees: worktreesData },
+        {
+          projectName: popupProjectName,
+          worktrees: worktreesData,
+        },
         projectRoot
       )
 

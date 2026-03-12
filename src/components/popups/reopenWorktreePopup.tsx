@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { PopupFooters, POPUP_CONFIG } from './config.js';
 
@@ -21,8 +22,11 @@ interface OrphanedWorktree {
 
 interface ReopenWorktreePopupProps {
   resultFile: string;
+  projectName?: string;
   worktrees: OrphanedWorktree[];
 }
+
+const MAX_VISIBLE_WORKTREES = 8;
 
 /**
  * Format relative time (e.g., "2 hours ago", "3 days ago")
@@ -48,13 +52,48 @@ function formatRelativeTime(dateStr: string): string {
   return 'just now';
 }
 
-const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
+function getVisibleWindow(totalItems: number, selectedIndex: number, maxVisible: number) {
+  let startIndex = 0;
+  let endIndex = Math.min(maxVisible, totalItems);
+
+  if (selectedIndex >= endIndex) {
+    endIndex = selectedIndex + 1;
+    startIndex = Math.max(0, endIndex - maxVisible);
+  } else if (selectedIndex < startIndex) {
+    startIndex = selectedIndex;
+    endIndex = Math.min(startIndex + maxVisible, totalItems);
+  }
+
+  if (selectedIndex >= maxVisible / 2 && totalItems > maxVisible) {
+    startIndex = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
+    endIndex = Math.min(startIndex + maxVisible, totalItems);
+    startIndex = Math.max(0, endIndex - maxVisible);
+  }
+
+  return { startIndex, endIndex };
+}
+
+function getWorktreeDetails(worktree: OrphanedWorktree): string {
+  const details: string[] = [];
+
+  if (worktree.branch !== worktree.slug) {
+    details.push(`branch:${worktree.branch}`);
+  }
+
+  if (worktree.hasUncommittedChanges) {
+    details.push('dirty');
+  }
+
+  return details.join('  ');
+}
+
+export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
   resultFile,
+  projectName,
   worktrees,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { exit } = useApp();
-  const maxVisible = 8;
 
   useInput((input, key) => {
     if (key.upArrow) {
@@ -73,6 +112,9 @@ const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
       <PopupWrapper resultFile={resultFile}>
         <PopupContainer footer="Press ESC to close">
           <Box flexDirection="column">
+            {projectName && (
+              <Text dimColor>Project: {projectName}</Text>
+            )}
             <Text dimColor>No closed worktrees found.</Text>
             <Text dimColor>All worktrees have active panes.</Text>
           </Box>
@@ -82,78 +124,92 @@ const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
   }
 
   const totalWorktrees = worktrees.length;
-  let startIndex = 0;
-  let endIndex = Math.min(maxVisible, totalWorktrees);
-
-  if (selectedIndex >= endIndex) {
-    endIndex = selectedIndex + 1;
-    startIndex = Math.max(0, endIndex - maxVisible);
-  } else if (selectedIndex < startIndex) {
-    startIndex = selectedIndex;
-    endIndex = Math.min(startIndex + maxVisible, totalWorktrees);
-  }
-
-  if (selectedIndex >= maxVisible / 2 && totalWorktrees > maxVisible) {
-    startIndex = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
-    endIndex = Math.min(startIndex + maxVisible, totalWorktrees);
-    startIndex = Math.max(0, endIndex - maxVisible);
-  }
-
+  const { startIndex, endIndex } = getVisibleWindow(
+    totalWorktrees,
+    selectedIndex,
+    MAX_VISIBLE_WORKTREES
+  );
   const visibleWorktrees = worktrees.slice(startIndex, endIndex);
-  const showScrollIndicators = totalWorktrees > maxVisible;
+  const emptyRows = Math.max(0, MAX_VISIBLE_WORKTREES - visibleWorktrees.length);
+  const moreAbove = startIndex > 0;
+  const moreBelow = endIndex < totalWorktrees;
 
   return (
     <PopupWrapper resultFile={resultFile}>
       <PopupContainer footer={PopupFooters.choice()}>
-        <Box marginBottom={1}>
-          <Text dimColor>Select a worktree to reopen:</Text>
+        <Box marginBottom={1} flexDirection="column">
+          {projectName && (
+            <Text dimColor>Project: {projectName}</Text>
+          )}
+          <Text dimColor>Select a closed worktree to reopen.</Text>
         </Box>
 
-        {showScrollIndicators && startIndex > 0 && (
+        <Box
+          flexDirection="column"
+          borderStyle={POPUP_CONFIG.inputBorderStyle}
+          borderColor={POPUP_CONFIG.borderColor}
+          paddingX={1}
+          width="100%"
+        >
           <Box marginBottom={1}>
-            <Text dimColor>↑ {startIndex} more above</Text>
+            <Box width={34} paddingRight={1}>
+              <Text dimColor>Worktree</Text>
+            </Box>
+            <Box width={16} paddingRight={1}>
+              <Text dimColor>Last worked</Text>
+            </Box>
+            <Text dimColor>Status</Text>
           </Box>
-        )}
 
-        {/* Worktree list */}
-        <Box flexDirection="column">
           {visibleWorktrees.map((worktree, idx) => {
             const index = startIndex + idx;
             const isSelected = index === selectedIndex;
+            const details = getWorktreeDetails(worktree);
+
             return (
-              <Box key={worktree.slug} marginBottom={idx < visibleWorktrees.length - 1 ? 1 : 0}>
-                <Box flexDirection="column">
+              <Box key={worktree.slug}>
+                <Box width={34} paddingRight={1}>
                   <Text
                     color={isSelected ? POPUP_CONFIG.titleColor : 'white'}
                     bold={isSelected}
+                    wrap="truncate-end"
                   >
-                    {isSelected ? '▶ ' : '  '}
-                    {worktree.slug}
-                    {worktree.hasUncommittedChanges && (
-                      <Text color="yellow"> *</Text>
-                    )}
+                    {isSelected ? '▶ ' : '  '}{worktree.slug}
                   </Text>
-                  <Box marginLeft={3}>
-                    <Text dimColor>
-                      {formatRelativeTime(worktree.lastModified)}
-                      {worktree.branch !== worktree.slug && ` • branch: ${worktree.branch}`}
-                    </Text>
-                  </Box>
                 </Box>
+                <Box width={16} paddingRight={1}>
+                  <Text
+                    color={isSelected ? POPUP_CONFIG.titleColor : undefined}
+                    dimColor={!isSelected}
+                    wrap="truncate-end"
+                  >
+                    {formatRelativeTime(worktree.lastModified)}
+                  </Text>
+                </Box>
+                <Text
+                  color={worktree.hasUncommittedChanges ? 'yellow' : undefined}
+                  dimColor={!worktree.hasUncommittedChanges}
+                  wrap="truncate-end"
+                >
+                  {details || ' '}
+                </Text>
               </Box>
             );
           })}
-        </Box>
 
-        {showScrollIndicators && endIndex < totalWorktrees && (
+          {Array.from({ length: emptyRows }).map((_, index) => (
+            <Box key={`empty-${index}`}>
+              <Text> </Text>
+            </Box>
+          ))}
+
           <Box marginTop={1}>
-            <Text dimColor>↓ {totalWorktrees - endIndex} more below</Text>
+            <Text dimColor>
+              {totalWorktrees} reopenable worktree{totalWorktrees === 1 ? '' : 's'}
+              {moreAbove ? `  •  ${startIndex} above` : ''}
+              {moreBelow ? `  •  ${totalWorktrees - endIndex} below` : ''}
+            </Text>
           </Box>
-        )}
-
-        {/* Legend */}
-        <Box marginTop={1}>
-          <Text dimColor italic>* = has uncommitted changes</Text>
         </Box>
       </PopupContainer>
     </PopupWrapper>
@@ -170,7 +226,10 @@ function main() {
     process.exit(1);
   }
 
-  let data: { worktrees: OrphanedWorktree[] };
+  let data: {
+    projectName?: string;
+    worktrees: OrphanedWorktree[];
+  };
 
   try {
     const dataJson = fs.readFileSync(dataFile, 'utf-8');
@@ -183,9 +242,13 @@ function main() {
   render(
     <ReopenWorktreePopupApp
       resultFile={resultFile}
+      projectName={data.projectName}
       worktrees={data.worktrees}
     />
   );
 }
 
-main();
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (import.meta.url === entryPointHref) {
+  main();
+}
