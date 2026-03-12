@@ -71,6 +71,7 @@ const DEFAULT_SETTINGS: DmuxSettings = {
   maxPaneWidth: DEFAULT_MAX_PANE_WIDTH,
   enabledAgents: getDefaultEnabledAgents(),
   enabledNotificationSounds: getDefaultNotificationSoundSelection(),
+  showFooterTips: true,
 };
 
 const AGENT_OPTIONS = getAgentDefinitions().map((agent) => ({
@@ -118,6 +119,12 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     label: 'Attention Notification Sounds',
     description: 'Select the macOS helper sounds that dmux randomizes between for background alerts',
     type: 'action' as any,
+  },
+  {
+    key: 'showFooterTips',
+    label: 'Show Footer Tips',
+    description: 'Rotate short dmux tips in the footer. Disable this if you prefer a quieter sidebar.',
+    type: 'boolean',
   },
   {
     key: 'useTmuxHooks',

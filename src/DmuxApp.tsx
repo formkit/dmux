@@ -54,6 +54,12 @@ import { getPaneBranchName } from "./utils/git.js"
 import { getGitStatus } from "./utils/mergeValidation.js"
 import { createMergeTargetChain } from "./utils/mergeTargets.js"
 import { claimProcessShutdown } from "./utils/processShutdown.js"
+import {
+  FOOTER_TIP_ROTATION_INTERVAL,
+  getFooterTips,
+  getNextFooterTipIndex,
+  getRandomFooterTipIndex,
+} from "./utils/footerTips.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -102,6 +108,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Settings state
   const [settingsManager] = useState(() => new SettingsManager(projectRoot))
   const { projectSettings, saveSettings } = useProjectSettings(settingsFile)
+  const settings = settingsManager.getSettings()
 
   // Dialog state management
   const dialogState = useDialogState()
@@ -136,8 +143,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Agent selection is settings-driven.
   // Installation checks are performed lazily in the Enabled Agents settings popup.
   const availableAgents = resolveEnabledAgentsSelection(
-    settingsManager.getSettings().enabledAgents
+    settings.enabledAgents
   )
+  const footerTips = useMemo(() => getFooterTips(isDevMode), [isDevMode])
+  const showFooterTips = settings.showFooterTips !== false && footerTips.length > 0
+  const [footerTipIndex, setFooterTipIndex] = useState(() => getRandomFooterTipIndex(footerTips.length))
+  const currentFooterTip = showFooterTips && footerTipIndex >= 0
+    ? footerTips[footerTipIndex]
+    : undefined
 
   // Popup support detection
   const [popupsSupported, setPopupsSupported] = useState(false)
@@ -163,6 +176,20 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   const [attentionService] = useState(
     () => new DmuxAttentionService({ focusService })
   )
+
+  useEffect(() => {
+    if (!showFooterTips || footerTips.length <= 1) {
+      return
+    }
+
+    const timer = setInterval(() => {
+      setFooterTipIndex((currentIndex) => getNextFooterTipIndex(currentIndex, footerTips.length))
+    }, FOOTER_TIP_ROTATION_INTERVAL)
+
+    return () => {
+      clearInterval(timer)
+    }
+  }, [showFooterTips, footerTips.length])
 
   // Subscribe to StateManager for unread error/warning count and toast updates
   useEffect(() => {
@@ -1141,34 +1168,45 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   // Footer height varies based on state:
   // - Quit confirm mode: 2 lines (marginTop + 1 text line)
   // - Normal mode calculation:
-  //   - Base: 4 lines (marginTop + logs divider + logs line + keyboard shortcuts)
+  //   - Base footer: 4 lines (marginTop + logs divider + logs line + keyboard shortcuts)
+  //   - Footer tip: +1 line when footer tips are enabled
   //   - Toast: +2 lines (toast message + marginBottom) if currentToast exists
   //   - Debug info: +1 line if DEBUG_DMUX
   //   - Status line: +1 line if updateAvailable/currentBranch/debugMessage
   //   - Status messages: +1 line per active message
+  const showFooterHelp = !showCommandPrompt
   let footerLines = 2
   if (quitConfirmMode) {
     footerLines = 2
   } else {
-    // Base footer (logs divider + logs + shortcuts - always shown)
-    footerLines = 4 // marginTop + logs divider + logs + shortcuts
-    // Add toast notification (calculate wrapped lines + header)
-    if (currentToast) {
-      // Calculate how many lines the toast will take
-      // Toast format: "✓ message" - icon (1) + space (1) + message
-      const iconAndSpaceLength = 2;
-      const toastTextLength = iconAndSpaceLength + currentToast.message.length;
+    footerLines = 0
 
-      // Available width is sidebar width (40) minus padding/margins (~2)
-      const availableWidth = SIDEBAR_WIDTH - 2;
-      const wrappedLines = Math.ceil(toastTextLength / availableWidth);
+    if (showFooterHelp) {
+      footerLines = 4 // marginTop + logs divider + logs + shortcuts
 
-      footerLines += wrappedLines + 1 + 1; // wrapped lines + header line + marginBottom
+      if (currentFooterTip) {
+        footerLines += 1
+      }
+
+      // Add toast notification (calculate wrapped lines + header)
+      if (currentToast) {
+        // Toast format: "✓ message" - icon (1) + space (1) + message
+        const iconAndSpaceLength = 2;
+        const toastTextLength = iconAndSpaceLength + currentToast.message.length;
+
+        // Available width is sidebar width (40) minus padding/margins (~2)
+        const availableWidth = SIDEBAR_WIDTH - 2;
+        const wrappedLines = Math.ceil(toastTextLength / availableWidth);
+
+        footerLines += wrappedLines + 1 + 1; // wrapped lines + header line + marginBottom
+      }
+
+      // Add debug info
+      if (process.env.DEBUG_DMUX) {
+        footerLines += 1
+      }
     }
-    // Add debug info
-    if (process.env.DEBUG_DMUX) {
-      footerLines += 1
-    }
+
     // Add status line
     if (isDevMode || updateAvailable || currentBranch || debugMessage) {
       footerLines += 1
@@ -1239,13 +1277,14 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
       {/* Footer - always at bottom */}
       <FooterHelp
-        show={!showCommandPrompt}
+        show={showFooterHelp}
         quitConfirmMode={quitConfirmMode}
         unreadErrorCount={unreadErrorCount}
         unreadWarningCount={unreadWarningCount}
         currentToast={currentToast}
         toastQueueLength={toastQueueLength}
         toastQueuePosition={toastQueuePosition}
+        footerTip={currentFooterTip}
         gridInfo={(() => {
           if (!process.env.DEBUG_DMUX) return undefined
           const rows = navigationRows.length

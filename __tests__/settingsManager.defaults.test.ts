@@ -26,7 +26,27 @@ describe('SettingsManager defaults', () => {
       minPaneWidth: 50,
       maxPaneWidth: 80,
       enabledNotificationSounds: ['default-system-sound'],
+      showFooterTips: true,
     });
+  });
+
+  it('allows overriding showFooterTips', async () => {
+    vi.mock('fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('fs')>();
+      return {
+        ...actual,
+        existsSync: vi.fn(() => false),
+        readFileSync: vi.fn(),
+        writeFileSync: vi.fn(),
+        mkdirSync: vi.fn(),
+      };
+    });
+
+    const { SettingsManager } = await import('../src/utils/settingsManager.js');
+    const manager = new SettingsManager('/tmp/test-project');
+
+    manager.updateSetting('showFooterTips', false, 'project');
+    expect(manager.getSettings().showFooterTips).toBe(false);
   });
 
   it('allows overriding enabledNotificationSounds with valid sound ids', async () => {

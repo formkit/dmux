@@ -101,6 +101,8 @@ export interface DmuxSettings {
   enabledAgents?: AgentName[];
   // Which macOS helper notification sounds are eligible for random selection
   enabledNotificationSounds?: NotificationSoundId[];
+  // Rotate short dmux tips in the footer
+  showFooterTips?: boolean;
   // Tmux hooks for event-driven updates (low CPU)
   // true = use hooks, false = use polling, undefined = not yet asked
   useTmuxHooks?: boolean;
