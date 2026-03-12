@@ -9,7 +9,8 @@ import React, { useState } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import type { PaneMenuAction } from '../../actions/types.js';
 import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
-import { PopupFooters, POPUP_CONFIG } from './config.js';
+import { POPUP_CONFIG } from './config.js';
+import { pathToFileURL } from 'url';
 
 interface KebabMenuPopupProps {
   resultFile: string;
@@ -17,7 +18,7 @@ interface KebabMenuPopupProps {
   actions: PaneMenuAction[];
 }
 
-const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName, actions }) => {
+export const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName, actions }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { exit } = useApp();
 
@@ -30,12 +31,17 @@ const KebabMenuPopupApp: React.FC<KebabMenuPopupProps> = ({ resultFile, paneName
       // User selected an action
       const selectedAction = actions[selectedIndex];
       writeSuccessAndExit(resultFile, selectedAction.id, exit);
+    } else {
+      const shortcutAction = actions.find((action) => action.shortcut === input);
+      if (shortcutAction) {
+        writeSuccessAndExit(resultFile, shortcutAction.id, exit);
+      }
     }
   });
 
   return (
     <PopupWrapper resultFile={resultFile}>
-      <PopupContainer footer={PopupFooters.choice()}>
+      <PopupContainer footer="↑↓ to navigate • Enter or hotkey to select • ESC to cancel">
         {/* Action list */}
         {actions.map((action, index) => (
           <Box key={action.id} width="100%">
@@ -77,4 +83,7 @@ function main() {
   render(<KebabMenuPopupApp resultFile={resultFile} paneName={paneName} actions={actions} />);
 }
 
-main();
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (import.meta.url === entryPointHref) {
+  main();
+}
