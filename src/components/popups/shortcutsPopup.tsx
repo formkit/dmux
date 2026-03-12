@@ -48,9 +48,10 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
     { key: 'b', description: 'Create child worktree' },
     { key: 'f', description: 'Open read-only file browser' },
     { key: 'A', description: 'Add terminal to worktree' },
-    { key: 'n', description: 'New agent pane' },
-    { key: 't', description: 'New terminal pane' },
-    { key: 'p', description: 'New pane in another project' },
+    { key: 'n', description: 'New agent pane in selected project' },
+    { key: 't', description: 'New terminal pane in selected project' },
+    { key: 'p', description: 'Add project to sidebar' },
+    { key: 'R', description: 'Remove selected empty project from sidebar' },
     { key: 'r', description: 'Reopen closed worktree' },
     ...(isDevMode
       ? [{ key: 'S', description: '[DEV] Toggle source pane' }]

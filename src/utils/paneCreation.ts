@@ -425,6 +425,8 @@ export async function createPane(
 
     try {
       writeWorktreeMetadata(worktreePath, {
+        agent,
+        permissionMode: settings.permissionMode,
         branchName: branchName !== slug ? branchName : undefined,
         mergeTargetChain,
       });
@@ -550,6 +552,7 @@ export async function createPane(
     projectName: paneProjectName,
     worktreePath,
     agent,
+    permissionMode: settings.permissionMode,
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
     autopilot: settings.enableAutopilotByDefault ?? false,
     mergeTargetChain,

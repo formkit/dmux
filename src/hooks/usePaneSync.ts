@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import path from 'path';
 import type { DmuxPane } from '../types.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
@@ -9,6 +10,7 @@ import type { DmuxConfig } from './usePaneLoading.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { getPaneTmuxTitle } from '../utils/paneTitle.js';
 import { StateManager } from '../shared/StateManager.js';
+import { normalizeSidebarProjects } from '../utils/sidebarProjects.js';
 
 /**
  * Enforces that pane titles in tmux match the slugs in the config
@@ -128,6 +130,14 @@ export async function savePanesToFile(
 
     // Save in config format (use atomic write to prevent race conditions)
     config.panes = activePanes;
+    const projectRoot = config.projectRoot || path.dirname(path.dirname(panesFile));
+    const projectName = config.projectName || path.basename(projectRoot);
+    config.sidebarProjects = normalizeSidebarProjects(
+      config.sidebarProjects,
+      activePanes,
+      projectRoot,
+      projectName
+    );
     config.lastUpdated = new Date().toISOString();
     await atomicWriteJson(panesFile, config);
 
@@ -261,6 +271,14 @@ export async function saveUpdatedPaneConfig(
 
     // Update with remapped panes
     currentConfig.panes = activePanes;
+    const projectRoot = currentConfig.projectRoot || path.dirname(path.dirname(panesFile));
+    const projectName = currentConfig.projectName || path.basename(projectRoot);
+    currentConfig.sidebarProjects = normalizeSidebarProjects(
+      currentConfig.sidebarProjects,
+      activePanes,
+      projectRoot,
+      projectName
+    );
     currentConfig.lastUpdated = new Date().toISOString();
     LogService.getInstance().debug(
       `Writing config with ${currentConfig.panes.length} panes`,

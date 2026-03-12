@@ -8,6 +8,7 @@ import {
   buildAgentLaunchOptions,
   buildInitialPromptCommand,
   buildResumeCommand,
+  buildAgentResumeOrLaunchCommand,
   getDefaultEnabledAgents,
   getAgentSlugSuffix,
   getPermissionFlags,
@@ -180,6 +181,18 @@ describe('command builders', () => {
   it('builds gemini resume command', () => {
     expect(buildResumeCommand('gemini', 'bypassPermissions')).toBe(
       'gemini --resume latest --approval-mode yolo'
+    );
+  });
+
+  it('builds codex resume command with per-agent permissions', () => {
+    expect(buildResumeCommand('codex', 'bypassPermissions')).toBe(
+      'codex resume --last --dangerously-bypass-approvals-and-sandbox'
+    );
+  });
+
+  it('falls back to launch command when an agent has no resume template', () => {
+    expect(buildAgentResumeOrLaunchCommand('opencode', 'bypassPermissions')).toBe(
+      'opencode'
     );
   });
 });

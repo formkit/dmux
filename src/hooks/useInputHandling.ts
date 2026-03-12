@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import path from "path"
 import { useInput } from "ink"
-import type { DmuxPane } from "../types.js"
+import type { DmuxPane, SidebarProject } from "../types.js"
 import { StateManager } from "../shared/StateManager.js"
 import { TmuxService } from "../services/TmuxService.js"
 import {
@@ -21,6 +21,7 @@ import { suggestCommand } from "../utils/commands.js"
 import type { PopupManager } from "../services/PopupManager.js"
 import { getPaneProjectName, getPaneProjectRoot } from "../utils/paneProject.js"
 import {
+  buildProjectActionLayout,
   getProjectActionByIndex,
   type ProjectActionItem,
 } from "../utils/projectActions.js"
@@ -32,6 +33,12 @@ import {
   partitionPanesByProject,
 } from "../utils/paneVisibility.js"
 import { buildFilesOnlyCommand } from "../utils/dmuxCommand.js"
+import {
+  addSidebarProject,
+  hasSidebarProject,
+  removeSidebarProject,
+  sameSidebarProjectRoot,
+} from "../utils/sidebarProjects.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -87,6 +94,8 @@ interface UseInputHandlingParams {
   handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
   setDevSourceFromPane: (pane: DmuxPane) => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
+  sidebarProjects: SidebarProject[]
+  saveSidebarProjects: (projects: SidebarProject[]) => Promise<SidebarProject[]>
   loadPanes: () => Promise<void>
   cleanExit: () => void
 
@@ -142,6 +151,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
     handleReopenWorktree,
     setDevSourceFromPane,
     savePanes,
+    sidebarProjects,
+    saveSidebarProjects,
     loadPanes,
     cleanExit,
     availableAgents,
@@ -218,6 +229,26 @@ export function useInputHandling(params: UseInputHandlingParams) {
       setIsCreatingPane(false)
       setStatusMessage(`Failed to create terminal pane: ${error.message}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+    }
+  }
+
+  const selectProjectAction = (
+    targetProjectRoot: string,
+    projectsToRender: SidebarProject[] = sidebarProjects
+  ) => {
+    const actionLayout = buildProjectActionLayout(
+      panes,
+      projectsToRender,
+      projectRoot,
+      path.basename(projectRoot)
+    )
+    const selectedAction = actionLayout.actionItems.find(
+      (action) =>
+        action.kind === "new-agent" &&
+        sameSidebarProjectRoot(action.projectRoot, targetProjectRoot)
+    )
+    if (selectedAction) {
+      setSelectedIndex(selectedAction.index)
     }
   }
 
@@ -332,7 +363,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
-  const handleCreatePaneInProject = async () => {
+  const handleAddProjectToSidebar = async () => {
     const selectedAction = getProjectActionByIndex(projectActionItems, selectedIndex)
     const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
     const defaultProjectPath = selectedPane
@@ -351,17 +382,55 @@ export function useInputHandling(params: UseInputHandlingParams) {
     try {
       const { resolveProjectRootFromPath } = await import("../utils/projectRoot.js")
       const resolved = resolveProjectRootFromPath(requestedProjectPath, projectRoot)
+      const nextProjects = addSidebarProject(sidebarProjects, {
+        projectRoot: resolved.projectRoot,
+        projectName: resolved.projectName,
+      })
 
-      const promptValue = await popupManager.launchNewPanePopup(resolved.projectRoot)
-      if (!promptValue) {
+      if (nextProjects === sidebarProjects) {
+        selectProjectAction(resolved.projectRoot)
+        setStatusMessage(`${resolved.projectName} is already in the sidebar`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
         return
       }
 
-      await handlePaneCreationWithAgent(promptValue, resolved.projectRoot)
+      const savedProjects = await saveSidebarProjects(nextProjects)
+      selectProjectAction(resolved.projectRoot, savedProjects)
+      setStatusMessage(`Added ${resolved.projectName} to the sidebar`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } catch (error: any) {
       setStatusMessage(error?.message || "Invalid project path")
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
     }
+  }
+
+  const handleRemoveProjectFromSidebar = async (targetProjectRoot: string) => {
+    if (sameSidebarProjectRoot(targetProjectRoot, projectRoot)) {
+      setStatusMessage("The session project cannot be removed from the sidebar")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const projectHasPanes = panes.some((pane) =>
+      sameSidebarProjectRoot(getPaneProjectRoot(pane, projectRoot), targetProjectRoot)
+    )
+    if (projectHasPanes) {
+      setStatusMessage("Close this project's panes before removing it from the sidebar")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      return
+    }
+
+    if (!hasSidebarProject(sidebarProjects, targetProjectRoot)) {
+      setStatusMessage("Project is not in the sidebar")
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const updatedProjects = removeSidebarProject(sidebarProjects, targetProjectRoot)
+    const savedProjects = await saveSidebarProjects(updatedProjects)
+    selectProjectAction(projectRoot, savedProjects)
+    setStatusMessage(`Removed ${path.basename(targetProjectRoot)} from the sidebar`)
+    setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
   }
 
   const getActiveProjectRoot = (): string => {
@@ -1074,8 +1143,11 @@ export function useInputHandling(params: UseInputHandlingParams) {
         input === "N"
       )
     ) {
-      // Create pane in another project ([p], with Shift+N fallback)
-      await handleCreatePaneInProject()
+      // Add a project to the sidebar ([p], with Shift+N fallback)
+      await handleAddProjectToSidebar()
+      return
+    } else if (!isLoading && input === "R") {
+      await handleRemoveProjectFromSidebar(getActiveProjectRoot())
       return
     } else if (!isLoading && input === "n") {
       await handleCreateAgentPane(getActiveProjectRoot())
@@ -1093,6 +1165,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
         await handleCreateAgentPane(selectedAction.projectRoot)
       } else if (selectedAction.kind === "terminal") {
         await handleCreateTerminalPane(selectedAction.projectRoot)
+      } else if (selectedAction.kind === "remove-project") {
+        await handleRemoveProjectFromSidebar(selectedAction.projectRoot)
       }
       return
     } else if (input === "j" && selectedIndex < panes.length) {

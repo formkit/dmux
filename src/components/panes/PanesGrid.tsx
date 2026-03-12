@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from "react"
 import { Box, Text } from "ink"
 import stringWidth from "string-width"
-import type { DmuxPane } from "../../types.js"
+import type { DmuxPane, SidebarProject } from "../../types.js"
 import type { AgentStatusMap } from "../../hooks/useAgentStatus.js"
 import PaneCard from "./PaneCard.js"
 import { COLORS } from "../../theme/colors.js"
@@ -18,6 +18,7 @@ interface PanesGridProps {
   isLoading: boolean
   agentStatuses?: AgentStatusMap
   activeDevSourcePath?: string
+  sidebarProjects: SidebarProject[]
   fallbackProjectRoot: string
   fallbackProjectName: string
   isProjectBusy?: (projectRoot: string) => boolean
@@ -32,24 +33,39 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   isLoading,
   agentStatuses,
   activeDevSourcePath,
+  sidebarProjects,
   fallbackProjectRoot,
   fallbackProjectName,
   isProjectBusy,
 }) => {
   const actionLayout = useMemo(
-    () => buildProjectActionLayout(panes, fallbackProjectRoot, fallbackProjectName),
-    [panes, fallbackProjectRoot, fallbackProjectName]
+    () => buildProjectActionLayout(
+      panes,
+      sidebarProjects,
+      fallbackProjectRoot,
+      fallbackProjectName
+    ),
+    [panes, sidebarProjects, fallbackProjectRoot, fallbackProjectName]
   )
   const paneGroups = actionLayout.groups
 
   const actionsByProject = useMemo(() => {
-    const map = new Map<string, { newAgent?: ProjectActionItem; terminal?: ProjectActionItem }>()
+    const map = new Map<
+      string,
+      {
+        newAgent?: ProjectActionItem
+        terminal?: ProjectActionItem
+        removeProject?: ProjectActionItem
+      }
+    >()
     for (const action of actionLayout.actionItems) {
       const entry = map.get(action.projectRoot) || {}
       if (action.kind === "new-agent") {
         entry.newAgent = action
-      } else {
+      } else if (action.kind === "terminal") {
         entry.terminal = action
+      } else {
+        entry.removeProject = action
       }
       map.set(action.projectRoot, entry)
     }
@@ -70,34 +86,41 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
   }, [selectedIndex, panes, paneGroups, actionLayout.actionItems])
 
   const renderActionRow = (
-    newAgentAction: ProjectActionItem,
-    terminalAction: ProjectActionItem,
+    actions: ProjectActionItem[],
     selIdx: number,
-    isActiveGroup: boolean,
-    navigable: boolean
+    isActiveGroup: boolean
   ) => {
-    const newSelected = navigable && selIdx === newAgentAction.index
-    const termSelected = navigable && selIdx === terminalAction.index
-    const eitherSelected = newSelected || termSelected
+    const renderLabel = (action: ProjectActionItem) => {
+      const isSelected = selIdx === action.index
+      const showHotkey = isActiveGroup && !!action.hotkey
+      const baseColor = action.kind === "remove-project" ? "red" : COLORS.border
+      const color = isSelected ? COLORS.selected : baseColor
 
-    const renderLabel = (kind: "new-agent" | "terminal", isSelected: boolean) => {
-      const color = isSelected ? COLORS.selected : COLORS.border
-      const showHotkey = isActiveGroup
-      if (kind === "new-agent") {
+      if (action.kind === "new-agent") {
         return showHotkey
           ? <Text color={color} bold={isSelected}><Text color="cyan">[n]</Text>ew agent</Text>
           : <Text color={color} bold={isSelected}>new agent</Text>
       }
+
+      if (action.kind === "terminal") {
+        return showHotkey
+          ? <Text color={color} bold={isSelected}><Text color="cyan">[t]</Text>erminal</Text>
+          : <Text color={color} bold={isSelected}>terminal</Text>
+      }
+
       return showHotkey
-        ? <Text color={color} bold={isSelected}><Text color="cyan">[t]</Text>erminal</Text>
-        : <Text color={color} bold={isSelected}>terminal</Text>
+        ? <Text color={color} bold={isSelected}><Text color="cyan">[R]</Text>emove</Text>
+        : <Text color={color} bold={isSelected}>remove</Text>
     }
 
     return (
       <Box width={40} justifyContent="flex-end">
-        {renderLabel("new-agent", newSelected)}
-        <Text color={COLORS.border}>{"  "}</Text>
-        {renderLabel("terminal", termSelected)}
+        {actions.map((action, index) => (
+          <React.Fragment key={`${action.projectRoot}-${action.kind}`}>
+            {index > 0 && <Text color={COLORS.border}>{"  "}</Text>}
+            {renderLabel(action)}
+          </React.Fragment>
+        ))}
       </Box>
     )
   }
@@ -161,20 +184,23 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
             )
           })}
 
-          {!isLoading && actionLayout.multiProjectMode && activeProjectRoot !== group.projectRoot && (
-            <Text>{" "}</Text>
-          )}
-
-          {!isLoading && actionLayout.multiProjectMode && activeProjectRoot === group.projectRoot && (() => {
+          {!isLoading && actionLayout.multiProjectMode && (() => {
             const groupActions = actionsByProject.get(group.projectRoot)
-            const newAgentAction = groupActions?.newAgent
-            const terminalAction = groupActions?.terminal
+            const actions = [
+              groupActions?.newAgent,
+              groupActions?.terminal,
+              groupActions?.removeProject,
+            ].filter((action): action is ProjectActionItem => !!action)
 
-            if (!newAgentAction || !terminalAction) {
+            if (actions.length === 0) {
               return null
             }
 
-            return renderActionRow(newAgentAction, terminalAction, selectedIndex, true, false)
+            return renderActionRow(
+              actions,
+              selectedIndex,
+              activeProjectRoot === group.projectRoot
+            )
           })()}
 
           {groupIndex < paneGroups.length - 1 && <Text>{" "}</Text>}
@@ -182,14 +208,15 @@ const PanesGrid: React.FC<PanesGridProps> = memo(({
       ))}
 
       {!isLoading && !actionLayout.multiProjectMode && (() => {
-        const newAgentAction = actionLayout.actionItems.find((item) => item.kind === "new-agent")
-        const terminalAction = actionLayout.actionItems.find((item) => item.kind === "terminal")
+        const actions = actionLayout.actionItems.filter(
+          (item) => item.kind === "new-agent" || item.kind === "terminal"
+        )
 
-        if (!newAgentAction || !terminalAction) {
+        if (actions.length === 0) {
           return null
         }
 
-        return renderActionRow(newAgentAction, terminalAction, selectedIndex, true, true)
+        return renderActionRow(actions, selectedIndex, true)
       })()}
     </Box>
   )

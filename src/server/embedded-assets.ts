@@ -308,7 +308,7 @@ const DmuxApp = ({ panesFile, projectName, sessionName, settingsFile, projectRoo
     // loadPanes moved to usePanes
     // getPanePositions moved to utils/tmux
     const sessionProjectRoot = projectRoot || process.cwd();
-    const projectActionLayout = useMemo(() => buildProjectActionLayout(panes, sessionProjectRoot, projectName), [panes, sessionProjectRoot, projectName]);
+    const projectActionLayout = useMemo(() => buildProjectActionLayout(panes, [], sessionProjectRoot, projectName), [panes, sessionProjectRoot, projectName]);
     const navigationRows = useMemo(() => isLoading
         ? projectActionLayout.groups.flatMap((group) => group.panes.map((entry) => [entry.index]))
         : buildVisualNavigationRows(projectActionLayout), [isLoading, projectActionLayout]);

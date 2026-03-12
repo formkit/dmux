@@ -23,8 +23,6 @@ import { SIDEBAR_WIDTH } from './utils/layoutManager.js';
 import { validateSystemRequirements, printValidationResults } from './utils/systemCheck.js';
 import { getUntrackedPanes } from './utils/shellPaneDetection.js';
 import { runFirstRunOnboardingIfNeeded } from './utils/onboarding.js';
-import { createPane } from './utils/paneCreation.js';
-import { SettingsManager } from './utils/settingsManager.js';
 import { atomicWriteJson } from './utils/atomicWrite.js';
 import { buildDevWatchCommand, buildDevWatchRespawnCommand } from './utils/devWatchCommand.js';
 import { shouldUseQuietDevWatchExit } from './utils/devWatchExit.js';
@@ -32,10 +30,11 @@ import { buildPaneExitedHookCommandForSession } from './utils/tmuxHookCommands.j
 import { ensureTmuxRuntimeCompatibility } from './utils/tmuxRuntimeCompatibility.js';
 import { claimProcessShutdown } from './utils/processShutdown.js';
 import {
-  resolveEnabledAgentsSelection,
-  type AgentName,
-} from './utils/agentLaunch.js';
-import type { DmuxConfig, DmuxPane } from './types.js';
+  addSidebarProject,
+  hasSidebarProject,
+  normalizeSidebarProjects,
+} from './utils/sidebarProjects.js';
+import type { DmuxConfig } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -105,6 +104,12 @@ class Dmux {
         projectName: this.projectName,
         projectRoot: this.projectRoot,
         panes: [],
+        sidebarProjects: [
+          {
+            projectName: this.projectName,
+            projectRoot: this.projectRoot,
+          },
+        ],
         settings: {},
         lastUpdated: new Date().toISOString(),
         controlPaneId: undefined,
@@ -134,7 +139,7 @@ class Dmux {
       currentTmuxSessionName !== this.sessionName
     ) {
       const shouldAttachToCurrent = await this.promptYesNo(
-        `Detected active dmux session '${currentTmuxSessionName}'. Add project '${this.projectName}' to this session?`,
+        `Detected active dmux session '${currentTmuxSessionName}'. Add project '${this.projectName}' to this session's sidebar?`,
         true
       );
 
@@ -762,21 +767,6 @@ class Dmux {
     return this.inferSessionContextFromPanePaths(sessionName);
   }
 
-  private getPreferredAttachAgent(
-    availableAgents: AgentName[]
-  ): AgentName | undefined {
-    if (availableAgents.length === 0) {
-      return undefined;
-    }
-
-    const settings = new SettingsManager(this.projectRoot).getSettings();
-    if (settings.defaultAgent && availableAgents.includes(settings.defaultAgent)) {
-      return settings.defaultAgent;
-    }
-
-    return availableAgents[0];
-  }
-
   private async attachProjectToExistingSession(sessionName: string): Promise<boolean> {
     const context = this.getExistingSessionContext(sessionName);
     if (!context) {
@@ -794,61 +784,31 @@ class Dmux {
       const configRaw = await fs.readFile(context.sessionConfigPath, 'utf-8');
       const config: DmuxConfig = JSON.parse(configRaw);
       const existingPanes = Array.isArray(config.panes) ? config.panes : [];
-      const availableAgents = resolveEnabledAgentsSelection(
-        new SettingsManager(this.projectRoot).getSettings().enabledAgents
-      );
-      let selectedAgent = this.getPreferredAttachAgent(availableAgents);
-
-      const prompt = `Explore ${this.projectName} and ask what to work on first.`;
-      let creation = await createPane(
-        {
-          prompt,
-          agent: selectedAgent,
-          projectName: context.sessionProjectName,
-          existingPanes,
-          projectRoot: this.projectRoot,
-          sessionConfigPath: context.sessionConfigPath,
-          sessionProjectRoot: context.sessionProjectRoot,
-        },
-        availableAgents
-      );
-
-      if (creation.needsAgentChoice) {
-        selectedAgent = availableAgents[0];
-        if (!selectedAgent) {
-          throw new Error('No enabled agents configured for pane creation');
-        }
-
-        creation = await createPane(
-          {
-            prompt,
-            agent: selectedAgent,
-            projectName: context.sessionProjectName,
-            existingPanes,
-            projectRoot: this.projectRoot,
-            sessionConfigPath: context.sessionConfigPath,
-            sessionProjectRoot: context.sessionProjectRoot,
-          },
-          availableAgents
-        );
-      }
-
       const latestConfigRaw = await fs.readFile(context.sessionConfigPath, 'utf-8');
       const latestConfig: DmuxConfig = JSON.parse(latestConfigRaw);
       const latestPanes = Array.isArray(latestConfig.panes) ? latestConfig.panes : [];
-
-      const alreadyPersisted = latestPanes.some((pane: DmuxPane) =>
-        pane.id === creation.pane.id || pane.paneId === creation.pane.paneId
+      const normalizedProjects = normalizeSidebarProjects(
+        latestConfig.sidebarProjects,
+        latestPanes,
+        context.sessionProjectRoot,
+        context.sessionProjectName
       );
-
-      if (!alreadyPersisted) {
-        latestConfig.panes = [...latestPanes, creation.pane];
-        latestConfig.lastUpdated = new Date().toISOString();
-        await atomicWriteJson(context.sessionConfigPath, latestConfig);
+      if (hasSidebarProject(normalizedProjects, this.projectRoot)) {
+        console.log(chalk.yellow(
+          `Project '${this.projectName}' is already in session '${sessionName}'.`
+        ));
+        return true;
       }
 
+      latestConfig.sidebarProjects = addSidebarProject(normalizedProjects, {
+        projectName: this.projectName,
+        projectRoot: this.projectRoot,
+      });
+      latestConfig.lastUpdated = new Date().toISOString();
+      await atomicWriteJson(context.sessionConfigPath, latestConfig);
+
       console.log(chalk.green(
-        `Added project '${this.projectName}' to session '${sessionName}'.`
+        `Added project '${this.projectName}' to session '${sessionName}' sidebar.`
       ));
       return true;
     } catch (error) {

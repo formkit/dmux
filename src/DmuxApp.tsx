@@ -189,7 +189,15 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
   }, [])
 
   // Panes state and persistence (skipLoading will be updated after actionSystem is initialized)
-  const { panes, setPanes, isLoading, loadPanes, savePanes } = usePanes(
+  const {
+    panes,
+    setPanes,
+    sidebarProjects,
+    isLoading,
+    loadPanes,
+    savePanes,
+    saveSidebarProjects,
+  } = usePanes(
     panesFile,
     false,
     sessionName,
@@ -456,8 +464,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
   const activeDevSourcePath = isDevMode ? process.cwd() : undefined
   const projectActionLayout = useMemo(
-    () => buildProjectActionLayout(panes, sessionProjectRoot, projectName),
-    [panes, sessionProjectRoot, projectName]
+    () => buildProjectActionLayout(
+      panes,
+      sidebarProjects,
+      sessionProjectRoot,
+      projectName
+    ),
+    [panes, sidebarProjects, sessionProjectRoot, projectName]
   )
   const selectedProjectRoot = useMemo(() => {
     const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
@@ -482,6 +495,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     () => isLoading ? [] : buildGroupStartRows(projectActionLayout),
     [isLoading, projectActionLayout]
   )
+
+  useEffect(() => {
+    const maxIndex = Math.max(0, projectActionLayout.totalItems - 1)
+    if (selectedIndex > maxIndex) {
+      setSelectedIndex(maxIndex)
+    }
+  }, [projectActionLayout.totalItems, selectedIndex, setSelectedIndex])
 
   // Navigation logic moved to hook
   const { getCardGridPosition, findCardInDirection } = useNavigation(navigationRows, groupStartRows)
@@ -1106,6 +1126,8 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     handleReopenWorktree,
     setDevSourceFromPane: handleSetDevSourceFromPane,
     savePanes,
+    sidebarProjects,
+    saveSidebarProjects,
     loadPanes,
     cleanExit,
     availableAgents,
@@ -1171,6 +1193,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
           isLoading={isLoading}
           agentStatuses={agentStatuses}
           activeDevSourcePath={activeDevSourcePath}
+          sidebarProjects={sidebarProjects}
           fallbackProjectRoot={projectRoot || process.cwd()}
           fallbackProjectName={projectName}
           isProjectBusy={isProjectHeaderBusy}

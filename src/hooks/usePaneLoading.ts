@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import type { DmuxPane } from '../types.js';
+import type { DmuxPane, SidebarProject } from '../types.js';
 import { splitPane } from '../utils/tmux.js';
 import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { LogService } from '../services/LogService.js';
@@ -8,17 +8,21 @@ import { TmuxService } from '../services/TmuxService.js';
 import { PaneLifecycleManager } from '../services/PaneLifecycleManager.js';
 import { TMUX_COMMAND_TIMEOUT, TMUX_RETRY_DELAY } from '../constants/timing.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
+import { buildAgentResumeOrLaunchCommand } from '../utils/agentLaunch.js';
+import { ensureGeminiFolderTrusted } from '../utils/geminiTrust.js';
 import { getPaneTmuxTitle } from '../utils/paneTitle.js';
 import {
   getVisiblePanes,
   syncHiddenStateFromCurrentWindow,
 } from '../utils/paneVisibility.js';
+import { normalizeSidebarProjects } from '../utils/sidebarProjects.js';
 
 // Separate config structure to match new format
 export interface DmuxConfig {
   projectName?: string;
   projectRoot?: string;
   panes: DmuxPane[];
+  sidebarProjects?: SidebarProject[];
   settings?: any;
   lastUpdated?: string;
   controlPaneId?: string;
@@ -29,6 +33,27 @@ interface PaneLoadResult {
   panes: DmuxPane[];
   allPaneIds: string[];
   titleToId: Map<string, string>;
+}
+
+async function restoreAgentSessionForPane(
+  tmuxService: TmuxService,
+  pane: DmuxPane,
+  paneId: string
+): Promise<void> {
+  if (!pane.agent) {
+    return;
+  }
+
+  if (pane.agent === 'gemini' && pane.worktreePath) {
+    ensureGeminiFolderTrusted(pane.worktreePath);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await tmuxService.sendShellCommand(
+    paneId,
+    buildAgentResumeOrLaunchCommand(pane.agent, pane.permissionMode)
+  );
+  await tmuxService.sendTmuxKeys(paneId, 'Enter');
 }
 
 /**
@@ -103,6 +128,39 @@ export async function loadPanesFromFile(panesFile: string): Promise<DmuxPane[]> 
   }
 }
 
+export async function loadSidebarProjectsFromFile(
+  panesFile: string,
+  panes?: DmuxPane[]
+): Promise<SidebarProject[]> {
+  const fallbackProjectRoot = path.dirname(path.dirname(panesFile));
+
+  try {
+    const content = await fs.readFile(panesFile, 'utf-8');
+    const parsed: any = JSON.parse(content);
+    const config = Array.isArray(parsed)
+      ? { panes: parsed as DmuxPane[] }
+      : parsed as DmuxConfig;
+    const configPanes = Array.isArray(config.panes) ? config.panes : [];
+    const effectivePanes = panes || configPanes;
+    const projectRoot = config.projectRoot || fallbackProjectRoot;
+    const projectName = config.projectName || path.basename(projectRoot);
+
+    return normalizeSidebarProjects(
+      config.sidebarProjects,
+      effectivePanes,
+      projectRoot,
+      projectName
+    );
+  } catch {
+    return normalizeSidebarProjects(
+      undefined,
+      panes || [],
+      fallbackProjectRoot,
+      path.basename(fallbackProjectRoot)
+    );
+  }
+}
+
 /**
  * Recreates missing worktree panes that exist in config but not in tmux
  * Only called on initial load
@@ -132,6 +190,7 @@ export async function recreateMissingPanes(
       const promptPreview = missingPane.prompt?.substring(0, 50) || '';
       await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       await tmuxService.sendKeys(newPaneId, `"cd ${missingPane.worktreePath || process.cwd()}" Enter`);
+      await restoreAgentSessionForPane(tmuxService, missingPane, newPaneId);
     } catch (error) {
       // If we can't create the pane, skip it
     }
@@ -212,6 +271,7 @@ export async function recreateKilledWorktreePanes(
         await tmuxService.sendKeys(newPaneId, `"echo '# Original prompt: ${promptPreview}...'" Enter`);
       }
       await tmuxService.sendKeys(newPaneId, `"cd ${pane.worktreePath}" Enter`);
+      await restoreAgentSessionForPane(tmuxService, pane, newPaneId);
 
   //       LogService.getInstance().debug(
   //         `Recreated worktree pane ${pane.id} (${pane.slug}) with new ID ${newPaneId}`,
@@ -303,6 +363,14 @@ export async function loadAndProcessPanes(
         const configContent = await fs.readFile(panesFile, 'utf-8');
         const config = JSON.parse(configContent);
         config.panes = reboundPanes;
+        const projectRoot = config.projectRoot || path.dirname(path.dirname(panesFile));
+        const projectName = config.projectName || path.basename(projectRoot);
+        config.sidebarProjects = normalizeSidebarProjects(
+          config.sidebarProjects,
+          reboundPanes,
+          projectRoot,
+          projectName
+        );
         config.lastUpdated = new Date().toISOString();
         await atomicWriteJson(panesFile, config);
         LogService.getInstance().debug('Saved cleaned config after removing stale shell panes', 'usePaneLoading');

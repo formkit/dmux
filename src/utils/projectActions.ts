@@ -1,18 +1,18 @@
 import path from 'path';
-import type { DmuxPane } from '../types.js';
+import type { DmuxPane, SidebarProject } from '../types.js';
 import {
   groupPanesByProject,
   type PaneProjectGroup,
 } from './paneGrouping.js';
 
-export type ProjectActionKind = 'new-agent' | 'terminal';
+export type ProjectActionKind = 'new-agent' | 'terminal' | 'remove-project';
 
 export interface ProjectActionItem {
   index: number;
   projectRoot: string;
   projectName: string;
   kind: ProjectActionKind;
-  hotkey: 'n' | 't' | null;
+  hotkey: 'n' | 't' | 'R' | null;
 }
 
 export interface ProjectActionLayout {
@@ -34,10 +34,16 @@ function sameRoot(a: string, b: string): boolean {
  */
 export function buildProjectActionLayout(
   panes: DmuxPane[],
+  sidebarProjects: SidebarProject[],
   fallbackProjectRoot: string,
   fallbackProjectName: string
 ): ProjectActionLayout {
-  const groups = groupPanesByProject(panes, fallbackProjectRoot, fallbackProjectName);
+  const groups = groupPanesByProject(
+    panes,
+    fallbackProjectRoot,
+    fallbackProjectName,
+    sidebarProjects
+  );
   const multiProjectMode = groups.length >= 2;
   const actionItems: ProjectActionItem[] = [];
 
@@ -66,7 +72,7 @@ export function buildProjectActionLayout(
         projectRoot: group.projectRoot,
         projectName: group.projectName,
         kind: 'new-agent',
-        hotkey: isMainProject ? 'n' : null,
+        hotkey: 'n',
       });
       index += 1;
       actionItems.push({
@@ -74,9 +80,19 @@ export function buildProjectActionLayout(
         projectRoot: group.projectRoot,
         projectName: group.projectName,
         kind: 'terminal',
-        hotkey: isMainProject ? 't' : null,
+        hotkey: 't',
       });
       index += 1;
+      if (!isMainProject && group.panes.length === 0) {
+        actionItems.push({
+          index,
+          projectRoot: group.projectRoot,
+          projectName: group.projectName,
+          kind: 'remove-project',
+          hotkey: 'R',
+        });
+        index += 1;
+      }
     }
   }
 
@@ -107,15 +123,21 @@ export function buildVisualNavigationRows(
   const rows: number[][] = [];
   const actionByProject = new Map<
     string,
-    { newAgent?: ProjectActionItem; terminal?: ProjectActionItem }
+    {
+      newAgent?: ProjectActionItem;
+      terminal?: ProjectActionItem;
+      removeProject?: ProjectActionItem;
+    }
   >();
 
   for (const action of layout.actionItems) {
     const entry = actionByProject.get(action.projectRoot) || {};
     if (action.kind === 'new-agent') {
       entry.newAgent = action;
-    } else {
+    } else if (action.kind === 'terminal') {
       entry.terminal = action;
+    } else {
+      entry.removeProject = action;
     }
     actionByProject.set(action.projectRoot, entry);
   }
@@ -140,6 +162,17 @@ export function buildVisualNavigationRows(
     for (const entry of group.panes) {
       rows.push([entry.index]);
     }
+
+    const groupActions = actionByProject.get(group.projectRoot);
+    const actionRow = [
+      groupActions?.newAgent?.index,
+      groupActions?.terminal?.index,
+      groupActions?.removeProject?.index,
+    ].filter((value): value is number => value !== undefined);
+
+    if (actionRow.length > 0) {
+      rows.push(actionRow);
+    }
   }
 
   return rows;
@@ -158,7 +191,7 @@ export function buildGroupStartRows(
   let row = 0;
   for (const group of layout.groups) {
     starts.push(row);
-    row += group.panes.length;
+    row += group.panes.length + 1;
   }
   return starts;
 }
