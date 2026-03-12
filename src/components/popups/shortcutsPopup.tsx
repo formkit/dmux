@@ -39,7 +39,7 @@ export const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   });
 
   const shortcuts = [
-    { key: 'M-M', description: 'Open the pane menu for the focused tmux pane' },
+    { key: 'Alt+Shift+M', description: 'Open the pane menu for the focused tmux pane' },
     { key: 'j', description: 'Jump to selected pane' },
     { key: 'm', description: 'Open pane menu' },
     { key: 'x', description: 'Close selected pane' },
@@ -78,7 +78,7 @@ export const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
 
         {shortcuts.map((shortcut, index) => (
           <Box key={index} marginBottom={0}>
-            <Box width={12}>
+            <Box width={16}>
               <Text color="yellow" bold>[{shortcut.key}]</Text>
             </Box>
             <Text>{shortcut.description}</Text>
@@ -86,7 +86,7 @@ export const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
         ))}
 
         <Box marginTop={1}>
-          <Text dimColor>Press M-M in any focused pane to open that pane&apos;s menu without returning to the sidebar. Press e for hooks, or Esc/? to close</Text>
+          <Text dimColor>Press Alt+Shift+M in any focused pane to open that pane&apos;s menu without returning to the sidebar. Press e for hooks, or Esc/? to close</Text>
         </Box>
       </Box>
     </PopupWrapper>
