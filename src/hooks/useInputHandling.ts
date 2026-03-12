@@ -32,6 +32,11 @@ import {
   partitionPanesByProject,
 } from "../utils/paneVisibility.js"
 import { buildFilesOnlyCommand } from "../utils/dmuxCommand.js"
+import {
+  drainRemotePaneActions,
+  getCurrentTmuxSessionName,
+  type RemotePaneActionShortcut,
+} from "../utils/remotePaneActions.js"
 
 // Type for the action system returned by useActionSystem hook
 interface ActionSystem {
@@ -775,6 +780,167 @@ export function useInputHandling(params: UseInputHandlingParams) {
     }
   }
 
+  const isInteractionBlocked = () =>
+    ignoreInput
+    || isCreatingPane
+    || runningCommand
+    || isUpdating
+    || isLoading
+    || showFileCopyPrompt
+    || showCommandPrompt !== null
+
+  const reopenClosedWorktreesInProject = async (targetProjectRoot: string) => {
+    const activeSlugs = panes
+      .filter((pane) => getPaneProjectRoot(pane, projectRoot) === targetProjectRoot)
+      .map((pane) => pane.slug)
+    const orphanedWorktrees = getOrphanedWorktrees(targetProjectRoot, activeSlugs)
+
+    if (orphanedWorktrees.length === 0) {
+      setStatusMessage(`No closed worktrees in ${targetProjectRoot}`)
+      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      return
+    }
+
+    const result = await popupManager.launchReopenWorktreePopup(
+      orphanedWorktrees,
+      targetProjectRoot
+    )
+    if (result) {
+      await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
+    }
+  }
+
+  const executePaneShortcut = async (
+    shortcut: RemotePaneActionShortcut,
+    selectedPane: DmuxPane
+  ) => {
+    switch (shortcut) {
+      case "a":
+        await attachAgentsToPane(selectedPane)
+        return
+      case "b":
+        await handleCreateChildWorktree(selectedPane)
+        return
+      case "f":
+        await openFileBrowserInWorktree(selectedPane)
+        return
+      case "A":
+        await openTerminalInWorktree(selectedPane)
+        return
+      case "m":
+        await openPaneMenu(selectedPane)
+        return
+      case "h":
+        await togglePaneVisibility(selectedPane)
+        return
+      case "H":
+        await toggleOtherPanesVisibility(selectedPane)
+        return
+      case "P":
+        await toggleProjectPanesVisibility(getPaneProjectRoot(selectedPane, projectRoot))
+        return
+      case "r":
+        await reopenClosedWorktreesInProject(getPaneProjectRoot(selectedPane, projectRoot))
+        return
+      case "S":
+        if (!isDevMode) {
+          setStatusMessage("Source switching is only available in DEV mode")
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+          return
+        }
+        await setDevSourceFromPane(selectedPane)
+        return
+      case "j":
+        StateManager.getInstance().setDebugMessage(
+          `Jumping to pane: ${selectedPane.slug}`
+        )
+        setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        await actionSystem.executeAction(PaneAction.VIEW, selectedPane)
+        return
+      case "x":
+        StateManager.getInstance().setDebugMessage(
+          `Closing pane: ${selectedPane.slug}`
+        )
+        setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        await actionSystem.executeAction(PaneAction.CLOSE, selectedPane)
+        return
+    }
+  }
+
+  const remoteDrainRef = useRef<Promise<void>>(Promise.resolve())
+
+  useEffect(() => {
+    const drainQueuedRemoteActions = async () => {
+      const sessionName = getCurrentTmuxSessionName()
+      if (!sessionName) {
+        return
+      }
+
+      const queuedActions = await drainRemotePaneActions(sessionName)
+      if (queuedActions.length === 0) {
+        return
+      }
+
+      for (const action of queuedActions) {
+        if (isInteractionBlocked()) {
+          setStatusMessage(`dmux is busy; ignored remote pane action ${action.shortcut}`)
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+          continue
+        }
+
+        const paneIndex = panes.findIndex((pane) => pane.paneId === action.targetPaneId)
+        if (paneIndex === -1) {
+          setStatusMessage(`Focused pane is not managed by dmux: ${action.targetPaneId}`)
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+          continue
+        }
+
+        setSelectedIndex(paneIndex)
+        await executePaneShortcut(action.shortcut, panes[paneIndex])
+      }
+    }
+
+    const queueDrain = () => {
+      remoteDrainRef.current = remoteDrainRef.current
+        .then(drainQueuedRemoteActions)
+        .catch((error: any) => {
+          setStatusMessage(`Failed to process remote pane action: ${error?.message || String(error)}`)
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+        })
+      return remoteDrainRef.current
+    }
+
+    const handleRemoteSignal = () => {
+      void queueDrain()
+    }
+
+    void queueDrain()
+    process.on("dmux-external-command-signal" as any, handleRemoteSignal)
+
+    return () => {
+      process.off("dmux-external-command-signal" as any, handleRemoteSignal)
+    }
+  }, [
+    actionSystem,
+    handleCreateChildWorktree,
+    handleReopenWorktree,
+    ignoreInput,
+    isCreatingPane,
+    isDevMode,
+    isLoading,
+    isUpdating,
+    panes,
+    popupManager,
+    projectRoot,
+    runCommandInternal,
+    runningCommand,
+    setDevSourceFromPane,
+    setSelectedIndex,
+    setStatusMessage,
+    showCommandPrompt,
+    showFileCopyPrompt,
+  ])
+
   useInput(async (input: string, key: any) => {
     // Ignore input temporarily after popup operations (prevents buffered keys from being processed)
     if (ignoreInput) {
@@ -915,22 +1081,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
       return
     }
 
-    if (input === "a" && selectedIndex < panes.length) {
-      await attachAgentsToPane(panes[selectedIndex])
+    if (
+      selectedIndex < panes.length
+      && ["a", "b", "f", "A", "m"].includes(input)
+    ) {
+      await executePaneShortcut(input as RemotePaneActionShortcut, panes[selectedIndex])
       return
-    } else if (input === "b" && selectedIndex < panes.length) {
-      await handleCreateChildWorktree(panes[selectedIndex])
-      return
-    } else if (input === "f" && selectedIndex < panes.length) {
-      await openFileBrowserInWorktree(panes[selectedIndex])
-      return
-    } else if (input === "A" && selectedIndex < panes.length) {
-      await openTerminalInWorktree(panes[selectedIndex])
-      return
-    } else if (input === "m" && selectedIndex < panes.length) {
-      // Open kebab menu popup for selected pane
-      const selectedPane = panes[selectedIndex]
-      await openPaneMenu(selectedPane)
     } else if (input === "s") {
       // Open settings popup
       const result = await popupManager.launchSettingsPopup(async () => {
@@ -993,20 +1149,24 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await popupManager.launchLogsPopup(getActiveProjectRoot())
     } else if (input === "h") {
       if (selectedIndex < panes.length) {
-        await togglePaneVisibility(panes[selectedIndex])
+        await executePaneShortcut("h", panes[selectedIndex])
       } else {
         setStatusMessage("Select a pane to toggle visibility")
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       }
     } else if (input === "H") {
       if (selectedIndex < panes.length) {
-        await toggleOtherPanesVisibility(panes[selectedIndex])
+        await executePaneShortcut("H", panes[selectedIndex])
       } else {
         setStatusMessage("Select a pane to toggle the others")
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       }
     } else if (input === "P") {
-      await toggleProjectPanesVisibility()
+      if (selectedIndex < panes.length) {
+        await executePaneShortcut("P", panes[selectedIndex])
+      } else {
+        await toggleProjectPanesVisibility()
+      }
     } else if (input === "?") {
       // Open keyboard shortcuts popup
       const shortcutsAction = await popupManager.launchShortcutsPopup(
@@ -1040,32 +1200,14 @@ export function useInputHandling(params: UseInputHandlingParams) {
     } else if (input === "q") {
       cleanExit()
     } else if (isDevMode && input === "S" && selectedIndex < panes.length) {
-      await setDevSourceFromPane(panes[selectedIndex])
+      await executePaneShortcut("S", panes[selectedIndex])
       return
     } else if (input === "r") {
-      // Reopen closed worktree popup
       const selectedPane = selectedIndex < panes.length ? panes[selectedIndex] : undefined
       const targetProjectRoot = selectedPane
         ? getPaneProjectRoot(selectedPane, projectRoot)
         : projectRoot
-      const activeSlugs = panes
-        .filter((p) => getPaneProjectRoot(p, projectRoot) === targetProjectRoot)
-        .map((p) => p.slug)
-      const orphanedWorktrees = getOrphanedWorktrees(targetProjectRoot, activeSlugs)
-
-      if (orphanedWorktrees.length === 0) {
-        setStatusMessage(`No closed worktrees in ${targetProjectRoot}`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-        return
-      }
-
-      const result = await popupManager.launchReopenWorktreePopup(
-        orphanedWorktrees,
-        targetProjectRoot
-      )
-      if (result) {
-        await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
-      }
+      await reopenClosedWorktreesInProject(targetProjectRoot)
       return
     } else if (
       !isLoading &&
@@ -1095,20 +1237,12 @@ export function useInputHandling(params: UseInputHandlingParams) {
         await handleCreateTerminalPane(selectedAction.projectRoot)
       }
       return
-    } else if (input === "j" && selectedIndex < panes.length) {
-      // Jump to pane (NEW: using action system)
-      StateManager.getInstance().setDebugMessage(
-        `Jumping to pane: ${panes[selectedIndex].slug}`
-      )
-      setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      actionSystem.executeAction(PaneAction.VIEW, panes[selectedIndex])
-    } else if (input === "x" && selectedIndex < panes.length) {
-      // Close pane (NEW: using action system)
-      StateManager.getInstance().setDebugMessage(
-        `Closing pane: ${panes[selectedIndex].slug}`
-      )
-      setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      actionSystem.executeAction(PaneAction.CLOSE, panes[selectedIndex])
+    } else if (
+      selectedIndex < panes.length
+      && (input === "j" || input === "x")
+    ) {
+      await executePaneShortcut(input as RemotePaneActionShortcut, panes[selectedIndex])
+      return
     } else if (key.return && selectedIndex < panes.length) {
       // Open pane menu for selected pane
       await openPaneMenu(panes[selectedIndex])

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { RemotePaneActionShortcut } from './remotePaneActions.js';
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -19,4 +20,10 @@ export function resolveDmuxExecutable(): string {
 
 export function buildFilesOnlyCommand(): string {
   return `${shellQuote(resolveDmuxExecutable())} --files-only`;
+}
+
+export function buildRemotePaneActionCommand(
+  shortcut: RemotePaneActionShortcut
+): string {
+  return `${shellQuote(resolveDmuxExecutable())} --remote-pane-action ${shortcut}`;
 }

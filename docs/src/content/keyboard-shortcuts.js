@@ -6,6 +6,7 @@ export function render() {
     <p class="lead">dmux is designed for keyboard-first navigation. All major actions are available through single-key shortcuts.</p>
 
     <h2>Pane Management</h2>
+    <p><kbd>Alt+Shift+D</kbd> enters remote pane mode for the currently focused tmux pane. The focused pane's top border switches to a highlighted <code>hit hotkey: ...</code> prompt until your next keypress. After that, press any pane-management shortcut below and dmux applies it to the focused pane without making you move back to the sidebar first. Pressing <kbd>m</kbd> from remote pane mode opens the full pane menu for that pane.</p>
     <table class="shortcut-table">
       <thead>
         <tr><th>Key</th><th>Action</th></tr>

@@ -32,6 +32,20 @@ import { buildPaneExitedHookCommandForSession } from './utils/tmuxHookCommands.j
 import { ensureTmuxRuntimeCompatibility } from './utils/tmuxRuntimeCompatibility.js';
 import { claimProcessShutdown } from './utils/processShutdown.js';
 import {
+  buildRemotePaneActionBindingCommands,
+  buildRemotePaneActionCleanupCommands,
+  clearRemotePaneActions,
+  DMUX_CONTROLLER_PID_OPTION,
+  DMUX_CONTROL_PANE_OPTION,
+  DMUX_REMOTE_PANE_MODE_OPTION,
+  enqueueRemotePaneAction,
+  getCurrentTmuxPaneId as getFocusedTmuxPaneId,
+  getCurrentTmuxSessionName as getFocusedTmuxSessionName,
+  getTmuxSessionOption,
+  isRemotePaneActionShortcut,
+  showTmuxMessage,
+} from './utils/remotePaneActions.js';
+import {
   resolveEnabledAgentsSelection,
   type AgentName,
 } from './utils/agentLaunch.js';
@@ -50,6 +64,60 @@ interface ExistingSessionContext {
 
 function isFilesOnlyMode(): boolean {
   return process.argv.slice(2).includes('--files-only');
+}
+
+function getArgValue(flag: string): string | null {
+  const args = process.argv.slice(2);
+  const flagIndex = args.indexOf(flag);
+  if (flagIndex === -1) {
+    return null;
+  }
+
+  return args[flagIndex + 1] || null;
+}
+
+async function handleRemotePaneActionCli(shortcutArg: string): Promise<number> {
+  if (!isRemotePaneActionShortcut(shortcutArg)) {
+    showTmuxMessage(`Unsupported dmux pane action: ${shortcutArg}`);
+    return 1;
+  }
+
+  const sessionName = getFocusedTmuxSessionName();
+  const targetPaneId = getFocusedTmuxPaneId();
+
+  if (!sessionName || !targetPaneId) {
+    showTmuxMessage('dmux remote pane actions require an active tmux pane');
+    return 1;
+  }
+
+  const controllerPid = getTmuxSessionOption(sessionName, DMUX_CONTROLLER_PID_OPTION);
+  if (!controllerPid || !/^\d+$/.test(controllerPid)) {
+    showTmuxMessage('No active dmux controller found for this session');
+    return 1;
+  }
+
+  const controlPaneId = getTmuxSessionOption(sessionName, DMUX_CONTROL_PANE_OPTION);
+  if (controlPaneId && controlPaneId === targetPaneId) {
+    showTmuxMessage('Focused pane is already the dmux control pane');
+    return 1;
+  }
+
+  try {
+    process.kill(Number(controllerPid), 0);
+  } catch {
+    showTmuxMessage('The dmux controller for this session is not running');
+    return 1;
+  }
+
+  try {
+    await enqueueRemotePaneAction(sessionName, targetPaneId, shortcutArg);
+    process.kill(Number(controllerPid), 'SIGUSR2');
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    showTmuxMessage(`Failed to queue dmux pane action: ${message}`);
+    return 1;
+  }
 }
 
 class Dmux {
@@ -525,7 +593,10 @@ class Dmux {
     const shouldPublishMetadata =
       !metadataSessionName.startsWith('dmux-') || metadataSessionName === this.sessionName;
     if (shouldPublishMetadata) {
-      this.publishSessionMetadata(metadataSessionName);
+      this.publishSessionMetadata(metadataSessionName, controlPaneId);
+      this.clearRemotePaneModeIndicators(metadataSessionName);
+      this.setupRemotePaneActionBindings(metadataSessionName);
+      await clearRemotePaneActions(metadataSessionName);
     }
 
     // Update state manager with project info
@@ -646,13 +717,115 @@ class Dmux {
     }
   }
 
-  private publishSessionMetadata(sessionName: string): void {
+  private publishSessionMetadata(sessionName: string, controlPaneId?: string): void {
     try {
       spawnSync('tmux', ['set-option', '-t', sessionName, '@dmux_project_root', this.projectRoot], { stdio: 'pipe' });
       spawnSync('tmux', ['set-option', '-t', sessionName, '@dmux_project_name', this.projectName], { stdio: 'pipe' });
       spawnSync('tmux', ['set-option', '-t', sessionName, '@dmux_config_path', this.panesFile], { stdio: 'pipe' });
+      spawnSync('tmux', ['set-option', '-t', sessionName, DMUX_CONTROLLER_PID_OPTION, String(process.pid)], { stdio: 'pipe' });
+      if (controlPaneId) {
+        spawnSync('tmux', ['set-option', '-t', sessionName, DMUX_CONTROL_PANE_OPTION, controlPaneId], { stdio: 'pipe' });
+      }
     } catch {
       // Metadata is best-effort only
+    }
+  }
+
+  private cleanupSessionRuntimeMetadata(
+    sessionName: string = this.getCurrentTmuxSessionName() || this.sessionName
+  ) {
+    try {
+      const activeControllerPid = this.getTmuxOptionValue(sessionName, DMUX_CONTROLLER_PID_OPTION);
+      if (activeControllerPid !== String(process.pid)) {
+        return;
+      }
+
+      spawnSync('tmux', ['set-option', '-u', '-t', sessionName, DMUX_CONTROLLER_PID_OPTION], { stdio: 'pipe' });
+      spawnSync('tmux', ['set-option', '-u', '-t', sessionName, DMUX_CONTROL_PANE_OPTION], { stdio: 'pipe' });
+    } catch {
+      // Metadata cleanup is best-effort only.
+    }
+  }
+
+  private setupRemotePaneActionBindings(
+    sessionName: string = this.sessionName
+  ) {
+    try {
+      const commands = buildRemotePaneActionBindingCommands().join(' \\; ');
+      execSync(`tmux ${commands}`, { stdio: 'pipe' });
+    } catch {
+      LogService.getInstance().warn('Failed to set up remote pane action bindings', 'Setup');
+    }
+  }
+
+  private clearRemotePaneModeIndicators(
+    sessionName: string = this.getCurrentTmuxSessionName() || this.sessionName
+  ) {
+    try {
+      const paneListResult = spawnSync(
+        'tmux',
+        ['list-panes', '-t', sessionName, '-F', '#{pane_id}'],
+        {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        }
+      );
+      if (paneListResult.status !== 0) {
+        return;
+      }
+
+      const paneIds = (paneListResult.stdout || '')
+        .split('\n')
+        .map((paneId) => paneId.trim())
+        .filter(Boolean);
+
+      for (const paneId of paneIds) {
+        spawnSync(
+          'tmux',
+          ['set-option', '-u', '-p', '-t', paneId, DMUX_REMOTE_PANE_MODE_OPTION],
+          { stdio: 'pipe' }
+        );
+      }
+    } catch {
+      // Best effort only.
+    }
+  }
+
+  private cleanupRemotePaneActionBindings(
+    sessionName: string = this.getCurrentTmuxSessionName() || this.sessionName
+  ) {
+    try {
+      const activeControllerPid = this.getTmuxOptionValue(sessionName, DMUX_CONTROLLER_PID_OPTION);
+      if (activeControllerPid !== String(process.pid)) {
+        return;
+      }
+
+      const sessionListResult = spawnSync(
+        'tmux',
+        ['list-sessions', '-F', '#{session_name}'],
+        {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        }
+      );
+      if (sessionListResult.status === 0) {
+        const otherControllerExists = (sessionListResult.stdout || '')
+          .split('\n')
+          .map((name) => name.trim())
+          .filter(Boolean)
+          .some((name) =>
+            name !== sessionName
+            && this.getTmuxOptionValue(name, DMUX_CONTROLLER_PID_OPTION) !== null
+          );
+        if (otherControllerExists) {
+          return;
+        }
+      }
+
+      const commands = buildRemotePaneActionCleanupCommands().join(' \\; ');
+      execSync(`tmux ${commands}`, { stdio: 'pipe' });
+    } catch {
+      // Ignore cleanup errors
     }
   }
 
@@ -1114,7 +1287,7 @@ class Dmux {
       `set-option -t ${sessionName} pane-border-status top`,
       `set-option -t ${sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
       `set-option -t ${sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
-      `set-option -t ${sessionName} pane-border-format " #{?@dmux_attention,#[bold]![ready] #[default],}#{pane_title} "`,
+      `set-option -t ${sessionName} pane-border-format " #{?${DMUX_REMOTE_PANE_MODE_OPTION},#[fg=colour16,bg=colour214,bold]#{${DMUX_REMOTE_PANE_MODE_OPTION}}#[default],#{?@dmux_attention,#[bold]![ready] #[default],}#{pane_title}} "`,
     ].join(' \\; ');
 
     execSync(`tmux ${sessionOptions}`, { stdio });
@@ -1189,6 +1362,9 @@ class Dmux {
       if (process.env.TMUX) {
         this.cleanupResizeHook();
         this.cleanupPaneSplitHook();
+        this.clearRemotePaneModeIndicators();
+        this.cleanupRemotePaneActionBindings();
+        this.cleanupSessionRuntimeMetadata();
       }
 
       if (shouldUseQuietDevWatchExit(signal)) {
@@ -1233,6 +1409,7 @@ class Dmux {
       LogService.getInstance().debug('Pane split detected via SIGUSR2, triggering immediate detection', 'shellDetection');
       // Emit a custom event to trigger immediate shell pane detection
       process.emit('pane-split-detected' as any);
+      process.emit('dmux-external-command-signal' as any);
     });
 
     // Handle uncaught exceptions and unhandled rejections
@@ -1253,6 +1430,11 @@ class Dmux {
   if (isFilesOnlyMode()) {
     render(React.createElement(FileBrowserApp), { exitOnCtrlC: false });
     return;
+  }
+
+  const remotePaneActionArg = getArgValue('--remote-pane-action');
+  if (remotePaneActionArg) {
+    process.exit(await handleRemotePaneActionCli(remotePaneActionArg));
   }
 
   const validationResult = await validateSystemRequirements();
