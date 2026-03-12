@@ -38,6 +38,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   });
 
   const shortcuts = [
+    { key: 'M-D', description: 'Remote pane mode for the focused pane' },
     { key: 'j', description: 'Jump to selected pane' },
     { key: 'm', description: 'Open pane menu' },
     { key: 'x', description: 'Close selected pane' },
@@ -84,7 +85,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
         ))}
 
         <Box marginTop={1}>
-          <Text dimColor>Press e for hooks, or Esc/? to close</Text>
+          <Text dimColor>Press M-D in any focused pane to light its border title with the hotkey prompt, then hit a pane shortcut. Press e for hooks, or Esc/? to close</Text>
         </Box>
       </Box>
     </PopupWrapper>
