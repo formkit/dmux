@@ -193,6 +193,7 @@ export async function reopenWorktree(
     paneId: paneInfo,
     projectRoot,
     projectName: paneProjectName,
+    type: 'worktree',
     worktreePath,
     agent,
     autopilot: settings.enableAutopilotByDefault ?? false,

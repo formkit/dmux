@@ -164,6 +164,7 @@ export async function attachAgentToWorktree(
     paneId: paneInfo,
     projectRoot,
     projectName: targetPane.projectName,
+    type: 'worktree',
     worktreePath: targetPane.worktreePath,
     agent,
     autopilot: settings.enableAutopilotByDefault ?? false,

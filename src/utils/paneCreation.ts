@@ -548,6 +548,7 @@ export async function createPane(
     paneId: paneInfo,
     projectRoot,
     projectName: paneProjectName,
+    type: 'worktree',
     worktreePath,
     agent,
     // Set autopilot based on settings (use ?? to properly handle false vs undefined)
