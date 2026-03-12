@@ -46,7 +46,7 @@ describe('PopupManager launchReopenWorktreePopup', () => {
       'reopenWorktreePopup.js',
       [],
       expect.objectContaining({
-        height: 16,
+        height: 18,
         title: 'Reopen Closed Worktree: project-selected',
         width: 78,
       }),

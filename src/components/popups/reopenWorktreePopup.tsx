@@ -112,10 +112,7 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
       <PopupWrapper resultFile={resultFile}>
         <PopupContainer footer="Press ESC to close">
           <Box flexDirection="column">
-            {projectName && (
-              <Text dimColor>Project: {projectName}</Text>
-            )}
-            <Text dimColor>No closed worktrees found.</Text>
+            <Text>No closed worktrees found{projectName ? ` in ${projectName}` : ''}.</Text>
             <Text dimColor>All worktrees have active panes.</Text>
           </Box>
         </PopupContainer>
@@ -137,21 +134,17 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
   return (
     <PopupWrapper resultFile={resultFile}>
       <PopupContainer footer={PopupFooters.choice()}>
-        <Box marginBottom={1} flexDirection="column">
-          {projectName && (
-            <Text dimColor>Project: {projectName}</Text>
-          )}
-          <Text dimColor>Select a closed worktree to reopen.</Text>
-        </Box>
+        <Text>Please select a previously closed worktree to reopen.</Text>
 
         <Box
           flexDirection="column"
           borderStyle={POPUP_CONFIG.inputBorderStyle}
           borderColor={POPUP_CONFIG.borderColor}
           paddingX={1}
+          marginTop={1}
           width="100%"
         >
-          <Box marginBottom={1}>
+          <Box>
             <Box width={34} paddingRight={1}>
               <Text dimColor>Worktree</Text>
             </Box>
@@ -203,7 +196,7 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
             </Box>
           ))}
 
-          <Box marginTop={1}>
+          <Box>
             <Text dimColor>
               {totalWorktrees} reopenable worktree{totalWorktrees === 1 ? '' : 's'}
               {moreAbove ? `  •  ${startIndex} above` : ''}

@@ -966,7 +966,7 @@ export class PopupManager {
         [],
         {
           width: 78,
-          height: Math.max(13, Math.min(18, Math.min(worktrees.length, maxVisibleRows) + 8)),
+          height: Math.max(15, Math.min(20, Math.min(worktrees.length, maxVisibleRows) + 10)),
           title: `Reopen Closed Worktree: ${popupProjectName}`,
         },
         {

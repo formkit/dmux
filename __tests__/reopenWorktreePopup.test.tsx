@@ -34,7 +34,7 @@ describe('ReopenWorktreePopupApp', () => {
     await sleep(20);
 
     let output = stripAnsi(lastFrame() ?? '');
-    expect(output).toContain('Project: repo-selected');
+    expect(output).toContain('Please select a previously closed worktree to reopen.');
     expect(output).toContain('Worktree');
     expect(output).toContain('Last worked');
     expect(output).toContain('task-0');
