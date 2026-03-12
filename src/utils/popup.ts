@@ -3,7 +3,7 @@
  * Requires tmux 3.2+
  */
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -43,9 +43,13 @@ export interface PopupHandle<T> {
     width: number;
     height: number;
   };
+  readyPromise: Promise<void>;
   resultPromise: Promise<PopupResult<T>>;
   kill: () => void;
 }
+
+const POPUP_READY_POLL_INTERVAL_MS = 25;
+const POPUP_READY_TIMEOUT_MS = 4000;
 
 /**
  * Calculate actual popup bounds based on tmux terminal dimensions
@@ -371,6 +375,7 @@ export function launchPopupNonBlocking(
   return {
     pid: child.pid!,
     bounds,
+    readyPromise: Promise.resolve(),
     resultPromise,
     kill: () => {
       try {
@@ -384,6 +389,45 @@ export function launchPopupNonBlocking(
       }
     },
   };
+}
+
+function waitForPopupReady(
+  child: ChildProcess,
+  readyFile: string
+): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      clearInterval(pollInterval);
+      clearTimeout(timeout);
+      if (fs.existsSync(readyFile)) {
+        try {
+          fs.unlinkSync(readyFile);
+        } catch {
+          // Ignore cleanup races between the popup process and parent watcher.
+        }
+      }
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const pollInterval = setInterval(() => {
+      if (fs.existsSync(readyFile)) {
+        finish();
+      }
+    }, POPUP_READY_POLL_INTERVAL_MS);
+
+    const timeout = setTimeout(finish, POPUP_READY_TIMEOUT_MS);
+
+    child.once('close', finish);
+    child.once('error', finish);
+  });
 }
 
 /**
@@ -417,14 +461,21 @@ export function launchNodePopupNonBlocking<T = any>(
   // Get the result file path that the script will write to
   // IMPORTANT: Only create this ONCE - do NOT create it again in child.on('close')
   const resultFile = path.join(os.tmpdir(), `dmux-popup-${Date.now()}.json`);
+  const readyFile = path.join(
+    os.tmpdir(),
+    `dmux-popup-ready-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`
+  );
 
   // Build node command with proper escaping
   const escapedArgs = [scriptPath, resultFile, ...args].map(arg => {
     const escaped = arg.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
     return `'${escaped}'`;
   });
+  const escapedReadyFile = readyFile
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "'\\''");
 
-  const command = `node ${escapedArgs.join(' ')}`;
+  const command = `DMUX_POPUP_READY_FILE='${escapedReadyFile}' node ${escapedArgs.join(' ')}`;
 
   // Build tmux popup command
   const tmuxArgs: string[] = [
@@ -471,6 +522,7 @@ export function launchNodePopupNonBlocking<T = any>(
   const child = spawn('sh', ['-c', fullCommand], {
     stdio: 'inherit',
   });
+  const readyPromise = waitForPopupReady(child, readyFile);
 
   const resultPromise = new Promise<PopupResult<T>>((resolve) => {
     child.on('close', () => {
@@ -525,6 +577,7 @@ export function launchNodePopupNonBlocking<T = any>(
   return {
     pid: child.pid!,
     bounds,
+    readyPromise,
     resultPromise,
     kill: () => {
       try {
@@ -532,6 +585,9 @@ export function launchNodePopupNonBlocking<T = any>(
         // Clean up temp file
         if (fs.existsSync(resultFile)) {
           fs.unlinkSync(resultFile);
+        }
+        if (fs.existsSync(readyFile)) {
+          fs.unlinkSync(readyFile);
         }
       } catch {
         // Ignore errors if process already dead

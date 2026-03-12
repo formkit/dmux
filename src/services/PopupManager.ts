@@ -180,12 +180,14 @@ export class PopupManager {
           positioning = POPUP_POSITIONING.standard(this.config.sidebarWidth)
         }
 
-        return launchNodePopupNonBlocking<T>(popupScriptPath, args, {
+        const popupHandle = launchNodePopupNonBlocking<T>(popupScriptPath, args, {
           ...positioning,
           ...(options.width !== undefined && { width: options.width }),
           ...(options.height !== undefined && { height: options.height }),
           title: options.title,
         })
+        await popupHandle.readyPromise
+        return popupHandle
       }, this.resolveActivityProjectRoot(projectRoot))
 
       // Wait for result
