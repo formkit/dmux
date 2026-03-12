@@ -5,7 +5,7 @@ import stripAnsi from 'strip-ansi';
 import { ShortcutsPopupApp } from '../src/components/popups/shortcutsPopup.js';
 
 describe('ShortcutsPopupApp', () => {
-  it('shows the focused-pane menu shortcut as M-M', () => {
+  it('shows the focused-pane menu shortcut as Alt+Shift+M', () => {
     const { lastFrame } = render(
       <ShortcutsPopupApp
         resultFile="/tmp/dmux-shortcuts-result.json"
@@ -16,9 +16,9 @@ describe('ShortcutsPopupApp', () => {
 
     const output = stripAnsi(lastFrame() ?? '');
 
-    expect(output).toContain('[M-M]');
+    expect(output).toContain('[Alt+Shift+M]');
     expect(output).toContain('Open the pane menu for the focused tmux pane');
-    expect(output).toContain('Press M-M in any focused pane');
+    expect(output).toContain('Press Alt+Shift+M in any focused pane');
     expect(output).not.toContain('[M-D]');
   });
 });
