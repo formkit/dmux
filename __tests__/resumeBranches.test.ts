@@ -221,8 +221,9 @@ describe('resumeBranches', () => {
     );
   });
 
-  it('creates root and child worktrees for a remote branch and runs hooks', async () => {
+  it('refreshes remote branches across workspace repos before creating worktrees', async () => {
     const createdPaths: string[] = [];
+    let childRemoteFetched = false;
 
     createPaneMock.mockResolvedValue({
       pane: {
@@ -246,22 +247,43 @@ describe('resumeBranches', () => {
       if (command.includes("'rev-parse' '--abbrev-ref' '--symbolic-full-name' '@{upstream}'")) {
         return output('origin/main');
       }
+      if (command.includes("'rev-parse' '--abbrev-ref' '--symbolic-full-name' 'feature/remote-shared@{upstream}'")) {
+        return output('');
+      }
       if (command.includes("'branch' '--show-current'")) {
         return output('main');
       }
-      if (command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+      if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('main\nfeature/remote-shared');
+      }
+      if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
         return output('main');
       }
       if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
         return output('origin/feature/remote-shared');
       }
       if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
+        return output(childRemoteFetched ? 'origin/feature/remote-shared' : '');
+      }
+      if (command.includes("'fetch' '--prune' 'origin'")) {
+        if (cwd === childRepo) {
+          childRemoteFetched = true;
+        }
         return output('');
       }
       if (command.includes("'symbolic-ref' 'refs/remotes/origin/HEAD'")) {
         return output('refs/remotes/origin/main');
       }
       if (command.includes("'show-ref' '--verify' '--quiet' 'refs/heads/main'")) {
+        return output('');
+      }
+      if (command.includes("'rev-list' '--left-right' '--count' 'feature/remote-shared...origin/feature/remote-shared'")) {
+        return output('0\t9');
+      }
+      if (command.includes("'branch' '--set-upstream-to=origin/feature/remote-shared' 'feature/remote-shared'")) {
+        return output('');
+      }
+      if (command.includes("'branch' '-f' 'feature/remote-shared' 'origin/feature/remote-shared'")) {
         return output('');
       }
       if (command.includes("'branch' '--track' 'feature/remote-shared' 'origin/feature/remote-shared'")) {
@@ -302,6 +324,26 @@ describe('resumeBranches', () => {
     const childWorktreePath = path.join(rootWorktreePath, 'child-repo');
 
     expect(createdPaths).toEqual([rootWorktreePath, childWorktreePath]);
+    expect(execSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining("'fetch' '--prune' 'origin'"),
+      expect.objectContaining({ cwd: rootRepo, stdio: 'pipe' })
+    );
+    expect(execSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining("'fetch' '--prune' 'origin'"),
+      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+    );
+    expect(execSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining("'branch' '-f' 'feature/remote-shared' 'origin/feature/remote-shared'"),
+      expect.objectContaining({ cwd: rootRepo, stdio: 'pipe' })
+    );
+    expect(execSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining("'branch' '--track' 'feature/remote-shared' 'origin/feature/remote-shared'"),
+      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+    );
+    expect(execSyncMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("'branch' 'feature/remote-shared' 'main'"),
+      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+    );
     expect(writeWorktreeMetadataMock).toHaveBeenCalledWith(
       rootWorktreePath,
       expect.objectContaining({

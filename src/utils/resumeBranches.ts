@@ -317,6 +317,23 @@ function getWorkspaceBranchStates(
   });
 }
 
+function refreshRemoteBranchState(
+  state: WorkspaceRepoState,
+  branchName: string
+): void {
+  if (!isValidBranchName(branchName)) {
+    throw new Error(`Invalid branch name: ${branchName}`);
+  }
+
+  runGit(
+    state.repoPath,
+    ['fetch', '--prune', state.remoteName],
+    { silent: true }
+  );
+
+  state.hasRemoteBranch = listRemoteBranches(state.repoPath, state.remoteName).has(branchName);
+}
+
 function deriveBaseSlug(branchName: string): string {
   const segment = branchName.split('/').pop() || branchName;
   const normalized = segment
@@ -355,19 +372,74 @@ function getAvailableSlug(
   return candidate;
 }
 
-function ensureLocalBranch(state: WorkspaceRepoState, branchName: string): void {
-  if (state.hasLocalBranch) {
-    return;
-  }
+function getBranchUpstream(repoPath: string, branchName: string): string {
+  return runGitText(
+    repoPath,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${branchName}@{upstream}`],
+    { silent: true }
+  );
+}
 
+function getBranchDivergence(
+  repoPath: string,
+  localRef: string,
+  remoteRef: string
+): { ahead: number; behind: number } {
+  const output = runGitText(
+    repoPath,
+    ['rev-list', '--left-right', '--count', `${localRef}...${remoteRef}`],
+    { silent: true }
+  );
+  const [aheadText = '0', behindText = '0'] = output.split(/\s+/);
+  const ahead = Number.parseInt(aheadText, 10);
+  const behind = Number.parseInt(behindText, 10);
+
+  return {
+    ahead: Number.isFinite(ahead) ? ahead : 0,
+    behind: Number.isFinite(behind) ? behind : 0,
+  };
+}
+
+function ensureLocalBranch(state: WorkspaceRepoState, branchName: string): void {
   if (!isValidBranchName(branchName)) {
     throw new Error(`Invalid branch name: ${branchName}`);
   }
 
+  refreshRemoteBranchState(state, branchName);
+
   if (state.hasRemoteBranch) {
+    const remoteRef = `${state.remoteName}/${branchName}`;
+
+    if (state.hasLocalBranch) {
+      const upstream = getBranchUpstream(state.repoPath, branchName);
+      if (upstream !== remoteRef) {
+        runGit(
+          state.repoPath,
+          ['branch', `--set-upstream-to=${remoteRef}`, branchName],
+          { silent: true }
+        );
+      }
+
+      const { ahead, behind } = getBranchDivergence(
+        state.repoPath,
+        branchName,
+        remoteRef
+      );
+      if (behind > 0 && ahead === 0) {
+        runGit(state.repoPath, ['branch', '-f', branchName, remoteRef]);
+      } else if (ahead > 0 && behind > 0) {
+        const repoLabel = state.relativePath || '.';
+        throw new Error(
+          `Branch ${branchName} in ${repoLabel} has diverged from ${remoteRef}; refusing to overwrite local commits while opening the workspace.`
+        );
+      }
+
+      return;
+    }
+
     runGit(
       state.repoPath,
-      ['branch', '--track', branchName, `${state.remoteName}/${branchName}`]
+      ['branch', '--track', branchName, remoteRef]
     );
     state.hasLocalBranch = true;
     return;
