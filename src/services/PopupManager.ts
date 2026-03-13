@@ -940,14 +940,15 @@ export class PopupManager {
 
   async launchReopenWorktreePopup(
     worktrees: Array<{
-      slug: string
-      path: string
-      lastModified: Date
-      branch: string
+      branchName: string
+      slug?: string
+      path?: string
+      lastModified?: Date
       hasUncommittedChanges: boolean
+      isRemote: boolean
     }>,
     projectRoot?: string
-  ): Promise<{ slug: string; path: string } | null> {
+  ): Promise<{ branchName: string } | null> {
     if (!this.checkPopupSupport()) return null
 
     try {
@@ -955,19 +956,18 @@ export class PopupManager {
       const popupProjectName = path.basename(popupProjectRoot) || popupProjectRoot
       const maxVisibleRows = 8
 
-      // Convert Date objects to ISO strings for JSON serialization
       const worktreesData = worktrees.map((wt) => ({
         ...wt,
-        lastModified: wt.lastModified.toISOString(),
+        lastModified: wt.lastModified?.toISOString(),
       }))
 
-      const result = await this.launchPopup<{ slug: string; path: string }>(
+      const result = await this.launchPopup<{ branchName: string }>(
         "reopenWorktreePopup.js",
         [],
         {
           width: 78,
           height: Math.max(15, Math.min(20, Math.min(worktrees.length, maxVisibleRows) + 10)),
-          title: `Reopen Closed Worktree: ${popupProjectName}`,
+          title: `Resume Branch: ${popupProjectName}`,
         },
         {
           projectName: popupProjectName,

@@ -33,11 +33,10 @@ describe('PopupManager launchReopenWorktreePopup', () => {
     });
 
     const worktrees = Array.from({ length: 20 }, (_, index) => ({
-      slug: `task-${index}`,
-      path: `/tmp/project-selected/.dmux/worktrees/task-${index}`,
+      branchName: `task-${index}`,
       lastModified: new Date(`2026-03-${String((index % 9) + 1).padStart(2, '0')}T12:00:00.000Z`),
-      branch: `task-${index}`,
       hasUncommittedChanges: false,
+      isRemote: index % 2 === 0,
     }));
 
     await manager.launchReopenWorktreePopup(worktrees, '/tmp/project-selected');
@@ -47,7 +46,7 @@ describe('PopupManager launchReopenWorktreePopup', () => {
       [],
       expect.objectContaining({
         height: 18,
-        title: 'Reopen Closed Worktree: project-selected',
+        title: 'Resume Branch: project-selected',
         width: 78,
       }),
       expect.objectContaining({

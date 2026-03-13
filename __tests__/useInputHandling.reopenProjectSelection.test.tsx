@@ -4,13 +4,13 @@ import { render } from 'ink-testing-library';
 import { Text } from 'ink';
 import { useInputHandling } from '../src/hooks/useInputHandling.js';
 import type { ProjectActionItem } from '../src/utils/projectActions.js';
-import { getOrphanedWorktrees } from '../src/utils/git.js';
+import { getResumableBranches } from '../src/utils/resumeBranches.js';
 
-vi.mock('../src/utils/git.js', async () => {
-  const actual = await vi.importActual<typeof import('../src/utils/git.js')>('../src/utils/git.js');
+vi.mock('../src/utils/resumeBranches.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/utils/resumeBranches.js')>('../src/utils/resumeBranches.js');
   return {
     ...actual,
-    getOrphanedWorktrees: vi.fn(),
+    getResumableBranches: vi.fn(),
   };
 });
 
@@ -90,17 +90,18 @@ function Harness({
 }
 
 describe('useInputHandling reopen project selection', () => {
-  it('reopens closed worktrees for the currently selected sidebar project', async () => {
-    const orphanedWorktrees = [
+  it('opens the resumable branch picker for the currently selected sidebar project', async () => {
+    const resumableBranches = [
       {
+        branchName: 'feature-a',
         slug: 'feature-a',
         path: '/repo-selected/.dmux/worktrees/feature-a',
         lastModified: new Date('2026-03-12T12:00:00.000Z'),
-        branch: 'feature-a',
         hasUncommittedChanges: false,
+        isRemote: false,
       },
     ];
-    vi.mocked(getOrphanedWorktrees).mockReturnValue(orphanedWorktrees);
+    vi.mocked(getResumableBranches).mockReturnValue(resumableBranches);
 
     const popupManager = {
       launchReopenWorktreePopup: vi.fn(async () => null),
@@ -128,9 +129,9 @@ describe('useInputHandling reopen project selection', () => {
     stdin.write('r');
     await sleep(40);
 
-    expect(getOrphanedWorktrees).toHaveBeenCalledWith('/repo-selected', []);
+    expect(getResumableBranches).toHaveBeenCalledWith('/repo-selected', []);
     expect(popupManager.launchReopenWorktreePopup).toHaveBeenCalledWith(
-      orphanedWorktrees,
+      resumableBranches,
       '/repo-selected'
     );
 

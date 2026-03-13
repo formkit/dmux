@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Popup for reopening closed worktrees
- * Shows a list of orphaned worktrees that can be reopened
+ * Popup for resuming local or remote branches.
  */
 
 import React, { useState } from 'react';
@@ -12,18 +11,19 @@ import { pathToFileURL } from 'url';
 import { PopupContainer, PopupWrapper, writeSuccessAndExit } from './shared/index.js';
 import { PopupFooters, POPUP_CONFIG } from './config.js';
 
-interface OrphanedWorktree {
-  slug: string;
-  path: string;
-  lastModified: string; // ISO date string
-  branch: string;
+interface ResumableBranch {
+  branchName: string;
+  slug?: string;
+  path?: string;
+  lastModified?: string; // ISO date string
   hasUncommittedChanges: boolean;
+  isRemote: boolean;
 }
 
 interface ReopenWorktreePopupProps {
   resultFile: string;
   projectName?: string;
-  worktrees: OrphanedWorktree[];
+  worktrees: ResumableBranch[];
 }
 
 const MAX_VISIBLE_WORKTREES = 8;
@@ -31,7 +31,11 @@ const MAX_VISIBLE_WORKTREES = 8;
 /**
  * Format relative time (e.g., "2 hours ago", "3 days ago")
  */
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr?: string): string {
+  if (!dateStr) {
+    return '--';
+  }
+
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -73,11 +77,11 @@ function getVisibleWindow(totalItems: number, selectedIndex: number, maxVisible:
   return { startIndex, endIndex };
 }
 
-function getWorktreeDetails(worktree: OrphanedWorktree): string {
+function getWorktreeDetails(worktree: ResumableBranch): string {
   const details: string[] = [];
 
-  if (worktree.branch !== worktree.slug) {
-    details.push(`branch:${worktree.branch}`);
+  if (worktree.isRemote) {
+    details.push('remote');
   }
 
   if (worktree.hasUncommittedChanges) {
@@ -101,9 +105,8 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
     } else if (key.downArrow) {
       setSelectedIndex(Math.min(worktrees.length - 1, selectedIndex + 1));
     } else if (key.return && worktrees.length > 0) {
-      // User selected a worktree to reopen
       const selected = worktrees[selectedIndex];
-      writeSuccessAndExit(resultFile, { slug: selected.slug, path: selected.path }, exit);
+      writeSuccessAndExit(resultFile, { branchName: selected.branchName }, exit);
     }
   });
 
@@ -112,8 +115,8 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
       <PopupWrapper resultFile={resultFile}>
         <PopupContainer footer="Press ESC to close">
           <Box flexDirection="column">
-            <Text>No closed worktrees found{projectName ? ` in ${projectName}` : ''}.</Text>
-            <Text dimColor>All worktrees have active panes.</Text>
+            <Text>No resumable branches found{projectName ? ` in ${projectName}` : ''}.</Text>
+            <Text dimColor>No local or remote branches are currently resumable.</Text>
           </Box>
         </PopupContainer>
       </PopupWrapper>
@@ -134,7 +137,7 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
   return (
     <PopupWrapper resultFile={resultFile}>
       <PopupContainer footer={PopupFooters.choice()}>
-        <Text>Please select a previously closed worktree to reopen.</Text>
+        <Text>Please select a branch to resume.</Text>
 
         <Box
           flexDirection="column"
@@ -146,7 +149,7 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
         >
           <Box>
             <Box width={34} paddingRight={1}>
-              <Text dimColor>Worktree</Text>
+              <Text dimColor>Branch</Text>
             </Box>
             <Box width={16} paddingRight={1}>
               <Text dimColor>Last worked</Text>
@@ -160,14 +163,14 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
             const details = getWorktreeDetails(worktree);
 
             return (
-              <Box key={worktree.slug}>
+              <Box key={worktree.branchName}>
                 <Box width={34} paddingRight={1}>
                   <Text
                     color={isSelected ? POPUP_CONFIG.titleColor : 'white'}
                     bold={isSelected}
                     wrap="truncate-end"
                   >
-                    {isSelected ? '▶ ' : '  '}{worktree.slug}
+                    {isSelected ? '▶ ' : '  '}{worktree.branchName}
                   </Text>
                 </Box>
                 <Box width={16} paddingRight={1}>
@@ -198,7 +201,7 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
 
           <Box>
             <Text dimColor>
-              {totalWorktrees} reopenable worktree{totalWorktrees === 1 ? '' : 's'}
+              {totalWorktrees} resumable branch{totalWorktrees === 1 ? '' : 'es'}
               {moreAbove ? `  •  ${startIndex} above` : ''}
               {moreBelow ? `  •  ${totalWorktrees - endIndex} below` : ''}
             </Text>
@@ -221,7 +224,7 @@ function main() {
 
   let data: {
     projectName?: string;
-    worktrees: OrphanedWorktree[];
+    worktrees: ResumableBranch[];
   };
 
   try {

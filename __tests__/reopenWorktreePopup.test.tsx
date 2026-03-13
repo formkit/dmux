@@ -16,11 +16,12 @@ async function down(stdin: { write: (value: string) => void }) {
 describe('ReopenWorktreePopupApp', () => {
   it('keeps the list inside the popup and scrolls entries into view', async () => {
     const worktrees = Array.from({ length: 10 }, (_, index) => ({
-      slug: `task-${index}`,
-      path: `/tmp/project/.dmux/worktrees/task-${index}`,
-      lastModified: `2026-03-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`,
-      branch: `task-${index}`,
+      branchName: `task-${index}`,
+      lastModified: index < 5
+        ? `2026-03-${String(index + 1).padStart(2, '0')}T12:00:00.000Z`
+        : undefined,
       hasUncommittedChanges: index % 2 === 0,
+      isRemote: index % 3 === 0,
     }));
 
     const { stdin, lastFrame, unmount } = render(
@@ -34,12 +35,13 @@ describe('ReopenWorktreePopupApp', () => {
     await sleep(20);
 
     let output = stripAnsi(lastFrame() ?? '');
-    expect(output).toContain('Please select a previously closed worktree to reopen.');
-    expect(output).toContain('Worktree');
+    expect(output).toContain('Please select a branch to resume.');
+    expect(output).toContain('Branch');
     expect(output).toContain('Last worked');
     expect(output).toContain('task-0');
     expect(output).not.toContain('task-9');
     expect(output).toContain('2 below');
+    expect(output).toContain('remote');
 
     for (let count = 0; count < 8; count += 1) {
       await down(stdin);

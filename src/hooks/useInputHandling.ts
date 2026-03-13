@@ -14,7 +14,11 @@ import {
   PaneAction,
   TOGGLE_PANE_VISIBILITY_ACTION,
 } from "../actions/index.js"
-import { getMainBranch, getOrphanedWorktrees } from "../utils/git.js"
+import { getMainBranch } from "../utils/git.js"
+import {
+  getResumableBranches,
+  type ResumableBranchCandidate,
+} from "../utils/resumeBranches.js"
 import { enforceControlPaneSize } from "../utils/tmux.js"
 import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
 import { suggestCommand } from "../utils/commands.js"
@@ -96,7 +100,10 @@ interface UseInputHandlingParams {
   runCommandInternal: (type: "test" | "dev", pane: DmuxPane) => Promise<void>
   handlePaneCreationWithAgent: (prompt: string, targetProjectRoot?: string) => Promise<void>
   handleCreateChildWorktree: (pane: DmuxPane) => Promise<void>
-  handleReopenWorktree: (slug: string, worktreePath: string, targetProjectRoot?: string) => Promise<void>
+  handleReopenWorktree: (
+    candidate: ResumableBranchCandidate,
+    targetProjectRoot?: string
+  ) => Promise<void>
   setDevSourceFromPane: (pane: DmuxPane) => Promise<void>
   savePanes: (panes: DmuxPane[]) => Promise<void>
   sidebarProjects: SidebarProject[]
@@ -869,20 +876,28 @@ export function useInputHandling(params: UseInputHandlingParams) {
     const activeSlugs = panes
       .filter((pane) => sameSidebarProjectRoot(getPaneProjectRoot(pane, projectRoot), targetProjectRoot))
       .map((pane) => pane.slug)
-    const orphanedWorktrees = getOrphanedWorktrees(targetProjectRoot, activeSlugs)
+    const resumableBranches = getResumableBranches(targetProjectRoot, activeSlugs)
 
-    if (orphanedWorktrees.length === 0) {
-      setStatusMessage(`No closed worktrees in ${targetProjectRoot}`)
+    if (resumableBranches.length === 0) {
+      setStatusMessage(`No resumable branches in ${targetProjectRoot}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       return
     }
 
     const result = await popupManager.launchReopenWorktreePopup(
-      orphanedWorktrees,
+      resumableBranches,
       targetProjectRoot
     )
     if (result) {
-      await handleReopenWorktree(result.slug, result.path, targetProjectRoot)
+      const selectedCandidate = resumableBranches.find(
+        (candidate) => candidate.branchName === result.branchName
+      )
+      if (selectedCandidate) {
+        await handleReopenWorktree(selectedCandidate, targetProjectRoot)
+      } else {
+        setStatusMessage(`Branch ${result.branchName} is no longer resumable`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      }
     }
   }
 
