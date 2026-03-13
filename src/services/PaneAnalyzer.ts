@@ -539,7 +539,12 @@ ${content}`,
    * @param signal - Optional abort signal
    * @param dmuxPaneId - Optional dmux pane ID for friendly logging (e.g., "dmux-123")
    */
-  async analyzePane(tmuxPaneId: string, signal?: AbortSignal, dmuxPaneId?: string): Promise<PaneAnalysis> {
+  async analyzePane(
+    tmuxPaneId: string,
+    signal?: AbortSignal,
+    dmuxPaneId?: string,
+    capturedSnapshot?: string
+  ): Promise<PaneAnalysis> {
     const logService = LogService.getInstance();
 
     // For logging, try to get friendly name from StateManager
@@ -563,8 +568,11 @@ ${content}`,
 
     // Normalize the analyzer input to the last 50 trimmed lines so every LLM stage
     // sees the same bounded pane snapshot.
+    const analysisSource = typeof capturedSnapshot === 'string'
+      ? capturedSnapshot
+      : capturePaneContent(tmuxPaneId, ANALYZER_CONTEXT_LINE_LIMIT);
     const content = normalizePaneContentForAnalysis(
-      capturePaneContent(tmuxPaneId, ANALYZER_CONTEXT_LINE_LIMIT),
+      analysisSource,
       ANALYZER_CONTEXT_LINE_LIMIT
     );
 
