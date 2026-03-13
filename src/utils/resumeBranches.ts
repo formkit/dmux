@@ -349,6 +349,57 @@ function shortHash(input: string): string {
   return createHash('sha1').update(input).digest('hex').slice(0, 6);
 }
 
+function hasReusableWorktreeForBranch(
+  worktreeRootPath: string,
+  branchName: string
+): boolean {
+  const rootGitPath = path.join(worktreeRootPath, '.git');
+  if (fs.existsSync(rootGitPath)) {
+    return getCurrentBranchName(worktreeRootPath) === branchName;
+  }
+
+  const stack = [worktreeRootPath];
+  while (stack.length > 0) {
+    const currentPath = stack.pop();
+    if (!currentPath) {
+      continue;
+    }
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (RESUME_SCAN_EXCLUDED_DIRS.has(entry.name)) {
+        continue;
+      }
+
+      const fullPath = path.join(currentPath, entry.name);
+      const gitPath = path.join(fullPath, '.git');
+      if (fs.existsSync(gitPath)) {
+        try {
+          const gitStat = fs.statSync(gitPath);
+          if (gitStat.isFile() && getCurrentBranchName(fullPath) === branchName) {
+            return true;
+          }
+        } catch {
+          // Ignore unreadable nested worktrees and keep scanning.
+        }
+      }
+
+      stack.push(fullPath);
+    }
+  }
+
+  return false;
+}
+
 function getAvailableSlug(
   branchName: string,
   projectRoot: string,
@@ -362,7 +413,10 @@ function getAvailableSlug(
 
   while (
     reserved.has(candidate)
-    || fs.existsSync(path.join(worktreesDir, candidate))
+    || (
+      fs.existsSync(path.join(worktreesDir, candidate))
+      && !hasReusableWorktreeForBranch(path.join(worktreesDir, candidate), branchName)
+    )
   ) {
     attempt += 1;
     const hashSuffix = shortHash(`${branchName}:${attempt}`);
@@ -400,12 +454,49 @@ function getBranchDivergence(
   };
 }
 
-function ensureLocalBranch(state: WorkspaceRepoState, branchName: string): void {
+function getCheckedOutWorktreePath(
+  repoPath: string,
+  branchName: string
+): string | null {
+  const output = runGitText(
+    repoPath,
+    ['worktree', 'list', '--porcelain'],
+    { silent: true }
+  );
+  if (!output) {
+    return null;
+  }
+
+  let currentWorktree: string | null = null;
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      currentWorktree = line.slice('worktree '.length).trim();
+      continue;
+    }
+
+    if (line === `branch refs/heads/${branchName}`) {
+      return currentWorktree;
+    }
+
+    if (!line.trim()) {
+      currentWorktree = null;
+    }
+  }
+
+  return null;
+}
+
+function ensureLocalBranch(
+  state: WorkspaceRepoState,
+  branchName: string,
+  worktreePath: string
+): void {
   if (!isValidBranchName(branchName)) {
     throw new Error(`Invalid branch name: ${branchName}`);
   }
 
   refreshRemoteBranchState(state, branchName);
+  runGit(state.repoPath, ['worktree', 'prune'], { silent: true });
 
   if (state.hasRemoteBranch) {
     const remoteRef = `${state.remoteName}/${branchName}`;
@@ -426,6 +517,21 @@ function ensureLocalBranch(state: WorkspaceRepoState, branchName: string): void 
         remoteRef
       );
       if (behind > 0 && ahead === 0) {
+        const checkedOutWorktreePath = getCheckedOutWorktreePath(
+          state.repoPath,
+          branchName
+        );
+        if (checkedOutWorktreePath) {
+          if (path.resolve(checkedOutWorktreePath) === path.resolve(worktreePath)) {
+            return;
+          }
+
+          const repoLabel = state.relativePath || '.';
+          throw new Error(
+            `Branch ${branchName} in ${repoLabel} is already checked out at ${checkedOutWorktreePath}; reopen that worktree instead of recreating it.`
+          );
+        }
+
         runGit(state.repoPath, ['branch', '-f', branchName, remoteRef]);
       } else if (ahead > 0 && behind > 0) {
         const repoLabel = state.relativePath || '.';
@@ -523,7 +629,10 @@ export async function resumeBranchWorkspace(
   }
 
   for (const state of workspaceStates) {
-    ensureLocalBranch(state, branchName);
+    const worktreePath = state.relativePath
+      ? path.join(rootWorktreePath, state.relativePath)
+      : rootWorktreePath;
+    ensureLocalBranch(state, branchName, worktreePath);
   }
 
   for (const state of workspaceStates) {

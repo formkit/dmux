@@ -382,4 +382,123 @@ describe('resumeBranches', () => {
       })
     );
   });
+
+  it('reuses an existing child worktree when that branch is already checked out there', async () => {
+    const createdPaths: string[] = [];
+    const rootWorktreePath = path.join(rootRepo, '.dmux', 'worktrees', 'react');
+    const childWorktreePath = path.join(rootWorktreePath, 'child-repo');
+
+    fs.mkdirSync(rootWorktreePath, { recursive: true });
+    fs.writeFileSync(path.join(rootWorktreePath, '.git'), 'gitdir: /tmp/existing-root-worktree\n', 'utf-8');
+    fs.mkdirSync(childWorktreePath, { recursive: true });
+    fs.writeFileSync(path.join(childWorktreePath, '.git'), 'gitdir: /tmp/existing-child-worktree\n', 'utf-8');
+
+    createPaneMock.mockResolvedValue({
+      pane: {
+        id: 'dmux-1',
+        slug: 'react',
+        branchName: 'react',
+        prompt: 'No initial prompt',
+        paneId: '%1',
+        projectRoot: rootRepo,
+        projectName: path.basename(rootRepo),
+        worktreePath: rootWorktreePath,
+      },
+      needsAgentChoice: false,
+    });
+
+    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+      const cwd = options?.cwd;
+      const encoding = options?.encoding;
+      const output = (value: string) => encoding ? value : Buffer.from(value);
+
+      if (command.includes("'rev-parse' '--abbrev-ref' '--symbolic-full-name' '@{upstream}'")) {
+        return output('origin/main');
+      }
+      if (cwd === childRepo && command.includes("'rev-parse' '--abbrev-ref' '--symbolic-full-name' 'react@{upstream}'")) {
+        return output('');
+      }
+      if (cwd === rootWorktreePath && command.includes("'branch' '--show-current'")) {
+        return output('react');
+      }
+      if (command.includes("'branch' '--show-current'")) {
+        return output('main');
+      }
+      if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('main');
+      }
+      if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('main\nreact');
+      }
+      if (command.includes("'fetch' '--prune' 'origin'")) {
+        return output('');
+      }
+      if (command.includes("'worktree' 'prune'")) {
+        return output('');
+      }
+      if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
+        return output('origin/react');
+      }
+      if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
+        return output('origin/react');
+      }
+      if (cwd === childRepo && command.includes("'rev-list' '--left-right' '--count' 'react...origin/react'")) {
+        return output('0\t3');
+      }
+      if (cwd === childRepo && command.includes("'worktree' 'list' '--porcelain'")) {
+        return output(`worktree ${childWorktreePath}\nHEAD abc123\nbranch refs/heads/react\n`);
+      }
+      if (cwd === rootRepo && command.includes("'worktree' 'list' '--porcelain'")) {
+        return output('');
+      }
+      if (command.includes("'branch' '--track' 'react' 'origin/react'")) {
+        return output('');
+      }
+      if (cwd === childRepo && command.includes("'branch' '-f' 'react' 'origin/react'")) {
+        throw new Error('should not force-update a branch already checked out in the target worktree');
+      }
+      if (command.includes("'worktree' 'add'")) {
+        const match = command.match(/'worktree' 'add' '([^']+)' 'react'/);
+        if (match) {
+          const worktreePath = match[1];
+          createdPaths.push(worktreePath!);
+          fs.mkdirSync(worktreePath!, { recursive: true });
+          fs.writeFileSync(path.join(worktreePath!, '.git'), 'gitdir: /tmp/root-worktree\n', 'utf-8');
+        }
+        return output('');
+      }
+
+      return output('');
+    });
+
+    const { resumeBranchWorkspace } = await import('../src/utils/resumeBranches.js');
+
+    await resumeBranchWorkspace({
+      agent: 'codex',
+      branchName: 'react',
+      projectRoot: rootRepo,
+      existingPanes: [],
+      sessionConfigPath: path.join(rootRepo, '.dmux', 'dmux.config.json'),
+      sessionProjectRoot: rootRepo,
+    });
+
+    expect(createdPaths).toEqual([]);
+    expect(execSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining("'worktree' 'list' '--porcelain'"),
+      expect.objectContaining({ cwd: childRepo, encoding: 'utf-8', stdio: 'pipe' })
+    );
+    expect(execSyncMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("'branch' '-f' 'react' 'origin/react'"),
+      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+    );
+    expect(triggerHookMock).toHaveBeenCalledWith(
+      'worktree_created',
+      childRepo,
+      undefined,
+      expect.objectContaining({
+        DMUX_BRANCH: 'react',
+        DMUX_WORKTREE_PATH: childWorktreePath,
+      })
+    );
+  });
 });
