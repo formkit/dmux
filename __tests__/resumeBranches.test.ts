@@ -4,7 +4,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const execSyncMock = vi.hoisted(() => vi.fn());
-const reopenWorktreeMock = vi.hoisted(() => vi.fn());
+const createPaneMock = vi.hoisted(() => vi.fn());
 const triggerHookMock = vi.hoisted(() => vi.fn(async () => {}));
 const writeWorktreeMetadataMock = vi.hoisted(() => vi.fn());
 
@@ -12,8 +12,8 @@ vi.mock('child_process', () => ({
   execSync: execSyncMock,
 }));
 
-vi.mock('../src/utils/reopenWorktree.js', () => ({
-  reopenWorktree: reopenWorktreeMock,
+vi.mock('../src/utils/paneCreation.js', () => ({
+  createPane: createPaneMock,
 }));
 
 vi.mock('../src/utils/hooks.js', () => ({
@@ -126,19 +126,96 @@ describe('resumeBranches', () => {
           slug: 'reopen-me',
           path: orphanedRootWorktree,
           hasUncommittedChanges: true,
+          hasWorktree: true,
+          hasLocalBranch: true,
+          hasRemoteBranch: true,
           isRemote: false,
         }),
         expect.objectContaining({
           branchName: 'child/local-only',
+          hasWorktree: false,
+          hasLocalBranch: true,
+          hasRemoteBranch: false,
           isRemote: false,
         }),
         expect.objectContaining({
           branchName: 'feature/remote-only',
+          hasWorktree: false,
+          hasLocalBranch: false,
+          hasRemoteBranch: true,
           isRemote: true,
         }),
         expect.objectContaining({
           branchName: 'child/remote-child-only',
+          hasWorktree: false,
+          hasLocalBranch: false,
+          hasRemoteBranch: true,
           isRemote: true,
+        }),
+      ])
+    );
+  });
+
+  it('skips remote branch scans until remote sources are requested', async () => {
+    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+      const cwd = options?.cwd;
+      const encoding = options?.encoding;
+      const output = (value: string) => encoding ? value : Buffer.from(value);
+
+      if (
+        cwd === orphanedRootWorktree
+        && (
+          command.includes("'branch' '--show-current'")
+          || command.includes('branch --show-current')
+        )
+      ) {
+        return output('feature/reopen-me');
+      }
+      if (
+        cwd === orphanedRootWorktree
+        && (
+          command.includes("'status' '--porcelain'")
+          || command.includes('status --porcelain')
+        )
+      ) {
+        return output('');
+      }
+
+      if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('main\nfeature/local-parent');
+      }
+      if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('child/local-only');
+      }
+
+      if (command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
+        throw new Error('remote branches should not be queried');
+      }
+
+      return output('');
+    });
+
+    const { getResumableBranches } = await import('../src/utils/resumeBranches.js');
+
+    const candidates = getResumableBranches(rootRepo, [], {
+      includeRemoteBranches: false,
+    });
+
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          branchName: 'feature/reopen-me',
+          hasRemoteBranch: false,
+        }),
+        expect.objectContaining({
+          branchName: 'feature/local-parent',
+          hasLocalBranch: true,
+          hasRemoteBranch: false,
+        }),
+        expect.objectContaining({
+          branchName: 'child/local-only',
+          hasLocalBranch: true,
+          hasRemoteBranch: false,
         }),
       ])
     );
@@ -147,17 +224,18 @@ describe('resumeBranches', () => {
   it('creates root and child worktrees for a remote branch and runs hooks', async () => {
     const createdPaths: string[] = [];
 
-    reopenWorktreeMock.mockResolvedValue({
+    createPaneMock.mockResolvedValue({
       pane: {
         id: 'dmux-1',
         slug: 'remote-shared',
         branchName: 'feature/remote-shared',
-        prompt: '(Reopened session)',
+        prompt: 'No initial prompt',
         paneId: '%1',
         projectRoot: rootRepo,
         projectName: path.basename(rootRepo),
         worktreePath: path.join(rootRepo, '.dmux', 'worktrees', 'remote-shared'),
       },
+      needsAgentChoice: false,
     });
 
     execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
@@ -212,6 +290,7 @@ describe('resumeBranches', () => {
     const { resumeBranchWorkspace } = await import('../src/utils/resumeBranches.js');
 
     await resumeBranchWorkspace({
+      agent: 'codex',
       branchName: 'feature/remote-shared',
       projectRoot: rootRepo,
       existingPanes: [],
@@ -226,6 +305,7 @@ describe('resumeBranches', () => {
     expect(writeWorktreeMetadataMock).toHaveBeenCalledWith(
       rootWorktreePath,
       expect.objectContaining({
+        agent: 'codex',
         permissionMode: 'plan',
         branchName: 'feature/remote-shared',
       })
@@ -236,24 +316,25 @@ describe('resumeBranches', () => {
         branchName: 'feature/remote-shared',
       })
     );
-    expect(reopenWorktreeMock).toHaveBeenCalledWith(
+    expect(createPaneMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        slug: 'remote-shared',
-        worktreePath: rootWorktreePath,
-      })
-    );
-    expect(triggerHookMock).toHaveBeenCalledWith(
-      'worktree_created',
-      rootRepo,
-      expect.objectContaining({
-        slug: 'remote-shared',
-      })
+        prompt: '',
+        agent: 'codex',
+        projectRoot: rootRepo,
+        existingWorktree: {
+          slug: 'remote-shared',
+          worktreePath: rootWorktreePath,
+          branchName: 'feature/remote-shared',
+        },
+      }),
+      ['codex']
     );
     expect(triggerHookMock).toHaveBeenCalledWith(
       'worktree_created',
       childRepo,
       undefined,
       expect.objectContaining({
+        DMUX_AGENT: 'codex',
         DMUX_BRANCH: 'feature/remote-shared',
         DMUX_WORKTREE_PATH: childWorktreePath,
       })

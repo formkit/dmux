@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Text } from 'ink';
 import { useInputHandling } from '../src/hooks/useInputHandling.js';
@@ -25,10 +25,14 @@ function Harness({
   selectedIndex,
   projectActionItems,
   popupManager,
+  trackProjectActivity,
+  handleReopenWorktree = vi.fn(),
 }: {
   selectedIndex: number;
   projectActionItems: ProjectActionItem[];
   popupManager: any;
+  trackProjectActivity: any;
+  handleReopenWorktree?: any;
 }) {
   useInputHandling({
     panes: [],
@@ -64,12 +68,13 @@ function Harness({
       setActionState: vi.fn(),
     },
     controlPaneId: undefined,
+    trackProjectActivity,
     setStatusMessage: vi.fn(),
     copyNonGitFiles: vi.fn(),
     runCommandInternal: vi.fn(),
     handlePaneCreationWithAgent: vi.fn(),
     handleCreateChildWorktree: vi.fn(),
-    handleReopenWorktree: vi.fn(),
+    handleReopenWorktree,
     setDevSourceFromPane: vi.fn(),
     savePanes: vi.fn(),
     sidebarProjects: [
@@ -90,6 +95,10 @@ function Harness({
 }
 
 describe('useInputHandling reopen project selection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('opens the resumable branch picker for the currently selected sidebar project', async () => {
     const resumableBranches = [
       {
@@ -98,6 +107,9 @@ describe('useInputHandling reopen project selection', () => {
         path: '/repo-selected/.dmux/worktrees/feature-a',
         lastModified: new Date('2026-03-12T12:00:00.000Z'),
         hasUncommittedChanges: false,
+        hasWorktree: true,
+        hasLocalBranch: true,
+        hasRemoteBranch: false,
         isRemote: false,
       },
     ];
@@ -106,6 +118,7 @@ describe('useInputHandling reopen project selection', () => {
     const popupManager = {
       launchReopenWorktreePopup: vi.fn(async () => null),
     };
+    const trackProjectActivity = vi.fn(async (work: () => unknown) => await work());
 
     const projectActionItems: ProjectActionItem[] = [
       {
@@ -122,6 +135,7 @@ describe('useInputHandling reopen project selection', () => {
         selectedIndex={0}
         projectActionItems={projectActionItems}
         popupManager={popupManager}
+        trackProjectActivity={trackProjectActivity}
       />
     );
 
@@ -129,9 +143,105 @@ describe('useInputHandling reopen project selection', () => {
     stdin.write('r');
     await sleep(40);
 
-    expect(getResumableBranches).toHaveBeenCalledWith('/repo-selected', []);
+    expect(getResumableBranches).toHaveBeenCalledWith('/repo-selected', [], {
+      includeRemoteBranches: false,
+    });
+    expect(trackProjectActivity).toHaveBeenCalledWith(
+      expect.any(Function),
+      '/repo-selected'
+    );
     expect(popupManager.launchReopenWorktreePopup).toHaveBeenCalledWith(
       resumableBranches,
+      '/repo-selected',
+      {
+        includeWorktrees: true,
+        includeLocalBranches: true,
+        includeRemoteBranches: false,
+        remoteLoaded: false,
+        filterQuery: '',
+      },
+      []
+    );
+
+    unmount();
+  });
+
+  it('reopens the selected candidate returned from the popup', async () => {
+    const resumableBranches = [
+      {
+        branchName: 'feature-a',
+        slug: 'feature-a',
+        path: '/repo-selected/.dmux/worktrees/feature-a',
+        lastModified: new Date('2026-03-12T12:00:00.000Z'),
+        hasUncommittedChanges: false,
+        hasWorktree: true,
+        hasLocalBranch: true,
+        hasRemoteBranch: false,
+        isRemote: false,
+      },
+    ];
+    vi.mocked(getResumableBranches).mockReturnValue(resumableBranches);
+
+    const selectedCandidate = {
+      ...resumableBranches[0],
+      lastModified: '2026-03-12T12:00:00.000Z',
+    };
+
+    const handleReopenWorktree = vi.fn(async () => {});
+    const popupManager = {
+      launchReopenWorktreePopup: vi.fn().mockResolvedValue({
+        action: 'select',
+        candidate: selectedCandidate,
+      }),
+    };
+    const trackProjectActivity = vi.fn(async (work: () => unknown) => await work());
+
+    const projectActionItems: ProjectActionItem[] = [
+      {
+        index: 0,
+        projectRoot: '/repo-selected',
+        projectName: 'repo-selected',
+        kind: 'new-agent',
+        hotkey: 'n',
+      },
+    ];
+
+    const { stdin, unmount } = render(
+      <Harness
+        selectedIndex={0}
+        projectActionItems={projectActionItems}
+        popupManager={popupManager}
+        trackProjectActivity={trackProjectActivity}
+        handleReopenWorktree={handleReopenWorktree}
+      />
+    );
+
+    await sleep(20);
+    stdin.write('r');
+    await sleep(60);
+
+    expect(getResumableBranches).toHaveBeenNthCalledWith(1, '/repo-selected', [], {
+      includeRemoteBranches: false,
+    });
+    expect(popupManager.launchReopenWorktreePopup).toHaveBeenNthCalledWith(
+      1,
+      resumableBranches,
+      '/repo-selected',
+      {
+        includeWorktrees: true,
+        includeLocalBranches: true,
+        includeRemoteBranches: false,
+        remoteLoaded: false,
+        filterQuery: '',
+      },
+      []
+    );
+    expect(trackProjectActivity).toHaveBeenCalledTimes(1);
+    expect(handleReopenWorktree).toHaveBeenCalledWith(
+      {
+        ...resumableBranches[0],
+        lastModified: new Date('2026-03-12T12:00:00.000Z'),
+      },
       '/repo-selected'
     );
 

@@ -3,10 +3,11 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import path from 'path';
 import type { DmuxPane } from '../types.js';
+import type { AgentName } from './agentLaunch.js';
 import { triggerHook } from './hooks.js';
 import { getOrphanedWorktrees, isValidBranchName } from './git.js';
+import { createPane } from './paneCreation.js';
 import { shellQuote } from './promptStore.js';
-import { reopenWorktree, type ReopenWorktreeResult } from './reopenWorktree.js';
 import { SettingsManager } from './settingsManager.js';
 import { writeWorktreeMetadata } from './worktreeMetadata.js';
 
@@ -29,6 +30,9 @@ export interface ResumableBranchCandidate {
   path?: string;
   lastModified?: Date;
   hasUncommittedChanges: boolean;
+  hasWorktree: boolean;
+  hasLocalBranch: boolean;
+  hasRemoteBranch: boolean;
   isRemote: boolean;
 }
 
@@ -47,10 +51,15 @@ interface WorkspaceRepoState {
 
 export interface ResumeBranchWorkspaceOptions {
   branchName: string;
+  agent: AgentName;
   projectRoot: string;
   existingPanes: DmuxPane[];
   sessionConfigPath?: string;
   sessionProjectRoot?: string;
+}
+
+export interface ResumableBranchScanOptions {
+  includeRemoteBranches?: boolean;
 }
 
 function runGitText(
@@ -224,8 +233,10 @@ function compareCandidates(
 
 export function getResumableBranches(
   projectRoot: string,
-  activePaneSlugs: string[]
+  activePaneSlugs: string[],
+  options: ResumableBranchScanOptions = {}
 ): ResumableBranchCandidate[] {
+  const includeRemoteBranches = options.includeRemoteBranches ?? true;
   const candidates = new Map<string, ResumableBranchRecord>();
 
   for (const worktree of getOrphanedWorktrees(projectRoot, activePaneSlugs)) {
@@ -235,6 +246,7 @@ export function getResumableBranches(
       path: worktree.path,
       lastModified: worktree.lastModified,
       hasUncommittedChanges: worktree.hasUncommittedChanges,
+      hasWorktree: true,
       isRemote: false,
       hasLocalBranch: true,
       hasRemoteBranch: false,
@@ -243,8 +255,9 @@ export function getResumableBranches(
 
   for (const repoPath of discoverWorkspaceRepos(projectRoot)) {
     const localBranches = listLocalBranches(repoPath);
-    const remoteName = getPreferredRemoteName(repoPath);
-    const remoteBranches = listRemoteBranches(repoPath, remoteName);
+    const remoteBranches = includeRemoteBranches
+      ? listRemoteBranches(repoPath, getPreferredRemoteName(repoPath))
+      : new Set<string>();
     const branchNames = new Set<string>([
       ...Array.from(localBranches),
       ...Array.from(remoteBranches),
@@ -253,6 +266,7 @@ export function getResumableBranches(
     for (const branchName of branchNames) {
       const existing = candidates.get(branchName);
       if (existing) {
+        existing.hasWorktree ||= false;
         existing.hasLocalBranch ||= localBranches.has(branchName);
         existing.hasRemoteBranch ||= remoteBranches.has(branchName);
         continue;
@@ -261,6 +275,7 @@ export function getResumableBranches(
       candidates.set(branchName, {
         branchName,
         hasUncommittedChanges: false,
+        hasWorktree: false,
         isRemote: false,
         hasLocalBranch: localBranches.has(branchName),
         hasRemoteBranch: remoteBranches.has(branchName),
@@ -275,7 +290,10 @@ export function getResumableBranches(
       path: candidate.path,
       lastModified: candidate.lastModified,
       hasUncommittedChanges: candidate.hasUncommittedChanges,
-      isRemote: !candidate.path && !candidate.hasLocalBranch && candidate.hasRemoteBranch,
+      hasWorktree: candidate.hasWorktree,
+      hasLocalBranch: candidate.hasLocalBranch,
+      hasRemoteBranch: candidate.hasRemoteBranch,
+      isRemote: !candidate.hasWorktree && !candidate.hasLocalBranch && candidate.hasRemoteBranch,
     }))
     .sort(compareCandidates);
 }
@@ -399,12 +417,13 @@ async function triggerChildWorktreeHook(
   projectRoot: string,
   branchName: string,
   slug: string,
-  worktreePath: string
+  worktreePath: string,
+  agent: AgentName
 ): Promise<void> {
   await triggerHook('worktree_created', projectRoot, undefined, {
     DMUX_SLUG: slug,
-    DMUX_PROMPT: '(Reopened session)',
-    DMUX_AGENT: 'unknown',
+    DMUX_PROMPT: 'No initial prompt',
+    DMUX_AGENT: agent,
     DMUX_WORKTREE_PATH: worktreePath,
     DMUX_BRANCH: branchName,
   });
@@ -412,9 +431,10 @@ async function triggerChildWorktreeHook(
 
 export async function resumeBranchWorkspace(
   options: ResumeBranchWorkspaceOptions
-): Promise<ReopenWorktreeResult> {
+): Promise<{ pane: DmuxPane }> {
   const {
     branchName,
+    agent,
     projectRoot,
     existingPanes,
     sessionConfigPath,
@@ -426,6 +446,10 @@ export async function resumeBranchWorkspace(
   const rootWorktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
   const settings = new SettingsManager(projectRoot).getSettings();
 
+  if (!agent) {
+    throw new Error(`An agent must be selected before opening ${branchName}`);
+  }
+
   for (const state of workspaceStates) {
     ensureLocalBranch(state, branchName);
   }
@@ -436,21 +460,33 @@ export async function resumeBranchWorkspace(
       : rootWorktreePath;
     createWorktree(state.repoPath, worktreePath, branchName);
     writeWorktreeMetadata(worktreePath, {
+      ...(agent && !state.relativePath ? { agent } : {}),
       permissionMode: state.relativePath ? undefined : settings.permissionMode,
       branchName: branchName !== slug ? branchName : undefined,
     });
   }
 
-  const reopened = await reopenWorktree({
-    slug,
-    worktreePath: rootWorktreePath,
-    projectRoot,
-    existingPanes,
-    sessionConfigPath,
-    sessionProjectRoot,
-  });
+  const creation = await createPane(
+    {
+      prompt: '',
+      agent,
+      existingWorktree: {
+        slug,
+        worktreePath: rootWorktreePath,
+        branchName,
+      },
+      projectName: path.basename(projectRoot),
+      existingPanes,
+      projectRoot,
+      sessionConfigPath,
+      sessionProjectRoot,
+    },
+    [agent]
+  );
 
-  await triggerHook('worktree_created', projectRoot, reopened.pane);
+  if (creation.needsAgentChoice) {
+    throw new Error('Agent selection is required to resume this branch');
+  }
 
   for (const state of workspaceStates) {
     if (!state.relativePath) {
@@ -460,9 +496,12 @@ export async function resumeBranchWorkspace(
       state.repoPath,
       branchName,
       slug,
-      path.join(rootWorktreePath, state.relativePath)
+      path.join(rootWorktreePath, state.relativePath),
+      agent
     );
   }
 
-  return reopened;
+  return {
+    pane: creation.pane,
+  };
 }

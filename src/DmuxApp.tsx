@@ -739,12 +739,32 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     candidate: ResumableBranchCandidate,
     targetProjectRoot?: string
   ) => {
+    const reopenProjectRoot = targetProjectRoot || projectRoot || process.cwd()
+    let selectedAgent: AgentName | undefined
+
+    if (!candidate.path) {
+      if (availableAgents.length === 0) {
+        setStatusMessage("No enabled agents available for opening this branch")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+        return
+      }
+
+      const chosenAgent = await popupManager.launchSingleAgentChoicePopup(
+        "Select Agent",
+        `Choose the agent to launch for ${candidate.branchName}.`,
+        reopenProjectRoot
+      )
+      if (!chosenAgent) {
+        return
+      }
+      selectedAgent = chosenAgent
+    }
+
     try {
       setIsCreatingPane(true)
       const label = candidate.path ? (candidate.slug || candidate.branchName) : candidate.branchName
-      setStatusMessage(`${candidate.path ? "Reopening" : "Resuming"} ${label}...`)
+      setStatusMessage(`${candidate.path ? "Reopening" : "Opening"} ${label}...`)
 
-      const reopenProjectRoot = targetProjectRoot || projectRoot || process.cwd()
       const result = candidate.path
         ? await reopenWorktree({
             slug: candidate.slug || candidate.branchName,
@@ -755,6 +775,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
             existingPanes: panes,
           })
         : await resumeBranchWorkspace({
+            agent: selectedAgent!,
             branchName: candidate.branchName,
             projectRoot: reopenProjectRoot,
             sessionProjectRoot: projectRoot || process.cwd(),
@@ -768,10 +789,10 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
       await loadPanes()
 
-      setStatusMessage(`${candidate.path ? "Reopened" : "Resumed"} ${label}`)
+      setStatusMessage(`${candidate.path ? "Reopened" : "Opened"} ${label}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } catch (error: any) {
-      setStatusMessage(`Failed to resume: ${error.message}`)
+      setStatusMessage(`Failed to open branch: ${error.message}`)
       setTimeout(() => setStatusMessage(""), 3000)
     } finally {
       setIsCreatingPane(false)
@@ -1157,6 +1178,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     popupManager,
     actionSystem,
     controlPaneId,
+    trackProjectActivity,
     setStatusMessage,
     copyNonGitFiles,
     runCommandInternal,

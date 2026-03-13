@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import path from "path"
 import { useInput } from "ink"
 import type { DmuxPane, SidebarProject } from "../types.js"
+import type { TrackProjectActivity } from "../types/activity.js"
 import { StateManager } from "../shared/StateManager.js"
 import { TmuxService } from "../services/TmuxService.js"
 import {
@@ -93,6 +94,7 @@ interface UseInputHandlingParams {
   popupManager: PopupManager
   actionSystem: ActionSystem
   controlPaneId: string | undefined
+  trackProjectActivity: TrackProjectActivity
 
   // Callbacks
   setStatusMessage: (message: string) => void
@@ -155,6 +157,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     popupManager,
     actionSystem,
     controlPaneId,
+    trackProjectActivity,
     setStatusMessage,
     copyNonGitFiles,
     runCommandInternal,
@@ -876,29 +879,43 @@ export function useInputHandling(params: UseInputHandlingParams) {
     const activeSlugs = panes
       .filter((pane) => sameSidebarProjectRoot(getPaneProjectRoot(pane, projectRoot), targetProjectRoot))
       .map((pane) => pane.slug)
-    const resumableBranches = getResumableBranches(targetProjectRoot, activeSlugs)
-
-    if (resumableBranches.length === 0) {
-      setStatusMessage(`No resumable branches in ${targetProjectRoot}`)
-      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      return
+    const popupState = {
+      includeWorktrees: true,
+      includeLocalBranches: true,
+      includeRemoteBranches: false,
+      remoteLoaded: false,
+      filterQuery: "",
     }
+    const resumableBranches = await trackProjectActivity(
+      async () => getResumableBranches(targetProjectRoot, activeSlugs, {
+        includeRemoteBranches: false,
+      }),
+      targetProjectRoot
+    )
 
     const result = await popupManager.launchReopenWorktreePopup(
       resumableBranches,
-      targetProjectRoot
+      targetProjectRoot,
+      popupState,
+      activeSlugs
     )
-    if (result) {
-      const selectedCandidate = resumableBranches.find(
-        (candidate) => candidate.branchName === result.branchName
-      )
-      if (selectedCandidate) {
-        await handleReopenWorktree(selectedCandidate, targetProjectRoot)
-      } else {
-        setStatusMessage(`Branch ${result.branchName} is no longer resumable`)
-        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
-      }
+    if (!result) {
+      return
     }
+
+    await handleReopenWorktree({
+      branchName: result.candidate.branchName,
+      slug: result.candidate.slug,
+      path: result.candidate.path,
+      lastModified: result.candidate.lastModified
+        ? new Date(result.candidate.lastModified)
+        : undefined,
+      hasUncommittedChanges: result.candidate.hasUncommittedChanges,
+      hasWorktree: result.candidate.hasWorktree,
+      hasLocalBranch: result.candidate.hasLocalBranch,
+      hasRemoteBranch: result.candidate.hasRemoteBranch,
+      isRemote: result.candidate.isRemote,
+    }, targetProjectRoot)
   }
 
   const executePaneShortcut = async (

@@ -22,6 +22,7 @@ import { getCurrentBranch } from './git.js';
 import { readWorktreeMetadata } from './worktreeMetadata.js';
 
 export interface ReopenWorktreeOptions {
+  agent?: AgentName;
   slug: string;
   worktreePath: string;
   projectRoot: string; // Target repo root for the reopened pane
@@ -42,6 +43,7 @@ export async function reopenWorktree(
   options: ReopenWorktreeOptions
 ): Promise<ReopenWorktreeResult> {
   const {
+    agent: requestedAgent,
     slug,
     worktreePath,
     projectRoot,
@@ -160,9 +162,10 @@ export async function reopenWorktree(
     ),
   ];
   const configuredAgent = metadata?.agent;
-  const agent = configuredAgent && candidateAgents.includes(configuredAgent)
-    ? configuredAgent
-    : preferredOrder.find((candidate) => candidateAgents.includes(candidate));
+  const agent = requestedAgent
+    || (configuredAgent && candidateAgents.includes(configuredAgent)
+      ? configuredAgent
+      : preferredOrder.find((candidate) => candidateAgents.includes(candidate)));
   const permissionMode = metadata?.permissionMode ?? settings.permissionMode;
 
   // Resume the agent session (or start interactive mode when no resume command is available).
