@@ -21,6 +21,7 @@ export default function useNavigation(navigationRows: number[][], groupStartRows
     return (currentIndex: number, direction: 'up' | 'down' | 'left' | 'right'): number | null => {
       const currentPos = indexToPosition.get(currentIndex);
       if (!currentPos) return null;
+      const currentRow = navigationRows[currentPos.row] || [];
 
       switch (direction) {
         case 'up':
@@ -38,6 +39,9 @@ export default function useNavigation(navigationRows: number[][], groupStartRows
           }
           break;
         case 'left':
+          if (currentPos.col > 0) {
+            return currentRow[currentPos.col - 1] ?? null;
+          }
           if (groupStartRows.length > 0) {
             // Jump to previous project group's first pane
             const currentGroupIdx = groupStartRows.findIndex((start, i) => {
@@ -48,12 +52,12 @@ export default function useNavigation(navigationRows: number[][], groupStartRows
               const targetRow = navigationRows[groupStartRows[currentGroupIdx - 1]];
               return targetRow?.[0] ?? null;
             }
-          } else if (currentPos.col > 0) {
-            const row = navigationRows[currentPos.row];
-            return row?.[currentPos.col - 1] ?? null;
           }
           break;
         case 'right':
+          if (currentPos.col < currentRow.length - 1) {
+            return currentRow[currentPos.col + 1] ?? null;
+          }
           if (groupStartRows.length > 0) {
             // Jump to next project group's first pane
             const currentGroupIdx = groupStartRows.findIndex((start, i) => {
@@ -64,9 +68,6 @@ export default function useNavigation(navigationRows: number[][], groupStartRows
               const targetRow = navigationRows[groupStartRows[currentGroupIdx + 1]];
               return targetRow?.[0] ?? null;
             }
-          } else if (navigationRows[currentPos.row] && currentPos.col < navigationRows[currentPos.row].length - 1) {
-            const row = navigationRows[currentPos.row];
-            return row?.[currentPos.col + 1] ?? null;
           }
           break;
       }

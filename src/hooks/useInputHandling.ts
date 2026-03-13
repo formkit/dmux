@@ -394,10 +394,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     try {
       const { resolveProjectRootFromPath } = await import("../utils/projectRoot.js")
       const resolved = resolveProjectRootFromPath(requestedProjectPath, projectRoot)
-      const nextProjects = addSidebarProject(sidebarProjects, {
-        projectRoot: resolved.projectRoot,
-        projectName: resolved.projectName,
-      })
+      const nextProjects = addSidebarProject(sidebarProjects, resolved)
 
       if (nextProjects === sidebarProjects) {
         selectProjectAction(resolved.projectRoot)
@@ -411,8 +408,56 @@ export function useInputHandling(params: UseInputHandlingParams) {
       setStatusMessage(`Added ${resolved.projectName} to the sidebar`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } catch (error: any) {
-      setStatusMessage(error?.message || "Invalid project path")
-      setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      const {
+        createEmptyGitProject,
+        inspectProjectCreationTarget,
+      } = await import("../utils/projectRoot.js")
+      const target = inspectProjectCreationTarget(requestedProjectPath, projectRoot)
+
+      if (target.state !== "missing" && target.state !== "empty_directory") {
+        const message = target.state === "directory_not_empty"
+          ? `Directory is not a git repository and is not empty: ${target.absolutePath}. New projects can only be created in a missing or empty directory.`
+          : (error?.message || "Invalid project path")
+        setStatusMessage(message)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+        return
+      }
+
+      const confirmMessage = target.state === "missing"
+        ? `This project does not exist yet:\n${target.absolutePath}\n\nCreate a new empty git repository here?`
+        : `This directory is not a git repository:\n${target.absolutePath}\n\nInitialize a new empty git repository here?`
+      const shouldCreateProject = await popupManager.launchConfirmPopup(
+        "Create Project",
+        confirmMessage,
+        "Create Project",
+        "Cancel",
+        projectRoot
+      )
+
+      if (!shouldCreateProject) {
+        return
+      }
+
+      try {
+        setStatusMessage(`Creating ${path.basename(target.absolutePath) || "project"}...`)
+        const createdProject = createEmptyGitProject(requestedProjectPath, projectRoot)
+        const nextProjects = addSidebarProject(sidebarProjects, createdProject)
+
+        if (nextProjects === sidebarProjects) {
+          selectProjectAction(createdProject.projectRoot)
+          setStatusMessage(`${createdProject.projectName} is already in the sidebar`)
+          setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+          return
+        }
+
+        const savedProjects = await saveSidebarProjects(nextProjects)
+        selectProjectAction(createdProject.projectRoot, savedProjects)
+        setStatusMessage(`Created ${createdProject.projectName} and added it to the sidebar`)
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
+      } catch (creationError: any) {
+        setStatusMessage(creationError?.message || "Failed to create project")
+        setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
+      }
     }
   }
 
