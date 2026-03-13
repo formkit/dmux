@@ -383,6 +383,112 @@ describe('resumeBranches', () => {
     );
   });
 
+  it('reuses existing local-only child branches without recreating them from main', async () => {
+    const createdPaths: string[] = [];
+
+    createPaneMock.mockResolvedValue({
+      pane: {
+        id: 'dmux-1',
+        slug: 'react',
+        branchName: 'react',
+        prompt: 'No initial prompt',
+        paneId: '%1',
+        projectRoot: rootRepo,
+        projectName: path.basename(rootRepo),
+        worktreePath: path.join(rootRepo, '.dmux', 'worktrees', 'react'),
+      },
+      needsAgentChoice: false,
+    });
+
+    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+      const cwd = options?.cwd;
+      const encoding = options?.encoding;
+      const output = (value: string) => encoding ? value : Buffer.from(value);
+
+      if (command.includes("'rev-parse' '--abbrev-ref' '--symbolic-full-name' '@{upstream}'")) {
+        return output('origin/main');
+      }
+      if (cwd === rootRepo && command.includes("'rev-parse' '--abbrev-ref' '--symbolic-full-name' 'react@{upstream}'")) {
+        return output('origin/react');
+      }
+      if (command.includes("'branch' '--show-current'")) {
+        return output('main');
+      }
+      if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('main');
+      }
+      if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/heads'")) {
+        return output('main\nreact');
+      }
+      if (command.includes("'fetch' '--prune' 'origin'")) {
+        return output('');
+      }
+      if (cwd === rootRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
+        return output('origin/react');
+      }
+      if (cwd === childRepo && command.includes("'for-each-ref' '--format=%(refname:short)' 'refs/remotes/origin'")) {
+        return output('');
+      }
+      if (command.includes("'worktree' 'prune'")) {
+        return output('');
+      }
+      if (command.includes("'worktree' 'list' '--porcelain'")) {
+        return output('');
+      }
+      if (command.includes("'branch' '--track' 'react' 'origin/react'")) {
+        return output('');
+      }
+      if (cwd === childRepo && command.includes("'branch' 'react' 'main'")) {
+        throw new Error('should not recreate an existing local-only branch from main');
+      }
+      if (command.includes("'worktree' 'add'")) {
+        const match = command.match(/'worktree' 'add' '([^']+)' 'react'/);
+        if (match) {
+          const worktreePath = match[1];
+          createdPaths.push(worktreePath!);
+          fs.mkdirSync(worktreePath!, { recursive: true });
+          fs.writeFileSync(path.join(worktreePath!, '.git'), 'gitdir: /tmp/worktree\n', 'utf-8');
+        }
+        return output('');
+      }
+
+      return output('');
+    });
+
+    const { resumeBranchWorkspace } = await import('../src/utils/resumeBranches.js');
+
+    await resumeBranchWorkspace({
+      agent: 'codex',
+      branchName: 'react',
+      projectRoot: rootRepo,
+      existingPanes: [],
+      sessionConfigPath: path.join(rootRepo, '.dmux', 'dmux.config.json'),
+      sessionProjectRoot: rootRepo,
+    });
+
+    const rootWorktreePath = path.join(rootRepo, '.dmux', 'worktrees', 'react');
+    const childWorktreePath = path.join(rootWorktreePath, 'child-repo');
+
+    expect(createdPaths).toEqual([rootWorktreePath, childWorktreePath]);
+    expect(execSyncMock).toHaveBeenCalledWith(
+      expect.stringContaining("'branch' '--track' 'react' 'origin/react'"),
+      expect.objectContaining({ cwd: rootRepo, stdio: 'pipe' })
+    );
+    expect(execSyncMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("'branch' 'react' 'main'"),
+      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+    );
+    expect(triggerHookMock).toHaveBeenCalledWith(
+      'worktree_created',
+      childRepo,
+      undefined,
+      expect.objectContaining({
+        DMUX_BRANCH: 'react',
+        DMUX_WORKTREE_PATH: childWorktreePath,
+      })
+    );
+  });
+
   it('reuses an existing child worktree when that branch is already checked out there', async () => {
     const createdPaths: string[] = [];
     const rootWorktreePath = path.join(rootRepo, '.dmux', 'worktrees', 'react');

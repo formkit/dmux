@@ -497,6 +497,7 @@ function ensureLocalBranch(
 
   refreshRemoteBranchState(state, branchName);
   runGit(state.repoPath, ['worktree', 'prune'], { silent: true });
+  state.hasLocalBranch = listLocalBranches(state.repoPath).has(branchName);
 
   if (state.hasRemoteBranch) {
     const remoteRef = `${state.remoteName}/${branchName}`;
@@ -548,6 +549,10 @@ function ensureLocalBranch(
       ['branch', '--track', branchName, remoteRef]
     );
     state.hasLocalBranch = true;
+    return;
+  }
+
+  if (state.hasLocalBranch) {
     return;
   }
 
