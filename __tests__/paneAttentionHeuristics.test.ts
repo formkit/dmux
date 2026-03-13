@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPaneActivityFingerprint,
   hasAgentWorkingIndicators,
   isLikelyUserTyping,
 } from '../src/utils/paneAttentionHeuristics.js';
@@ -20,6 +21,22 @@ describe('paneAttentionHeuristics', () => {
     expect(isLikelyUserTyping('', '> start here')).toBe(true);
   });
 
+  it('detects long multi-line prompt drafting as user typing', () => {
+    const previous = [
+      'Updated auth.ts',
+      '> write the follow-up note for the migration',
+      '  and mention the config change',
+    ].join('\n');
+    const current = [
+      'Updated auth.ts',
+      '> write the follow-up note for the migration',
+      '  and mention the config change',
+      '  plus the rollback plan before I send it',
+    ].join('\n');
+
+    expect(isLikelyUserTyping(previous, current)).toBe(true);
+  });
+
   it('does not treat large multi-line changes as user typing', () => {
     const previous = [
       'Reading files',
@@ -33,5 +50,25 @@ describe('paneAttentionHeuristics', () => {
     ].join('\n');
 
     expect(isLikelyUserTyping(previous, current)).toBe(false);
+  });
+
+  it('ignores top-of-window context shifts when building activity fingerprints', () => {
+    const stableTail = Array.from({ length: 12 }, (_, index) => `stable line ${index + 1}`);
+    const previous = [
+      'older context 1',
+      'older context 2',
+      'older context 3',
+      ...stableTail,
+    ].join('\n');
+    const current = [
+      'different context a',
+      'different context b',
+      'different context c',
+      ...stableTail,
+    ].join('\n');
+
+    expect(buildPaneActivityFingerprint(previous)).toBe(
+      buildPaneActivityFingerprint(current)
+    );
   });
 });

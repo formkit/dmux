@@ -184,7 +184,12 @@ export class StatusDetector extends EventEmitter {
         }
 
         // Run LLM analysis with abort signal (pass dmux pane ID for friendly logging)
-        const analysis = await this.paneAnalyzer.analyzePane(tmuxPaneId, controller.signal, paneId);
+        const analysis = await this.paneAnalyzer.analyzePane(
+          tmuxPaneId,
+          controller.signal,
+          paneId,
+          captureSnapshot
+        );
 
         // Clear the timeout since analysis completed
         clearTimeout(timeoutId);
