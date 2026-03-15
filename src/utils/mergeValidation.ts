@@ -44,6 +44,9 @@ export function getGitStatus(repoPath: string): GitStatus {
       .trim()
       .split('\n')
       .filter(line => line.trim())
+      // Ignore dmux's own metadata directories — they are managed by dmux
+      // and should never block merge validation
+      .filter(line => !line.includes('.dmux/') && !line.includes('.dmux-hooks/'))
       .map(line => {
         // Git status porcelain format can vary:
         // Standard: " M filename" (2 status chars + space + filename)
