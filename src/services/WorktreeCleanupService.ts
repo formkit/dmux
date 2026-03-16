@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import type { DmuxPane } from '../types.js';
 import { triggerHook } from '../utils/hooks.js';
 import { getPaneBranchName } from '../utils/git.js';
+import { detectAllWorktrees } from '../utils/worktreeDiscovery.js';
 import { LogService } from './LogService.js';
 
 interface WorktreeCleanupJob {
@@ -14,6 +15,11 @@ interface WorktreeCleanupJob {
 interface CommandResult {
   success: boolean;
   error?: string;
+}
+
+interface BranchDeletionTarget {
+  repoPath: string;
+  branchName: string;
 }
 
 /**
@@ -56,6 +62,10 @@ export class WorktreeCleanupService {
       return;
     }
 
+    const branchDeletionTargets = deleteBranch
+      ? this.getBranchDeletionTargets(pane, mainRepoPath)
+      : [];
+
     this.logger.debug(
       `Starting background worktree cleanup for ${pane.slug}`,
       'paneActions',
@@ -79,17 +89,27 @@ export class WorktreeCleanupService {
     await triggerHook('worktree_removed', paneProjectRoot, pane);
 
     if (deleteBranch) {
-      const deleteBranchResult = await this.runGitCommand(
-        ['branch', '-D', getPaneBranchName(pane)],
-        mainRepoPath
-      );
-
-      if (!deleteBranchResult.success) {
-        this.logger.warn(
-          `Branch deletion reported an error for ${pane.slug}: ${deleteBranchResult.error}`,
-          'paneActions',
-          pane.id
+      for (const target of branchDeletionTargets) {
+        const branchExists = await this.runGitCommand(
+          ['show-ref', '--verify', '--quiet', `refs/heads/${target.branchName}`],
+          target.repoPath
         );
+        if (!branchExists.success) {
+          continue;
+        }
+
+        const deleteBranchResult = await this.runGitCommand(
+          ['branch', '-D', target.branchName],
+          target.repoPath
+        );
+
+        if (!deleteBranchResult.success) {
+          this.logger.warn(
+            `Branch deletion reported an error for ${pane.slug} in ${target.repoPath}: ${deleteBranchResult.error}`,
+            'paneActions',
+            pane.id
+          );
+        }
       }
     }
 
@@ -98,6 +118,34 @@ export class WorktreeCleanupService {
       'paneActions',
       pane.id
     );
+  }
+
+  private getBranchDeletionTargets(
+    pane: DmuxPane,
+    mainRepoPath: string
+  ): BranchDeletionTarget[] {
+    const branchName = getPaneBranchName(pane);
+    const repoPaths = new Set<string>([mainRepoPath]);
+
+    if (pane.worktreePath) {
+      try {
+        for (const worktree of detectAllWorktrees(pane.worktreePath)) {
+          repoPaths.add(worktree.parentRepoPath);
+        }
+      } catch (error) {
+        const errorObj = error instanceof Error ? error : new Error(String(error));
+        this.logger.debug(
+          `Failed to detect nested worktrees for ${pane.slug}: ${errorObj.message}`,
+          'paneActions',
+          pane.id
+        );
+      }
+    }
+
+    return Array.from(repoPaths).map((repoPath) => ({
+      repoPath,
+      branchName,
+    }));
   }
 
   private runGitCommand(args: string[], cwd: string): Promise<CommandResult> {
