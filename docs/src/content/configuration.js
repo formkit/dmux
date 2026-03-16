@@ -145,36 +145,38 @@ export function render() {
       <li>Built-in defaults — if neither file defines the setting</li>
     </ol>
 
-    <h2>OpenRouter Configuration</h2>
-    <p>dmux uses <a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a> for AI-powered features like smart branch naming and commit message generation.</p>
+    <h2>AI Provider Configuration</h2>
+    <p>dmux uses any <a href="https://platform.openai.com/docs/api-reference" target="_blank" rel="noopener">OpenAI-compatible</a> API provider for AI-powered features like smart branch naming and commit message generation. <a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a> is the default endpoint but you can point dmux at any compatible provider.</p>
 
     <h3>Setting Up</h3>
     <ol>
-      <li>Create an account at <a href="https://openrouter.ai" target="_blank" rel="noopener">openrouter.ai</a></li>
-      <li>Generate an API key from the <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">keys page</a></li>
+      <li>Obtain an API key from your provider (e.g. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a>, OpenAI, etc.)</li>
       <li>Set the environment variable:
-        <pre><code data-lang="bash">export OPENROUTER_API_KEY="sk-or-v1-..."</code></pre>
+        <pre><code data-lang="bash">export OPENAI_API_KEY="sk-..."</code></pre>
       </li>
       <li>Add it to your shell profile for persistence:
         <pre><code data-lang="bash"># Add to ~/.zshrc or ~/.bashrc
-echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
+echo 'export OPENAI_API_KEY="sk-..."' >> ~/.zshrc</code></pre>
+      </li>
+      <li>Optionally point dmux at a different provider:
+        <pre><code data-lang="bash">export OPENAI_BASE_URL="https://api.openai.com/v1"</code></pre>
       </li>
     </ol>
 
     <h3>How It's Used</h3>
     <table>
       <thead>
-        <tr><th>Feature</th><th>Model</th><th>Purpose</th></tr>
+        <tr><th>Feature</th><th>Default Models</th><th>Purpose</th></tr>
       </thead>
       <tbody>
-        <tr><td>Slug generation</td><td>gpt-4o-mini</td><td>Convert prompts to short branch names</td></tr>
-        <tr><td>Commit messages</td><td>gpt-4o-mini</td><td>Generate conventional commit messages from diffs</td></tr>
-        <tr><td>Pane status</td><td>grok-4-fast (free)</td><td>Detect agent state from terminal output</td></tr>
+        <tr><td>Slug generation</td><td>gemini-2.5-flash, grok-4-fast, gpt-4o-mini</td><td>Convert prompts to short branch names</td></tr>
+        <tr><td>Commit messages</td><td>gemini-2.5-flash, grok-4-fast, gpt-4o-mini</td><td>Generate conventional commit messages from diffs</td></tr>
+        <tr><td>Pane status</td><td>gemini-2.5-flash, grok-4-fast, gpt-4o-mini</td><td>Detect agent state from terminal output</td></tr>
       </tbody>
     </table>
 
-    <h3>Without OpenRouter</h3>
-    <p>If <code>OPENROUTER_API_KEY</code> is not set, dmux still works but with reduced functionality:</p>
+    <h3>Without an AI Provider</h3>
+    <p>If <code>OPENAI_API_KEY</code> is not set, dmux still works but with reduced functionality:</p>
     <ul>
       <li>Branch names fall back to <code>dmux-{timestamp}</code></li>
       <li>Commit messages fall back to <code>dmux: auto-commit changes</code></li>
@@ -183,7 +185,7 @@ echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
 
     <div class="callout callout-tip">
       <div class="callout-title">Tip</div>
-      OpenRouter provides free credits for new accounts, and the models dmux uses (gpt-4o-mini, grok-4-fast) are very inexpensive. Even heavy usage costs only pennies per day.
+      OpenRouter provides free credits for new accounts, and the default models dmux uses are very inexpensive. Even heavy usage costs only pennies per day.
     </div>
 
     <h2>Environment Variables</h2>
@@ -192,7 +194,9 @@ echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.zshrc</code></pre>
         <tr><th>Variable</th><th>Description</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>OPENROUTER_API_KEY</code></td><td>API key for OpenRouter AI features</td></tr>
+        <tr><td><code>OPENAI_API_KEY</code></td><td>API key for AI-powered features (falls back to <code>OPENROUTER_API_KEY</code>)</td></tr>
+        <tr><td><code>OPENAI_BASE_URL</code></td><td>Base URL for the AI provider (default: <code>https://openrouter.ai/api/v1</code>)</td></tr>
+        <tr><td><code>OPENAI_MODEL</code></td><td>Comma-separated model list to try in order (overrides defaults)</td></tr>
         <tr><td><code>DMUX_SESSION</code></td><td>Override the tmux session name</td></tr>
       </tbody>
     </table>
