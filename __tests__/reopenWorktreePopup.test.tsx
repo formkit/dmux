@@ -215,6 +215,9 @@ describe('ReopenWorktreePopupApp', () => {
       />
     );
 
+    const initialOutput = stripAnsi(lastFrame() ?? '');
+    const initialLineCount = initialOutput.split('\n').length;
+
     await sleep(20);
     stdin.write('z');
     await sleep(20);
@@ -223,6 +226,7 @@ describe('ReopenWorktreePopupApp', () => {
     expect(output).toContain('No matches for "z"');
     expect(output).toContain('0 of 1 resumable branch');
     expect(output).toContain('Type filter');
+    expect(output.split('\n').length).toBe(initialLineCount);
 
     unmount();
   });

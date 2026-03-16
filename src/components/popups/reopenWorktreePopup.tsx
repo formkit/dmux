@@ -351,9 +351,8 @@ export const ReopenWorktreePopupApp: React.FC<ReopenWorktreePopupProps> = ({
     MAX_VISIBLE_WORKTREES
   );
   const visibleWorktrees = filteredWorktrees.slice(startIndex, endIndex);
-  const emptyRows = showEmptyState
-    ? 0
-    : Math.max(0, MAX_VISIBLE_WORKTREES - visibleWorktrees.length);
+  const renderedRowCount = showEmptyState ? 1 : visibleWorktrees.length;
+  const emptyRows = Math.max(0, MAX_VISIBLE_WORKTREES - renderedRowCount);
   const moreAbove = startIndex > 0;
   const moreBelow = endIndex < totalFilteredWorktrees;
   const filterActive = filterQuery.trim().length > 0;
