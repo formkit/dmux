@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { getApiKey, getBaseUrl, getModels } from './aiProvider.js';
 
 export const callClaudeCode = async (prompt: string): Promise<string | null> => {
   try {
@@ -21,14 +22,11 @@ export const callClaudeCode = async (prompt: string): Promise<string | null> => 
 export const generateSlug = async (prompt: string): Promise<string> => {
   if (!prompt) return `dmux-${Date.now()}`;
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = getApiKey();
   if (apiKey) {
-    // Try multiple models with fallback
-    const models = ['google/gemini-2.5-flash', 'x-ai/grok-4-fast:free', 'openai/gpt-4o-mini'];
-
-    for (const model of models) {
+    for (const model of getModels()) {
       try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const response = await fetch(`${getBaseUrl()}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

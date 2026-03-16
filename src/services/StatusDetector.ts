@@ -288,9 +288,9 @@ export class StatusDetector extends EventEmitter {
             const [, model, status] = match;
             // Provide helpful messages for common status codes
             if (status === '401') {
-              errorMessage = `API auth failed - check OPENROUTER_API_KEY`;
+              errorMessage = `API auth failed - check OPENAI_API_KEY`;
             } else if (status === '402') {
-              errorMessage = `Insufficient credits - add credits to OpenRouter account`;
+              errorMessage = `Insufficient credits - check your AI provider account`;
             } else if (status === '429') {
               errorMessage = `Rate limited - wait before retrying`;
             } else if (status === '503') {
@@ -302,7 +302,7 @@ export class StatusDetector extends EventEmitter {
             errorMessage = error.message;
           }
         } else if (error.message.includes('API key')) {
-          errorMessage = 'Set OPENROUTER_API_KEY env var';
+          errorMessage = 'Set OPENAI_API_KEY env var';
         } else if (error.message.includes('All models')) {
           errorMessage = 'All models failed - check API key & credits';
         } else if (error.message.includes('fetch')) {
