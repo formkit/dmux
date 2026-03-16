@@ -3,12 +3,14 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const execMock = vi.hoisted(() => vi.fn());
 const execSyncMock = vi.hoisted(() => vi.fn());
 const createPaneMock = vi.hoisted(() => vi.fn());
 const triggerHookMock = vi.hoisted(() => vi.fn(async () => {}));
 const writeWorktreeMetadataMock = vi.hoisted(() => vi.fn());
 
 vi.mock('child_process', () => ({
+  exec: execMock,
   execSync: execSyncMock,
 }));
 
@@ -38,6 +40,43 @@ function createTempRepoDir(prefix: string): string {
   return tempDir;
 }
 
+type MockCommandOptions = {
+  cwd?: string;
+  encoding?: string;
+  stdio?: string;
+  maxBuffer?: number;
+};
+
+function installGitCommandMock(
+  handler: (command: string, options?: MockCommandOptions) => string | Buffer
+): void {
+  execSyncMock.mockImplementation((command: string, options?: MockCommandOptions) => (
+    handler(command, options)
+  ));
+
+  execMock.mockImplementation((
+    command: string,
+    optionsOrCallback?: MockCommandOptions | ((error: Error | null, stdout?: string, stderr?: string) => void),
+    maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void
+  ) => {
+    const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback;
+    const options = typeof optionsOrCallback === 'function' ? undefined : optionsOrCallback;
+
+    if (!callback) {
+      throw new Error('exec callback is required in test mock');
+    }
+
+    try {
+      const result = handler(command, options);
+      callback(null, typeof result === 'string' ? result : result.toString('utf-8'), '');
+    } catch (error) {
+      callback(error as Error, '', '');
+    }
+
+    return {} as any;
+  });
+}
+
 describe('resumeBranches', () => {
   let rootRepo: string;
   let childRepo: string;
@@ -60,7 +99,7 @@ describe('resumeBranches', () => {
   });
 
   it('dedupes orphaned worktrees with local and remote branches across child repos', async () => {
-    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+    installGitCommandMock((command: string, options?: { cwd?: string; encoding?: string }) => {
       const cwd = options?.cwd;
       const encoding = options?.encoding;
       const output = (value: string) => encoding ? value : Buffer.from(value);
@@ -157,7 +196,7 @@ describe('resumeBranches', () => {
   });
 
   it('skips remote branch scans until remote sources are requested', async () => {
-    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+    installGitCommandMock((command: string, options?: { cwd?: string; encoding?: string }) => {
       const cwd = options?.cwd;
       const encoding = options?.encoding;
       const output = (value: string) => encoding ? value : Buffer.from(value);
@@ -239,7 +278,7 @@ describe('resumeBranches', () => {
       needsAgentChoice: false,
     });
 
-    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+    installGitCommandMock((command: string, options?: { cwd?: string; encoding?: string }) => {
       const cwd = options?.cwd;
       const encoding = options?.encoding;
       const output = (value: string) => encoding ? value : Buffer.from(value);
@@ -324,25 +363,34 @@ describe('resumeBranches', () => {
     const childWorktreePath = path.join(rootWorktreePath, 'child-repo');
 
     expect(createdPaths).toEqual([rootWorktreePath, childWorktreePath]);
-    expect(execSyncMock).toHaveBeenCalledWith(
+    expect(execMock).toHaveBeenCalledWith(
       expect.stringContaining("'fetch' '--prune' 'origin'"),
-      expect.objectContaining({ cwd: rootRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: rootRepo, encoding: 'utf-8' }),
+      expect.any(Function)
     );
-    expect(execSyncMock).toHaveBeenCalledWith(
+    expect(execMock).toHaveBeenCalledWith(
       expect.stringContaining("'fetch' '--prune' 'origin'"),
-      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: childRepo, encoding: 'utf-8' }),
+      expect.any(Function)
     );
-    expect(execSyncMock).toHaveBeenCalledWith(
+    expect(execMock).toHaveBeenCalledWith(
       expect.stringContaining("'branch' '-f' 'feature/remote-shared' 'origin/feature/remote-shared'"),
-      expect.objectContaining({ cwd: rootRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: rootRepo, encoding: 'utf-8' }),
+      expect.any(Function)
     );
-    expect(execSyncMock).toHaveBeenCalledWith(
+    expect(execMock).toHaveBeenCalledWith(
       expect.stringContaining("'branch' '--track' 'feature/remote-shared' 'origin/feature/remote-shared'"),
-      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: childRepo, encoding: 'utf-8' }),
+      expect.any(Function)
+    );
+    expect(execMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("'branch' 'feature/remote-shared' 'main'"),
+      expect.objectContaining({ cwd: childRepo }),
+      expect.any(Function)
     );
     expect(execSyncMock).not.toHaveBeenCalledWith(
-      expect.stringContaining("'branch' 'feature/remote-shared' 'main'"),
-      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+      expect.stringContaining("'fetch' '--prune' 'origin'"),
+      expect.anything()
     );
     expect(writeWorktreeMetadataMock).toHaveBeenCalledWith(
       rootWorktreePath,
@@ -400,7 +448,7 @@ describe('resumeBranches', () => {
       needsAgentChoice: false,
     });
 
-    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+    installGitCommandMock((command: string, options?: { cwd?: string; encoding?: string }) => {
       const cwd = options?.cwd;
       const encoding = options?.encoding;
       const output = (value: string) => encoding ? value : Buffer.from(value);
@@ -470,13 +518,15 @@ describe('resumeBranches', () => {
     const childWorktreePath = path.join(rootWorktreePath, 'child-repo');
 
     expect(createdPaths).toEqual([rootWorktreePath, childWorktreePath]);
-    expect(execSyncMock).toHaveBeenCalledWith(
+    expect(execMock).toHaveBeenCalledWith(
       expect.stringContaining("'branch' '--track' 'react' 'origin/react'"),
-      expect.objectContaining({ cwd: rootRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: rootRepo, encoding: 'utf-8' }),
+      expect.any(Function)
     );
-    expect(execSyncMock).not.toHaveBeenCalledWith(
+    expect(execMock).not.toHaveBeenCalledWith(
       expect.stringContaining("'branch' 'react' 'main'"),
-      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: childRepo }),
+      expect.any(Function)
     );
     expect(triggerHookMock).toHaveBeenCalledWith(
       'worktree_created',
@@ -513,7 +563,7 @@ describe('resumeBranches', () => {
       needsAgentChoice: false,
     });
 
-    execSyncMock.mockImplementation((command: string, options?: { cwd?: string; encoding?: string }) => {
+    installGitCommandMock((command: string, options?: { cwd?: string; encoding?: string }) => {
       const cwd = options?.cwd;
       const encoding = options?.encoding;
       const output = (value: string) => encoding ? value : Buffer.from(value);
@@ -589,13 +639,15 @@ describe('resumeBranches', () => {
     });
 
     expect(createdPaths).toEqual([]);
-    expect(execSyncMock).toHaveBeenCalledWith(
+    expect(execMock).toHaveBeenCalledWith(
       expect.stringContaining("'worktree' 'list' '--porcelain'"),
-      expect.objectContaining({ cwd: childRepo, encoding: 'utf-8', stdio: 'pipe' })
+      expect.objectContaining({ cwd: childRepo, encoding: 'utf-8' }),
+      expect.any(Function)
     );
-    expect(execSyncMock).not.toHaveBeenCalledWith(
+    expect(execMock).not.toHaveBeenCalledWith(
       expect.stringContaining("'branch' '-f' 'react' 'origin/react'"),
-      expect.objectContaining({ cwd: childRepo, stdio: 'pipe' })
+      expect.objectContaining({ cwd: childRepo }),
+      expect.any(Function)
     );
     expect(triggerHookMock).toHaveBeenCalledWith(
       'worktree_created',
