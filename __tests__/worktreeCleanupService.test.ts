@@ -52,7 +52,7 @@ describe('WorktreeCleanupService', () => {
     vi.resetModules();
   });
 
-  it('deletes the pane branch from every repo in a multi-repo workspace cleanup', async () => {
+  it('removes nested worktrees and deletes the pane branch from every repo in a multi-repo workspace cleanup', async () => {
     detectAllWorktreesMock.mockReturnValue([
       {
         worktreePath: '/test/project/.dmux/worktrees/react',
@@ -106,16 +106,30 @@ describe('WorktreeCleanupService', () => {
       deleteBranch: true,
     });
 
-    expect(spawnMock).toHaveBeenCalledWith(
-      'git',
-      ['worktree', 'remove', '/test/project/.dmux/worktrees/react', '--force'],
-      expect.objectContaining({ cwd: '/test/project' })
-    );
-
     const gitCalls = spawnMock.mock.calls.map((call) => ({
       args: call[1],
       cwd: call[2]?.cwd,
     }));
+
+    const worktreeRemovalCalls = gitCalls.filter((call) => call.args[0] === 'worktree');
+    expect(worktreeRemovalCalls).toEqual(expect.arrayContaining([
+      {
+        args: ['worktree', 'remove', '/test/project/.dmux/worktrees/react/docs-ui', '--force'],
+        cwd: '/test/project/docs-ui',
+      },
+      {
+        args: ['worktree', 'remove', '/test/project/.dmux/worktrees/react/theme-schemas', '--force'],
+        cwd: '/test/project/theme-schemas',
+      },
+      {
+        args: ['worktree', 'remove', '/test/project/.dmux/worktrees/react', '--force'],
+        cwd: '/test/project',
+      },
+    ]));
+    expect(worktreeRemovalCalls.at(-1)).toEqual({
+      args: ['worktree', 'remove', '/test/project/.dmux/worktrees/react', '--force'],
+      cwd: '/test/project',
+    });
 
     expect(gitCalls).toEqual(expect.arrayContaining([
       {

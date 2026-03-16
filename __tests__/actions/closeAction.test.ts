@@ -322,6 +322,42 @@ describe('closeAction', () => {
       const cleanupJob = mockEnqueueCleanup.mock.calls.at(-1)?.[0];
       expect(cleanupJob?.deleteBranch).toBe(true);
     });
+
+    it('should use the pane project root when deleting a sidebar project worktree', async () => {
+      const mockPane = createWorktreePane({
+        slug: 'project-b-feature',
+        projectRoot: '/test/project-b',
+        projectName: 'project-b',
+        worktreePath: '/test/project-b/.dmux/worktrees/project-b-feature',
+      });
+      const mockContext = createMockContext([mockPane]);
+
+      mockStateManager.getState.mockReturnValueOnce({
+        projectRoot: '/test/project-a',
+      });
+
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd.includes('list-panes')) {
+          return '%1\n';
+        }
+        return Buffer.from('');
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        controlPaneId: '%0',
+      }));
+
+      const result = await closePane(mockPane, mockContext);
+      await result.onSelect!('kill_clean_branch');
+
+      expect(mockEnqueueCleanup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pane: mockPane,
+          paneProjectRoot: '/test/project-b',
+          mainRepoPath: '/test/project-b',
+          deleteBranch: true,
+        })
+      );
+    });
   });
 
   describe('error handling', () => {
