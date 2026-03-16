@@ -472,7 +472,11 @@ index abc123..def456 100644
     });
 
     it('should generate commit message from AI', async () => {
-      // Mock OpenRouter API
+      // Set API key so callAiProvider doesn't short-circuit
+      const originalKey = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = 'test-key';
+
+      // Mock AI provider API
       global.fetch = vi.fn(() =>
         Promise.resolve({
           ok: true,
@@ -486,6 +490,13 @@ index abc123..def456 100644
       const { generateCommitMessage } = await import('../../src/utils/aiMerge.js');
 
       const message = await generateCommitMessage('diff content here', '/test');
+
+      // Restore original key
+      if (originalKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalKey;
+      }
 
       expect(message).toContain('feat:');
       expect(message).toContain('authentication');

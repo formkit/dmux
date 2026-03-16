@@ -195,9 +195,9 @@ function handleGitCommand(cmd: string, context: CommandMockContext): Buffer {
 }
 
 /**
- * Mock OpenRouter API for slug/commit generation
+ * Mock AI provider API for slug/commit generation
  */
-export function createMockOpenRouterAPI() {
+export function createMockAiProviderAPI() {
   return {
     generateSlug: vi.fn((prompt: string) => Promise.resolve('test-slug')),
     generateCommitMessage: vi.fn((diff: string) =>

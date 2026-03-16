@@ -5,10 +5,10 @@ import { Writable } from 'stream';
 import { LogService } from '../services/LogService.js';
 import { runTmuxConfigOnboardingIfNeeded } from './tmuxConfigOnboarding.js';
 import {
-  hasCompletedOpenRouterOnboarding,
-  persistOpenRouterApiKeyToShell,
-  writeOpenRouterOnboardingState,
-} from './openRouterApiKeySetup.js';
+  hasCompletedAiProviderOnboarding,
+  persistAiApiKeyToShell,
+  writeAiProviderOnboardingState,
+} from './aiApiKeySetup.js';
 
 async function promptYesNo(question: string, defaultYes: boolean = true): Promise<boolean> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -59,7 +59,7 @@ async function promptHiddenInput(question: string): Promise<string> {
   }
 }
 
-export async function runOpenRouterApiKeyOnboardingIfNeeded(): Promise<void> {
+export async function runAiApiKeyOnboardingIfNeeded(): Promise<void> {
   const logger = LogService.getInstance();
 
   try {
@@ -68,55 +68,55 @@ export async function runOpenRouterApiKeyOnboardingIfNeeded(): Promise<void> {
       return;
     }
 
-    const existingApiKey = process.env.OPENROUTER_API_KEY?.trim();
+    const existingApiKey = (process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY)?.trim();
     if (existingApiKey) {
-      await writeOpenRouterOnboardingState(homeDir, 'existing-env');
+      await writeAiProviderOnboardingState(homeDir, 'existing-env');
       return;
     }
 
-    const completed = await hasCompletedOpenRouterOnboarding(homeDir);
+    const completed = await hasCompletedAiProviderOnboarding(homeDir);
     if (completed) {
       return;
     }
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       logger.debug(
-        'Skipping OpenRouter API key onboarding because terminal is non-interactive',
+        'Skipping AI provider API key onboarding because terminal is non-interactive',
         'onboarding'
       );
       return;
     }
 
     const shouldConfigure = await promptYesNo(
-      'OPENROUTER_API_KEY is not set. Configure it now to enable AI-powered features?',
+      'OPENAI_API_KEY is not set. Configure it now to enable AI-powered features?',
       true
     );
 
     if (!shouldConfigure) {
-      await writeOpenRouterOnboardingState(homeDir, 'skip');
+      await writeAiProviderOnboardingState(homeDir, 'skip');
       return;
     }
 
-    const apiKey = await promptHiddenInput('Enter your OpenRouter API key:');
+    const apiKey = await promptHiddenInput('Enter your AI provider API key:');
     if (!apiKey) {
-      console.log(chalk.yellow('Skipping OpenRouter setup (no API key entered).'));
-      await writeOpenRouterOnboardingState(homeDir, 'skip');
+      console.log(chalk.yellow('Skipping AI provider setup (no API key entered).'));
+      await writeAiProviderOnboardingState(homeDir, 'skip');
       return;
     }
 
-    const { shellConfigPath } = await persistOpenRouterApiKeyToShell(apiKey, {
+    const { shellConfigPath } = await persistAiApiKeyToShell(apiKey, {
       shellPath: process.env.SHELL,
       homeDir,
     });
 
-    process.env.OPENROUTER_API_KEY = apiKey;
-    await writeOpenRouterOnboardingState(homeDir, 'configured', shellConfigPath);
+    process.env.OPENAI_API_KEY = apiKey;
+    await writeAiProviderOnboardingState(homeDir, 'configured', shellConfigPath);
 
-    console.log(chalk.green(`Saved OPENROUTER_API_KEY to ${shellConfigPath}`));
+    console.log(chalk.green(`Saved OPENAI_API_KEY to ${shellConfigPath}`));
     console.log(chalk.yellow(`Run 'source ${shellConfigPath}' or open a new shell to load it globally.`));
   } catch (error) {
     logger.warn(
-      `OpenRouter onboarding failed: ${error instanceof Error ? error.message : String(error)}`,
+      `AI provider onboarding failed: ${error instanceof Error ? error.message : String(error)}`,
       'onboarding'
     );
   }
@@ -126,9 +126,9 @@ export async function runOpenRouterApiKeyOnboardingIfNeeded(): Promise<void> {
  * Run all first-run onboarding checks in one place.
  * This currently includes:
  * - tmux config suggestion/setup
- * - OpenRouter API key setup
+ * - AI provider API key setup
  */
 export async function runFirstRunOnboardingIfNeeded(): Promise<void> {
   await runTmuxConfigOnboardingIfNeeded();
-  await runOpenRouterApiKeyOnboardingIfNeeded();
+  await runAiApiKeyOnboardingIfNeeded();
 }
