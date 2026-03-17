@@ -104,26 +104,37 @@ export async function fetchTmuxPaneIds(maxRetries = 2): Promise<{
 
 /**
  * Reads and parses the panes config file
- * Handles both old array format and new config format
+ * Handles both old array format and new config format.
+ * Migrates legacy panes that are missing an explicit `type` field.
  */
 export async function loadPanesFromFile(panesFile: string): Promise<DmuxPane[]> {
   try {
     const content = await fs.readFile(panesFile, 'utf-8');
     const parsed: any = JSON.parse(content);
 
+    let panes: DmuxPane[];
     if (Array.isArray(parsed)) {
-      return parsed as DmuxPane[];
+      panes = parsed as DmuxPane[];
     } else {
       const config = parsed as DmuxConfig;
-      return config.panes || [];
+      panes = config.panes || [];
     }
+
+    // Migrate legacy panes: set explicit type for panes created before the
+    // `type` field was always written.
+    // Only worktreePath is used to determine worktree type — panes with agent
+    // but no worktreePath (e.g. conflict-resolution panes) are shell panes
+    // that operate directly in the target repo.
+    for (const pane of panes) {
+      if (!pane.type) {
+        pane.type = pane.worktreePath ? 'worktree' : 'shell';
+      }
+    }
+
+    return panes;
   } catch (error) {
     // Return empty array if config file doesn't exist or is invalid
     // This is expected on first run
-  //     LogService.getInstance().debug(
-  //       `Config file not found or invalid: ${error instanceof Error ? error.message : String(error)}`,
-  //       'usePaneLoading'
-  //     );
     return [];
   }
 }

@@ -573,6 +573,7 @@ export async function createPane(
     paneId: paneInfo,
     projectRoot,
     projectName: paneProjectName,
+    type: 'worktree',
     worktreePath,
     agent,
     permissionMode: settings.permissionMode,
