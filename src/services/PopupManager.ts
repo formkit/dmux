@@ -333,7 +333,7 @@ export class PopupManager {
         [pane.slug, JSON.stringify(actions)],
         {
           width: 60,
-          height: Math.min(20, actions.length + 5),
+          height: Math.min(21, actions.length + 6),
           title: `Menu: ${pane.slug}`,
           positioning: options.anchorToPane ? "pane" : "standard",
           targetPaneId: options.anchorToPane ? pane.paneId : undefined,

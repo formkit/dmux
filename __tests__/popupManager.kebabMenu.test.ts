@@ -47,11 +47,15 @@ describe('PopupManager launchKebabMenuPopup', () => {
 
     await manager.launchKebabMenuPopup(pane, [pane], { anchorToPane: true });
 
+    const [, popupArgs, popupOptions] = manager.launchPopup.mock.calls[0];
+    const actions = JSON.parse(popupArgs[1]);
+
     expect(manager.launchPopup).toHaveBeenCalledWith(
       'kebabMenuPopup.js',
       [pane.slug, expect.any(String)],
       expect.objectContaining({
         width: 60,
+        height: Math.min(21, actions.length + 6),
         positioning: 'pane',
         targetPaneId: pane.paneId,
       }),
