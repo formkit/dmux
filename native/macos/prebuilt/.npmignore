@@ -1,0 +1,4 @@
+# Keep the generated helper out of git while still publishing it.
+!.gitignore
+!dmux-helper.app
+!dmux-helper.app/**

@@ -8,6 +8,7 @@
 import React, { useState, useMemo, useRef } from "react"
 import { render, Box, Text, useApp, useInput } from "ink"
 import * as fs from "fs"
+import { pathToFileURL } from "url"
 import CleanTextInput from "../inputs/CleanTextInput.js"
 import {
   PopupContainer,
@@ -27,7 +28,7 @@ interface ProjectSelectProps {
   defaultValue: string
 }
 
-const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
+export const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
   resultFile,
   defaultValue,
 }) => {
@@ -41,6 +42,18 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
     const { parentDir, prefix } = parsePathInput(value)
     return scanDirectories(parentDir, prefix)
   }, [value])
+  const shouldShowCreateProjectHint = useMemo(() => {
+    if (selectedDirIndex >= 0) return false
+
+    const trimmedValue = value.trim()
+    if (!trimmedValue) return false
+
+    try {
+      return !fs.existsSync(expandTilde(trimmedValue))
+    } catch {
+      return false
+    }
+  }, [selectedDirIndex, value])
 
   // Reset selection when value changes (back to "nothing highlighted")
   const prevValueRef = useRef(value)
@@ -151,6 +164,14 @@ const ProjectSelectApp: React.FC<ProjectSelectProps> = ({
           selectedIndex={selectedDirIndex}
           maxVisible={10}
         />
+
+        {shouldShowCreateProjectHint && (
+          <Box marginTop={1}>
+            <Text color="blue">
+              Hit Enter to create a new project at this location.
+            </Text>
+          </Box>
+        )}
       </PopupContainer>
     </PopupWrapper>
   )
@@ -182,4 +203,7 @@ function main() {
   )
 }
 
-main()
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : ""
+if (import.meta.url === entryPointHref) {
+  main()
+}

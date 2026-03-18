@@ -26,11 +26,48 @@ Core behavior:
 
 - `src/index.ts`: startup, tmux session attach/create, control pane management, dev-mode startup behavior
 - `src/DmuxApp.tsx`: main TUI state, status/footer, input hookups, source switching
+- `src/services/DmuxFocusService.ts`: macOS helper lifecycle, fully-focused pane tracking, helper-backed native notifications
+- `src/services/DmuxAttentionService.ts`: attention-notification coordinator for idle/waiting panes
 - `src/hooks/useInputHandling.ts`: keyboard and menu action handling
 - `src/services/PopupManager.ts`: popup launch + data plumbing
 - `src/actions/types.ts`: action registry and menu visibility rules
 - `src/actions/implementations/closeAction.ts`: close behavior + source fallback on source-pane removal
 - `src/components/panes/*`: pane list rendering (includes source indicator)
+
+## Native helper
+
+dmux ships a macOS helper daemon implemented in `native/macos/dmux-helper.swift`.
+
+What it does:
+
+- Release packages ship a prebuilt `dmux-helper.app` bundle under `native/macos/prebuilt/`
+- On macOS, dmux syncs that packaged app bundle into `~/.dmux/native-helper/dmux-helper.app`
+- If the packaged bundle is unavailable (for example in a source checkout without a prepack step), dmux can still build the helper app bundle on demand from `native/macos/dmux-helper.swift`
+- Auto-starts behind a Unix socket at `~/.dmux/native-helper/run/dmux-helper.sock`
+- Tracks the actual frontmost macOS app/window via CoreGraphics + Accessibility
+- Correlates the active terminal window/tab back to a specific dmux instance using a short token injected into the terminal title
+- Delivers macOS notifications for panes that need attention
+- The square helper icon source lives at `native/macos/dmux-helper-icon.png`; it is derived from `docs/public/favicon.svg` so the docs/favicon mark and native helper branding stay aligned
+- Bundles custom notification sounds from `native/macos/sounds/` and randomly chooses from the configured enabled set for each background alert
+- Startup also removes the legacy `~/.dmux/macos-notifier` helper if it still exists from older dmux releases
+- This is progressive enhancement only: on non-macOS platforms the helper path must stay inert and dmux should continue working without native focus/notification integration
+
+Focus model:
+
+- `DmuxFocusService` writes a per-instance token into the terminal title.
+- The helper looks at the frontmost visible app window and its title.
+- A pane is considered "fully focused" only when:
+  - the frontmost app bundle matches the terminal app running this dmux instance, and
+  - the focused window title contains this dmux instance's token, and
+  - tmux reports that pane as the selected pane.
+
+Notification model:
+
+- Worker heuristics + `PaneAnalyzer` first decide whether a pane is still working or has settled into `idle` / `waiting`.
+- `StatusDetector` emits attention events only after LLM-backed analysis succeeds.
+- `DmuxAttentionService` only sends a native notification when that pane is not the fully focused pane for this dmux instance.
+
+If focus behavior changes, update this section and keep `CLAUDE.md` as a symlink to `AGENTS.md`.
 
 ## Adding a new agent to the registry
 

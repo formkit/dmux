@@ -33,6 +33,27 @@ function getLines(frame: string): string[] {
   return lines.map((l, idx) => (idx === 0 ? l.replace(/^>\s/, '') : l.replace(/^\s{2}/, '')));
 }
 
+async function waitForWrappedLines(
+  lastFrame: () => string | undefined,
+  minLines: number,
+  timeoutMs = 200
+): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const frame = lastFrame();
+    if (frame) {
+      const lines = getLines(frame);
+      if (lines.length >= minLines) {
+        return lines;
+      }
+    }
+    await sleep(10);
+  }
+
+  return getLines(lastFrame() || '');
+}
+
 // Patch process.stdout.columns deterministically for this suite
 let originalColumns: PropertyDescriptor | undefined;
 
@@ -80,8 +101,7 @@ describe('CleanTextInput: wrapping moment (char-by-char)', () => {
 
     // Type the character that causes the wrap
     await typeChar(stdin, text[wrapTriggerIndex]!);
-    frame = lastFrame();
-    lines = getLines(frame!);
+    lines = await waitForWrappedLines(lastFrame, 2);
     expect(lines.length).toBeGreaterThan(1);
     // First visual line must end at a full word boundary as computed by wrapText
     expect(lines[0]).toBe(expectedFirstLine);

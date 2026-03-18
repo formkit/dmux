@@ -35,6 +35,17 @@ export function PopupWrapper<T = any>({
 }: PopupWrapperProps<T>) {
   const { exit } = useApp();
 
+  useEffect(() => {
+    const readyFile = process.env.DMUX_POPUP_READY_FILE;
+    if (!readyFile) return;
+
+    try {
+      fs.writeFileSync(readyFile, 'ready');
+    } catch (error) {
+      console.error('[PopupWrapper] Failed to write ready file:', error);
+    }
+  }, []);
+
   // Handle ESC key for cancellation
   useInput((input, key) => {
     if (allowEscapeToCancel && key.escape) {

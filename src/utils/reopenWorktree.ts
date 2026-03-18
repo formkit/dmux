@@ -12,15 +12,17 @@ import { atomicWriteJsonSync } from './atomicWrite.js';
 import { buildWorktreePaneTitle } from './paneTitle.js';
 import {
   AGENT_IDS,
-  buildAgentCommand,
-  buildResumeCommand,
+  buildAgentResumeOrLaunchCommand,
   type AgentName,
 } from './agentLaunch.js';
 import { ensureGeminiFolderTrusted } from './geminiTrust.js';
 import { SettingsManager } from './settingsManager.js';
 import { filterEnabledAgents, getInstalledAgents } from './agentDetection.js';
+import { getCurrentBranch } from './git.js';
+import { readWorktreeMetadata } from './worktreeMetadata.js';
 
 export interface ReopenWorktreeOptions {
+  agent?: AgentName;
   slug: string;
   worktreePath: string;
   projectRoot: string; // Target repo root for the reopened pane
@@ -41,6 +43,7 @@ export async function reopenWorktree(
   options: ReopenWorktreeOptions
 ): Promise<ReopenWorktreeResult> {
   const {
+    agent: requestedAgent,
     slug,
     worktreePath,
     projectRoot,
@@ -50,6 +53,7 @@ export async function reopenWorktree(
   } = options;
   const paneProjectName = path.basename(projectRoot);
   const settings = new SettingsManager(projectRoot).getSettings();
+  const metadata = readWorktreeMetadata(worktreePath);
   const sessionProjectRoot = optionsSessionProjectRoot
     || (optionsSessionConfigPath ? path.dirname(path.dirname(optionsSessionConfigPath)) : projectRoot);
 
@@ -145,7 +149,7 @@ export async function reopenWorktree(
   // Wait for CD to complete
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  // Detect which agent to use - prefer enabled agents and then fallback order.
+  // Detect which agent to use - prefer stored metadata, then fall back to enabled/installed order.
   const installedAgents = await getInstalledAgents();
   const enabledAgents = filterEnabledAgents(installedAgents, settings.enabledAgents);
   const candidateAgents = enabledAgents.length > 0 ? enabledAgents : installedAgents;
@@ -157,9 +161,12 @@ export async function reopenWorktree(
       !['claude', 'codex', 'opencode'].includes(agent)
     ),
   ];
-  const agent = preferredOrder.find((candidate) =>
-    candidateAgents.includes(candidate)
-  );
+  const configuredAgent = metadata?.agent;
+  const agent = requestedAgent
+    || (configuredAgent && candidateAgents.includes(configuredAgent)
+      ? configuredAgent
+      : preferredOrder.find((candidate) => candidateAgents.includes(candidate)));
+  const permissionMode = metadata?.permissionMode ?? settings.permissionMode;
 
   // Resume the agent session (or start interactive mode when no resume command is available).
   if (agent) {
@@ -167,9 +174,7 @@ export async function reopenWorktree(
       ensureGeminiFolderTrusted(worktreePath);
     }
 
-    const resumeCommand =
-      buildResumeCommand(agent, settings.permissionMode)
-      || buildAgentCommand(agent, settings.permissionMode);
+    const resumeCommand = buildAgentResumeOrLaunchCommand(agent, permissionMode);
     await tmuxService.sendShellCommand(paneInfo, resumeCommand);
     await tmuxService.sendTmuxKeys(paneInfo, 'Enter');
   }
@@ -178,16 +183,23 @@ export async function reopenWorktree(
   await tmuxService.selectPane(paneInfo);
 
   // Create the pane object
+  const currentBranch = getCurrentBranch(worktreePath);
+
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    branchName: (metadata?.branchName || currentBranch) !== slug
+      ? (metadata?.branchName || currentBranch)
+      : undefined,
     prompt: '(Reopened session)',
     paneId: paneInfo,
     projectRoot,
     projectName: paneProjectName,
     worktreePath,
     agent,
+    permissionMode,
     autopilot: settings.enableAutopilotByDefault ?? false,
+    mergeTargetChain: metadata?.mergeTargetChain,
   };
 
   // Handle welcome pane destruction if first content pane

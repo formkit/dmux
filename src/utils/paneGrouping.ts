@@ -1,5 +1,7 @@
-import type { DmuxPane } from '../types.js';
+import path from 'path';
+import type { DmuxPane, SidebarProject } from '../types.js';
 import { getPaneProjectName, getPaneProjectRoot } from './paneProject.js';
+import { normalizeSidebarProjects } from './sidebarProjects.js';
 
 export interface GroupedPane {
   pane: DmuxPane;
@@ -46,14 +48,36 @@ function sortWithAttachedAgents(panes: GroupedPane[]): GroupedPane[] {
 export function groupPanesByProject(
   panes: DmuxPane[],
   fallbackProjectRoot: string,
-  fallbackProjectName: string
+  fallbackProjectName: string,
+  sidebarProjects: SidebarProject[] = []
 ): PaneProjectGroup[] {
   const groupMap = new Map<string, PaneProjectGroup>();
   const groups: PaneProjectGroup[] = [];
 
+  for (const project of normalizeSidebarProjects(
+    sidebarProjects,
+    panes,
+    fallbackProjectRoot,
+    fallbackProjectName
+  )) {
+    const projectKey = path.resolve(project.projectRoot);
+    const existingGroup = groupMap.get(projectKey);
+    if (existingGroup) {
+      continue;
+    }
+
+    const group: PaneProjectGroup = {
+      projectRoot: project.projectRoot,
+      projectName: project.projectName,
+      panes: [],
+    };
+    groupMap.set(projectKey, group);
+    groups.push(group);
+  }
+
   panes.forEach((pane, index) => {
     const projectRoot = getPaneProjectRoot(pane, fallbackProjectRoot);
-    let group = groupMap.get(projectRoot);
+    let group = groupMap.get(path.resolve(projectRoot));
 
     if (!group) {
       group = {
@@ -61,7 +85,7 @@ export function groupPanesByProject(
         projectName: getPaneProjectName(pane, fallbackProjectRoot, fallbackProjectName),
         panes: [],
       };
-      groupMap.set(projectRoot, group);
+      groupMap.set(path.resolve(projectRoot), group);
       groups.push(group);
     }
 

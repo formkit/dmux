@@ -15,8 +15,16 @@ interface WorkerInfo {
   worker: Worker;
   paneId: string;
   tmuxPaneId: string;
+  paneType?: DmuxPane['type'];
+  agent?: DmuxPane['agent'];
   startTime: number;
   restartCount: number;
+}
+
+export function shouldMonitorPaneForStatusTracking(
+  pane: Pick<DmuxPane, 'type' | 'agent'>
+): boolean {
+  return pane.type !== 'shell' && Boolean(pane.agent);
 }
 
 /**
@@ -38,7 +46,7 @@ export class PaneWorkerManager {
    */
   createWorker(pane: DmuxPane): void {
     // Don't create if already exists or shutting down
-    if (this.workers.has(pane.id) || this.isShuttingDown) {
+    if (this.workers.has(pane.id) || this.isShuttingDown || !shouldMonitorPaneForStatusTracking(pane)) {
       return;
     }
 
@@ -58,6 +66,8 @@ export class PaneWorkerManager {
         worker,
         paneId: pane.id,
         tmuxPaneId: pane.paneId,
+        paneType: pane.type,
+        agent: pane.agent,
         startTime: Date.now(),
         restartCount: 0
       };
@@ -203,10 +213,11 @@ export class PaneWorkerManager {
    * Update workers based on current panes
    */
   async updateWorkers(panes: DmuxPane[]): Promise<void> {
-    const currentPaneIds = new Set(panes.map(p => p.id));
+    const monitoredPanes = panes.filter(shouldMonitorPaneForStatusTracking);
+    const currentPaneIds = new Set(monitoredPanes.map(p => p.id));
 
     // Create workers for new panes
-    for (const pane of panes) {
+    for (const pane of monitoredPanes) {
       if (!this.workers.has(pane.id)) {
         this.createWorker(pane);
       } else {
@@ -298,7 +309,9 @@ export class PaneWorkerManager {
         id: paneId,
         paneId: tmuxPaneId,
         slug: '',
-        prompt: ''
+        prompt: '',
+        type: workerInfo.paneType,
+        agent: workerInfo.agent,
       } as DmuxPane);
 
       const newWorkerInfo = this.workers.get(paneId);

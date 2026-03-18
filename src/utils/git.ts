@@ -20,6 +20,21 @@ export function getPaneBranchName(pane: DmuxPane): string {
 }
 
 /**
+ * Checks whether a local branch exists in the repository.
+ */
+export function branchExists(repoPath: string, branchName: string): boolean {
+  try {
+    execSync(`git show-ref --verify --quiet "refs/heads/${branchName}"`, {
+      cwd: repoPath,
+      stdio: 'pipe',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Validate that a string is safe for use as a git branch name or prefix.
  * Returns true if valid, false if it contains dangerous characters.
  */

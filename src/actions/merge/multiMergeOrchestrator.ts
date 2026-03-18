@@ -260,7 +260,7 @@ async function handleWorktreeMergeIssues(
 
   // Check for nothing to merge
   const nothingToMerge = issues.find(i => i.type === 'nothing_to_merge');
-  if (nothingToMerge) {
+  if (nothingToMerge && issues.length === 1) {
     return onComplete(false, 'skipped');
   }
 

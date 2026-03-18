@@ -3,12 +3,13 @@
  * Requires tmux 3.2+
  */
 
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { POPUP_CONFIG } from '../components/popups/config.js';
 import { TmuxService } from '../services/TmuxService.js';
+import type { PanePosition } from '../types.js';
 
 export interface PopupOptions {
   width?: number;
@@ -43,9 +44,36 @@ export interface PopupHandle<T> {
     width: number;
     height: number;
   };
+  readyPromise: Promise<void>;
   resultPromise: Promise<PopupResult<T>>;
   kill: () => void;
 }
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function getPaneAnchoredPopupOptions(
+  pane: PanePosition,
+  popupSize: { width: number; height: number },
+  clientSize: { width: number; height: number }
+): Pick<PopupOptions, 'centered' | 'x' | 'y' | 'width' | 'height'> {
+  const width = Math.min(popupSize.width, clientSize.width);
+  const height = Math.min(popupSize.height, clientSize.height);
+  const maxX = Math.max(0, clientSize.width - width);
+  const maxY = Math.max(0, clientSize.height - height);
+
+  return {
+    centered: false,
+    width,
+    height,
+    x: clamp(pane.left + Math.floor((pane.width - width) / 2), 0, maxX),
+    y: clamp(pane.top, 0, maxY),
+  };
+}
+
+const POPUP_READY_POLL_INTERVAL_MS = 25;
+const POPUP_READY_TIMEOUT_MS = 4000;
 
 /**
  * Calculate actual popup bounds based on tmux terminal dimensions
@@ -371,6 +399,7 @@ export function launchPopupNonBlocking(
   return {
     pid: child.pid!,
     bounds,
+    readyPromise: Promise.resolve(),
     resultPromise,
     kill: () => {
       try {
@@ -384,6 +413,45 @@ export function launchPopupNonBlocking(
       }
     },
   };
+}
+
+function waitForPopupReady(
+  child: ChildProcess,
+  readyFile: string
+): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      clearInterval(pollInterval);
+      clearTimeout(timeout);
+      if (fs.existsSync(readyFile)) {
+        try {
+          fs.unlinkSync(readyFile);
+        } catch {
+          // Ignore cleanup races between the popup process and parent watcher.
+        }
+      }
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const pollInterval = setInterval(() => {
+      if (fs.existsSync(readyFile)) {
+        finish();
+      }
+    }, POPUP_READY_POLL_INTERVAL_MS);
+
+    const timeout = setTimeout(finish, POPUP_READY_TIMEOUT_MS);
+
+    child.once('close', finish);
+    child.once('error', finish);
+  });
 }
 
 /**
@@ -417,14 +485,21 @@ export function launchNodePopupNonBlocking<T = any>(
   // Get the result file path that the script will write to
   // IMPORTANT: Only create this ONCE - do NOT create it again in child.on('close')
   const resultFile = path.join(os.tmpdir(), `dmux-popup-${Date.now()}.json`);
+  const readyFile = path.join(
+    os.tmpdir(),
+    `dmux-popup-ready-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`
+  );
 
   // Build node command with proper escaping
   const escapedArgs = [scriptPath, resultFile, ...args].map(arg => {
     const escaped = arg.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
     return `'${escaped}'`;
   });
+  const escapedReadyFile = readyFile
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "'\\''");
 
-  const command = `node ${escapedArgs.join(' ')}`;
+  const command = `DMUX_POPUP_READY_FILE='${escapedReadyFile}' node ${escapedArgs.join(' ')}`;
 
   // Build tmux popup command
   const tmuxArgs: string[] = [
@@ -471,6 +546,7 @@ export function launchNodePopupNonBlocking<T = any>(
   const child = spawn('sh', ['-c', fullCommand], {
     stdio: 'inherit',
   });
+  const readyPromise = waitForPopupReady(child, readyFile);
 
   const resultPromise = new Promise<PopupResult<T>>((resolve) => {
     child.on('close', () => {
@@ -525,6 +601,7 @@ export function launchNodePopupNonBlocking<T = any>(
   return {
     pid: child.pid!,
     bounds,
+    readyPromise,
     resultPromise,
     kill: () => {
       try {
@@ -532,6 +609,9 @@ export function launchNodePopupNonBlocking<T = any>(
         // Clean up temp file
         if (fs.existsSync(resultFile)) {
           fs.unlinkSync(resultFile);
+        }
+        if (fs.existsSync(readyFile)) {
+          fs.unlinkSync(readyFile);
         }
       } catch {
         // Ignore errors if process already dead
@@ -629,5 +709,17 @@ export const POPUP_POSITIONING = {
       width: Math.min(terminalWidth - sidebarWidth - 2, 100),
       height: Math.floor(terminalHeight * 0.9),
     };
+  },
+
+  /**
+   * Anchor a popup to the top of a specific pane.
+   * Use for focused-pane actions launched from inside the pane.
+   */
+  overPane(
+    pane: PanePosition,
+    popupSize: { width: number; height: number },
+    clientSize: { width: number; height: number }
+  ): Partial<PopupOptions> {
+    return getPaneAnchoredPopupOptions(pane, popupSize, clientSize);
   },
 };

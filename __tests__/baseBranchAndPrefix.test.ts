@@ -363,4 +363,12 @@ describe('setting definitions', () => {
     expect(def!.step).toBe(1);
     expect(def!.shiftStep).toBe(10);
   });
+
+  it('showFooterTips is a boolean setting', async () => {
+    const { SETTING_DEFINITIONS } = await import('../src/utils/settingsManager.js');
+    const def = SETTING_DEFINITIONS.find(d => d.key === 'showFooterTips');
+
+    expect(def).toBeDefined();
+    expect(def!.type).toBe('boolean');
+  });
 });

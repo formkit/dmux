@@ -19,6 +19,23 @@ export interface StatusUpdateEvent {
   analyzerError?: string;
 }
 
+export interface AttentionNeededEvent {
+  paneId: string;
+  tmuxPaneId: string;
+  status: Extract<AgentStatus, 'idle' | 'waiting'>;
+  title: string;
+  body: string;
+  subtitle?: string;
+  fingerprint: string;
+}
+
+export interface PaneUserInteractionEvent {
+  paneId: string;
+}
+
+const LLM_ABORT_REASON_TIMEOUT = 'timeout';
+const LLM_ABORT_REASON_SUPERSEDED = 'superseded';
+
 /**
  * High-level service coordinating status detection via workers and LLM
  */
@@ -69,6 +86,10 @@ export class StatusDetector extends EventEmitter {
     this.messageBus.subscribe('ready', (paneId) => {
       // Worker ready, no action needed
     });
+
+    this.messageBus.subscribe('user-interaction', (paneId) => {
+      this.handleUserInteraction(paneId);
+    });
   }
 
   /**
@@ -103,11 +124,10 @@ export class StatusDetector extends EventEmitter {
     const oldStatus = this.paneStatuses.get(paneId);
     this.paneStatuses.set(paneId, status);
 
-    // ONLY cancel LLM request if transitioning from analyzing to working
-    // This is the specific case where the agent started working again
-    // before the LLM analysis completed
-    if (oldStatus === 'analyzing' && status === 'working') {
-      this.cancelLLMRequest(paneId);
+    // Cancel any stale LLM request when live activity resumes or the pane
+    // leaves the analyzing state before the request completes.
+    if (oldStatus === 'analyzing' && status !== 'analyzing') {
+      this.cancelLLMRequest(paneId, LLM_ABORT_REASON_SUPERSEDED);
     }
 
     // Emit event for UI updates
@@ -137,7 +157,7 @@ export class StatusDetector extends EventEmitter {
     if (!captureSnapshot) return;
 
     // Cancel any existing request for this pane
-    this.cancelLLMRequest(paneId);
+    this.cancelLLMRequest(paneId, LLM_ABORT_REASON_SUPERSEDED);
 
     // Set status to analyzing
     this.paneStatuses.set(paneId, 'analyzing');
@@ -153,7 +173,7 @@ export class StatusDetector extends EventEmitter {
 
       // Set a timeout to abort if LLM takes too long
       const timeoutId = setTimeout(() => {
-        controller.abort();
+        controller.abort(LLM_ABORT_REASON_TIMEOUT);
       }, 10000); // 10 second timeout
 
       try {
@@ -164,7 +184,12 @@ export class StatusDetector extends EventEmitter {
         }
 
         // Run LLM analysis with abort signal (pass dmux pane ID for friendly logging)
-        const analysis = await this.paneAnalyzer.analyzePane(tmuxPaneId, controller.signal, paneId);
+        const analysis = await this.paneAnalyzer.analyzePane(
+          tmuxPaneId,
+          controller.signal,
+          paneId,
+          captureSnapshot
+        );
 
         // Clear the timeout since analysis completed
         clearTimeout(timeoutId);
@@ -201,7 +226,7 @@ export class StatusDetector extends EventEmitter {
         });
 
         // Emit event for UI with analysis data
-        this.emit('status-updated', {
+        const statusEvent: StatusUpdateEvent = {
           paneId,
           status: finalStatus,
           previousStatus: 'analyzing',
@@ -209,12 +234,23 @@ export class StatusDetector extends EventEmitter {
           options: analysis.options,
           potentialHarm: analysis.potentialHarm,
           summary: analysis.summary
-        } as StatusUpdateEvent);
+        };
+        this.emit('status-updated', statusEvent);
+
+        const attentionEvent = this.buildAttentionEvent(paneId, tmuxPaneId, finalStatus, analysis);
+        if (attentionEvent) {
+          this.emit('attention-needed', attentionEvent);
+        }
       } catch (error: any) {
         // Clear the timeout on error
         clearTimeout(timeoutId);
 
-        if (error.name === 'AbortError') {
+        if (controller.signal.aborted || error.name === 'AbortError') {
+          const abortReason = controller.signal.reason;
+          if (abortReason !== LLM_ABORT_REASON_TIMEOUT) {
+            return;
+          }
+
           // Request was aborted due to timeout
           LogService.getInstance().warn(`LLM analysis timeout for pane ${paneId} after 10 seconds`, 'statusDetector', paneId);
 
@@ -297,12 +333,22 @@ export class StatusDetector extends EventEmitter {
   /**
    * Cancel LLM request for a pane
    */
-  private cancelLLMRequest(paneId: string): void {
+  private cancelLLMRequest(
+    paneId: string,
+    reason: string = LLM_ABORT_REASON_SUPERSEDED
+  ): void {
     const controller = this.llmRequests.get(paneId);
     if (controller) {
-      controller.abort();
+      controller.abort(reason);
       this.llmRequests.delete(paneId);
     }
+  }
+
+  private handleUserInteraction(paneId: string): void {
+    this.cancelLLMRequest(paneId, LLM_ABORT_REASON_SUPERSEDED);
+    this.emit('pane-user-interaction', {
+      paneId,
+    } satisfies PaneUserInteractionEvent);
   }
 
   /**
@@ -388,6 +434,46 @@ export class StatusDetector extends EventEmitter {
         error instanceof Error ? error : undefined
       );
     }
+  }
+
+  private buildAttentionEvent(
+    paneId: string,
+    tmuxPaneId: string,
+    status: AgentStatus,
+    analysis: PaneAnalysis
+  ): AttentionNeededEvent | null {
+    if (status !== 'idle' && status !== 'waiting') {
+      return null;
+    }
+
+    const pane = StateManager.getInstance().getPaneById(paneId);
+    const subtitle = pane?.slug;
+
+    const title = analysis.attentionTitle
+      || (status === 'waiting'
+        ? 'Decision needed'
+        : 'Ready for the next prompt');
+
+    const body = analysis.attentionBody
+      || (status === 'waiting'
+        ? `${analysis.question || 'The agent is waiting for your input.'} Open the pane and choose how to continue.`
+        : `${analysis.summary || 'The agent finished its current step.'} Open the pane and continue the work.`);
+
+    const normalizedTitle = title.trim();
+    const normalizedBody = body.trim();
+    if (!normalizedTitle || !normalizedBody) {
+      return null;
+    }
+
+    return {
+      paneId,
+      tmuxPaneId,
+      status,
+      title: normalizedTitle,
+      body: normalizedBody,
+      subtitle,
+      fingerprint: `${status}:${normalizedTitle}:${normalizedBody}`,
+    };
   }
 
   /**

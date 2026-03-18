@@ -39,10 +39,24 @@ export async function executeAction(
         dismissable: true,
       };
 
+    case 'create_child_worktree':
+      return {
+        type: 'info',
+        message: 'Create child worktree is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
     case 'open_terminal_in_worktree':
       return {
         type: 'info',
         message: 'Open terminal in worktree is handled by the pane input/menu flow',
+        dismissable: true,
+      };
+
+    case 'open_file_browser':
+      return {
+        type: 'info',
+        message: 'Open file browser is handled by the pane input/menu flow',
         dismissable: true,
       };
 

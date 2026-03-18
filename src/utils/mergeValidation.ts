@@ -84,13 +84,23 @@ export function getCurrentBranch(repoPath: string): string {
  */
 export function hasCommitsToMerge(repoPath: string, fromBranch: string, toBranch: string): boolean {
   try {
-    const output = execSync(`git log ${toBranch}..${fromBranch} --oneline`, {
+    const fromRef = fromBranch.trim() || 'HEAD';
+    const toRef = toBranch.trim() || 'HEAD';
+
+    const output = execSync(`git rev-list --count "${toRef}..${fromRef}"`, {
       cwd: repoPath,
       encoding: 'utf-8',
       stdio: 'pipe',
     });
-    return output.trim().length > 0;
-  } catch {
+
+    const commitCount = Number.parseInt(output.trim(), 10);
+    return Number.isFinite(commitCount) && commitCount > 0;
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    LogService.getInstance().warn(
+      `Failed commit check for ${toBranch}..${fromBranch} in ${repoPath}: ${errorMsg}`,
+      'mergeValidation'
+    );
     return false;
   }
 }
@@ -217,13 +227,15 @@ export function validateMerge(
     });
   }
 
-  // Check if there's anything to merge (commits OR uncommitted changes)
+  // Check if there's anything to merge from the worktree perspective.
+  // Main-repo uncommitted changes are handled by main_dirty and should not
+  // also be classified as "nothing to merge" (which causes incorrect skips).
   const hasCommits = hasCommitsToMerge(mainRepoPath, worktreeBranch, mainBranch);
   LogService.getInstance().info(
     `Merge check: hasCommits=${hasCommits}, worktreeHasChanges=${worktreeStatus.hasChanges}`,
     'mergeValidation'
   );
-  if (!hasCommits && !worktreeStatus.hasChanges) {
+  if (!hasCommits && !worktreeStatus.hasChanges && !mainStatus.hasChanges) {
     LogService.getInstance().info('Adding nothing_to_merge issue', 'mergeValidation');
     issues.push({
       type: 'nothing_to_merge',

@@ -1,7 +1,9 @@
 import { execSync } from 'child_process';
 import { LogService } from './LogService.js';
-import { execAsync, execAsyncAll } from '../utils/execAsync.js';
+import { execAsync } from '../utils/execAsync.js';
 import type { PanePosition, WindowDimensions } from '../types.js';
+
+export type PaneListScope = 'window' | 'session';
 
 /**
  * Comprehensive dimension info from a single tmux query
@@ -186,6 +188,36 @@ export class TmuxService {
     }
   }
 
+  private listPanesLines(
+    format: string,
+    scope: PaneListScope = 'window'
+  ): string[] {
+    if (scope === 'window') {
+      const output = this.execute(`tmux list-panes -F '${format}'`);
+      return output.split('\n').filter((line) => line.trim());
+    }
+
+    const currentSession = this.execute(`tmux display-message -p "#{session_name}"`);
+    const output = this.execute(`tmux list-panes -a -F '#{session_name}|${format}'`);
+
+    return output
+      .split('\n')
+      .filter((line) => line.trim())
+      .flatMap((line) => {
+        const delimiterIndex = line.indexOf('|');
+        if (delimiterIndex === -1) {
+          return [];
+        }
+
+        const sessionName = line.slice(0, delimiterIndex);
+        if (sessionName !== currentSession) {
+          return [];
+        }
+
+        return [line.slice(delimiterIndex + 1)];
+      });
+  }
+
   // ===== BATCHED QUERIES (Performance optimization) =====
 
   /**
@@ -230,22 +262,44 @@ export class TmuxService {
    *
    * Performance: 1 command instead of N * 3+ (where N = pane count)
    */
-  async getAllPaneInfo(): Promise<Array<PanePosition & { title: string }>> {
+  async getAllPaneInfo(
+    scope: PaneListScope = 'window'
+  ): Promise<Array<PanePosition & { title: string }>> {
     const output = await this.executeNonBlocking(
-      `tmux list-panes -F '#{pane_id}|#{pane_title}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}'`
+      scope === 'window'
+        ? `tmux list-panes -F '#{pane_id}|#{pane_title}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}'`
+        : `tmux list-panes -a -F '#{session_name}|#{pane_id}|#{pane_title}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}'`
     );
+    const currentSession = scope === 'session'
+      ? await this.executeNonBlocking(`tmux display-message -p "#{session_name}"`)
+      : null;
 
-    return output.split('\n').filter(Boolean).map(line => {
-      const [paneId, title, left, top, width, height] = line.split('|');
-      return {
-        paneId,
-        title,
-        left: parseInt(left, 10),
-        top: parseInt(top, 10),
-        width: parseInt(width, 10),
-        height: parseInt(height, 10),
-      };
-    });
+    return output
+      .split('\n')
+      .filter(Boolean)
+      .flatMap(line => {
+        const parts = line.split('|');
+        const values = scope === 'session'
+          ? (() => {
+              const [sessionName, ...rest] = parts;
+              return sessionName === currentSession ? rest : null;
+            })()
+          : parts;
+
+        if (!values || values.length < 6) {
+          return [];
+        }
+
+        const [paneId, title, left, top, width, height] = values;
+        return [{
+          paneId,
+          title,
+          left: parseInt(left, 10),
+          top: parseInt(top, 10),
+          width: parseInt(width, 10),
+          height: parseInt(height, 10),
+        }];
+      });
   }
 
   // ===== READ OPERATIONS (IDEMPOTENT - safe to retry) =====
@@ -260,6 +314,32 @@ export class TmuxService {
       },
       RetryStrategy.IDEMPOTENT,
       'getCurrentPaneId'
+    );
+  }
+
+  /**
+   * Get current window ID
+   */
+  async getCurrentWindowId(): Promise<string> {
+    return this.executeWithRetry(
+      () => {
+        return this.execute('tmux display-message -p "#{window_id}"');
+      },
+      RetryStrategy.IDEMPOTENT,
+      'getCurrentWindowId'
+    );
+  }
+
+  /**
+   * Get the window ID for a specific pane
+   */
+  async getPaneWindowId(paneId: string): Promise<string> {
+    return this.executeWithRetry(
+      () => {
+        return this.execute(`tmux display-message -t '${paneId}' -p '#{window_id}'`);
+      },
+      RetryStrategy.IDEMPOTENT,
+      `getPaneWindowId(${paneId})`
     );
   }
 
@@ -300,14 +380,13 @@ export class TmuxService {
   /**
    * Get all pane IDs in current window
    */
-  async getAllPaneIds(): Promise<string[]> {
+  async getAllPaneIds(scope: PaneListScope = 'window'): Promise<string[]> {
     return this.executeWithRetry(
       () => {
-        const output = this.execute('tmux list-panes -F "#{pane_id}"');
-        return output.split('\n').filter(id => id.trim());
+        return this.listPanesLines('#{pane_id}', scope);
       },
       RetryStrategy.IDEMPOTENT,
-      'getAllPaneIds'
+      `getAllPaneIds(${scope})`
     );
   }
 
@@ -703,6 +782,48 @@ export class TmuxService {
   // ===== DESTRUCTIVE OPERATIONS (NO RETRY) =====
 
   /**
+   * Move a pane into its own detached window.
+   * Returns the new window ID.
+   */
+  async breakPaneToWindow(paneId: string, windowName: string): Promise<string> {
+    await this.executeWithRetry(
+      () => {
+        const escapedWindowName = windowName.replace(/'/g, `'\\''`);
+        return this.execute(
+          `tmux break-pane -d -P -F '#{window_id}' -s '${paneId}' -n '${escapedWindowName}'`
+        );
+      },
+      RetryStrategy.FAST,
+      `breakPaneToWindow(${paneId})`
+    );
+
+    const output = await this.executeNonBlocking(
+      `tmux display-message -t '${paneId}' -p '#{window_id}'`
+    );
+    return output.trim();
+  }
+
+  /**
+   * Join a pane back into the current window via a target pane.
+   */
+  async joinPaneToTarget(
+    sourcePaneId: string,
+    targetPaneId: string,
+    horizontal: boolean = true
+  ): Promise<void> {
+    await this.executeWithRetry(
+      () => {
+        const direction = horizontal ? '-h' : '-v';
+        this.execute(
+          `tmux join-pane -d ${direction} -s '${sourcePaneId}' -t '${targetPaneId}'`
+        );
+      },
+      RetryStrategy.FAST,
+      `joinPaneToTarget(${sourcePaneId})`
+    );
+  }
+
+  /**
    * Kill a pane (DESTRUCTIVE - no retry)
    * Gracefully handles case where pane doesn't exist (considered success)
    */
@@ -1060,6 +1181,18 @@ export class TmuxService {
   }
 
   /**
+   * Get a global option value
+   */
+  getGlobalOptionSync(option: string): string {
+    try {
+      return this.execute(`tmux show-options -gv ${option}`, { silent: true }).trim();
+    } catch (error) {
+      this.logger.warn(`Failed to get global option ${option}`, 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
    * Set a session option
    */
   setSessionOptionSync(sessionName: string, option: string, value: string): void {
@@ -1090,6 +1223,40 @@ export class TmuxService {
       this.execute(`tmux set-window-option ${option} ${value}`, { silent: true });
     } catch (error) {
       this.logger.warn(`Failed to set window option ${option}`, 'TmuxService');
+    }
+  }
+
+  /**
+   * Get a pane option value (sync version for compatibility)
+   */
+  getPaneOptionSync(paneId: string, option: string): string {
+    try {
+      return this.execute(`tmux show-options -p -v -t '${paneId}' ${option}`, { silent: true }).trim();
+    } catch (error) {
+      this.logger.warn(`Failed to get pane option ${option} for ${paneId}`, 'TmuxService');
+      return '';
+    }
+  }
+
+  /**
+   * Set a pane option (sync version for compatibility)
+   */
+  setPaneOptionSync(paneId: string, option: string, value: string): void {
+    try {
+      this.execute(`tmux set-option -p -t '${paneId}' ${option} ${value}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to set pane option ${option} for ${paneId}`, 'TmuxService');
+    }
+  }
+
+  /**
+   * Unset a pane option (sync version for compatibility)
+   */
+  unsetPaneOptionSync(paneId: string, option: string): void {
+    try {
+      this.execute(`tmux set-option -u -p -t '${paneId}' ${option}`, { silent: true });
+    } catch (error) {
+      this.logger.warn(`Failed to unset pane option ${option} for ${paneId}`, 'TmuxService');
     }
   }
 

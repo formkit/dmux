@@ -17,6 +17,7 @@ function createPopupManager(availableAgents: AgentName[]): PopupManager {
       getProjectSettings: () => ({}),
     },
     projectSettings: {},
+    trackProjectActivity: async (work) => await work(),
   };
 
   return new PopupManager(config, () => {}, () => {});
@@ -52,7 +53,13 @@ describe('PopupManager launchChoicePopup', () => {
       expect.objectContaining({
         title: 'Main Branch Has Uncommitted Changes',
       }),
-      expect.objectContaining(mergeData)
+      expect.objectContaining({
+        ...mergeData,
+        title: 'Main Branch Has Uncommitted Changes',
+        message: 'Resolve before merge',
+        options: [{ id: 'commit_automatic', label: 'AI commit' }],
+      }),
+      undefined
     );
   });
 
@@ -79,7 +86,8 @@ describe('PopupManager launchChoicePopup', () => {
         title: 'Choose Option',
         message: 'Pick one',
         options: [{ id: 'cancel', label: 'Cancel' }],
-      }
+      },
+      undefined
     );
   });
 

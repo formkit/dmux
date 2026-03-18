@@ -520,6 +520,14 @@ export function buildResumeCommand(
   return appendFlags(template, permissionFlags);
 }
 
+export function buildAgentResumeOrLaunchCommand(
+  agent: AgentName,
+  permissionMode: PermissionMode | undefined
+): string {
+  return buildResumeCommand(agent, permissionMode)
+    || buildAgentCommand(agent, permissionMode);
+}
+
 /**
  * Launch an agent CLI inside an already-existing tmux pane.
  *

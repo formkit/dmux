@@ -20,6 +20,7 @@ function createPopupManager(
       getProjectSettings: () => ({}),
     },
     projectSettings: {},
+    trackProjectActivity: async (work) => await work(),
   };
 
   return new PopupManager(config, () => {}, () => {});
@@ -42,7 +43,9 @@ describe('PopupManager launchAgentChoicePopup', () => {
       expect.objectContaining({
         width: 72,
         title: 'Select Agent(s)',
-      })
+      }),
+      undefined,
+      undefined
     );
   });
 
@@ -59,7 +62,9 @@ describe('PopupManager launchAgentChoicePopup', () => {
     expect(manager.launchPopup).toHaveBeenCalledWith(
       'agentChoicePopup.js',
       [JSON.stringify(['claude', 'opencode']), JSON.stringify([])],
-      expect.any(Object)
+      expect.any(Object),
+      undefined,
+      undefined
     );
   });
 });

@@ -6,6 +6,7 @@
 import React from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import { PopupWrapper, writeCancelAndExit, writeSuccessAndExit } from './shared/index.js';
 import { POPUP_CONFIG } from './config.js';
 
@@ -19,7 +20,7 @@ interface ShortcutActionResult {
   action?: 'hooks';
 }
 
-const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
+export const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   resultFile,
   hasSidebarLayout,
   isDevMode,
@@ -27,7 +28,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   const { exit } = useApp();
 
   useInput((input, key) => {
-    if (input === 'h') {
+    if (input === 'e') {
       writeSuccessAndExit<ShortcutActionResult>(resultFile, { action: 'hooks' }, exit);
       return;
     }
@@ -38,21 +39,28 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
   });
 
   const shortcuts = [
+    { key: 'Alt+Shift+M', description: 'Open the pane menu for the focused tmux pane' },
     { key: 'j', description: 'Jump to selected pane' },
     { key: 'm', description: 'Open pane menu' },
     { key: 'x', description: 'Close selected pane' },
+    { key: 'h', description: 'Hide/show selected pane' },
+    { key: 'H', description: 'Hide/show all other panes' },
+    { key: 'P', description: 'Show only the selected project, then show all' },
     { key: 'a', description: 'Add agent to worktree' },
+    { key: 'b', description: 'Create child worktree' },
+    { key: 'f', description: 'Open read-only file browser' },
     { key: 'A', description: 'Add terminal to worktree' },
-    { key: 'n', description: 'New agent pane' },
-    { key: 't', description: 'New terminal pane' },
-    { key: 'p', description: 'New pane in another project' },
+    { key: 'n', description: 'New agent pane in selected project' },
+    { key: 't', description: 'New terminal pane in selected project' },
+    { key: 'p', description: 'Add project to sidebar' },
+    { key: 'R', description: 'Remove selected empty project from sidebar' },
     { key: 'r', description: 'Reopen closed worktree' },
     ...(isDevMode
       ? [{ key: 'S', description: '[DEV] Toggle source pane' }]
       : []),
     { key: 'l', description: 'View logs' },
     { key: 's', description: 'Open settings' },
-    { key: 'h', description: 'Manage hooks with AI' },
+    { key: 'e', description: 'Manage hooks with AI (from this popup)' },
     ...(hasSidebarLayout ? [{ key: 'L', description: 'Reset sidebar layout' }] : []),
     { key: 'q', description: 'Quit dmux' },
     { key: '↑↓←→', description: 'Navigate panes' },
@@ -70,7 +78,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
 
         {shortcuts.map((shortcut, index) => (
           <Box key={index} marginBottom={0}>
-            <Box width={12}>
+            <Box width={16}>
               <Text color="yellow" bold>[{shortcut.key}]</Text>
             </Box>
             <Text>{shortcut.description}</Text>
@@ -78,7 +86,7 @@ const ShortcutsPopupApp: React.FC<ShortcutsPopupAppProps> = ({
         ))}
 
         <Box marginTop={1}>
-          <Text dimColor>Press h for hooks, or Esc/? to close</Text>
+          <Text dimColor>Press Alt+Shift+M in any focused pane to open that pane&apos;s menu without returning to the sidebar. Press e for hooks, or Esc/? to close</Text>
         </Box>
       </Box>
     </PopupWrapper>
@@ -112,4 +120,7 @@ const main = async () => {
   }
 };
 
-main();
+const entryPointHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (import.meta.url === entryPointHref) {
+  void main();
+}

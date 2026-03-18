@@ -6,6 +6,7 @@ import ToastNotification from './ToastNotification.js';
 interface FooterHelpProps {
   show: boolean;
   gridInfo?: string;
+  footerTip?: string;
   quitConfirmMode?: boolean;
   unreadErrorCount?: number;
   unreadWarningCount?: number;
@@ -17,6 +18,7 @@ interface FooterHelpProps {
 const FooterHelp: React.FC<FooterHelpProps> = memo(({
   show,
   gridInfo,
+  footerTip,
   quitConfirmMode = false,
   unreadErrorCount = 0,
   unreadWarningCount = 0,
@@ -134,6 +136,12 @@ const FooterHelp: React.FC<FooterHelpProps> = memo(({
       <Text dimColor>
         Press <Text color="cyan">[?]</Text> for keyboard shortcuts
       </Text>
+
+      {footerTip && (
+        <Text dimColor wrap="truncate-end">
+          <Text color="green">Tip:</Text> {footerTip}
+        </Text>
+      )}
 
       {/* Debug info */}
       {gridInfo && (

@@ -36,13 +36,16 @@ Press `n` to create a new pane, type a prompt, pick one or more agents (or none 
 
 ## What it does
 
-dmux creates a tmux pane for each task. Every pane gets its own git worktree and branch so agents work in complete isolation. When a task is done, press `m` to merge it back into your main branch.
+dmux creates a tmux pane for each task. Every pane gets its own git worktree and branch so agents work in complete isolation. When a task is done, open the pane menu with `m` and choose Merge to bring it back into your main branch.
 
 - **Worktree isolation** &mdash; each pane is a full working copy, no conflicts between agents
 - **Agent support** &mdash; Claude Code, Codex, OpenCode, Cline CLI, Gemini CLI, Qwen CLI, Amp CLI, pi CLI, Cursor CLI, Copilot CLI, and Crush CLI
 - **Multi-select launches** &mdash; choose any combination of enabled agents per prompt
 - **AI naming** &mdash; branches and commit messages generated automatically
 - **Smart merging** &mdash; auto-commit, merge, and clean up in one step
+- **macOS notifications** &mdash; background panes can send native attention alerts when they settle and need you
+- **Built-in file browser** &mdash; inspect a pane's worktree, search files, and preview code or diffs without leaving dmux
+- **Pane visibility controls** &mdash; hide individual panes, isolate one project, or restore everything later without stopping work
 - **Multi-project** &mdash; add multiple repos to the same session
 - **Lifecycle hooks** &mdash; run scripts on worktree create, pre-merge, post-merge, and more
 
@@ -62,9 +65,13 @@ dmux can use default branch behavior or let you override branch details when cre
 | `n` | New pane (worktree + agent) |
 | `t` | New terminal pane |
 | `j` / `Enter` | Jump to pane |
-| `m` | Merge pane to main |
+| `m` | Open pane menu |
+| `f` | Browse files in selected pane's worktree |
 | `x` | Close pane |
+| `h` | Hide/show selected pane |
+| `H` | Hide/show all other panes |
 | `p` | New pane in another project |
+| `P` | Show only the selected project's panes, then show all |
 | `s` | Settings |
 | `q` | Quit |
 

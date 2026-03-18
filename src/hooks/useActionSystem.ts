@@ -14,27 +14,48 @@ import {
   type TUIActionState
 } from '../adapters/tuiActionHandler.js';
 import type { DmuxPane } from '../types.js';
+import type { TrackProjectActivity } from '../types/activity.js';
 
 interface UseActionSystemParams {
   panes: DmuxPane[];
   savePanes: (panes: DmuxPane[]) => Promise<void>;
   sessionName: string;
   projectName: string;
+  defaultProjectRoot: string;
   onPaneUpdate?: (pane: DmuxPane) => void;
   onPaneRemove?: (paneId: string) => void;
   onActionResult?: (result: ActionResult) => Promise<void>;
+  trackProjectActivity: TrackProjectActivity;
 
   // Popup launchers (optional - falls back to inline dialogs if not provided)
   popupLaunchers?: {
-    launchConfirmPopup?: (title: string, message: string, yesLabel?: string, noLabel?: string) => Promise<boolean>;
+    launchConfirmPopup?: (
+      title: string,
+      message: string,
+      yesLabel?: string,
+      noLabel?: string,
+      projectRoot?: string
+    ) => Promise<boolean>;
     launchChoicePopup?: (
       title: string,
       message: string,
       options: Array<{id: string, label: string, description?: string, danger?: boolean, default?: boolean}>,
-      data?: unknown
+      data?: unknown,
+      projectRoot?: string
     ) => Promise<string | null>;
-    launchInputPopup?: (title: string, message: string, placeholder?: string, defaultValue?: string) => Promise<string | null>;
-    launchProgressPopup?: (message: string, type: 'info' | 'success' | 'error', timeout: number) => Promise<void>;
+    launchInputPopup?: (
+      title: string,
+      message: string,
+      placeholder?: string,
+      defaultValue?: string,
+      projectRoot?: string
+    ) => Promise<string | null>;
+    launchProgressPopup?: (
+      message: string,
+      type: 'info' | 'success' | 'error',
+      timeout: number,
+      projectRoot?: string
+    ) => Promise<void>;
   };
 }
 
@@ -47,7 +68,9 @@ interface UseActionSystemParams {
  */
 async function handleResultWithPopups(
   result: ActionResult,
-  popupLaunchers: UseActionSystemParams['popupLaunchers']
+  popupLaunchers: UseActionSystemParams['popupLaunchers'],
+  projectRoot: string | undefined,
+  trackProjectActivity: TrackProjectActivity
 ): Promise<void> {
   // Handle confirm dialogs
   if (result.type === 'confirm' && popupLaunchers?.launchConfirmPopup) {
@@ -55,15 +78,16 @@ async function handleResultWithPopups(
       result.title || 'Confirm',
       result.message,
       result.confirmLabel,
-      result.cancelLabel
+      result.cancelLabel,
+      projectRoot
     );
 
     if (confirmed && result.onConfirm) {
-      const nextResult = await result.onConfirm();
-      await handleResultWithPopups(nextResult, popupLaunchers);
+      const nextResult = await trackProjectActivity(() => result.onConfirm!(), projectRoot);
+      await handleResultWithPopups(nextResult, popupLaunchers, projectRoot, trackProjectActivity);
     } else if (!confirmed && result.onCancel) {
-      const nextResult = await result.onCancel();
-      await handleResultWithPopups(nextResult, popupLaunchers);
+      const nextResult = await trackProjectActivity(() => result.onCancel!(), projectRoot);
+      await handleResultWithPopups(nextResult, popupLaunchers, projectRoot, trackProjectActivity);
     }
     return;
   }
@@ -74,12 +98,16 @@ async function handleResultWithPopups(
       result.title || 'Choose',
       result.message,
       result.options || [],
-      result.data
+      result.data,
+      projectRoot
     );
 
     if (selectedId && result.onSelect) {
-      const nextResult = await result.onSelect(selectedId);
-      await handleResultWithPopups(nextResult, popupLaunchers);
+      const nextResult = await trackProjectActivity(
+        () => result.onSelect!(selectedId),
+        projectRoot
+      );
+      await handleResultWithPopups(nextResult, popupLaunchers, projectRoot, trackProjectActivity);
     }
     return;
   }
@@ -90,12 +118,16 @@ async function handleResultWithPopups(
       result.title || 'Input',
       result.message,
       result.placeholder,
-      result.defaultValue
+      result.defaultValue,
+      projectRoot
     );
 
     if (inputValue !== null && result.onSubmit) {
-      const nextResult = await result.onSubmit(inputValue);
-      await handleResultWithPopups(nextResult, popupLaunchers);
+      const nextResult = await trackProjectActivity(
+        () => result.onSubmit!(inputValue),
+        projectRoot
+      );
+      await handleResultWithPopups(nextResult, popupLaunchers, projectRoot, trackProjectActivity);
     }
     return;
   }
@@ -112,9 +144,11 @@ export default function useActionSystem({
   savePanes,
   sessionName,
   projectName,
+  defaultProjectRoot,
   onPaneUpdate,
   onPaneRemove,
   onActionResult,
+  trackProjectActivity,
   popupLaunchers,
 }: UseActionSystemParams) {
   // TUI state for rendering dialogs
@@ -137,12 +171,21 @@ export default function useActionSystem({
     pane: DmuxPane,
     params?: any
   ) => {
+    const projectRoot = pane.projectRoot || defaultProjectRoot;
     try {
-      const result = await executeAction(actionId, pane, context, params);
+      const result = await trackProjectActivity(
+        () => executeAction(actionId, pane, context, params),
+        projectRoot
+      );
 
       // If popup launchers are available, handle interactive results with popups
       if (popupLaunchers) {
-        await handleResultWithPopups(result, popupLaunchers);
+        await handleResultWithPopups(
+          result,
+          popupLaunchers,
+          projectRoot,
+          trackProjectActivity
+        );
       } else {
         // Fall back to inline dialogs if popup launchers not available
         handleActionResult(result, actionState, (updates) => {
@@ -157,17 +200,18 @@ export default function useActionSystem({
         statusType: 'error',
       }));
     }
-  }, [context, actionState, popupLaunchers]);
+  }, [context, actionState, defaultProjectRoot, popupLaunchers, trackProjectActivity]);
 
   // Handle callback execution (for multi-step actions)
   const executeCallback = useCallback(async (
     callback: (() => Promise<ActionResult>) | null,
-    options?: { showProgress?: boolean; progressMessage?: string }
+    options?: { showProgress?: boolean; progressMessage?: string; projectRoot?: string }
   ) => {
     if (!callback) return;
 
     const showProgress = options?.showProgress !== false; // default true
     const progressMessage = options?.progressMessage || 'Processing...';
+    const projectRoot = options?.projectRoot || defaultProjectRoot;
 
     try {
       // Show progress indicator while executing
@@ -180,7 +224,7 @@ export default function useActionSystem({
         }));
       }
 
-      const result = await callback();
+      const result = await trackProjectActivity(callback, projectRoot);
 
       // Hide progress
       if (showProgress) {
@@ -192,7 +236,12 @@ export default function useActionSystem({
 
       // Handle the result (may trigger more dialogs)
       if (popupLaunchers) {
-        await handleResultWithPopups(result, popupLaunchers);
+        await handleResultWithPopups(
+          result,
+          popupLaunchers,
+          projectRoot,
+          trackProjectActivity
+        );
       } else {
         handleActionResult(result, actionState, (updates) => {
           setActionState(prev => ({ ...prev, ...updates }));
@@ -207,7 +256,7 @@ export default function useActionSystem({
         statusType: 'error',
       }));
     }
-  }, [context, actionState, popupLaunchers]);
+  }, [actionState, defaultProjectRoot, popupLaunchers, trackProjectActivity]);
 
   // Clear a specific dialog
   const clearDialog = useCallback((dialogType: keyof TUIActionState) => {

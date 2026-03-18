@@ -7,6 +7,13 @@
  */
 
 import type { DmuxPane } from '../types.js';
+import {
+  getBulkVisibilityAction,
+  getProjectVisibilityAction,
+  type PaneBulkVisibilityAction,
+  type PaneProjectVisibilityAction,
+} from '../utils/paneVisibility.js';
+import { getPaneProjectRoot } from '../utils/paneProject.js';
 
 /**
  * Action result types determine what kind of UI response is needed
@@ -108,25 +115,44 @@ export enum PaneAction {
   OPEN_IN_EDITOR = 'open_in_editor',
   TOGGLE_AUTOPILOT = 'toggle_autopilot',
   ATTACH_AGENT = 'attach_agent',
+  CREATE_CHILD_WORKTREE = 'create_child_worktree',
   OPEN_TERMINAL_IN_WORKTREE = 'open_terminal_in_worktree',
+  OPEN_FILE_BROWSER = 'open_file_browser',
 }
 
 /**
  * Action metadata for UI generation
  */
-export interface ActionMetadata {
-  id: PaneAction;
+export interface MenuActionMetadata {
+  id: string;
   label: string;
   description: string;
   icon?: string;
   shortcut?: string;
+  danger?: boolean;
+}
+
+export interface ActionMetadata extends MenuActionMetadata {
+  id: PaneAction;
   requires?: {
     worktree?: boolean;
     testCommand?: boolean;
     devCommand?: boolean;
     runningProcess?: boolean;
   };
-  danger?: boolean;
+}
+
+export const TOGGLE_PANE_VISIBILITY_ACTION = 'toggle_visibility';
+
+export type PaneVisibilityMenuActionId =
+  | typeof TOGGLE_PANE_VISIBILITY_ACTION
+  | PaneBulkVisibilityAction
+  | PaneProjectVisibilityAction;
+
+export type PaneMenuActionId = PaneAction | PaneVisibilityMenuActionId;
+
+export interface PaneMenuAction extends MenuActionMetadata {
+  id: PaneMenuActionId;
 }
 
 /**
@@ -220,6 +246,22 @@ export const ACTION_REGISTRY: Record<PaneAction, ActionMetadata> = {
     icon: '🤖',
     requires: { worktree: true },
   },
+  [PaneAction.CREATE_CHILD_WORKTREE]: {
+    id: PaneAction.CREATE_CHILD_WORKTREE,
+    label: 'Create Child Worktree',
+    description: 'Branch a new worktree from this worktree',
+    icon: '⑂',
+    shortcut: 'b',
+    requires: { worktree: true },
+  },
+  [PaneAction.OPEN_FILE_BROWSER]: {
+    id: PaneAction.OPEN_FILE_BROWSER,
+    label: 'Browse Files',
+    description: 'Open a read-only project file browser in this worktree',
+    icon: 'F',
+    shortcut: 'f',
+    requires: { worktree: true },
+  },
   [PaneAction.OPEN_TERMINAL_IN_WORKTREE]: {
     id: PaneAction.OPEN_TERMINAL_IN_WORKTREE,
     label: 'Add Terminal to Worktree',
@@ -266,4 +308,89 @@ export function getAvailableActions(
 
     return true;
   });
+}
+
+function getBulkVisibilityMenuAction(
+  action: PaneBulkVisibilityAction
+): PaneMenuAction {
+  return action === 'hide-others'
+    ? {
+        id: action,
+        label: 'Hide All Other Panes',
+        description: 'Hide every pane except this one',
+        shortcut: 'H',
+      }
+    : {
+        id: action,
+        label: 'Show All Other Panes',
+        description: 'Show every hidden pane except this one',
+        shortcut: 'H',
+      };
+}
+
+function getProjectVisibilityMenuAction(
+  action: PaneProjectVisibilityAction
+): PaneMenuAction {
+  return action === 'focus-project'
+    ? {
+        id: action,
+        label: 'Show Only This Project',
+        description: 'Show panes from this project and hide the rest',
+        shortcut: 'P',
+      }
+    : {
+        id: action,
+        label: 'Show All Panes',
+        description: 'Show panes from every project',
+        shortcut: 'P',
+      };
+}
+
+export function getPaneMenuActions(
+  pane: DmuxPane,
+  panes: DmuxPane[],
+  projectSettings?: any,
+  isDevMode: boolean = false,
+  projectRoot: string = pane.projectRoot || ''
+): PaneMenuAction[] {
+  const actions = getAvailableActions(pane, projectSettings, isDevMode);
+  const menuActions: PaneMenuAction[] = [];
+
+  for (const action of actions) {
+    menuActions.push(action);
+
+    if (action.id !== PaneAction.VIEW) {
+      continue;
+    }
+
+    menuActions.push({
+      id: TOGGLE_PANE_VISIBILITY_ACTION,
+      label: pane.hidden ? 'Show Pane' : 'Hide Pane',
+      description: pane.hidden
+        ? 'Show this pane in the active window'
+        : 'Hide this pane from the active window',
+      shortcut: 'h',
+    });
+
+    const bulkVisibilityAction = getBulkVisibilityAction(panes, pane);
+    if (bulkVisibilityAction) {
+      menuActions.push(getBulkVisibilityMenuAction(bulkVisibilityAction));
+    }
+
+    const targetProjectRoot = getPaneProjectRoot(pane, projectRoot);
+    const projectVisibilityAction = getProjectVisibilityAction(
+      panes,
+      targetProjectRoot,
+      projectRoot
+    );
+    if (projectVisibilityAction) {
+      menuActions.push(getProjectVisibilityMenuAction(projectVisibilityAction));
+    }
+  }
+
+  return menuActions;
+}
+
+export function isPaneAction(actionId: PaneMenuActionId): actionId is PaneAction {
+  return Object.prototype.hasOwnProperty.call(ACTION_REGISTRY, actionId);
 }

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,17 +22,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22.14.0'
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
-      - name: Update npm
-        run: npm install -g npm@latest
-
-      - run: pnpm install
+      - run: npm install -g npm@11
+      - run: node --version && npm --version
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - run: pnpm run build:macos-helper
       - run: pnpm run smoke:pack
-      - run: pnpm publish --no-git-checks --provenance --access public
+      - run: npm publish --provenance --access public
 
       - name: Detect previous tag
         id: tags

@@ -18,6 +18,13 @@ import {
 } from '../fixtures/integration/gitRepo.js';
 import { createMockExecSync } from '../helpers/integration/mockCommands.js';
 
+const fsMock = vi.hoisted(() => ({
+  readFileSync: vi.fn(() => JSON.stringify({ controlPaneId: '%0' })),
+  writeFileSync: vi.fn(),
+  existsSync: vi.fn(),
+  mkdirSync: vi.fn(),
+}));
+
 // Mock child_process
 const mockExecSync = createMockExecSync({});
 vi.mock('child_process', () => ({
@@ -69,23 +76,15 @@ vi.mock('../../src/services/WorktreeCleanupService.js', () => ({
 }));
 
 // Mock fs for reading config
-const mockFsReadFileSync = vi.fn(() => JSON.stringify({ controlPaneId: '%0' }));
-const mockFsWriteFileSync = vi.fn();
-const mockFsExistsSync = vi.fn((targetPath: string) => !targetPath.includes('.dmux/worktrees/'));
 vi.mock('fs', () => ({
-  default: {
-    readFileSync: mockFsReadFileSync,
-    writeFileSync: mockFsWriteFileSync,
-    existsSync: mockFsExistsSync,
-  },
-  readFileSync: mockFsReadFileSync,
-  writeFileSync: mockFsWriteFileSync,
-  existsSync: mockFsExistsSync,
+  default: fsMock,
+  ...fsMock,
 }));
 
 describe('Pane Lifecycle Integration Tests', () => {
   let tmuxSession: MockTmuxSession;
   let gitRepo: MockGitRepo;
+  let createdWorktreePaths: Set<string>;
 
   beforeEach(() => {
     // Reset all mocks
@@ -95,11 +94,12 @@ describe('Pane Lifecycle Integration Tests', () => {
     // Create fresh test environment
     tmuxSession = createMockTmuxSession('dmux-test', 1);
     gitRepo = createMockGitRepo('main');
-    const createdWorktreePaths = new Set<string>();
+    createdWorktreePaths = new Set<string>();
 
-    mockFsExistsSync.mockImplementation((targetPath: string) => {
-      if (targetPath.includes('.dmux/worktrees/')) {
-        return createdWorktreePaths.has(targetPath);
+    fsMock.existsSync.mockImplementation((target) => {
+      const value = String(target);
+      if (value.includes('/.dmux/worktrees/')) {
+        return createdWorktreePaths.has(value);
       }
       return true;
     });
@@ -134,19 +134,24 @@ describe('Pane Lifecycle Integration Tests', () => {
 
       // Git worktree add
       if (cmd.includes('worktree add')) {
-        gitRepo = addWorktree(gitRepo, '/test/.dmux/worktrees/test-slug', 'test-slug');
-
-        const match = cmd.match(/git worktree add\s+"([^"]+)"/);
-        if (match?.[1]) {
-          createdWorktreePaths.add(match[1]);
-        }
-
+        const pathMatch = cmd.match(/git worktree add "([^"]+)"/);
+        const branchMatch = cmd.match(/-b "([^"]+)"/) || cmd.match(/git worktree add "[^"]+" "([^"]+)"/);
+        const worktreePath = pathMatch?.[1] || '/test/.dmux/worktrees/test-slug';
+        const branchName = branchMatch?.[1] || 'test-slug';
+        createdWorktreePaths.add(worktreePath);
+        createdWorktreePaths.add(`${worktreePath}/.git`);
+        gitRepo = addWorktree(gitRepo, worktreePath, branchName);
         return returnValue('');
       }
 
       // Git worktree list
       if (cmd.includes('worktree list')) {
-        return returnValue('/test/.dmux/worktrees/test-slug abc123 [test-slug]');
+        return returnValue(
+          Array.from(createdWorktreePaths)
+            .filter((worktreePath) => !worktreePath.endsWith('/.git'))
+            .map((worktreePath) => `${worktreePath} abc123 [${worktreePath.split('/').pop()}]`)
+            .join('\n')
+        );
       }
 
       // Branch existence checks for new-worktree branch creation.
@@ -172,7 +177,7 @@ describe('Pane Lifecycle Integration Tests', () => {
         return returnValue('abc123');
       }
 
-      // Git rev-parse (fallback current branch)
+      // Git rev-parse (current branch)
       if (cmd.includes('rev-parse')) {
         return returnValue('main');
       }
@@ -232,6 +237,39 @@ describe('Pane Lifecycle Integration Tests', () => {
       );
 
       expect(worktreeCall).toBeDefined();
+    });
+
+    it('should attach a fresh pane to an existing worktree without recreating it', async () => {
+      const { createPane } = await import('../../src/utils/paneCreation.js');
+      const existingWorktreePath = '/test/.dmux/worktrees/resume-me';
+      createdWorktreePaths.add(existingWorktreePath);
+      createdWorktreePaths.add(`${existingWorktreePath}/.git`);
+
+      const result = await createPane(
+        {
+          prompt: '',
+          agent: 'claude',
+          projectName: 'test-project',
+          existingPanes: [],
+          existingWorktree: {
+            slug: 'resume-me',
+            worktreePath: existingWorktreePath,
+            branchName: 'feature/resume-me',
+          },
+        },
+        ['claude']
+      );
+
+      expect(mockExecSync.mock.calls.some(([cmd]) =>
+        typeof cmd === 'string' && cmd.includes(`git worktree add "${existingWorktreePath}"`)
+      )).toBe(false);
+
+      if ('pane' in result) {
+        expect(result.pane.slug).toBe('resume-me');
+        expect(result.pane.branchName).toBe('feature/resume-me');
+        expect(result.pane.worktreePath).toBe(existingWorktreePath);
+        expect(result.pane.prompt).toBe('No initial prompt');
+      }
     });
 
     it('should split tmux pane', async () => {
@@ -349,11 +387,12 @@ describe('Pane Lifecycle Integration Tests', () => {
     it('should fail early when target worktree path already exists', async () => {
       const { createPane } = await import('../../src/utils/paneCreation.js');
 
-      mockFsExistsSync.mockImplementation((targetPath: string) => {
-        if (targetPath === '/test/.dmux/worktrees/feat-lin-999-existing') {
+      fsMock.existsSync.mockImplementation((targetPath: string) => {
+        const value = String(targetPath);
+        if (value === '/test/.dmux/worktrees/feat-lin-999-existing') {
           return true;
         }
-        return !targetPath.includes('.dmux/worktrees/');
+        return !value.includes('.dmux/worktrees/');
       });
 
       await expect(

@@ -1,6 +1,6 @@
 {
   "name": "dmux",
-  "version": "5.4.0",
+  "version": "5.6.1",
   "description": "Tmux pane manager with AI agent integration for parallel development workflows",
   "type": "module",
   "author": "Justin Schroeder",
@@ -36,18 +36,20 @@
   },
   "files": [
     "dist/**/*",
+    "native/**/*",
     "dmux",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "pnpm run generate:hooks-docs && pnpm run build:frontend && tsc",
+    "build:macos-helper": "node scripts/build-macos-helper-bundle.js",
     "build:frontend": "pnpm --filter dmux-frontend run build",
     "build:docs": "pnpm --filter dmux-docs run build",
     "generate:hooks-docs": "node scripts/generate-hooks-docs.js",
     "hooks:install-local": "bash scripts/install-local-hooks.sh",
     "dev:bootstrap": "pnpm run generate:hooks-docs && pnpm run hooks:install-local",
-    "clean": "rm -rf dist src/utils/generated-agents-doc.ts",
+    "clean": "rm -rf dist src/utils/generated-agents-doc.ts native/macos/prebuilt/dmux-helper.app",
     "dev": "pnpm run dev:bootstrap && tsc && DMUX_DEV=true DMUX_DEV_WATCH=false node dist/index.js",
     "dev:watch": "pnpm run generate:hooks-docs && run-p --race dev:watch:compile dev:watch:run",
     "dev:watch:compile": "tsc --watch --preserveWatchOutput --pretty false > /dev/null 2>&1",
@@ -56,6 +58,7 @@
     "dev:doctor": "node scripts/dev-doctor.js",
     "dev:frontend": "pnpm --filter dmux-frontend run dev",
     "dev:docs": "pnpm --filter dmux-docs run dev",
+    "prepack": "pnpm run build:macos-helper",
     "start": "node dist/index.js",
     "typecheck": "pnpm run dev:guard-runtime && pnpm run generate:hooks-docs && tsc --noEmit",
     "smoke:pack": "node scripts/smoke-pack-install.js",
@@ -72,6 +75,7 @@
   "dependencies": {
     "chalk": "^5.3.0",
     "chokidar": "^4.0.3",
+    "cli-highlight": "^2.1.11",
     "ink": "^5.0.1",
     "ink-text-input": "^6.0.0",
     "p-queue": "^9.0.0",

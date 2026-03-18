@@ -18,6 +18,12 @@ import {
   handleMergeConflict,
 } from '../merge/issueHandlers/index.js';
 import { LogService } from '../../services/LogService.js';
+import {
+  buildFallbackMergeMessage,
+  buildMissingMergeTargetMessage,
+  resolveMergeTarget,
+  type MergeTargetResolution,
+} from '../../utils/mergeTargets.js';
 
 /**
  * Merge a worktree into the main branch with comprehensive pre-checks.
@@ -37,9 +43,26 @@ export async function mergePane(
     };
   }
 
+  const mergeTarget = resolveMergeTarget(pane);
+  if (!mergeTarget) {
+    return {
+      type: 'error',
+      message: buildMissingMergeTargetMessage(pane),
+      dismissable: true,
+    };
+  }
+
   // 2. Detect all worktrees (including sub-worktrees created by hooks)
   const { detectAllWorktrees } = await import('../../utils/worktreeDiscovery.js');
-  const worktrees = detectAllWorktrees(pane.worktreePath);
+  const worktrees = detectAllWorktrees(pane.worktreePath).map((worktree) =>
+    worktree.isRoot
+      ? {
+          ...worktree,
+          parentRepoPath: mergeTarget.targetRepoPath,
+          mainBranch: mergeTarget.targetBranch,
+        }
+      : worktree
+  );
 
   console.error(`[mergeAction] Detected ${worktrees.length} worktree(s) in ${pane.worktreePath}`);
   for (const wt of worktrees) {
@@ -62,15 +85,23 @@ export async function mergePane(
     };
   }
 
-  // Single root worktree = use existing flow (backwards compatible)
-  if (queue.length === 1 && queue[0].worktree.isRoot) {
-    console.error('[mergeAction] Single root worktree - using existing flow');
-    return executeSingleRootMerge(pane, context, params);
+  const continueMerge = async (): Promise<ActionResult> => {
+    // Single root worktree = use existing flow (backwards compatible)
+    if (queue.length === 1 && queue[0].worktree.isRoot) {
+      console.error('[mergeAction] Single root worktree - using existing flow');
+      return executeSingleRootMerge(pane, context, params, mergeTarget);
+    }
+
+    // Multiple worktrees or only sub-worktrees = use multi-merge flow
+    console.error('[mergeAction] Multiple worktrees or sub-worktrees - using multi-merge flow');
+    return executeMultiMerge(pane, context, queue);
+  };
+
+  if (!mergeTarget.requiresConfirmation) {
+    return continueMerge();
   }
 
-  // Multiple worktrees or only sub-worktrees = use multi-merge flow
-  console.error('[mergeAction] Multiple worktrees or sub-worktrees - using multi-merge flow');
-  return executeMultiMerge(pane, context, queue);
+  return buildMergeTargetFallbackConfirmation(pane, mergeTarget, continueMerge);
 }
 
 /**
@@ -79,15 +110,19 @@ export async function mergePane(
 async function executeSingleRootMerge(
   pane: DmuxPane,
   context: ActionContext,
-  params?: { mainBranch?: string }
+  params: { mainBranch?: string } | undefined,
+  mergeTarget: MergeTargetResolution
 ): Promise<ActionResult> {
   const { validateMerge } = await import('../../utils/mergeValidation.js');
-  const mainRepoPath = pane.worktreePath!.replace(/\/\.dmux\/worktrees\/[^/]+$/, '');
-  const validation = validateMerge(mainRepoPath, pane.worktreePath!, getPaneBranchName(pane));
+  const validation = validateMerge(
+    mergeTarget.targetRepoPath,
+    pane.worktreePath!,
+    getPaneBranchName(pane)
+  );
 
   // Handle detected issues
   if (!validation.canMerge) {
-    return handleMergeIssues(pane, context, validation, mainRepoPath);
+    return handleMergeIssues(pane, context, validation, mergeTarget.targetRepoPath);
   }
 
   // Check for sibling panes sharing the same worktree
@@ -120,14 +155,19 @@ async function executeSingleRootMerge(
     return {
       type: 'confirm',
       title: 'Merge Worktree',
-      message: `Merge "${pane.slug}" into ${validation.mainBranch}?`,
+      message: `Merge "${pane.slug}" into ${mergeTarget.targetLabel}?`,
       confirmLabel: 'Merge',
       cancelLabel: 'Cancel',
       onConfirm: async () => {
-        await triggerHook('pre_merge', mainRepoPath, pane, {
+        await triggerHook('pre_merge', mergeTarget.targetRepoPath, pane, {
           DMUX_TARGET_BRANCH: validation.mainBranch,
         });
-        return executeMerge(pane, context, validation.mainBranch, mainRepoPath);
+        return executeMerge(
+          pane,
+          context,
+          validation.mainBranch,
+          mergeTarget.targetRepoPath
+        );
       },
       onCancel: async () => ({
         type: 'info' as const,
@@ -162,6 +202,26 @@ async function executeSingleRootMerge(
   return buildMergeConfirmation();
 }
 
+function buildMergeTargetFallbackConfirmation(
+  pane: DmuxPane,
+  mergeTarget: MergeTargetResolution,
+  onConfirm: () => Promise<ActionResult>
+): ActionResult {
+  return {
+    type: 'confirm',
+    title: 'Parent Merge Target Unavailable',
+    message: buildFallbackMergeMessage(pane, mergeTarget),
+    confirmLabel: 'Continue',
+    cancelLabel: 'Cancel',
+    onConfirm,
+    onCancel: async () => ({
+      type: 'info',
+      message: 'Merge cancelled',
+      dismissable: true,
+    }),
+  };
+}
+
 /**
  * Handle detected merge issues by delegating to specialized handlers
  */
@@ -178,7 +238,7 @@ async function handleMergeIssues(
 
   // Find and handle specific issue types
   const nothingToMerge = issues.find((i: any) => i.type === 'nothing_to_merge');
-  if (nothingToMerge) {
+  if (nothingToMerge && issues.length === 1) {
     return handleNothingToMerge();
   }
 

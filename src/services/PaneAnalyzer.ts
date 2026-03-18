@@ -19,11 +19,52 @@ export interface PaneAnalysis {
     description?: string;
   };
   summary?: string; // Brief summary when state is 'open_prompt' (idle)
+  attentionTitle?: string;
+  attentionBody?: string;
 }
 
 interface CacheEntry {
   result: PaneAnalysis;
   timestamp: number;
+}
+
+interface PaneContext {
+  paneName: string;
+  panePrompt?: string;
+  agentLabel?: string;
+}
+
+const ANALYZER_CONTEXT_LINE_LIMIT = 50;
+
+function trimSurroundingEmptyLines(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+
+  while (start < end && lines[start]?.trim() === '') {
+    start += 1;
+  }
+
+  while (end > start && lines[end - 1]?.trim() === '') {
+    end -= 1;
+  }
+
+  return lines.slice(start, end);
+}
+
+export function normalizePaneContentForAnalysis(
+  content: string,
+  maxLines: number = ANALYZER_CONTEXT_LINE_LIMIT
+): string {
+  if (!content) {
+    return '';
+  }
+
+  const trimmedLines = trimSurroundingEmptyLines(content.split('\n'));
+  if (trimmedLines.length === 0) {
+    return '';
+  }
+
+  return trimSurroundingEmptyLines(trimmedLines.slice(-maxLines)).join('\n');
 }
 
 export class PaneAnalyzer {
@@ -265,8 +306,13 @@ CRITICAL:
    * @param signal - Optional abort signal
    * @param paneName - Optional friendly pane name for logging
    */
-  async extractOptions(content: string, signal?: AbortSignal, paneName?: string): Promise<Omit<PaneAnalysis, 'state'>> {
+  async extractOptions(
+    content: string,
+    context: PaneContext,
+    signal?: AbortSignal
+  ): Promise<Omit<PaneAnalysis, 'state'>> {
     const logService = LogService.getInstance();
+    const paneName = context.paneName;
 
     if (!this.apiKey) {
       logService.debug(`PaneAnalyzer: No API key set, cannot extract options${paneName ? ` for "${paneName}"` : ''}`, 'paneAnalyzer');
@@ -285,6 +331,8 @@ Return a JSON object with:
 - question: The question or prompt text
 - options: Array of {action, keys, description}
 - potential_harm: {has_risk, description} if there's risk of harm
+- attention_title: 3-8 words describing what needs review
+- attention_body: one sentence, under 140 characters, that states what finished and nudges the user to continue
 
 EXAMPLES:
 Input: "Delete all files? [y/n]"
@@ -294,6 +342,8 @@ Output: {
     {"action": "Yes", "keys": ["y"]},
     {"action": "No", "keys": ["n"]}
   ],
+  "attention_title": "Confirm file deletion",
+  "attention_body": "The agent is waiting on a yes or no. Open the pane and decide how to proceed.",
   "potential_harm": {"has_risk": true, "description": "Will delete all files"}
 }
 
@@ -304,7 +354,9 @@ Output: {
     {"action": "Create file", "keys": ["1"]},
     {"action": "Edit file", "keys": ["2"]},
     {"action": "Cancel", "keys": ["3"]}
-  ]
+  ],
+  "attention_title": "Choose the next step",
+  "attention_body": "The agent prepared the options and needs your choice to keep going."
 }
 
 Input: "[A]ccept edits, [R]eject, [E]dit manually"
@@ -314,7 +366,9 @@ Output: {
     {"action": "Accept edits", "keys": ["a", "A"]},
     {"action": "Reject", "keys": ["r", "R"]},
     {"action": "Edit manually", "keys": ["e", "E"]}
-  ]
+  ],
+  "attention_title": "Review the proposed edits",
+  "attention_body": "The agent finished this pass and is waiting for your decision so it can continue."
 }`;
 
     try {
@@ -322,8 +376,14 @@ Output: {
 
       const data = await this.makeRequestWithFallback(
         systemPrompt,
-        `Extract the option details from this dialog and return as JSON:\n\n${content}`,
-        300,
+        `Pane: ${context.paneName}
+Agent: ${context.agentLabel || 'unknown'}
+Original task: ${context.panePrompt || 'unknown'}
+
+Extract the option details from this dialog and return as JSON:
+
+${content}`,
+        360,
         signal
       );
 
@@ -337,6 +397,8 @@ Output: {
           keys: Array.isArray(opt.keys) ? opt.keys : [opt.keys],
           description: opt.description
         })),
+        attentionTitle: result.attention_title,
+        attentionBody: result.attention_body,
         potentialHarm: result.potential_harm ? {
           hasRisk: result.potential_harm.has_risk,
           description: result.potential_harm.description
@@ -360,23 +422,35 @@ Output: {
   /**
    * Stage 3: Extract summary when state is open_prompt (idle)
    */
-  async extractSummary(content: string, signal?: AbortSignal): Promise<string | undefined> {
+  async extractSummary(
+    content: string,
+    context: PaneContext,
+    signal?: AbortSignal
+  ): Promise<Pick<PaneAnalysis, 'summary' | 'attentionTitle' | 'attentionBody'>> {
     if (!this.apiKey) {
-      return undefined;
+      return {};
     }
 
-    const systemPrompt = `You are analyzing terminal output from an AI coding agent (Claude Code or opencode).
+    const systemPrompt = `You are analyzing terminal output from an AI coding agent.
 The agent is now idle and waiting for the next prompt.
 
-Your task: Provide a 1 paragraph or shorter summary of what the agent communicated to the user before going idle.
+Your task:
+1. Provide a short summary of what the agent communicated before going idle.
+2. Write a concise macOS notification title.
+3. Write a short notification body that both explains the completed step and nudges the user to continue.
 
 Focus on:
 - What the agent just finished doing or said
 - Any results, conclusions, or feedback provided
-- Keep it concise (1-2 sentences max)
+- Keep it concise
 - Use past tense ("completed", "fixed", "created", etc.)
+- Notification title should be 3-8 words
+- Notification body should be one sentence, under 140 characters
 
-Return a JSON object with a "summary" field.
+Return a JSON object with:
+- summary
+- attention_title
+- attention_body
 
 Examples:
 - "Completed refactoring the authentication module and fixed TypeScript errors."
@@ -384,22 +458,31 @@ Examples:
 - "Build succeeded with no errors. All tests passed."
 - "Unable to find the specified file. Waiting for clarification."
 
-If there's no meaningful content or the output is unclear, return an empty summary.`;
+If there's no meaningful content or the output is unclear, return empty strings.`;
 
     try {
       const data = await this.makeRequestWithFallback(
         systemPrompt,
-        `Extract the summary from this terminal output:\n\n${content}`,
-        100,
+        `Pane: ${context.paneName}
+Agent: ${context.agentLabel || 'unknown'}
+Original task: ${context.panePrompt || 'unknown'}
+
+Extract the summary and notification copy from this terminal output:
+
+${content}`,
+        180,
         signal
       );
 
       const result = JSON.parse(data.choices?.[0]?.message?.content || '{}');
 
-      return result.summary || undefined;
+      return {
+        summary: result.summary || undefined,
+        attentionTitle: result.attention_title || undefined,
+        attentionBody: result.attention_body || undefined,
+      };
     } catch (error) {
-      // Failed to extract summary - return undefined
-      return undefined;
+      return {};
     }
   }
 
@@ -409,11 +492,12 @@ If there's no meaningful content or the output is unclear, return an empty summa
   private async doAnalyzePane(
     tmuxPaneId: string,
     content: string,
-    paneName: string,
+    context: PaneContext,
     dmuxPaneId: string | undefined,
     signal?: AbortSignal
   ): Promise<PaneAnalysis> {
     const logService = LogService.getInstance();
+    const paneName = context.paneName;
 
     try {
       // Stage 1: Determine the state
@@ -422,7 +506,7 @@ If there's no meaningful content or the output is unclear, return an empty summa
       // If it's an option dialog, extract option details
       if (state === 'option_dialog') {
         logService.debug(`PaneAnalyzer: Detected option_dialog for "${paneName}", extracting options...`, 'paneAnalyzer', dmuxPaneId);
-        const optionDetails = await this.extractOptions(content, signal, paneName);
+        const optionDetails = await this.extractOptions(content, context, signal);
         return {
           state,
           ...optionDetails
@@ -432,10 +516,10 @@ If there's no meaningful content or the output is unclear, return an empty summa
       // If it's open_prompt (idle), extract summary
       if (state === 'open_prompt') {
         logService.debug(`PaneAnalyzer: Detected open_prompt for "${paneName}", extracting summary...`, 'paneAnalyzer', dmuxPaneId);
-        const summary = await this.extractSummary(content, signal);
+        const summaryDetails = await this.extractSummary(content, context, signal);
         return {
           state,
-          summary
+          ...summaryDetails
         };
       }
 
@@ -455,17 +539,26 @@ If there's no meaningful content or the output is unclear, return an empty summa
    * @param signal - Optional abort signal
    * @param dmuxPaneId - Optional dmux pane ID for friendly logging (e.g., "dmux-123")
    */
-  async analyzePane(tmuxPaneId: string, signal?: AbortSignal, dmuxPaneId?: string): Promise<PaneAnalysis> {
+  async analyzePane(
+    tmuxPaneId: string,
+    signal?: AbortSignal,
+    dmuxPaneId?: string,
+    capturedSnapshot?: string
+  ): Promise<PaneAnalysis> {
     const logService = LogService.getInstance();
 
     // For logging, try to get friendly name from StateManager
     let paneName = tmuxPaneId;
+    let panePrompt: string | undefined;
+    let agentLabel: string | undefined;
     if (dmuxPaneId) {
       try {
         // Import dynamically to avoid circular dependency
         const { StateManager } = await import('../shared/StateManager.js');
         const pane = StateManager.getInstance().getPaneById(dmuxPaneId);
         paneName = pane?.slug || dmuxPaneId;
+        panePrompt = pane?.prompt;
+        agentLabel = pane?.agent;
       } catch {
         paneName = dmuxPaneId;
       }
@@ -473,8 +566,15 @@ If there's no meaningful content or the output is unclear, return an empty summa
 
     logService.debug(`PaneAnalyzer: Starting analysis for "${paneName}"`, 'paneAnalyzer', dmuxPaneId);
 
-    // Capture the pane content (50 lines for state detection)
-    const content = capturePaneContent(tmuxPaneId, 50);
+    // Normalize the analyzer input to the last 50 trimmed lines so every LLM stage
+    // sees the same bounded pane snapshot.
+    const analysisSource = typeof capturedSnapshot === 'string'
+      ? capturedSnapshot
+      : capturePaneContent(tmuxPaneId, ANALYZER_CONTEXT_LINE_LIMIT);
+    const content = normalizePaneContentForAnalysis(
+      analysisSource,
+      ANALYZER_CONTEXT_LINE_LIMIT
+    );
 
     if (!content) {
       logService.debug(`PaneAnalyzer: No content captured for "${paneName}", defaulting to in_progress`, 'paneAnalyzer', dmuxPaneId);
@@ -497,7 +597,17 @@ If there's no meaningful content or the output is unclear, return an empty summa
     }
 
     // Start new analysis
-    const analysisPromise = this.doAnalyzePane(tmuxPaneId, content, paneName, dmuxPaneId, signal)
+    const analysisPromise = this.doAnalyzePane(
+      tmuxPaneId,
+      content,
+      {
+        paneName,
+        panePrompt,
+        agentLabel,
+      },
+      dmuxPaneId,
+      signal
+    )
       .then(result => {
         // Cache successful result
         this.setCache(contentHash, result);

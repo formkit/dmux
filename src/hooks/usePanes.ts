@@ -1,11 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
+import fs from 'fs/promises';
 import path from 'path';
 import PQueue from 'p-queue';
-import type { DmuxPane } from '../types.js';
+import type { DmuxConfig, DmuxPane, SidebarProject } from '../types.js';
 import { LogService } from '../services/LogService.js';
 import { PANE_POLLING_INTERVAL } from '../constants/timing.js';
 import {
   loadAndProcessPanes,
+  loadSidebarProjectsFromFile,
   recreateKilledWorktreePanes,
   fetchTmuxPaneIds,
 } from './usePaneLoading.js';
@@ -24,6 +26,8 @@ import { rebindPaneByTitle } from '../utils/paneRebinding.js';
 import { PaneEventService, type PaneEventMode } from '../services/PaneEventService.js';
 import { enforceControlPaneSize } from '../utils/tmux.js';
 import { SIDEBAR_WIDTH } from '../utils/layoutManager.js';
+import { atomicWriteJson } from '../utils/atomicWrite.js';
+import { normalizeSidebarProjects } from '../utils/sidebarProjects.js';
 
 // Use p-queue for proper concurrency control instead of manual write lock
 // This prevents race conditions and provides better visibility into queue state
@@ -50,6 +54,8 @@ export default function usePanes(
 ) {
   const [panes, setPanes] = useState<DmuxPane[]>([]);
   const panesRef = useRef<DmuxPane[]>([]);
+  const [sidebarProjects, setSidebarProjects] = useState<SidebarProject[]>([]);
+  const sidebarProjectsRef = useRef<SidebarProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [eventMode, setEventMode] = useState<PaneEventMode>('disabled');
   const initialLoadComplete = useRef(false);
@@ -60,6 +66,10 @@ export default function usePanes(
   useEffect(() => {
     panesRef.current = panes;
   }, [panes]);
+
+  useEffect(() => {
+    sidebarProjectsRef.current = sidebarProjects;
+  }, [sidebarProjects]);
 
   const loadPanes = async () => {
     if (skipLoading) return;
@@ -81,11 +91,14 @@ export default function usePanes(
           panesFile,
           !initialLoadComplete.current
         );
+        const loadedSidebarProjects = await loadSidebarProjectsFromFile(panesFile, loadedPanes);
 
         // For initial load, set the loaded panes and mark as complete
         if (!initialLoadComplete.current) {
           panesRef.current = loadedPanes;
           setPanes(loadedPanes);
+          sidebarProjectsRef.current = loadedSidebarProjects;
+          setSidebarProjects(loadedSidebarProjects);
           initialLoadComplete.current = true;
           continue;
         }
@@ -124,6 +137,8 @@ export default function usePanes(
           shellPanesAdded = added;
         }
 
+        const nextSidebarProjects = await loadSidebarProjectsFromFile(panesFile, finalPanes);
+
         // Destroy welcome pane if transitioning from 0 to >0 panes
         await destroyWelcomePaneIfNeeded(panesFile, panesRef.current.length, finalPanes.length);
 
@@ -138,11 +153,22 @@ export default function usePanes(
         const idsChanged = finalPanes.some((pane, idx) =>
           loadedPanes[idx] && loadedPanes[idx].paneId !== pane.paneId
         );
+        const sidebarProjectsChanged = JSON.stringify(sidebarProjectsRef.current)
+          !== JSON.stringify(nextSidebarProjects);
 
         // Update state and save if panes changed OR if shell panes were added/removed
-        if (currentPaneIds !== newPaneIds || shellPanesAdded || shellPanesRemoved) {
+        if (
+          currentPaneIds !== newPaneIds ||
+          shellPanesAdded ||
+          shellPanesRemoved ||
+          sidebarProjectsChanged
+        ) {
           panesRef.current = finalPanes;
           setPanes(finalPanes);
+          if (sidebarProjectsChanged) {
+            sidebarProjectsRef.current = nextSidebarProjects;
+            setSidebarProjects(nextSidebarProjects);
+          }
 
           // Save to file if IDs were remapped OR if shell panes were added/removed
           if (idsChanged || shellPanesAdded || shellPanesRemoved) {
@@ -186,6 +212,56 @@ export default function usePanes(
     const updatedPanes = await savePanesToFile(panesFile, newPanes, withWriteLock);
     panesRef.current = updatedPanes;
     setPanes(updatedPanes);
+
+    const fallbackProjectRoot = path.dirname(path.dirname(panesFile));
+    const nextSidebarProjects = normalizeSidebarProjects(
+      sidebarProjectsRef.current,
+      updatedPanes,
+      fallbackProjectRoot,
+      path.basename(fallbackProjectRoot)
+    );
+    if (JSON.stringify(sidebarProjectsRef.current) !== JSON.stringify(nextSidebarProjects)) {
+      sidebarProjectsRef.current = nextSidebarProjects;
+      setSidebarProjects(nextSidebarProjects);
+    }
+  };
+
+  const saveSidebarProjects = async (newSidebarProjects: SidebarProject[]) => {
+    return withWriteLock(async () => {
+      const fallbackProjectRoot = path.dirname(path.dirname(panesFile));
+      let config: DmuxConfig = {
+        projectName: path.basename(fallbackProjectRoot),
+        projectRoot: fallbackProjectRoot,
+        panes: panesRef.current,
+        settings: {},
+        lastUpdated: new Date().toISOString(),
+      };
+
+      try {
+        const content = await fs.readFile(panesFile, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (!Array.isArray(parsed)) {
+          config = parsed;
+        }
+      } catch {}
+
+      const projectRoot = config.projectRoot || fallbackProjectRoot;
+      const projectName = config.projectName || path.basename(projectRoot);
+      const normalizedProjects = normalizeSidebarProjects(
+        newSidebarProjects,
+        config.panes || panesRef.current,
+        projectRoot,
+        projectName
+      );
+
+      config.sidebarProjects = normalizedProjects;
+      config.lastUpdated = new Date().toISOString();
+      await atomicWriteJson(panesFile, config);
+
+      sidebarProjectsRef.current = normalizedProjects;
+      setSidebarProjects(normalizedProjects);
+      return normalizedProjects;
+    });
   };
 
   // Initialize PaneEventService when session info is available
@@ -273,5 +349,14 @@ export default function usePanes(
     };
   }, [skipLoading, panesFile, eventMode]);
 
-  return { panes, setPanes, isLoading, loadPanes, savePanes, eventMode } as const;
+  return {
+    panes,
+    setPanes,
+    sidebarProjects,
+    isLoading,
+    loadPanes,
+    savePanes,
+    saveSidebarProjects,
+    eventMode,
+  } as const;
 }

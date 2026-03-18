@@ -110,7 +110,7 @@ export function buildRecommendedTmuxConfig(theme: TmuxPresetTheme): string {
     `if-shell "command -v xclip >/dev/null 2>&1" "bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel 'xclip -selection clipboard -in'"`,
     `if-shell "command -v xclip >/dev/null 2>&1" "bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel 'xclip -selection clipboard -in'"`,
     '',
-    '# Terminal passthrough improvements (Ghostty/kitty)',
+    '# Clipboard and cursor compatibility',
     "set -ga terminal-overrides ',xterm-256color:Ms=\\E]52;c;%p2%s\\007'",
     "set -ga terminal-overrides ',*:Ss=\\E[%p1%d q:Se=\\E[2 q'",
     '',

@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { PopupManager, type PopupManagerConfig } from "../services/PopupManager.js"
 import type { ProjectSettings } from "../types.js"
 import type { AgentName } from "../utils/agentLaunch.js"
+import type { TrackProjectActivity } from "../types/activity.js"
 
 interface UseServicesProps {
   // PopupManager config
@@ -19,6 +20,7 @@ interface UseServicesProps {
   // Callbacks
   setStatusMessage: (msg: string) => void
   setIgnoreInput: (ignore: boolean) => void
+  trackProjectActivity: TrackProjectActivity
 }
 
 export function useServices(props: UseServicesProps) {
@@ -35,6 +37,7 @@ export function useServices(props: UseServicesProps) {
       availableAgents: props.availableAgents,
       settingsManager: props.settingsManager,
       projectSettings: props.projectSettings,
+      trackProjectActivity: props.trackProjectActivity,
     }
 
     return new PopupManager(
@@ -55,6 +58,7 @@ export function useServices(props: UseServicesProps) {
     props.projectSettings,
     props.setStatusMessage,
     props.setIgnoreInput,
+    props.trackProjectActivity,
   ])
 
   return {

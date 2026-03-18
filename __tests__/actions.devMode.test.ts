@@ -29,10 +29,28 @@ describe("dev-only action visibility", () => {
     expect(ids.includes(PaneAction.OPEN_TERMINAL_IN_WORKTREE)).toBe(true)
   })
 
+  it("shows open_file_browser for worktree panes", () => {
+    const actions = getAvailableActions(pane, {}, false)
+    const ids = actions.map((action) => action.id)
+    expect(ids.includes(PaneAction.OPEN_FILE_BROWSER)).toBe(true)
+  })
+
+  it("shows create_child_worktree for worktree panes", () => {
+    const actions = getAvailableActions(pane, {}, false)
+    const ids = actions.map((action) => action.id)
+    expect(ids.includes(PaneAction.CREATE_CHILD_WORKTREE)).toBe(true)
+  })
+
   it("keeps add agent as the last visible pane action", () => {
     const actions = getAvailableActions(pane, {}, false)
     const ids = actions.map((action) => action.id)
     expect(ids[ids.length - 1]).toBe(PaneAction.ATTACH_AGENT)
+    expect(ids.indexOf(PaneAction.CREATE_CHILD_WORKTREE)).toBeLessThan(
+      ids.indexOf(PaneAction.OPEN_FILE_BROWSER)
+    )
+    expect(ids.indexOf(PaneAction.OPEN_FILE_BROWSER)).toBeLessThan(
+      ids.indexOf(PaneAction.OPEN_TERMINAL_IN_WORKTREE)
+    )
     expect(ids.indexOf(PaneAction.OPEN_TERMINAL_IN_WORKTREE)).toBeLessThan(
       ids.indexOf(PaneAction.ATTACH_AGENT)
     )
@@ -50,5 +68,7 @@ describe("dev-only action visibility", () => {
     const actions = getAvailableActions(shellPane, {}, false)
     const ids = actions.map((action) => action.id)
     expect(ids.includes(PaneAction.OPEN_TERMINAL_IN_WORKTREE)).toBe(false)
+    expect(ids.includes(PaneAction.OPEN_FILE_BROWSER)).toBe(false)
+    expect(ids.includes(PaneAction.CREATE_CHILD_WORKTREE)).toBe(false)
   })
 })
