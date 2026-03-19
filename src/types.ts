@@ -118,6 +118,7 @@ export interface DmuxSettings {
 }
 
 export type SettingsScope = 'global' | 'project';
+export type EffectiveSettingsScope = SettingsScope | 'team';
 
 export interface SettingDefinition {
   key: keyof DmuxSettings | string;
