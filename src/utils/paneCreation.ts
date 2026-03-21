@@ -35,7 +35,7 @@ import {
 import { ensureGeminiFolderTrusted } from './geminiTrust.js';
 import { isValidBranchName } from './git.js';
 import { sendPromptViaTmux } from './agentPromptDispatch.js';
-import { writeWorktreeMetadata } from './worktreeMetadata.js';
+import { readWorktreeMetadata, writeWorktreeMetadata } from './worktreeMetadata.js';
 
 export interface CreatePaneOptions {
   prompt: string;
@@ -134,6 +134,9 @@ export async function createPane(
 
   const settingsManager = new SettingsManager(projectRoot);
   const settings = settingsManager.getSettings();
+  const existingWorktreeMetadata = existingWorktree
+    ? readWorktreeMetadata(existingWorktree.worktreePath)
+    : null;
 
   const sessionProjectRoot = optionsSessionProjectRoot
     || (optionsSessionConfigPath ? path.dirname(path.dirname(optionsSessionConfigPath)) : projectRoot);
@@ -450,6 +453,7 @@ export async function createPane(
       writeWorktreeMetadata(worktreePath, {
         agent,
         permissionMode: settings.permissionMode,
+        displayName: existingWorktreeMetadata?.displayName,
         branchName: branchName !== slug ? branchName : undefined,
         mergeTargetChain,
       });
@@ -568,6 +572,7 @@ export async function createPane(
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    displayName: existingWorktreeMetadata?.displayName,
     branchName: branchName !== slug ? branchName : undefined, // Only store if different from slug
     prompt: prompt || 'No initial prompt',
     paneId: paneInfo,

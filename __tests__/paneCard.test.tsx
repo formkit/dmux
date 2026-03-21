@@ -54,6 +54,7 @@ describe('PaneCard', () => {
   it('renders an attention marker when a pane needs attention', () => {
     const pane = createWorktreePane({
       slug: 'attention-pane',
+      displayName: 'Attention Pane',
       needsAttention: true,
     });
 
@@ -61,6 +62,6 @@ describe('PaneCard', () => {
       <PaneCard pane={pane} isDevSource={false} selected={false} />
     );
 
-    expect(stripAnsi(lastFrame() ?? '')).toContain('! attention-pane');
+    expect(stripAnsi(lastFrame() ?? '')).toContain('! Attention Pane');
   });
 });

@@ -26,6 +26,7 @@ import {
 } from "../utils/notificationSounds.js"
 import { resolveDistPath } from "../utils/runtimePaths.js"
 import { getPaneProjectRoot } from "../utils/paneProject.js"
+import { getPaneDisplayName } from "../utils/paneTitle.js"
 import type { TrackProjectActivity } from "../types/activity.js"
 import type {
   ReopenWorktreePopupResult,
@@ -330,11 +331,11 @@ export class PopupManager {
       )
       const result = await this.launchPopup<string>(
         "kebabMenuPopup.js",
-        [pane.slug, JSON.stringify(actions)],
+        [getPaneDisplayName(pane), JSON.stringify(actions)],
         {
           width: 60,
           height: Math.min(21, actions.length + 6),
-          title: `Menu: ${pane.slug}`,
+          title: `Menu: ${getPaneDisplayName(pane)}`,
           positioning: options.anchorToPane ? "pane" : "standard",
           targetPaneId: options.anchorToPane ? pane.paneId : undefined,
         },

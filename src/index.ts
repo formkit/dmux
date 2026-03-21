@@ -52,6 +52,7 @@ import {
   resolveEnabledAgentsSelection,
   type AgentName,
 } from './utils/agentLaunch.js';
+import { TMUX_PANE_TITLE_DISPLAY_FORMAT } from './utils/paneTitle.js';
 import type { DmuxConfig, DmuxPane } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1258,7 +1259,7 @@ class Dmux {
       `set-option -t ${sessionName} pane-border-status top`,
       `set-option -t ${sessionName} pane-active-border-style "fg=colour${TMUX_COLORS.activeBorder}"`,
       `set-option -t ${sessionName} pane-border-style "fg=colour${TMUX_COLORS.inactiveBorder}"`,
-      `set-option -t ${sessionName} pane-border-format " #{?@dmux_attention,#[bold]![ready] #[default],}#{pane_title} "`,
+      `set-option -t ${sessionName} pane-border-format " #{?@dmux_attention,#[bold]![ready] #[default],}${TMUX_PANE_TITLE_DISPLAY_FORMAT} "`,
     ].join(' \\; ');
 
     execSync(`tmux ${sessionOptions}`, { stdio });

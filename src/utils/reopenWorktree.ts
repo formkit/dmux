@@ -188,6 +188,7 @@ export async function reopenWorktree(
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    displayName: metadata?.displayName,
     branchName: (metadata?.branchName || currentBranch) !== slug
       ? (metadata?.branchName || currentBranch)
       : undefined,

@@ -4,7 +4,7 @@ import { getPaneTitleCandidates } from './paneTitle.js';
 import { StateManager } from '../shared/StateManager.js';
 
 /**
- * Attempts to rebind a pane whose ID has changed by matching on title (slug).
+ * Attempts to rebind a pane whose ID has changed by matching on its stable tmux title.
  *
  * IMPORTANT: Only rebinds if the pane ID is truly missing (pane was killed and recreated).
  * Does NOT rebind if the title simply changed (user renamed it).

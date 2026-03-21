@@ -18,6 +18,7 @@ import { cleanupPromptFilesForSlug } from '../../utils/promptStore.js';
 import { getPaneBranchName } from '../../utils/git.js';
 import { buildDevWatchRespawnCommand } from '../../utils/devWatchCommand.js';
 import { isActiveDevSourcePath } from '../../utils/devSource.js';
+import { getPaneDisplayName } from '../../utils/paneTitle.js';
 
 /**
  * Close a pane - presents options for how to close
@@ -26,6 +27,8 @@ export async function closePane(
   pane: DmuxPane,
   context: ActionContext
 ): Promise<ActionResult> {
+  const paneName = getPaneDisplayName(pane);
+
   // For shell panes (no worktree), close immediately without options
   if (pane.type === 'shell' || !pane.worktreePath) {
     return executeCloseOption(pane, context, 'kill_only');
@@ -43,7 +46,7 @@ export async function closePane(
     const MAX_LISTED_SIBLINGS = 5;
     const listedSiblings = siblingPanesOnWorktree
       .slice(0, MAX_LISTED_SIBLINGS)
-      .map(sibling => `  - ${sibling.slug}`);
+      .map((sibling) => `  - ${getPaneDisplayName(sibling)}`);
     const remainingSiblings = siblingPanesOnWorktree.length - listedSiblings.length;
     const remainingSiblingLine = remainingSiblings > 0
       ? [`  - +${remainingSiblings} more`]
@@ -98,7 +101,7 @@ export async function closePane(
   return {
     type: 'choice',
     title: 'Close Pane',
-    message: `How do you want to close "${pane.slug}"?`,
+    message: `How do you want to close "${paneName}"?`,
     options,
     onSelect: async (optionId: string) => {
       return executeCloseOption(pane, context, optionId);
@@ -115,6 +118,7 @@ async function executeCloseOption(
   context: ActionContext,
   option: string
 ): Promise<ActionResult> {
+  const paneName = getPaneDisplayName(pane);
   const lifecycleManager = PaneLifecycleManager.getInstance();
   const stateManager = StateManager.getInstance();
   const state = stateManager.getState();
@@ -225,7 +229,7 @@ async function executeCloseOption(
         if (siblingPanes.length > 0) {
           // Skip worktree/branch deletion — other panes still using it
           LogService.getInstance().info(
-            `Skipping worktree cleanup for ${pane.slug}: ${siblingPanes.length} sibling(s) still using ${pane.worktreePath}`,
+            `Skipping worktree cleanup for ${paneName}: ${siblingPanes.length} sibling(s) still using ${pane.worktreePath}`,
             'paneActions',
             pane.id
           );
@@ -356,13 +360,13 @@ async function executeCloseOption(
         }
       }
 
-      return {
-        type: 'success',
-        message: startedBackgroundCleanup
-          ? `Pane "${pane.slug}" closed successfully (cleanup running in background)`
-          : `Pane "${pane.slug}" closed successfully`,
-        dismissable: true,
-      };
+        return {
+          type: 'success',
+          message: startedBackgroundCleanup
+          ? `Pane "${paneName}" closed successfully (cleanup running in background)`
+          : `Pane "${paneName}" closed successfully`,
+          dismissable: true,
+        };
     } finally {
       // CRITICAL: Always resume watcher, even if there was an error
       stateManager.resumeConfigWatcher();

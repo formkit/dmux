@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
 import { LogService } from './LogService.js';
+import { getPaneDisplayName } from '../utils/paneTitle.js';
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';
@@ -556,7 +557,7 @@ ${content}`,
         // Import dynamically to avoid circular dependency
         const { StateManager } = await import('../shared/StateManager.js');
         const pane = StateManager.getInstance().getPaneById(dmuxPaneId);
-        paneName = pane?.slug || dmuxPaneId;
+        paneName = pane ? getPaneDisplayName(pane) : dmuxPaneId;
         panePrompt = pane?.prompt;
         agentLabel = pane?.agent;
       } catch {

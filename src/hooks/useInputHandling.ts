@@ -25,6 +25,7 @@ import { SIDEBAR_WIDTH } from "../utils/layoutManager.js"
 import { suggestCommand } from "../utils/commands.js"
 import type { PopupManager } from "../services/PopupManager.js"
 import { getPaneProjectName, getPaneProjectRoot } from "../utils/paneProject.js"
+import { getPaneDisplayName } from "../utils/paneTitle.js"
 import {
   buildProjectActionLayout,
   getProjectActionByIndex,
@@ -278,7 +279,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     try {
       setIsCreatingPane(true)
-      setStatusMessage(`Opening terminal in ${selectedPane.slug}...`)
+      setStatusMessage(`Opening terminal in ${getPaneDisplayName(selectedPane)}...`)
 
       const tmuxService = TmuxService.getInstance()
       const newPaneId = await tmuxService.splitPane({ cwd: selectedPane.worktreePath })
@@ -293,7 +294,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       shellPane.projectRoot = targetProjectRoot
       await savePanes([...panes, shellPane])
 
-      setStatusMessage(`Opened terminal in ${selectedPane.slug}`)
+      setStatusMessage(`Opened terminal in ${getPaneDisplayName(selectedPane)}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
 
       // Force a reload to ensure tmux metadata and pane IDs are in sync
@@ -320,7 +321,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     if (existingBrowserPane) {
       try {
         await TmuxService.getInstance().selectPane(existingBrowserPane.paneId)
-        setStatusMessage(`File browser already open for ${selectedPane.slug}`)
+        setStatusMessage(`File browser already open for ${getPaneDisplayName(selectedPane)}`)
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       } catch (error: any) {
         setStatusMessage(`Failed to focus file browser: ${error?.message || String(error)}`)
@@ -334,7 +335,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     try {
       setIsCreatingPane(true)
-      setStatusMessage(`Opening file browser for ${selectedPane.slug}...`)
+      setStatusMessage(`Opening file browser for ${getPaneDisplayName(selectedPane)}...`)
 
       const tmuxService = TmuxService.getInstance()
       const newPaneId = await tmuxService.splitPane({
@@ -368,7 +369,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
       await savePanes([...panes, browserPane])
       await loadPanes()
 
-      setStatusMessage(`Opened file browser for ${selectedPane.slug}`)
+      setStatusMessage(`Opened file browser for ${getPaneDisplayName(selectedPane)}`)
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } catch (error: any) {
       setStatusMessage(`Failed to open file browser: ${error?.message || String(error)}`)
@@ -548,7 +549,11 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
     try {
       setIsCreatingPane(true)
-      setStatusMessage(selectedPane.hidden ? `Showing ${selectedPane.slug}...` : `Hiding ${selectedPane.slug}...`)
+      setStatusMessage(
+        selectedPane.hidden
+          ? `Showing ${getPaneDisplayName(selectedPane)}...`
+          : `Hiding ${getPaneDisplayName(selectedPane)}...`
+      )
 
       if (selectedPane.hidden) {
         const targetPaneId = await getPaneShowTarget(selectedPane.paneId)
@@ -575,8 +580,8 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
       setStatusMessage(
         selectedPane.hidden
-          ? `Showing ${selectedPane.slug}`
-          : `Hid ${selectedPane.slug}`
+          ? `Showing ${getPaneDisplayName(selectedPane)}`
+          : `Hid ${getPaneDisplayName(selectedPane)}`
       )
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } catch (error: any) {
@@ -821,7 +826,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
     if (selectedPane.agentStatus === "working") {
       const confirmed = await popupManager.launchConfirmPopup(
         "Agent Active",
-        `Agent in "${selectedPane.slug}" is currently working. Attach another agent anyway?`,
+        `Agent in "${getPaneDisplayName(selectedPane)}" is currently working. Attach another agent anyway?`,
         "Attach",
         "Cancel",
         targetProjectRoot
@@ -889,7 +894,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
 
       if (failedAgents.length === 0) {
         setStatusMessage(
-          `Attached ${createdPanes.length} agent${createdPanes.length === 1 ? "" : "s"} to ${selectedPane.slug}`
+          `Attached ${createdPanes.length} agent${createdPanes.length === 1 ? "" : "s"} to ${getPaneDisplayName(selectedPane)}`
         )
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
       } else if (createdPanes.length === 0) {
@@ -899,7 +904,7 @@ export function useInputHandling(params: UseInputHandlingParams) {
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
       } else {
         setStatusMessage(
-          `Attached ${createdPanes.length}/${selectedAgents.length} agents to ${selectedPane.slug} (${failedAgents.length} failed)`
+          `Attached ${createdPanes.length}/${selectedAgents.length} agents to ${getPaneDisplayName(selectedPane)} (${failedAgents.length} failed)`
         )
         setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_LONG)
       }
@@ -1008,14 +1013,14 @@ export function useInputHandling(params: UseInputHandlingParams) {
         return
       case "j":
         StateManager.getInstance().setDebugMessage(
-          `Jumping to pane: ${selectedPane.slug}`
+          `Jumping to pane: ${getPaneDisplayName(selectedPane)}`
         )
         setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
         await actionSystem.executeAction(PaneAction.VIEW, selectedPane)
         return
       case "x":
         StateManager.getInstance().setDebugMessage(
-          `Closing pane: ${selectedPane.slug}`
+          `Closing pane: ${getPaneDisplayName(selectedPane)}`
         )
         setTimeout(() => StateManager.getInstance().setDebugMessage(""), STATUS_MESSAGE_DURATION_SHORT)
         await actionSystem.executeAction(PaneAction.CLOSE, selectedPane)

@@ -7,10 +7,12 @@ import {
   type PermissionMode,
 } from './agentLaunch.js';
 import { atomicWriteJsonSync } from './atomicWrite.js';
+import { sanitizePaneDisplayName } from './paneTitle.js';
 
 export interface WorktreeMetadata {
   agent?: AgentName;
   permissionMode?: PermissionMode;
+  displayName?: string;
   branchName?: string;
   mergeTargetChain?: MergeTargetReference[];
 }
@@ -29,6 +31,9 @@ function isMergeTargetReference(value: unknown): value is MergeTargetReference {
 
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.branchName !== 'string' || candidate.branchName.length === 0) {
+    return false;
+  }
+  if (candidate.displayName !== undefined && typeof candidate.displayName !== 'string') {
     return false;
   }
   if (candidate.slug !== undefined && typeof candidate.slug !== 'string') {
@@ -52,6 +57,7 @@ function normalizeMergeTargetChain(
   const normalized = mergeTargetChain
     .filter(isMergeTargetReference)
     .map((entry) => ({
+      displayName: entry.displayName,
       branchName: entry.branchName,
       slug: entry.slug,
       worktreePath: entry.worktreePath,
@@ -82,6 +88,13 @@ export function readWorktreeMetadata(worktreePath: string): WorktreeMetadata | n
       metadata.permissionMode = parsed.permissionMode as PermissionMode;
     }
 
+    if (typeof parsed.displayName === 'string') {
+      const displayName = sanitizePaneDisplayName(parsed.displayName);
+      if (displayName.length > 0) {
+        metadata.displayName = displayName;
+      }
+    }
+
     if (typeof parsed.branchName === 'string' && parsed.branchName.length > 0) {
       metadata.branchName = parsed.branchName;
     }
@@ -103,5 +116,10 @@ export function writeWorktreeMetadata(
 ): void {
   const metadataPath = getWorktreeMetadataPath(worktreePath);
   fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
-  atomicWriteJsonSync(metadataPath, metadata);
+  atomicWriteJsonSync(metadataPath, {
+    ...metadata,
+    displayName: metadata.displayName
+      ? sanitizePaneDisplayName(metadata.displayName)
+      : undefined,
+  });
 }

@@ -27,6 +27,7 @@ function createPane(id: string): DmuxPane {
   return {
     id,
     slug: `pane-${id}`,
+    displayName: `Pane ${id}`,
     prompt: `prompt-${id}`,
     paneId: `%${id}`,
     projectRoot: '/tmp/project',
@@ -52,10 +53,11 @@ describe('PopupManager launchKebabMenuPopup', () => {
 
     expect(manager.launchPopup).toHaveBeenCalledWith(
       'kebabMenuPopup.js',
-      [pane.slug, expect.any(String)],
+      ['Pane 1', expect.any(String)],
       expect.objectContaining({
         width: 60,
         height: Math.min(21, actions.length + 6),
+        title: 'Menu: Pane 1',
         positioning: 'pane',
         targetPaneId: pane.paneId,
       }),

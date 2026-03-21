@@ -24,6 +24,7 @@ import {
   resolveMergeTarget,
   type MergeTargetResolution,
 } from '../../utils/mergeTargets.js';
+import { getPaneDisplayName } from '../../utils/paneTitle.js';
 
 /**
  * Merge a worktree into the main branch with comprehensive pre-checks.
@@ -34,6 +35,7 @@ export async function mergePane(
   context: ActionContext,
   params?: { mainBranch?: string }
 ): Promise<ActionResult> {
+  const paneName = getPaneDisplayName(pane);
   // 1. Validation
   if (!pane.worktreePath) {
     return {
@@ -101,7 +103,7 @@ export async function mergePane(
     return continueMerge();
   }
 
-  return buildMergeTargetFallbackConfirmation(pane, mergeTarget, continueMerge);
+  return buildMergeTargetFallbackConfirmation(pane, paneName, mergeTarget, continueMerge);
 }
 
 /**
@@ -113,6 +115,7 @@ async function executeSingleRootMerge(
   params: { mainBranch?: string } | undefined,
   mergeTarget: MergeTargetResolution
 ): Promise<ActionResult> {
+  const paneName = getPaneDisplayName(pane);
   const { validateMerge } = await import('../../utils/mergeValidation.js');
   const validation = validateMerge(
     mergeTarget.targetRepoPath,
@@ -145,7 +148,7 @@ async function executeSingleRootMerge(
     );
     await context.savePanes(withoutSiblings);
     LogService.getInstance().info(
-      `Closed ${siblingPanes.length} sibling pane(s) for merge of ${pane.slug}`,
+      `Closed ${siblingPanes.length} sibling pane(s) for merge of ${paneName}`,
       'mergeAction',
     );
   };
@@ -155,7 +158,7 @@ async function executeSingleRootMerge(
     return {
       type: 'confirm',
       title: 'Merge Worktree',
-      message: `Merge "${pane.slug}" into ${mergeTarget.targetLabel}?`,
+      message: `Merge "${paneName}" into ${mergeTarget.targetLabel}?`,
       confirmLabel: 'Merge',
       cancelLabel: 'Cancel',
       onConfirm: async () => {
@@ -179,7 +182,7 @@ async function executeSingleRootMerge(
 
   // If siblings exist, show warning first, then proceed with normal merge flow
   if (siblingPanes.length > 0) {
-    const siblingNames = siblingPanes.map(s => s.slug).join(', ');
+    const siblingNames = siblingPanes.map((s) => getPaneDisplayName(s)).join(', ');
     return {
       type: 'confirm',
       title: 'Sibling Agents Active',
@@ -204,13 +207,14 @@ async function executeSingleRootMerge(
 
 function buildMergeTargetFallbackConfirmation(
   pane: DmuxPane,
+  paneName: string,
   mergeTarget: MergeTargetResolution,
   onConfirm: () => Promise<ActionResult>
 ): ActionResult {
   return {
     type: 'confirm',
     title: 'Parent Merge Target Unavailable',
-    message: buildFallbackMergeMessage(pane, mergeTarget),
+    message: buildFallbackMergeMessage(pane, mergeTarget, paneName),
     confirmLabel: 'Continue',
     cancelLabel: 'Cancel',
     onConfirm,

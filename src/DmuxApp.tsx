@@ -58,6 +58,7 @@ import { getPaneBranchName } from "./utils/git.js"
 import { getGitStatus } from "./utils/mergeValidation.js"
 import { createMergeTargetChain } from "./utils/mergeTargets.js"
 import { claimProcessShutdown } from "./utils/processShutdown.js"
+import { getPaneDisplayName } from "./utils/paneTitle.js"
 import {
   FOOTER_TIP_ROTATION_INTERVAL,
   getFooterTips,
@@ -647,13 +648,13 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       if (createdCount > 0) {
         return {
           type: "success",
-          message: `Created ${createdCount} sub-worktree${createdCount === 1 ? "" : "s"} from ${parentPane.slug}`,
+          message: `Created ${createdCount} sub-worktree${createdCount === 1 ? "" : "s"} from ${getPaneDisplayName(parentPane)}`,
         }
       }
 
       return {
         type: "error",
-        message: `Failed to create a sub-worktree from ${parentPane.slug}`,
+        message: `Failed to create a sub-worktree from ${getPaneDisplayName(parentPane)}`,
         dismissable: true,
       }
     }
@@ -670,7 +671,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
     const branchFromDirtyResult: ActionResult = {
       type: "choice",
       title: "Parent Worktree Has Uncommitted Changes",
-      message: `"${parentPane.slug}" has uncommitted changes. Commit them before creating a sub-worktree.`,
+      message: `"${getPaneDisplayName(parentPane)}" has uncommitted changes. Commit them before creating a sub-worktree.`,
       options: [
         {
           id: "commit_automatic",
@@ -789,7 +790,9 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
 
       await loadPanes()
 
-      setStatusMessage(`${candidate.path ? "Reopened" : "Opened"} ${label}`)
+      setStatusMessage(
+        `${candidate.path ? "Reopened" : "Opened"} ${getPaneDisplayName(result.pane)}`
+      )
       setTimeout(() => setStatusMessage(""), STATUS_MESSAGE_DURATION_SHORT)
     } catch (error: any) {
       setStatusMessage(`Failed to open branch: ${error.message}`)
@@ -845,7 +848,7 @@ const DmuxApp: React.FC<DmuxAppProps> = ({
       return
     }
 
-    setStatusMessage(`Switching source to "${pane.slug}"...`)
+    setStatusMessage(`Switching source to "${getPaneDisplayName(pane)}"...`)
     await trackProjectActivity(
       () => restartDevSessionAtSource(nextSource.nextSourcePath),
       paneProjectRoot

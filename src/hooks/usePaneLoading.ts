@@ -332,7 +332,7 @@ export async function loadAndProcessPanes(
   const loadedPanes = await loadPanesFromFile(panesFile);
   let { allPaneIds, titleToId, currentWindowPaneIds } = await fetchTmuxPaneIds();
 
-  // Attempt to rebind panes whose IDs changed by matching on title (slug)
+  // Attempt to rebind panes whose IDs changed by matching on their stable tmux title.
   let reboundPanes = syncHiddenStateFromCurrentWindow(
     loadedPanes.map(p => rebindPaneByTitle(p, titleToId, allPaneIds)),
     currentWindowPaneIds
