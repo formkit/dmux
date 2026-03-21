@@ -102,6 +102,15 @@ export const getContentPaneIds = (controlPaneId: string): string[] => {
 };
 
 /**
+ * Enable pane border titles for the current tmux session only.
+ */
+export const ensurePaneBorderStatusForCurrentSession = (): void => {
+  const tmuxService = TmuxService.getInstance();
+  const sessionName = tmuxService.getCurrentSessionNameSync();
+  tmuxService.setSessionOptionSync(sessionName, 'pane-border-status', 'top');
+};
+
+/**
  * Creates initial sidebar layout by splitting from control pane
  * @param controlPaneId The pane ID running dmux TUI (left sidebar)
  * @param cwd Optional working directory for the new content pane

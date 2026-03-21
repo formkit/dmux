@@ -1204,6 +1204,18 @@ export class TmuxService {
   }
 
   /**
+   * Get current session name (sync version for compatibility)
+   */
+  getCurrentSessionNameSync(): string {
+    try {
+      return this.execute('tmux display-message -p "#{session_name}"');
+    } catch (error) {
+      this.logger.warn('Failed to get current session name', 'TmuxService');
+      throw error;
+    }
+  }
+
+  /**
    * Get current pane ID (sync version for compatibility)
    */
   getCurrentPaneIdSync(): string {

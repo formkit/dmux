@@ -117,8 +117,11 @@ describe('Pane Lifecycle Integration Tests', () => {
         return Buffer.from(value);
       };
 
-      // Tmux display-message (get current pane id)
+      // Tmux display-message (get current pane id or session name)
       if (cmd.includes('display-message')) {
+        if (cmd.includes('#{session_name}')) {
+          return returnValue('dmux-test');
+        }
         return returnValue('%0');
       }
 
@@ -206,6 +209,30 @@ describe('Pane Lifecycle Integration Tests', () => {
         expect(result.pane.slug).toBeTruthy();
         expect(result.pane.paneId).toBeTruthy();
       }
+    });
+
+    it('should scope pane border status to the current tmux session', async () => {
+      const { createPane } = await import('../../src/utils/paneCreation.js');
+
+      await createPane(
+        {
+          prompt: 'scope pane borders',
+          agent: 'claude',
+          projectName: 'test-project',
+          existingPanes: [],
+        },
+        ['claude']
+      );
+
+      expect(mockExecSync.mock.calls.some(([cmd]) =>
+        typeof cmd === 'string'
+        && cmd.includes('tmux set -t dmux-test pane-border-status top')
+      )).toBe(true);
+
+      expect(mockExecSync.mock.calls.some(([cmd]) =>
+        typeof cmd === 'string'
+        && cmd.includes('tmux set-option -g pane-border-status top')
+      )).toBe(false);
     });
 
     it('should create git worktree with branch', async () => {

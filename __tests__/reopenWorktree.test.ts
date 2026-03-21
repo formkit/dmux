@@ -6,8 +6,9 @@ const fsMock = vi.hoisted(() => ({
 
 const tmuxServiceMock = vi.hoisted(() => ({
   getCurrentPaneIdSync: vi.fn(() => '%0'),
+  getCurrentSessionNameSync: vi.fn(() => 'dmux-test'),
   paneExists: vi.fn(async () => true),
-  setGlobalOptionSync: vi.fn(),
+  setSessionOptionSync: vi.fn(),
   setPaneTitle: vi.fn(async () => {}),
   refreshClient: vi.fn(async () => {}),
   sendShellCommand: vi.fn(async () => {}),
@@ -38,6 +39,13 @@ vi.mock('../src/services/TmuxService.js', () => ({
 }));
 
 vi.mock('../src/utils/tmux.js', () => ({
+  ensurePaneBorderStatusForCurrentSession: vi.fn(() => {
+    tmuxServiceMock.setSessionOptionSync(
+      tmuxServiceMock.getCurrentSessionNameSync(),
+      'pane-border-status',
+      'top'
+    );
+  }),
   setupSidebarLayout: setupSidebarLayoutMock,
   splitPane: splitPaneMock,
   getTerminalDimensions: vi.fn(() => ({ width: 160, height: 40 })),
@@ -113,6 +121,11 @@ describe('reopenWorktree', () => {
     expect(tmuxServiceMock.sendShellCommand).toHaveBeenCalledWith(
       '%1',
       'codex resume --last --dangerously-bypass-approvals-and-sandbox'
+    );
+    expect(tmuxServiceMock.setSessionOptionSync).toHaveBeenCalledWith(
+      'dmux-test',
+      'pane-border-status',
+      'top'
     );
     expect(result.pane.agent).toBe('codex');
     expect(result.pane.permissionMode).toBe('bypassPermissions');
