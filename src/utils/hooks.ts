@@ -275,50 +275,6 @@ export function listAvailableHooks(projectRoot: string): HookType[] {
 }
 
 /**
- * Ensure .dmux/ and .dmux-hooks/ are listed in the project's .gitignore.
- * Runs once per project init — skips if entries already present.
- */
-function ensureGitignoreEntries(projectRoot: string): void {
-  const gitignorePath = path.join(projectRoot, '.gitignore');
-
-  // Only add entries in git repos
-  if (!existsSync(path.join(projectRoot, '.git'))) {
-    return;
-  }
-
-  const entriesToAdd = ['.dmux/', '.dmux-hooks/'];
-
-  try {
-    let content = '';
-    if (existsSync(gitignorePath)) {
-      content = readFileSync(gitignorePath, 'utf-8');
-    }
-
-    const lines = content.split('\n');
-    const missing = entriesToAdd.filter(
-      (entry) => !lines.some((line) => line.trim() === entry)
-    );
-
-    if (missing.length === 0) {
-      return;
-    }
-
-    const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-    const block = `${suffix}\n# dmux\n${missing.join('\n')}\n`;
-    writeFileSync(gitignorePath, content + block, 'utf-8');
-    LogService.getInstance().debug(
-      `Added ${missing.join(', ')} to .gitignore`,
-      'hooks'
-    );
-  } catch (error) {
-    LogService.getInstance().warn(
-      `Failed to update .gitignore: ${error instanceof Error ? error.message : String(error)}`,
-      'hooks'
-    );
-  }
-}
-
-/**
  * Initialize .dmux-hooks/ directory with documentation and examples
  * This gets called the first time hooks are accessed or when user explicitly initializes
  */
@@ -345,9 +301,6 @@ export function initializeHooksDirectory(projectRoot: string): void {
 
   const initMsg = 'Initializing .dmux-hooks/ directory (or repairing missing docs)...';
   LogService.getInstance().debug(initMsg, 'hooks');
-
-  // Ensure .dmux/ and .dmux-hooks/ are gitignored before creating any files
-  ensureGitignoreEntries(projectRoot);
 
   try {
     let madeChanges = false;
