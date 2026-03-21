@@ -142,7 +142,8 @@ export default function usePanes(
         // Destroy welcome pane if transitioning from 0 to >0 panes
         await destroyWelcomePaneIfNeeded(panesFile, panesRef.current.length, finalPanes.length);
 
-        // Enforce pane titles always match slug (worktree name)
+        // Enforce tmux pane titles so they keep a stable rebinding key while
+        // reflecting any user-defined display names in the visible border title.
         await enforcePaneTitles(finalPanes, allPaneIds, controlPaneId);
 
         // Check if panes changed (compare IDs and paneIds only)

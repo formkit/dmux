@@ -6,7 +6,11 @@
 
 import type { DmuxPane } from '../types.js';
 import { TmuxService } from '../services/TmuxService.js';
-import { enforceControlPaneSize, splitPane } from './tmux.js';
+import {
+  enforceControlPaneSize,
+  ensurePaneBorderStatusForCurrentSession,
+  splitPane,
+} from './tmux.js';
 import { capturePaneContent } from './paneCapture.js';
 import { SIDEBAR_WIDTH } from './layoutManager.js';
 import { TMUX_LAYOUT_APPLY_DELAY, TMUX_SPLIT_DELAY } from '../constants/timing.js';
@@ -60,7 +64,7 @@ export async function createConflictResolutionPane(
 
   // Enable pane borders to show titles
   try {
-    tmuxService.setGlobalOptionSync('pane-border-status', 'top');
+    ensurePaneBorderStatusForCurrentSession();
   } catch {
     // Ignore if already set or fails
   }

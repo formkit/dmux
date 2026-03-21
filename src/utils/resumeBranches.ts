@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { createHash } from 'crypto';
 import * as fs from 'fs';
 import path from 'path';
@@ -83,6 +83,37 @@ function runGitText(
   }
 }
 
+async function runGitTextAsync(
+  cwd: string,
+  args: string[],
+  options: { silent?: boolean } = {}
+): Promise<string> {
+  const command = `git ${args.map((arg) => shellQuote(arg)).join(' ')}`;
+
+  return new Promise((resolve, reject) => {
+    exec(
+      command,
+      {
+        cwd,
+        encoding: 'utf-8',
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (error, stdout) => {
+        if (error) {
+          if (options.silent) {
+            resolve('');
+            return;
+          }
+          reject(error);
+          return;
+        }
+
+        resolve(stdout.trim());
+      }
+    );
+  });
+}
+
 function runGit(
   cwd: string,
   args: string[],
@@ -100,6 +131,14 @@ function runGit(
       throw error;
     }
   }
+}
+
+async function runGitAsync(
+  cwd: string,
+  args: string[],
+  options: { silent?: boolean } = {}
+): Promise<void> {
+  await runGitTextAsync(cwd, args, options);
 }
 
 function isGitRepoRoot(dirPath: string): boolean {
@@ -317,6 +356,29 @@ function getWorkspaceBranchStates(
   });
 }
 
+async function getWorkspaceBranchStatesAsync(
+  projectRoot: string,
+  branchName: string
+): Promise<WorkspaceRepoState[]> {
+  const repoStates: WorkspaceRepoState[] = [];
+
+  for (const repoPath of discoverWorkspaceRepos(projectRoot)) {
+    const remoteName = await getPreferredRemoteNameAsync(repoPath);
+    const localBranches = await listLocalBranchesAsync(repoPath);
+    const remoteBranches = await listRemoteBranchesAsync(repoPath, remoteName);
+
+    repoStates.push({
+      repoPath,
+      relativePath: repoPath === projectRoot ? '' : path.relative(projectRoot, repoPath),
+      remoteName,
+      hasLocalBranch: localBranches.has(branchName),
+      hasRemoteBranch: remoteBranches.has(branchName),
+    });
+  }
+
+  return repoStates;
+}
+
 function refreshRemoteBranchState(
   state: WorkspaceRepoState,
   branchName: string
@@ -332,6 +394,25 @@ function refreshRemoteBranchState(
   );
 
   state.hasRemoteBranch = listRemoteBranches(state.repoPath, state.remoteName).has(branchName);
+}
+
+async function refreshRemoteBranchStateAsync(
+  state: WorkspaceRepoState,
+  branchName: string
+): Promise<void> {
+  if (!isValidBranchName(branchName)) {
+    throw new Error(`Invalid branch name: ${branchName}`);
+  }
+
+  await runGitAsync(
+    state.repoPath,
+    ['fetch', '--prune', state.remoteName],
+    { silent: true }
+  );
+
+  state.hasRemoteBranch = (
+    await listRemoteBranchesAsync(state.repoPath, state.remoteName)
+  ).has(branchName);
 }
 
 function deriveBaseSlug(branchName: string): string {
@@ -434,6 +515,14 @@ function getBranchUpstream(repoPath: string, branchName: string): string {
   );
 }
 
+async function getBranchUpstreamAsync(repoPath: string, branchName: string): Promise<string> {
+  return runGitTextAsync(
+    repoPath,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${branchName}@{upstream}`],
+    { silent: true }
+  );
+}
+
 function getBranchDivergence(
   repoPath: string,
   localRef: string,
@@ -454,11 +543,63 @@ function getBranchDivergence(
   };
 }
 
+async function getBranchDivergenceAsync(
+  repoPath: string,
+  localRef: string,
+  remoteRef: string
+): Promise<{ ahead: number; behind: number }> {
+  const output = await runGitTextAsync(
+    repoPath,
+    ['rev-list', '--left-right', '--count', `${localRef}...${remoteRef}`],
+    { silent: true }
+  );
+  const [aheadText = '0', behindText = '0'] = output.split(/\s+/);
+  const ahead = Number.parseInt(aheadText, 10);
+  const behind = Number.parseInt(behindText, 10);
+
+  return {
+    ahead: Number.isFinite(ahead) ? ahead : 0,
+    behind: Number.isFinite(behind) ? behind : 0,
+  };
+}
+
 function getCheckedOutWorktreePath(
   repoPath: string,
   branchName: string
 ): string | null {
   const output = runGitText(
+    repoPath,
+    ['worktree', 'list', '--porcelain'],
+    { silent: true }
+  );
+  if (!output) {
+    return null;
+  }
+
+  let currentWorktree: string | null = null;
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      currentWorktree = line.slice('worktree '.length).trim();
+      continue;
+    }
+
+    if (line === `branch refs/heads/${branchName}`) {
+      return currentWorktree;
+    }
+
+    if (!line.trim()) {
+      currentWorktree = null;
+    }
+  }
+
+  return null;
+}
+
+async function getCheckedOutWorktreePathAsync(
+  repoPath: string,
+  branchName: string
+): Promise<string | null> {
+  const output = await runGitTextAsync(
     repoPath,
     ['worktree', 'list', '--porcelain'],
     { silent: true }
@@ -561,6 +702,81 @@ function ensureLocalBranch(
   state.hasLocalBranch = true;
 }
 
+async function ensureLocalBranchAsync(
+  state: WorkspaceRepoState,
+  branchName: string,
+  worktreePath: string
+): Promise<void> {
+  if (!isValidBranchName(branchName)) {
+    throw new Error(`Invalid branch name: ${branchName}`);
+  }
+
+  await refreshRemoteBranchStateAsync(state, branchName);
+  await runGitAsync(state.repoPath, ['worktree', 'prune'], { silent: true });
+  state.hasLocalBranch = (await listLocalBranchesAsync(state.repoPath)).has(branchName);
+
+  if (state.hasRemoteBranch) {
+    const remoteRef = `${state.remoteName}/${branchName}`;
+
+    if (state.hasLocalBranch) {
+      const upstream = await getBranchUpstreamAsync(state.repoPath, branchName);
+      if (upstream !== remoteRef) {
+        await runGitAsync(
+          state.repoPath,
+          ['branch', `--set-upstream-to=${remoteRef}`, branchName],
+          { silent: true }
+        );
+      }
+
+      const { ahead, behind } = await getBranchDivergenceAsync(
+        state.repoPath,
+        branchName,
+        remoteRef
+      );
+      if (behind > 0 && ahead === 0) {
+        const checkedOutWorktreePath = await getCheckedOutWorktreePathAsync(
+          state.repoPath,
+          branchName
+        );
+        if (checkedOutWorktreePath) {
+          if (path.resolve(checkedOutWorktreePath) === path.resolve(worktreePath)) {
+            return;
+          }
+
+          const repoLabel = state.relativePath || '.';
+          throw new Error(
+            `Branch ${branchName} in ${repoLabel} is already checked out at ${checkedOutWorktreePath}; reopen that worktree instead of recreating it.`
+          );
+        }
+
+        await runGitAsync(state.repoPath, ['branch', '-f', branchName, remoteRef]);
+      } else if (ahead > 0 && behind > 0) {
+        const repoLabel = state.relativePath || '.';
+        throw new Error(
+          `Branch ${branchName} in ${repoLabel} has diverged from ${remoteRef}; refusing to overwrite local commits while opening the workspace.`
+        );
+      }
+
+      return;
+    }
+
+    await runGitAsync(
+      state.repoPath,
+      ['branch', '--track', branchName, remoteRef]
+    );
+    state.hasLocalBranch = true;
+    return;
+  }
+
+  if (state.hasLocalBranch) {
+    return;
+  }
+
+  const defaultBranch = await getMainBranchForRepoAsync(state.repoPath);
+  await runGitAsync(state.repoPath, ['branch', branchName, defaultBranch]);
+  state.hasLocalBranch = true;
+}
+
 function getMainBranchForRepo(repoPath: string): string {
   const originHead = runGitText(
     repoPath,
@@ -586,6 +802,31 @@ function getMainBranchForRepo(repoPath: string): string {
   }
 }
 
+async function getMainBranchForRepoAsync(repoPath: string): Promise<string> {
+  const originHead = await runGitTextAsync(
+    repoPath,
+    ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+    { silent: true }
+  );
+  if (originHead.startsWith('refs/remotes/origin/')) {
+    return originHead.slice('refs/remotes/origin/'.length);
+  }
+
+  try {
+    await runGitAsync(repoPath, ['show-ref', '--verify', '--quiet', 'refs/heads/main']);
+    return 'main';
+  } catch {
+    // Continue to master fallback.
+  }
+
+  try {
+    await runGitAsync(repoPath, ['show-ref', '--verify', '--quiet', 'refs/heads/master']);
+    return 'master';
+  } catch {
+    return (await getCurrentBranchNameAsync(repoPath)) || 'main';
+  }
+}
+
 function createWorktree(repoPath: string, worktreePath: string, branchName: string): void {
   if (fs.existsSync(path.join(worktreePath, '.git'))) {
     return;
@@ -594,6 +835,91 @@ function createWorktree(repoPath: string, worktreePath: string, branchName: stri
   fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
   runGit(repoPath, ['worktree', 'prune'], { silent: true });
   runGit(repoPath, ['worktree', 'add', worktreePath, branchName]);
+}
+
+async function createWorktreeAsync(
+  repoPath: string,
+  worktreePath: string,
+  branchName: string
+): Promise<void> {
+  if (fs.existsSync(path.join(worktreePath, '.git'))) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+  await runGitAsync(repoPath, ['worktree', 'prune'], { silent: true });
+  await runGitAsync(repoPath, ['worktree', 'add', worktreePath, branchName]);
+}
+
+async function listLocalBranchesAsync(repoPath: string): Promise<Set<string>> {
+  const output = await runGitTextAsync(
+    repoPath,
+    ['for-each-ref', '--format=%(refname:short)', 'refs/heads'],
+    { silent: true }
+  );
+
+  return new Set(
+    output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+}
+
+async function getCurrentBranchNameAsync(repoPath: string): Promise<string> {
+  return (await runGitTextAsync(
+    repoPath,
+    ['branch', '--show-current'],
+    { silent: true }
+  )) || 'main';
+}
+
+async function getPreferredRemoteNameAsync(repoPath: string): Promise<string> {
+  const upstream = await runGitTextAsync(
+    repoPath,
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
+    { silent: true }
+  );
+  if (upstream.includes('/')) {
+    return upstream.split('/')[0];
+  }
+
+  const currentBranch = await getCurrentBranchNameAsync(repoPath);
+  if (currentBranch && currentBranch !== 'HEAD') {
+    const configuredRemote = await runGitTextAsync(
+      repoPath,
+      ['config', `branch.${currentBranch}.remote`],
+      { silent: true }
+    );
+    if (configuredRemote) {
+      return configuredRemote;
+    }
+  }
+
+  return REMOTE_FALLBACK;
+}
+
+async function listRemoteBranchesAsync(
+  repoPath: string,
+  remoteName: string
+): Promise<Set<string>> {
+  const output = await runGitTextAsync(
+    repoPath,
+    ['for-each-ref', '--format=%(refname:short)', `refs/remotes/${remoteName}`],
+    { silent: true }
+  );
+
+  return new Set(
+    output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => line !== `${remoteName}/HEAD`)
+      .map((line) => (
+        line.startsWith(`${remoteName}/`) ? line.slice(remoteName.length + 1) : line
+      ))
+      .filter(Boolean)
+  );
 }
 
 async function triggerChildWorktreeHook(
@@ -624,7 +950,7 @@ export async function resumeBranchWorkspace(
     sessionProjectRoot,
   } = options;
 
-  const workspaceStates = getWorkspaceBranchStates(projectRoot, branchName);
+  const workspaceStates = await getWorkspaceBranchStatesAsync(projectRoot, branchName);
   const slug = getAvailableSlug(branchName, projectRoot, existingPanes);
   const rootWorktreePath = path.join(projectRoot, '.dmux', 'worktrees', slug);
   const settings = new SettingsManager(projectRoot).getSettings();
@@ -637,14 +963,14 @@ export async function resumeBranchWorkspace(
     const worktreePath = state.relativePath
       ? path.join(rootWorktreePath, state.relativePath)
       : rootWorktreePath;
-    ensureLocalBranch(state, branchName, worktreePath);
+    await ensureLocalBranchAsync(state, branchName, worktreePath);
   }
 
   for (const state of workspaceStates) {
     const worktreePath = state.relativePath
       ? path.join(rootWorktreePath, state.relativePath)
       : rootWorktreePath;
-    createWorktree(state.repoPath, worktreePath, branchName);
+    await createWorktreeAsync(state.repoPath, worktreePath, branchName);
     writeWorktreeMetadata(worktreePath, {
       ...(agent && !state.relativePath ? { agent } : {}),
       permissionMode: state.relativePath ? undefined : settings.permissionMode,

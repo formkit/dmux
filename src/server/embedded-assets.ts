@@ -893,7 +893,7 @@ class Dmux {
                     \`set-option -t \${this.sessionName} pane-border-status top\`,
                     \`set-option -t \${this.sessionName} pane-active-border-style "fg=colour\${TMUX_COLORS.activeBorder}"\`,
                     \`set-option -t \${this.sessionName} pane-border-style "fg=colour\${TMUX_COLORS.inactiveBorder}"\`,
-                    \`set-option -t \${this.sessionName} pane-border-format " #{pane_title} "\`,
+                    \`set-option -t \${this.sessionName} pane-border-format " #{s|__dmux__.*$||:pane_title} "\`,
                     \`select-pane -t \${this.sessionName} -T "dmux v\${packageJson.version} - \${this.projectName}"\`,
                 ].join(' \\\\; ');
                 execSync(\`tmux \${sessionOptions}\`, { stdio: 'inherit' });

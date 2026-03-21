@@ -2,6 +2,7 @@ import path from 'path';
 import * as fs from 'fs';
 import { TmuxService } from '../services/TmuxService.js';
 import {
+  ensurePaneBorderStatusForCurrentSession,
   setupSidebarLayout,
   getTerminalDimensions,
   splitPane,
@@ -95,7 +96,7 @@ export async function reopenWorktree(
 
   // Enable pane borders to show titles
   try {
-    tmuxService.setGlobalOptionSync('pane-border-status', 'top');
+    ensurePaneBorderStatusForCurrentSession();
   } catch {
     // Ignore if already set or fails
   }
@@ -188,6 +189,7 @@ export async function reopenWorktree(
   const newPane: DmuxPane = {
     id: `dmux-${Date.now()}`,
     slug,
+    displayName: metadata?.displayName,
     branchName: (metadata?.branchName || currentBranch) !== slug
       ? (metadata?.branchName || currentBranch)
       : undefined,

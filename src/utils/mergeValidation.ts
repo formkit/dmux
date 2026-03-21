@@ -28,6 +28,46 @@ export interface GitStatus {
   summary: string;
 }
 
+const DMUX_HOOK_SCAFFOLD_PATHS = new Set([
+  '.dmux-hooks',
+  '.dmux-hooks/',
+  '.dmux-hooks/AGENTS.md',
+  '.dmux-hooks/CLAUDE.md',
+  '.dmux-hooks/README.md',
+  '.dmux-hooks/examples',
+  '.dmux-hooks/examples/',
+]);
+
+function parseGitStatusLine(line: string): { statusCode: string; filename: string } {
+  const trimmed = line.trimStart();
+  const spaceIndex = trimmed.indexOf(' ');
+  const filename = spaceIndex >= 0 ? trimmed.slice(spaceIndex + 1).trim() : trimmed;
+
+  return {
+    statusCode: line.slice(0, 2),
+    filename,
+  };
+}
+
+function shouldIgnoreGitStatusEntry(statusCode: string, filename: string): boolean {
+  if (
+    filename === '.dmux'
+    || filename === '.dmux/'
+    || filename.startsWith('.dmux/')
+  ) {
+    return true;
+  }
+
+  if (statusCode !== '??') {
+    return false;
+  }
+
+  return (
+    DMUX_HOOK_SCAFFOLD_PATHS.has(filename)
+    || filename.startsWith('.dmux-hooks/examples/')
+  );
+}
+
 /**
  * Get git status for a repository
  */
@@ -40,28 +80,43 @@ export function getGitStatus(repoPath: string): GitStatus {
       stdio: 'pipe',
     });
 
-    const files = statusOutput
+    const entries = statusOutput
       .trim()
       .split('\n')
       .filter(line => line.trim())
       .map(line => {
-        // Git status porcelain format can vary:
-        // Standard: " M filename" (2 status chars + space + filename)
-        // Sometimes: "M filename" (1 status char + space + filename)
-        // Solution: trim leading spaces, find first space, take everything after it and trim again
-        const trimmed = line.trimStart();
-        const spaceIndex = trimmed.indexOf(' ');
-        const filename = spaceIndex >= 0 ? trimmed.slice(spaceIndex + 1).trim() : trimmed;
-        LogService.getInstance().info(`Git status: "${line}" → "${filename}"`, 'mergeValidation');
-        return filename;
+        const parsed = parseGitStatusLine(line);
+        LogService.getInstance().info(
+          `Git status: "${line}" → "${parsed.filename}"`,
+          'mergeValidation'
+        );
+        return { line, ...parsed };
       });
 
-    LogService.getInstance().info(`Final files for ${repoPath}: ${JSON.stringify(files)}`, 'mergeValidation');
+    const visibleEntries = entries
+      .filter(({ statusCode, filename, line }) => {
+        const shouldIgnore = shouldIgnoreGitStatusEntry(statusCode, filename);
+        if (shouldIgnore) {
+          LogService.getInstance().info(
+            `Ignoring git status entry: "${line}"`,
+            'mergeValidation'
+          );
+        }
+        return !shouldIgnore;
+      });
+
+    const files = visibleEntries
+      .map(({ filename }) => filename);
+
+    LogService.getInstance().info(
+      `Final files for ${repoPath}: ${JSON.stringify(files)}`,
+      'mergeValidation'
+    );
 
     return {
       hasChanges: files.length > 0,
       files,
-      summary: statusOutput.trim(),
+      summary: visibleEntries.map(({ line }) => line).join('\n'),
     };
   } catch (error) {
     return {

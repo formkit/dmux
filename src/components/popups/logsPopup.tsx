@@ -18,6 +18,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { POPUP_CONFIG } from './config.js';
 import { PopupWrapper, writeSuccessAndExit } from './shared/index.js';
+import { getPaneDisplayName } from '../../utils/paneTitle.js';
 
 type FilterMode = 'all' | 'errors' | 'warnings' | 'info' | 'pane';
 
@@ -30,7 +31,7 @@ interface LogsPopupProps {
     unreadErrors: number;
     unreadWarnings: number;
   };
-  panes?: Array<{ id: string; slug: string }>; // For looking up friendly pane names
+  panes?: Array<{ id: string; slug: string; displayName?: string }>; // For looking up friendly pane names
 }
 
 interface LogsPopupAppProps extends LogsPopupProps {
@@ -117,7 +118,7 @@ const LogsPopupApp: React.FC<LogsPopupAppProps> = ({ allLogs, stats, panes = [],
   // Helper to get friendly pane name from paneId
   const getPaneName = (paneId: string): string => {
     const pane = panes.find(p => p.id === paneId);
-    return pane?.slug || paneId;
+    return pane ? getPaneDisplayName(pane) : paneId;
   };
 
   useInput((input, key) => {

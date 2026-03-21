@@ -7,6 +7,7 @@ import type { PaneAnalysis } from './PaneAnalyzer.js';
 import type { OutboundMessage } from '../workers/WorkerMessages.js';
 import { StateManager } from '../shared/StateManager.js';
 import { LogService } from './LogService.js';
+import { getPaneDisplayName } from '../utils/paneTitle.js';
 
 export interface StatusUpdateEvent {
   paneId: string;
@@ -364,7 +365,7 @@ export class StatusDetector extends EventEmitter {
     // Get pane data early for friendly naming in logs
     const stateManager = StateManager.getInstance();
     const pane = stateManager.getPaneById(paneId);
-    const paneName = pane?.slug || paneId;
+    const paneName = pane ? getPaneDisplayName(pane) : paneId;
 
     // Log entry into autopilot handler
     logService.debug(`Autopilot: Evaluating "${paneName}" (status: ${finalStatus}, state: ${analysis.state})`, 'autopilot', paneId);
@@ -447,7 +448,7 @@ export class StatusDetector extends EventEmitter {
     }
 
     const pane = StateManager.getInstance().getPaneById(paneId);
-    const subtitle = pane?.slug;
+    const subtitle = pane ? getPaneDisplayName(pane) : undefined;
 
     const title = analysis.attentionTitle
       || (status === 'waiting'

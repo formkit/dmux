@@ -103,7 +103,7 @@ export function render() {
       <li><strong>Show Only This Project / Show All Panes</strong> — focus one project's panes in a shared session</li>
       <li><strong>Merge</strong> — merge the pane's work back to main</li>
       <li><strong>Close</strong> — close the pane and optionally remove the worktree</li>
-      <li><strong>Rename</strong> — rename the pane slug</li>
+      <li><strong>Rename</strong> — rename the pane label without changing the worktree slug</li>
       <li><strong>Add Agent to Worktree</strong> — launch another agent in the same worktree</li>
       <li><strong>Add Terminal to Worktree</strong> — open a shell pane in the worktree</li>
       <li><strong>Browse Files</strong> — open the read-only worktree file browser</li>

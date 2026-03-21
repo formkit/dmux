@@ -4,6 +4,7 @@ import stringWidth from 'string-width';
 import type { DmuxPane } from '../../types.js';
 import { COLORS } from '../../theme/colors.js';
 import { getAgentShortLabel } from '../../utils/agentLaunch.js';
+import { getPaneDisplayName } from '../../utils/paneTitle.js';
 
 interface PaneCardProps {
   pane: DmuxPane;
@@ -49,6 +50,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
 
   const status = getStatusIcon();
   const isFileBrowserPane = pane.type === 'shell' && pane.shellType === 'fb';
+  const paneName = getPaneDisplayName(pane);
 
   // Right-aligned columns: [cc] = 4 chars, (ap) = 4 chars, space between = 1
   const hasAgent = pane.type === 'shell' || !!pane.agent;
@@ -68,7 +70,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   const shellPrefixText = isFileBrowserPane ? ' ' : '';
   const fixedLeftWidth = stringWidth(prefix + statusText + attentionText + sourceText + shellPrefixText + hiddenText);
   const maxSlugWidth = Math.max(0, LEFT_COLUMN_WIDTH - fixedLeftWidth);
-  const slugText = clipToWidth(pane.slug, maxSlugWidth);
+  const slugText = clipToWidth(paneName, maxSlugWidth);
   const slugColor = isFileBrowserPane
     ? 'cyan'
     : selected
@@ -115,6 +117,7 @@ const PaneCard: React.FC<PaneCardProps> = memo(({ pane, isDevSource, selected })
   return (
     prevProps.pane.id === nextProps.pane.id &&
     prevProps.pane.slug === nextProps.pane.slug &&
+    prevProps.pane.displayName === nextProps.pane.displayName &&
     prevProps.pane.agentStatus === nextProps.pane.agentStatus &&
     prevProps.pane.needsAttention === nextProps.pane.needsAttention &&
     prevProps.pane.testStatus === nextProps.pane.testStatus &&

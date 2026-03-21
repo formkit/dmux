@@ -16,6 +16,7 @@ export interface PotentialHarm {
 }
 
 export interface MergeTargetReference {
+  displayName?: string;
   slug?: string;
   branchName: string;
   worktreePath?: string;
@@ -29,6 +30,7 @@ export interface SidebarProject {
 export interface DmuxPane {
   id: string;
   slug: string;
+  displayName?: string; // User-facing pane name (independent from worktree slug/branch)
   branchName?: string; // Git branch name (may differ from slug when branchPrefix is set)
   prompt: string;
   paneId: string;

@@ -13,8 +13,8 @@ import { StateManager } from '../shared/StateManager.js';
 import { normalizeSidebarProjects } from '../utils/sidebarProjects.js';
 
 /**
- * Enforces that pane titles in tmux match the slugs in the config
- * This ensures dmux config is the source of truth for pane names
+ * Enforces that tmux pane titles match the encoded config title for each pane.
+ * This keeps rebinding stable while allowing a separate user-facing display name.
  */
 export async function enforcePaneTitles(
   panes: DmuxPane[],

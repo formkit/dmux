@@ -5,6 +5,7 @@
 import { execSync } from 'child_process';
 import type { DmuxPane } from '../../types.js';
 import type { ActionResult, ActionContext } from '../types.js';
+import { getPaneDisplayName } from '../../utils/paneTitle.js';
 
 /**
  * View/Jump to a pane
@@ -13,10 +14,12 @@ export async function viewPane(
   pane: DmuxPane,
   context: ActionContext
 ): Promise<ActionResult> {
+  const paneName = getPaneDisplayName(pane);
+
   if (pane.hidden) {
     return {
       type: 'info',
-      message: `Pane "${pane.slug}" is hidden. Press h to show it.`,
+      message: `Pane "${paneName}" is hidden. Press h to show it.`,
       dismissable: true,
     };
   }
@@ -26,7 +29,7 @@ export async function viewPane(
 
     return {
       type: 'navigation',
-      message: `Jumped to pane: ${pane.slug}`,
+      message: `Jumped to pane: ${paneName}`,
       targetPaneId: pane.id,
       dismissable: true,
     };
