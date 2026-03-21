@@ -2,23 +2,26 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
-export type OpenRouterOnboardingOutcome = 'existing-env' | 'configured' | 'skip';
+export type AiProviderOnboardingOutcome = 'existing-env' | 'configured' | 'skip';
 
-interface OpenRouterOnboardingEntry {
+interface AiProviderOnboardingEntry {
   completed: boolean;
   completedAt: string;
-  outcome: OpenRouterOnboardingOutcome;
+  outcome: AiProviderOnboardingOutcome;
   shellConfigPath?: string;
 }
 
 interface OnboardingState {
-  openRouterApiKeyOnboarding?: OpenRouterOnboardingEntry;
+  aiProviderOnboarding?: AiProviderOnboardingEntry;
+  openRouterApiKeyOnboarding?: AiProviderOnboardingEntry; // backwards compat
   [key: string]: unknown;
 }
 
 const ONBOARDING_STATE_RELATIVE_PATH = path.join('.dmux', 'onboarding.json');
-const OPENROUTER_BLOCK_START = '# >>> dmux openrouter >>>';
-const OPENROUTER_BLOCK_END = '# <<< dmux openrouter <<<';
+const AI_BLOCK_START = '# >>> dmux ai-provider >>>';
+const AI_BLOCK_END = '# <<< dmux ai-provider <<<';
+const LEGACY_BLOCK_START = '# >>> dmux openrouter >>>';
+const LEGACY_BLOCK_END = '# <<< dmux openrouter <<<';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -89,20 +92,35 @@ export async function resolveShellConfigPath(shellPath: string | undefined, home
   return candidates[0];
 }
 
-export function buildOpenRouterExportLine(apiKey: string, shellPath?: string): string {
+export function buildAiExportLine(apiKey: string, shellPath?: string): string {
   const trimmedKey = apiKey.trim();
   if (isFishShell(shellPath)) {
-    return `set -gx OPENROUTER_API_KEY ${quoteForFish(trimmedKey)}`;
+    return `set -gx OPENAI_API_KEY ${quoteForFish(trimmedKey)}`;
   }
 
-  return `export OPENROUTER_API_KEY=${quoteForPosix(trimmedKey)}`;
+  return `export OPENAI_API_KEY=${quoteForPosix(trimmedKey)}`;
 }
 
-export function upsertOpenRouterKeyBlock(existingContent: string, exportLine: string): string {
-  const normalizedContent = existingContent.replace(/\r\n/g, '\n');
-  const block = `${OPENROUTER_BLOCK_START}\n${exportLine}\n${OPENROUTER_BLOCK_END}`;
+/**
+ * Remove legacy `# >>> dmux openrouter >>>` block if present
+ */
+function removeLegacyBlock(content: string): string {
+  const legacyPattern = new RegExp(
+    `${escapeRegex(LEGACY_BLOCK_START)}[\\s\\S]*?${escapeRegex(LEGACY_BLOCK_END)}\\n?`,
+    'm'
+  );
+  return content.replace(legacyPattern, '');
+}
+
+export function upsertAiKeyBlock(existingContent: string, exportLine: string): string {
+  let normalizedContent = existingContent.replace(/\r\n/g, '\n');
+
+  // Migrate: remove old openrouter block if present
+  normalizedContent = removeLegacyBlock(normalizedContent);
+
+  const block = `${AI_BLOCK_START}\n${exportLine}\n${AI_BLOCK_END}`;
   const blockPattern = new RegExp(
-    `${escapeRegex(OPENROUTER_BLOCK_START)}[\\s\\S]*?${escapeRegex(OPENROUTER_BLOCK_END)}\\n?`,
+    `${escapeRegex(AI_BLOCK_START)}[\\s\\S]*?${escapeRegex(AI_BLOCK_END)}\\n?`,
     'm'
   );
 
@@ -122,7 +140,7 @@ export function upsertOpenRouterKeyBlock(existingContent: string, exportLine: st
   return `${withTrailingNewline}\n${block}\n`;
 }
 
-export async function persistOpenRouterApiKeyToShell(
+export async function persistAiApiKeyToShell(
   apiKey: string,
   options?: { shellPath?: string; homeDir?: string }
 ): Promise<{ shellConfigPath: string; exportLine: string }> {
@@ -141,8 +159,8 @@ export async function persistOpenRouterApiKeyToShell(
     // Expected if shell config does not exist yet
   }
 
-  const exportLine = buildOpenRouterExportLine(apiKey, shellPath);
-  const updatedContent = upsertOpenRouterKeyBlock(existingContent, exportLine);
+  const exportLine = buildAiExportLine(apiKey, shellPath);
+  const updatedContent = upsertAiKeyBlock(existingContent, exportLine);
 
   await fs.mkdir(path.dirname(shellConfigPath), { recursive: true });
   await fs.writeFile(shellConfigPath, updatedContent, 'utf-8');
@@ -169,14 +187,16 @@ export async function readOnboardingState(homeDir: string): Promise<OnboardingSt
   return {};
 }
 
-export async function hasCompletedOpenRouterOnboarding(homeDir: string): Promise<boolean> {
+export async function hasCompletedAiProviderOnboarding(homeDir: string): Promise<boolean> {
   const state = await readOnboardingState(homeDir);
-  return state.openRouterApiKeyOnboarding?.completed === true;
+  // Check both new and legacy state fields for backwards compat
+  return state.aiProviderOnboarding?.completed === true
+    || state.openRouterApiKeyOnboarding?.completed === true;
 }
 
-export async function writeOpenRouterOnboardingState(
+export async function writeAiProviderOnboardingState(
   homeDir: string,
-  outcome: OpenRouterOnboardingOutcome,
+  outcome: AiProviderOnboardingOutcome,
   shellConfigPath?: string
 ): Promise<void> {
   const statePath = getOnboardingStatePath(homeDir);
@@ -184,7 +204,7 @@ export async function writeOpenRouterOnboardingState(
 
   const nextState: OnboardingState = {
     ...currentState,
-    openRouterApiKeyOnboarding: {
+    aiProviderOnboarding: {
       completed: true,
       completedAt: new Date().toISOString(),
       outcome,

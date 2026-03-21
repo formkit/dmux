@@ -8,6 +8,7 @@ import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { LogService } from '../services/LogService.js';
+import { getApiKey, getBaseUrl, getModels } from './aiProvider.js';
 
 /**
  * Fetch with timeout wrapper
@@ -30,18 +31,16 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 }
 
 /**
- * Call OpenRouter API for AI assistance with model fallback
+ * Call AI provider for assistance with model fallback
  */
-async function callOpenRouter(prompt: string, maxTokens: number = 1000, timeoutMs: number = 12000): Promise<string | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+async function callAiProvider(prompt: string, maxTokens: number = 1000, timeoutMs: number = 12000): Promise<string | null> {
+  const apiKey = getApiKey();
   if (!apiKey) return null;
 
-  const models = ['google/gemini-2.5-flash', 'x-ai/grok-4-fast:free', 'openai/gpt-4o-mini'];
-
-  for (const model of models) {
+  for (const model of getModels()) {
     try {
       const response = await fetchWithTimeout(
-        'https://openrouter.ai/api/v1/chat/completions',
+        `${getBaseUrl()}/chat/completions`,
         {
           method: 'POST',
           headers: {
@@ -156,8 +155,8 @@ export async function generateCommitMessage(repoPath: string): Promise<string | 
 
     const prompt = `Generate a concise conventional commit message (e.g., "feat: add feature", "fix: bug") for these changes. Respond with ONLY the commit message, nothing else:\n\nFile changes:\n${summary}\n\nDiff:\n${contextDiff}`;
 
-    // Try OpenRouter first
-    let message = await callOpenRouter(prompt, 50);
+    // Try AI provider first
+    let message = await callAiProvider(prompt, 50);
     if (message) {
       // Clean up the response
       message = message.replace(/^["']|["']$/g, '').trim();
@@ -294,8 +293,8 @@ ${content}
 
 Respond with ONLY the complete resolved file content, no explanations:`;
 
-    // Try OpenRouter with longer timeout for conflict resolution
-    let resolved = await callOpenRouter(prompt, 2000, 20000);
+    // Try AI provider with longer timeout for conflict resolution
+    let resolved = await callAiProvider(prompt, 2000, 20000);
     if (!resolved) {
       // Try Claude Code with longer timeout for conflict resolution
       resolved = await callClaudeCode(prompt, 20000);

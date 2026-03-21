@@ -16,7 +16,7 @@ import {
   addWorktree,
   type MockGitRepo,
 } from '../fixtures/integration/gitRepo.js';
-import { createMockExecSync, createMockOpenRouterAPI } from '../helpers/integration/mockCommands.js';
+import { createMockExecSync, createMockAiProviderAPI } from '../helpers/integration/mockCommands.js';
 
 const fsMock = vi.hoisted(() => ({
   readFileSync: vi.fn(() => JSON.stringify({ controlPaneId: '%0' })),
@@ -322,7 +322,7 @@ describe('Pane Lifecycle Integration Tests', () => {
     });
 
     it('should handle slug generation failure (fallback to timestamp)', async () => {
-      // Mock OpenRouter API failure
+      // Mock AI provider API failure
       const mockFetch = vi.fn(() =>
         Promise.reject(new Error('API timeout'))
       );

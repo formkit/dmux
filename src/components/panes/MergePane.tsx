@@ -5,6 +5,7 @@ import CleanTextInput from '../inputs/CleanTextInput.js';
 import chalk from 'chalk';
 import { SettingsManager } from '../../utils/settingsManager.js';
 import { getPermissionFlags } from '../../utils/agentLaunch.js';
+import { getApiKey, getBaseUrl, getModels } from '../../utils/aiProvider.js';
 
 interface MergePaneProps {
   pane: {
@@ -95,7 +96,7 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
   };
 
   const generateCommitMessage = async (): Promise<string> => {
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const apiKey = getApiKey();
     if (!apiKey) {
       return `chore: merge ${pane.slug} into ${mainBranch}`;
     }
@@ -106,25 +107,36 @@ export default function MergePane({ pane, onComplete, onCancel, mainBranch }: Me
         return `chore: merge ${pane.slug} into ${mainBranch}`;
       }
 
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-4o-mini',
-          messages: [{
-            role: 'user',
-            content: `Generate a concise, semantic commit message for these changes. Follow conventional commits format (feat:, fix:, chore:, etc). Be specific about what changed:\n\n${diff.output.substring(0, 4000)}`
-          }],
-          max_tokens: 100,
-          temperature: 0.3,
-        }),
-      });
+      const prompt = `Generate a concise, semantic commit message for these changes. Follow conventional commits format (feat:, fix:, chore:, etc). Be specific about what changed:\n\n${diff.output.substring(0, 4000)}`;
 
-      const data = await response.json() as any;
-      return data.choices?.[0]?.message?.content?.trim() || `chore: merge ${pane.slug} into ${mainBranch}`;
+      for (const model of getModels()) {
+        try {
+          const response = await fetch(`${getBaseUrl()}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: prompt }],
+              max_tokens: 100,
+              temperature: 0.3,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json() as any;
+            const message = data.choices?.[0]?.message?.content?.trim();
+            if (message) return message;
+          }
+        } catch {
+          // Try next model
+          continue;
+        }
+      }
+
+      return `chore: merge ${pane.slug} into ${mainBranch}`;
     } catch {
       return `chore: merge ${pane.slug} into ${mainBranch}`;
     }

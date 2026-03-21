@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { capturePaneContent } from '../utils/paneCapture.js';
 import { LogService } from './LogService.js';
+import { getApiKey, getBaseUrl, getModels } from '../utils/aiProvider.js';
 
 // State types for agent status
 export type PaneState = 'option_dialog' | 'open_prompt' | 'in_progress';
@@ -69,11 +70,7 @@ export function normalizePaneContentForAnalysis(
 
 export class PaneAnalyzer {
   private apiKey: string;
-  private modelStack: string[] = [
-    'google/gemini-2.5-flash',
-    'x-ai/grok-4-fast:free',
-    'openai/gpt-4o-mini'
-  ];
+  private modelStack: string[] = getModels();
 
   // Content-hash based cache to avoid repeated API calls for identical content
   private cache = new Map<string, CacheEntry>();
@@ -84,7 +81,7 @@ export class PaneAnalyzer {
   private pendingRequests = new Map<string, Promise<PaneAnalysis>>();
 
   constructor() {
-    this.apiKey = process.env.OPENROUTER_API_KEY || '';
+    this.apiKey = getApiKey() || '';
   }
 
   /**
@@ -139,7 +136,7 @@ export class PaneAnalyzer {
     maxTokens: number,
     signal?: AbortSignal
   ): Promise<any> {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(`${getBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -169,7 +166,7 @@ export class PaneAnalyzer {
   }
 
   /**
-   * Makes a request to OpenRouter API with PARALLEL model fallback
+   * Makes a request to AI provider with PARALLEL model fallback
    * Uses Promise.any to race all models - first success wins
    *
    * Performance improvement: Previously could take 6+ seconds if models failed sequentially.
