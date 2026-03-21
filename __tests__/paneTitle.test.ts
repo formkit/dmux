@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LEGACY_PANE_TITLE_DELIMITERS,
   PANE_TITLE_DELIMITER,
   buildWorktreePaneTitle,
   getPaneDisplayName,
@@ -9,6 +10,10 @@ import {
 import { createWorktreePane } from './fixtures/mockPanes.js';
 
 describe('pane title helpers', () => {
+  it('uses a tmux-safe delimiter for border title rendering', () => {
+    expect(PANE_TITLE_DELIMITER.includes(':')).toBe(false);
+  });
+
   it('prefers the custom display name for UI labels', () => {
     const pane = createWorktreePane({
       slug: 'fix-auth',
@@ -29,6 +34,9 @@ describe('pane title helpers', () => {
       `Auth Review${PANE_TITLE_DELIMITER}fix-auth`
     );
     expect(getPaneTitleCandidates(pane, '/tmp/project')).toContain('fix-auth');
+    expect(getPaneTitleCandidates(pane, '/tmp/project')).toContain(
+      `Auth Review${LEGACY_PANE_TITLE_DELIMITERS[0]}fix-auth`
+    );
   });
 
   it('keeps the legacy multi-project title when no custom name is set', () => {
